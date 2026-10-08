@@ -7494,7 +7494,8 @@ class FunctionLowering {
           Comparator = snapshot(expression(Call->getArg(5)), L);
       }
       const auto Wrapper =
-          (Merge || Union || Difference || Symmetric) && Call->getNumArgs() == 5
+          (Merge || Union || Difference || Symmetric || Intersection) &&
+                  Call->getNumArgs() == 5
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),

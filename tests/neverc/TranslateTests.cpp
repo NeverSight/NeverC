@@ -209619,3 +209619,1147 @@ using F=P(*)(P,P,P,P,P);F selected(){using std::set_symmetric_difference;return 
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-set-intersection-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-set-intersection-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+template<class T>using Alias=std::reference_wrapper<T>;using R=Alias<int>;
+int main(){int x=1,y=2,z=9;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&y||&o[1].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x,x,y},b[]={x},o[]={z,z,z};auto r=std::set_intersection(a,a+3,b,b+1,o);return r!=o+1||&o[0].get()!=&x||&o[1].get()!=&z||&o[2].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeBool) {
+  const auto Source = tmpFile("wrapper-set-intersection-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-set-intersection-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,y=true,z=false;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&y||&o[1].get()!=&z||z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeBothEmpty) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-both-empty.cpp");
+  const auto Output = tmpFile("wrapper-set-intersection-runtime-both-empty.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z};auto e=std::set_intersection(a,a,b,b,o);return e!=o||&o[0].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-both-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperSetIntersectionRuntimeConstInputConstReferents) {
+  const auto Source = tmpFile(
+      "wrapper-set-intersection-runtime-const-input-const-referents.cpp");
+  const auto Output = tmpFile(
+      "wrapper-set-intersection-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=9;const R a[]={x,y},b[]={y};R o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&y||&o[1].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,2,4,2,3,9};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5]},o[]={v[6],v[6]};const R* p=a;const R* q=b;auto end=std::set_intersection(p,p+4,q,q+2,o);return end!=o+1||&o[0].get()!=&v[1]||&o[1].get()!=&v[6]||v[6]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*const>;
+int main(){int storage[4]={};int*const p=storage,*const q=storage+1,*const s=storage+3;R a[]={p,q},b[]={q},o[]={s,s};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&q||&o[1].get()!=&s||s!=storage+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){int v[]={1,2,2,4,2,3,9};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5]},o[]={v[6],v[6]};auto end=std::set_intersection(a,a+4,b,b+2,o);return end!=o+1||&o[0].get()!=&v[1]||&o[1].get()!=&v[6]||v[6]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-set-intersection-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-set-intersection-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<double>;
+int main(){double x=-1.5,y=2.5,z=9.5;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&y||&o[1].get()!=&z||z!=9.5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeEmptyFirst) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-empty-first.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-empty-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z};auto e=std::set_intersection(a,a,b,b+1,o);return e!=o||&o[0].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-empty-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeEmptySecond) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-empty-second.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-empty-second.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z};auto e=std::set_intersection(a,a+1,b,b,o);return e!=o||&o[0].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-empty-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=7,y=8,z=9,q=2,s=99;R a[]={x,y,z},b[]={q},o[]={s,s};x=1;y=2;z=4;auto e=std::set_intersection(a,a+3,b,b+1,o);return e!=o+1||&o[0].get()!=&y||&o[1].get()!=&s||s!=99;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeMultiplicity) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-multiplicity.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-multiplicity.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=1,z=1,q=1,s=9;R a[]={x,y,z},b[]={q},o[]={s,s};auto e=std::set_intersection(a,a+3,b,b+1,o);return e!=o+1||&o[0].get()!=&x||&o[1].get()!=&s;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-multiplicity" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=-5,y=-2,z=9;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&y||&o[1].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeOneElement) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-one-element.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,z=9;R a[]={x},o[]={z};auto r=std::set_intersection(a,a+1,a,a+1,o);return r!=o+1||&o[0].get()!=&x||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int calls=0,dtors=0;struct Access{R*p;R*get(){++calls;return p;}~Access(){++dtors;}};int main(){int x=1,y=2,z=9;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(Access{a}.get(),Access{a+2}.get(),Access{b}.get(),Access{b+1}.get(),Access{o}.get());return r!=o+1||calls!=5||dtors!=5||&o[0].get()!=&y||&o[1].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int calls=0;R*arg(R*p){++calls;return p;}int main(){int x=1,y=2,z=9;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(arg(a),arg(a+2),arg(b),arg(b+1),arg(o));return r!=o+1||calls!=5||&o[0].get()!=&y||&o[1].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-partial-range.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={9,1,2,9,8,2,9,7};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5],v[6]},o[]={v[7],v[7],v[7],v[7]};auto r=std::set_intersection(a+1,a+3,b+1,b+2,o+1);return r!=o+2||&o[0].get()!=&v[7]||&o[1].get()!=&v[2]||&o[2].get()!=&v[7]||v[7]!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimePointer) {
+  const auto Source = tmpFile("wrapper-set-intersection-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-set-intersection-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*>;
+int main(){int v[4]={};int* p=v;int* q=v+1;int* r=v+1;int* s=v+2;int* z=v+3;R a[]={p,q},b[]={r,s},o[]={z,z};auto e=std::set_intersection(a,a+2,b,b+2,o);return e!=o+1||&o[0].get()!=&q||&o[1].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-intersection-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+
+struct V{int n;};bool operator<(const V&a,const V&b){return a.n<b.n;}int main(){V a[]={{1},{2},{2},{4}},b[]={{2},{3}},o[4]={};auto r=std::set_intersection(a,a+4,b,b+2,o);return r!=o+1||o[0].n!=2||o[1].n!=0||o[2].n!=0||o[3].n!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);(r-1)->get()=7;return r!=o+1||x!=1||y!=7||z!=9||&o[0].get()!=&y||&o[1].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+
+int main(){int a[]={1,2,2,4},b[]={2,3},o[4]={};auto r=std::set_intersection(a,a+4,b,b+2,o);return r!=o+1||o[0]!=2||o[1]!=0||o[2]!=0||o[3]!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeSetIntersection) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-set-intersection.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-set-intersection.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,2,4,2,3,9};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5]},o[]={v[6],v[6]};auto end=std::set_intersection(a,a+4,b,b+2,o);return end!=o+1||&o[0].get()!=&v[1]||&o[1].get()!=&v[6]||v[6]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-set-intersection" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeSmallInteger) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-small-integer.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<short>;
+int main(){short x=-2,y=7,z=9;R a[]={x,y},b[]={y},o[]={z,z};auto r=std::set_intersection(a,a+2,b,b+1,o);return r!=o+1||&o[0].get()!=&y||&o[1].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetIntersectionRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-set-intersection-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-intersection-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using std::set_intersection;
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,2,4,2,3,9};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5]},o[]={v[6],v[6]};auto end=set_intersection(a,a+4,b,b+2,o);return end!=o+1||&o[0].get()!=&v[1]||&o[1].get()!=&v[6]||v[6]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-intersection-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperSetIntersectionRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);auto selected(P a,P b){return static_cast<F>(&std::set_intersection<P,P,P>)(a,b,a,b,a);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);auto selected(P a,P b){F f=&std::set_intersection<P,P,P>;return f(a,b,a,b,a);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::set_intersection(&source(a),&a+1,&b,&b+1,&a);}
+)cpp"},
+      {"source-forward-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr __less<void,void>&& forward<__less<void,void>>(__less<void,void>&) noexcept;}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-forward-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr __less<void,void>&& forward<__less<void,void>>(__less<void,void>& value) noexcept{return static_cast<__less<void,void>&&>(value);}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-half-positive-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-half-positive-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long){return 0;}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-dispatcher-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class C,class I,class S,class J,class T,class O>__set_intersection_result<I,J,O>__set_intersection(I,S,J,T,O,C&&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-dispatcher-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_intersection_result<P,P,P>__set_intersection<_ClassicAlgPolicy,__less<void,void>,P,P,P,P,P>(P a,P b,P c,P d,P o,__less<void,void>&&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-dispatcher-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_intersection_result<P,P,P>__set_intersection<_ClassicAlgPolicy,__less<void,void>,P,P,P,P,P>(P a,P b,P c,P d,P o,__less<void,void>&&){return {std::move(a),std::move(c),std::move(o)};}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-forward-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class C,class I,class S,class J,class T,class O>__set_intersection_result<I,J,O>__set_intersection(I,S,J,T,O,C&&,forward_iterator_tag,forward_iterator_tag);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-forward-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_intersection_result<P,P,P>__set_intersection<_ClassicAlgPolicy,__less<void,void>,P,P,P,P,P>(P a,P b,P c,P d,P o,__less<void,void>&&,forward_iterator_tag,forward_iterator_tag);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_intersection_result<P,P,P>__set_intersection<_ClassicAlgPolicy,__less<void,void>,P,P,P,P,P>(P a,P b,P c,P d,P o,__less<void,void>&&,forward_iterator_tag,forward_iterator_tag){return {std::move(a),std::move(c),std::move(o)};}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-output-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O>void __set_intersection_add_output_if_equal(bool,I&,J&,O&,bool&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-output-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void __set_intersection_add_output_if_equal<P,P,P>(bool,P&,P&,P&,bool&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-intersection-output-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void __set_intersection_add_output_if_equal<P,P,P>(bool,P&,P&,P&,bool&){}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::set_intersection(a,b,a,b,a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::set_intersection(a,b,a,b,a);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::set_intersection(a,b,a,b,a);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::set_intersection(a,b,a,b,a);}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&)noexcept;}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::set_intersection(&source(a),&a+1,&b,&b+1,&a);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::set_intersection(&source(a),&a+1,&b,&b+1,&a);}int main(){return 0;}
+)cpp"},
+      {"source-policy-advance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::advance<P,long>(P&,long);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-advance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::advance<P,long>(P&,long){}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-advance-to-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr _IterOps<_ClassicAlgPolicy>::__difference_type<P> _IterOps<_ClassicAlgPolicy>::__advance_to<P>(P&,__difference_type<P>,P const&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-advance-to-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr _IterOps<_ClassicAlgPolicy>::__difference_type<P> _IterOps<_ClassicAlgPolicy>::__advance_to<P>(P&,__difference_type<P>,P const&){return 0;}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-distance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-distance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b){return b-a;}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-next-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P,P b);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-policy-next-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P,P b){return b;}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-result-constructor-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_intersection_result<P,P,P>::__set_intersection_result(P&&,P&&,P&&);}}
+auto selected(P a,P b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-result-record-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B,class C>struct __set_intersection_result;}}
+auto selected(P a,P b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-search-bisecting-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class T,class J,class C>I __lower_bound_bisecting(I,const T&,typename iterator_traits<I>::difference_type,C&,J&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-search-bisecting-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,const __identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,const __identity&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-search-bisecting-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,const __identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,const __identity&){return a;}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-search-onesided-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S,class T,class J,class C>I __lower_bound_onesided(I,S,const T&,C&,J&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-search-onesided-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_onesided<_ClassicAlgPolicy,P,P,W,const __identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,const __identity&);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-search-onesided-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_onesided<_ClassicAlgPolicy,P,P,W,const __identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,const __identity&){return a;}}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-set-intersection-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O>O set_intersection(I,I,J,J,O);}}
+auto selected(P a,P b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-intersection-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P set_intersection<P,P,P>(P,P,P,P,P);}}
+auto selected(P a,P b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-intersection-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P set_intersection<P,P,P>(P,P,P,P,P){return nullptr;}}}
+auto selected(P a,P b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::set_intersection(a,a+1,b,b+1,a);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);F selected(){using std::set_intersection;return &set_intersection<P,P,P>;}
+)cpp"},
+      {"source-convert-integral-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{constexpr long __convert_to_integral(long);}}
+auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-set-intersection-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-set-intersection-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
