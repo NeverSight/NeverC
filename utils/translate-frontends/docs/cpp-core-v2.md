@@ -389,6 +389,19 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::upper_bound` admits a raw pointer range and a query of the
+same checked SDK `std::reference_wrapper<T>`, including const inputs, queries
+and referents, and built-in scalar referents. The range must be partitioned so
+that elements for which the query is not less precede those for which it is
+less. It returns the first element greater than the query, or the range end;
+an empty range returns the begin pointer. Comparisons read current referent
+values and preserve bindings and referent objects. All three arguments are
+evaluated once and receiver cleanup is preserved. Selected SDK delegation,
+callable and iterator-copy traits, identity projection, pointer distance,
+half-length and midpoint advancement are verified. Source replacements,
+custom comparisons, enum or nested-wrapper referents, and indirect or casted
+callees remain rejected.
+
 Direct default `std::lower_bound` admits a raw pointer range and a query of the
 same checked SDK `std::reference_wrapper<T>`, including const inputs, const
 queries, const referents and built-in scalar referents. The range must be
