@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::min` admits two const references to objects of the same
+checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
+with comparable built-in scalar referents. It compares their current values
+and returns a const reference to the selected original wrapper; equivalent
+values select the first argument. Wrapper bindings, referents and object
+identity remain unchanged. Both arguments are evaluated once and receiver
+cleanup is preserved. Selected SDK default delegation, comparator construction,
+referent conversions, comparison argument order, conditional selection and
+returned references are verified. Source replacements, custom predicates,
+enum or nested-wrapper referents, and indirect or casted callees remain rejected.
+
 Direct default `std::search_n` admits raw pointer ranges and a query of the
 same checked SDK `std::reference_wrapper<T>`, including const inputs, query
 and referents, with plain built-in integer counts and built-in scalar referents.

@@ -7790,6 +7790,21 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
+      const auto Wrapper =
+          Minimum && Call->getNumArgs() == 2
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        return dereference(Expression{{"kind", "member"},
+                                      {"type", type(Wrapper->PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Value)}},
+                                      {"loc", A.loc(L)}},
+                           L);
+      };
       auto Result = temporary(*LeftAddress.getString("type"), L);
       const auto SelectLeft = labelName(), SelectRight = labelName();
       const auto End = labelName();
@@ -7817,6 +7832,11 @@ class FunctionLowering {
                        Minimum ? dereference(json::Object(LeftAddress), L)
                                : dereference(json::Object(RightAddress), L),
                        L)
+             : Wrapper ? CompareUtilityValues(
+                             "<", ComparedValue(json::Object(RightAddress)),
+                             Wrapper->ReferentType,
+                             ComparedValue(json::Object(LeftAddress)),
+                             Wrapper->ReferentType)
              : Minimum ? AlgorithmReferenceLess(json::Object(RightAddress),
                                                 json::Object(LeftAddress))
                        : AlgorithmReferenceLess(json::Object(LeftAddress),
