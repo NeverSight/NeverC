@@ -389,6 +389,20 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::set_symmetric_difference` admits two raw pointer ranges of
+the same checked SDK `std::reference_wrapper<T>` and a mutable wrapper output
+pointer range, including const inputs, const referents and built-in scalar
+referents. Inputs must be sorted by current referent value; output must have
+enough space and must not overlap either input. It compares current values and
+copies remaining bindings from either range, preserving referent objects.
+Equal occurrences cancel pairwise; remaining occurrences preserve source order
+and bindings. If either range is empty, the other range is copied. It returns
+the output end, evaluates all five arguments once and preserves receiver cleanup.
+Selected SDK delegation, comparator reference, result carrier fields and
+constructor, move adapters, scan and both internal copy tails are verified.
+Source replacements, custom comparisons, enum or nested-wrapper referents and
+indirect or casted callees remain rejected.
+
 Direct default `std::set_difference` admits two raw pointer ranges of the same
 checked SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer
 range, including const inputs, const referents and built-in scalar referents.
