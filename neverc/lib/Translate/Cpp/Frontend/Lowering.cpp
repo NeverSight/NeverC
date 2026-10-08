@@ -7791,7 +7791,7 @@ class FunctionLowering {
         }
       }
       const auto Wrapper =
-          Minimum && Call->getNumArgs() == 2
+          Call->getNumArgs() == 2
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
@@ -7833,9 +7833,12 @@ class FunctionLowering {
                                : dereference(json::Object(RightAddress), L),
                        L)
              : Wrapper ? CompareUtilityValues(
-                             "<", ComparedValue(json::Object(RightAddress)),
+                             "<",
+                             ComparedValue(json::Object(Minimum ? RightAddress
+                                                                : LeftAddress)),
                              Wrapper->ReferentType,
-                             ComparedValue(json::Object(LeftAddress)),
+                             ComparedValue(json::Object(
+                                 Minimum ? LeftAddress : RightAddress)),
                              Wrapper->ReferentType)
              : Minimum ? AlgorithmReferenceLess(json::Object(RightAddress),
                                                 json::Object(LeftAddress))

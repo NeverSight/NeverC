@@ -30823,6 +30823,117 @@ static bool utilityWrapperMinValue(const State &S, const SourceManager &SM,
                                    D->getParamDecl(0), Context);
 }
 
+static bool utilityWrapperMaxValue(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *F, QualType Type,
+                                   const ASTContext &Context) {
+  if (Type.hasQualifiers())
+    return false;
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true))
+    return false;
+  const auto ConstType = Type.withConst();
+  const auto Reference = Context.getLValueReferenceType(ConstType);
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/comp.h");
+  };
+  auto Function = [&](const FunctionDecl *F, llvm::ArrayRef<QualType> Arguments,
+                      llvm::ArrayRef<QualType> Parameters) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, "max", "__algorithm/max.h") ||
+        !Same(F->getReturnType(), Reference) || !A ||
+        A->size() != Arguments.size() || F->getNumParams() != Parameters.size())
+      return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    return true;
+  };
+  auto Result = [&](const FunctionDecl *F) -> const Expr * {
+    const auto *D = F ? F->getDefinition() : nullptr;
+    const auto *B = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
+    const auto *R =
+        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
+    return R ? R->getRetValue() : nullptr;
+  };
+  if (!Function(F, {Type}, {Reference, Reference}))
+    return false;
+  const auto *Inner = dyn_cast_or_null<CallExpr>(Result(F));
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  const auto *Construction =
+      Inner && Inner->getNumArgs() == 3
+          ? dyn_cast<CXXTemporaryObjectExpr>(Inner->getArg(2))
+          : nullptr;
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Comparator = Construction ? Construction->getType() : QualType();
+  const auto *Record = Comparator.isNull()
+                           ? nullptr
+                           : dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                                 Comparator->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Inner || !Inner->isLValue() || !Same(Inner->getType(), ConstType) ||
+      !Function(Helper, {Type, Comparator},
+                {Reference, Reference, Comparator}) ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) || !Construction ||
+      Construction->getNumArgs() || !Ctor || !Ctor->isImplicit() ||
+      !Ctor->isDefaultConstructor() || !Ctor->isTrivial() ||
+      Comparator.hasQualifiers() || !Record || !Primary ||
+      Record->getName() != "__less" || !Record->isCompleteDefinition() ||
+      !Record->isEmpty() || !Record->isTrivial() || !Record->field_empty() ||
+      Record->getNumBases() ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Record->getTemplateArgs().size() != 2 ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  for (const auto &A : Record->getTemplateArgs().asArray())
+    if (A.getKind() != TemplateArgument::Type || !A.getAsType()->isVoidType())
+      return false;
+  for (const auto *D : Record->redecls())
+    if (!Origin(D))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return false;
+  for (const auto *D : Ctor->redecls())
+    if (!Origin(D))
+      return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilityAlgorithmReference(
+            Inner->getArg(I), F->getDefinition()->getParamDecl(I), Context))
+      return false;
+  const auto *Conditional =
+      dyn_cast_or_null<ConditionalOperator>(Result(Helper));
+  const auto *Invoke =
+      Conditional ? dyn_cast<CXXOperatorCallExpr>(Conditional->getCond())
+                  : nullptr;
+  const auto *D = Helper->getDefinition();
+  return Conditional && Conditional->isLValue() &&
+         Same(Conditional->getType(), ConstType) && Invoke &&
+         utilityWrapperLessPredicate(S, SM, Invoke, Record, *Wrapper, Type,
+                                     Context) &&
+         utilityAlgorithmReference(Invoke->getArg(0), D->getParamDecl(2),
+                                   Context) &&
+         utilityAlgorithmReference(Invoke->getArg(1), D->getParamDecl(0),
+                                   Context) &&
+         utilityAlgorithmReference(Invoke->getArg(2), D->getParamDecl(1),
+                                   Context) &&
+         utilityAlgorithmReference(Conditional->getTrueExpr(),
+                                   D->getParamDecl(1), Context) &&
+         utilityAlgorithmReference(Conditional->getFalseExpr(),
+                                   D->getParamDecl(0), Context);
+}
+
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
 static bool utilityWrapperMismatchMinimum(const State &S,
                                           const SourceManager &SM,
@@ -44635,6 +44746,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Element.withConst()) &&
         utilityWrapperMinValue(S, SM, Function, Element, Context))
       return UtilityOperation::AlgorithmMin;
+  }
+  if (Origin->Path == "__algorithm/max.h" && Name == "max" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isLValue()) {
+    const auto Reference = Function->getParamDecl(0)->getType();
+    const auto Element = Reference->isLValueReferenceType()
+                             ? Reference->getPointeeType().getUnqualifiedType()
+                             : QualType();
+    if (!Element.isNull() &&
+        Same(Reference, Context.getLValueReferenceType(Element.withConst())) &&
+        Same(Function->getParamDecl(1)->getType(), Reference) &&
+        Same(Function->getReturnType(), Reference) &&
+        Same(Call->getType(), Element.withConst()) &&
+        Same(Call->getArg(0)->getType(), Element.withConst()) &&
+        Same(Call->getArg(1)->getType(), Element.withConst()) &&
+        utilityWrapperMaxValue(S, SM, Function, Element, Context))
+      return UtilityOperation::AlgorithmMax;
   }
   if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
        (Origin->Path == "__algorithm/max.h" && Name == "max")) &&

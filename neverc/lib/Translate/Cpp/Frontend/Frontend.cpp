@@ -14601,6 +14601,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/set_symmetric_difference.h";
       else if (Name->getName() == "set_difference")
         ExpectedPath = "__algorithm/set_difference.h";
+      else if (Name->getName() == "max")
+        ExpectedPath = "__algorithm/max.h";
       else if (Name->getName() == "min")
         ExpectedPath = "__algorithm/min.h";
       else if (Name->getName() == "search_n")

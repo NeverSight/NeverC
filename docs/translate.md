@@ -234,6 +234,9 @@ Direct `std::find` accepts raw pointer ranges of the same exact checked `std::re
 
 
 
+
+Two-value default `std::max` accepts two objects of the same `std::reference_wrapper<T>`, including const inputs and referents. It compares current built-in referent values and returns a const reference to the selected original wrapper; equivalent values select the first argument, preserving bindings, referents and object identity. Both arguments are evaluated once and cleanup is preserved. The selected SDK delegation, default comparator, referent conversions and returned references are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.
+
 Two-value default `std::min` accepts two objects of the same `std::reference_wrapper<T>`, including const inputs and referents. It compares current built-in referent values and returns a const reference to the selected original wrapper; equivalent values select the first argument, preserving bindings, referents and object identity. Both arguments are evaluated once and cleanup is preserved. The selected SDK delegation, default comparator, referent conversions and returned references are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.
 
 `std::search_n` supports raw pointer ranges and a query of the same `std::reference_wrapper<T>`, including const inputs, query and referents, with built-in integer counts. It compares current built-in referent values to locate the first consecutive run of the requested length, returns the beginning for zero count and the end without a match. Aliases, bindings, referents, argument evaluation and cleanup are preserved. Selected SDK count conversion, random-access eligibility, callable and iterator traits, equality and identity dispatch, matching loops and pair construction are verified. Custom predicates, enum or nested referents, and replaced SDK declarations remain rejected.
