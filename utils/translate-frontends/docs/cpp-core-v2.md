@@ -389,6 +389,16 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::max_element` admits raw pointer ranges of a checked SDK
+`std::reference_wrapper<T>`, including const input wrappers, const referents and
+built-in scalar referents. It compares live referent values and returns the
+original iterator to the first maximum, preserving bindings and referent objects.
+Empty input returns its first iterator. Both arguments are evaluated once and
+receiver cleanup is preserved. Selected SDK less-than comparisons, callable and
+iterator-category assertions, comparator-reference aliases and maximum scans
+are verified. Source replacements, custom comparisons, enum or nested-wrapper
+referents and indirect or casted callees remain rejected.
+
 Direct default `std::min_element` admits raw pointer ranges of a checked SDK
 `std::reference_wrapper<T>`, including const input wrappers, const referents and
 built-in scalar referents. It compares live referent values and returns the
