@@ -389,6 +389,20 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::minmax` admits two const references to objects of the same
+checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
+with comparable built-in scalar referents. It compares their current values
+and returns a checked SDK pair of const references to the selected original
+minimum and maximum wrappers; equivalent values retain argument order.
+The pair stores references to authenticated scalar wrapper objects at its
+reference-field boundary. Bindings, referents and wrapper identity remain
+unchanged. Both arguments are evaluated once and receiver cleanup is preserved.
+Selected SDK default delegation, comparator construction, referent conversions,
+comparison order, conditional pair selection, reference constructor source,
+parameter bindings and field initializers are verified. Source replacements,
+custom predicates, enum or nested-wrapper referents, and indirect or casted
+callees remain rejected.
+
 Direct default `std::clamp` admits three const references to objects of the same
 checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
 with comparable built-in scalar referents and valid lower/upper bounds. It

@@ -236,6 +236,9 @@ Direct `std::find` accepts raw pointer ranges of the same exact checked `std::re
 
 
 
+
+Two-value default `std::minmax` accepts two objects of the same `std::reference_wrapper<T>` with comparable built-in referents, including const inputs and referents. It compares current values and returns a pair of const references to the original minimum and maximum wrappers; equivalent values retain argument order. Bindings, referents and identity are preserved. Each argument is evaluated once and cleanup is retained. SDK delegation, the default comparator and reference-pair construction are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.
+
 Default three-argument `std::clamp` accepts three objects of the same `std::reference_wrapper<T>`, including const inputs and referents, with valid bounds. It compares current built-in referent values and returns a const reference to the original value, lower-bound or upper-bound wrapper. Equality with a bound retains the value wrapper. Bindings, referents and object identity remain unchanged; each argument is evaluated once and cleanup is preserved. The selected SDK delegation, default comparator, comparison order and returned references are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.
 
 Two-value default `std::max` accepts two objects of the same `std::reference_wrapper<T>`, including const inputs and referents. It compares current built-in referent values and returns a const reference to the selected original wrapper; equivalent values select the first argument, preserving bindings, referents and object identity. Both arguments are evaluated once and cleanup is preserved. The selected SDK delegation, default comparator, referent conversions and returned references are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.

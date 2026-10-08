@@ -7977,6 +7977,21 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
+      const auto Wrapper =
+          Call->getNumArgs() == 2
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        return dereference(Expression{{"kind", "member"},
+                                      {"type", type(Wrapper->PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Value)}},
+                                      {"loc", A.loc(L)}},
+                           L);
+      };
       auto Pair = approvedUtilityReferencePairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Pair)
@@ -8003,8 +8018,13 @@ class FunctionLowering {
                     json::Object(*Comparator), Call->getArg(2)->getType(),
                     dereference(json::Object(RightAddress), L),
                     dereference(json::Object(LeftAddress), L), L)
-              : AlgorithmReferenceLess(json::Object(RightAddress),
-                                       json::Object(LeftAddress)),
+          : Wrapper ? CompareUtilityValues(
+                          "<", ComparedValue(json::Object(RightAddress)),
+                          Wrapper->ReferentType,
+                          ComparedValue(json::Object(LeftAddress)),
+                          Wrapper->ReferentType)
+                    : AlgorithmReferenceLess(json::Object(RightAddress),
+                                             json::Object(LeftAddress)),
           Reverse, Forward, L);
       label(Forward, L);
       assign(fieldStorage(json::Object(Place), Pair->First, L), LeftAddress, L);
