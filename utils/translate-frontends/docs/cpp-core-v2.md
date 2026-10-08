@@ -389,6 +389,19 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::search` admits two raw pointer ranges of the same
+checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
+and built-in scalar referents. It compares current referent values and returns
+the first matching subsequence, the range start for an empty pattern, or the
+range end for absent matches. Alias and overlapping ranges preserve bindings
+and referent objects. All four arguments are evaluated once and receiver
+cleanup is preserved. Selected SDK default delegation, iterator eligibility
+aliases / traits, callable traits, equality and identity dispatch, pattern
+length checks, random-access matching loops, end advancement, pair fields,
+make_pair and pair construction are verified. Source replacements, custom
+predicates, enum or nested-wrapper referents, and indirect or casted callees
+remain rejected.
+
 Direct default `std::equal_range` admits a raw pointer range and a query of
 the same checked SDK `std::reference_wrapper<T>`, including const inputs,
 queries and referents, and built-in scalar referents. Current referent values

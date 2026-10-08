@@ -6673,6 +6673,25 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
+      const auto Wrapper =
+          !LastMatch && Call->getNumArgs() == 4
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        if (Wrapper)
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        return Value;
+      };
       auto Candidate = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       auto PatternCurrent = snapshot(json::Object(Pattern), L);
@@ -6708,8 +6727,13 @@ class FunctionLowering {
                        json::Object(*Predicate), Call->getArg(4)->getType(),
                        dereference(json::Object(Current), L),
                        dereference(json::Object(PatternCurrent), L), L)
-                 : AlgorithmEqual(dereference(Current, L), 0,
-                                  dereference(PatternCurrent, L), 2),
+             : Wrapper ? CompareUtilityValues(
+                             "==", ComparedValue(json::Object(Current)),
+                             Wrapper->ReferentType,
+                             ComparedValue(json::Object(PatternCurrent)),
+                             Wrapper->ReferentType)
+                       : AlgorithmEqual(dereference(Current, L), 0,
+                                        dereference(PatternCurrent, L), 2),
              Advance, Mismatch, L);
       label(Advance, L);
       assign(Current,

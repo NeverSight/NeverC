@@ -215324,3 +215324,1209 @@ using F=std::pair<P,P>(*)(P,P,const W&);F selected(){using std::equal_range;retu
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-search-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=3;R a[]={x,y,z};auto r=std::search(a,a+3,a+1,a+3);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeAliasedReferents) {
+  const auto Source = tmpFile("wrapper-search-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a[]={x,x,y},b[]={x,y};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeBool) {
+  const auto Source = tmpFile("wrapper-search-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,y=true,z=false,q=true,t=false;R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeConstBoth) {
+  const auto Source = tmpFile("wrapper-search-runtime-const-both.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-const-both.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;const R a[]={x,y},b[]={q};auto r=std::search(a,a+2,b,b+1);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-const-both" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeConstFirst) {
+  const auto Source = tmpFile("wrapper-search-runtime-const-first.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-const-first.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;const R a[]={x,y};R b[]={q};auto r=std::search(a,a+2,b,b+1);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-const-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-search-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-search-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=3,q=2,t=3;const R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-search-runtime-const-input-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeConstPattern) {
+  const auto Source = tmpFile("wrapper-search-runtime-const-pattern.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-const-pattern.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y};const R b[]={q};auto r=std::search(a,a+2,b,b+1);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-const-pattern" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-search-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=3,q=2,t=3;R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-search-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=1.0,y=2.5,z=3.5,q=2.5,t=3.5;R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeEmptyPattern) {
+  const auto Source = tmpFile("wrapper-search-runtime-empty-pattern.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-empty-pattern.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,q=1;R a[]={x},b[]={q};auto r=std::search(a,a+1,b,b);return r!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-empty-pattern" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeEmptyRange) {
+  const auto Source = tmpFile("wrapper-search-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,q=1;R a[]={x},b[]={q};auto r=std::search(a,a,b,b+1);return r!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-search-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=4;R a[]={x,y},b[]={q};y=3;q=3;auto r=std::search(a,a+2,b,b+1);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeLongerPattern) {
+  const auto Source = tmpFile("wrapper-search-runtime-longer-pattern.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-longer-pattern.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,q=1,t=2;R a[]={x},b[]={q,t};auto r=std::search(a,a+1,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-longer-pattern" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeMissing) {
+  const auto Source = tmpFile("wrapper-search-runtime-missing.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-missing.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=3;R a[]={x,y},b[]={q};auto r=std::search(a,a+2,b,b+1);return r!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-missing" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-search-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+struct Range{R*p;int*n;~Range(){++*n;}R*get(){return p;}};int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},b[]={q};auto r=std::search(Range{a,&n}.get(),Range{a+2,&n}.get(),Range{b,&n}.get(),Range{b+1,&n}.get());return r!=a+1||n!=4||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-search-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+R* pick(R*p,int&n){++n;return p;}int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},b[]={q};auto r=std::search(pick(a,n),pick(a+2,n),pick(b,n),pick(b+1,n));return r!=a+1||n!=4||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeOverlap) {
+  const auto Source = tmpFile("wrapper-search-runtime-overlap.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-overlap.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1;R a[]={x,x,x},b[]={x,x};auto r=std::search(a,a+3,b,b+2);return r!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-overlap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-search-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=3,t=2,q=2;R a[]={x,y,z,t},b[]={q};auto r=std::search(a+2,a+4,b,b+1);return r!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimePointer) {
+  const auto Source = tmpFile("wrapper-search-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int*>;
+int main(){int values[4]={};int*x=values,*y=values+2,*z=values+3,*q=values+2,*t=values+3;R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-search-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Item{int n;};bool operator==(const Item&a,const Item&b){return a.n==b.n;}int main(){Item a[]={{1},{2},{3}},b[]={{2},{3}};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-search-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=3,q=2;R a[]={x,y,z},b[]={q};auto r=std::search(a,a+3,b,b+1);r->get()=8;return r!=a+1||x!=1||y!=8||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-search-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={1,2,3},b[]={2,3};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeSearch) {
+  const auto Source = tmpFile("wrapper-search-runtime-search.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-search.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=3,q=2,t=3;R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-search" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeShort) {
+  const auto Source = tmpFile("wrapper-search-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=1,y=2,z=3,q=2,t=3;R a[]={x,y,z},b[]={q,t};auto r=std::search(a,a+3,b,b+2);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-search-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-search-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::search;int main(){int x=1,y=2,q=2;R a[]={x,y},b[]={q};auto r=search(a,a+2,b,b+1);return r!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-search-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperSearchRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P);auto selected(P a,P b){return static_cast<F>(&std::search<P,P>)(a,a+1,b,b+1);}
+)cpp"},
+      {"custom-predicate", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Eq{bool operator()(const W&a,const W&b)const{return a.get()==b.get();}};auto selected(P a,P b){return std::search(a,a+1,b,b+1,Eq{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"heterogeneous-carriers", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using C=std::reference_wrapper<const int>;auto selected(P a,C*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P);auto selected(P a,P b){F f=&std::search<P,P>;return f(a,a+1,b,b+1);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator==(const W&a,const W&b){return a.get().get()==b.get().get();}}}
+auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-bidirectional-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct bidirectional_iterator_tag;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-callable-helper-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A,class> true_type __is_callable_helper(int);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-callable-record-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A>struct __is_callable;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-callable-record-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __is_callable<__equal_to&,W&,W&>:true_type{};}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-category-convertible-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,bool B>struct __has_iterator_category_convertible_to;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-category-convertible-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __has_iterator_category_convertible_to<P,random_access_iterator_tag,true>:true_type{};}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-enable-if-alias-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<bool B,class T>using __enable_if_t=typename enable_if<B,T>::type;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-enable-if-partial-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<class T>struct enable_if<true,T>;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-enable-if-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<bool B,class T>struct enable_if;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-enable-if-specialization", R"cpp(
+#include <__type_traits/enable_if.h>
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<>struct enable_if<true,int>{using type=int;};}}
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const;}}auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const{return false;}}}auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-equal-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __equal_to;}}auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::search(&source(a),&a+1,&b,&b+1);}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-forward-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct forward_iterator_tag;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-has-iterator-category-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct __has_iterator_category;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-has-iterator-category-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __has_iterator_category<iterator_traits<P>>:true_type{};}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-identity-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-identity-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&)const noexcept;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-identity-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&w)const noexcept{return w;}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-input-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct input_iterator_tag;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-integral-constant-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,T Value>struct integral_constant;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-invoke-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__invoke<__identity&,W&>(__identity&,W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-is-convertible-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B>struct is_convertible;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-make-pair-mixed-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<>constexpr pair<P,P> make_pair<P&,P>(P& a,P&& b);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-make-pair-mixed-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<>constexpr pair<P,P> make_pair<P&,P>(P& a,P&& b){return {a,static_cast<P&&>(b)};}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-make-pair-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr pair<P,P> make_pair<P&,P&>(P& a,P& b);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-make-pair-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr pair<P,P> make_pair<P&,P&>(P& a,P& b){return {a,b};}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::search(&source(a),&a+1,&b,&b+1);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::search(&source(a),&a+1,&b,&b+1);}int main(){return 0;}
+)cpp"},
+      {"source-pair-lvalue-constructor-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P& a,P& b)noexcept;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-pair-lvalue-constructor-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P& a,P& b)noexcept:first(a),second(b){}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-pair-mixed-constructor-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P& a,P&& b)noexcept;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-pair-mixed-constructor-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P& a,P&& b)noexcept:first(a),second(static_cast<P&&>(b)){}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-pair-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct pair;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-policy-advance-end-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::__advance_to<P>(P& a,P b);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-policy-advance-end-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::__advance_to<P>(P& a,P b){a=b;}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-random-access-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>using __has_random_access_iterator_category=__has_iterator_category_convertible_to<I,random_access_iterator_tag>;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-random-access-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct random_access_iterator_tag;}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-delegate-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class C>I search(I,I,J,J,C);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-delegate-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P search<P,P,__equal_to>(P a,P,P,P,__equal_to);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-delegate-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P search<P,P,__equal_to>(P a,P,P,P,__equal_to){return a;}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-dispatch-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class S,class J,class T,class C,class X,class Y,__enable_if_t<__has_random_access_iterator_category<I>::value&&__has_random_access_iterator_category<J>::value,int>>constexpr pair<I,I> __search_impl(I,S,J,T,C&,X&,Y&);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-dispatch-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __search_impl<P,P,P,P,__equal_to,__identity,__identity,0>(P a,P,P,P,__equal_to&,__identity&,__identity&);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-dispatch-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __search_impl<P,P,P,P,__equal_to,__identity,__identity,0>(P a,P,P,P,__equal_to&,__identity&,__identity&){return {a,a};}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J>I search(I,I,J,J);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-random-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S,class J,class T,class C,class X,class Y,class D,class E>constexpr pair<I,I> __search_random_access_impl(I,S,J,T,C&,X&,Y&,D,E);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-random-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __search_random_access_impl<_ClassicAlgPolicy,P,P,P,P,__equal_to,__identity,__identity,long,long>(P a,P,P,P,__equal_to&,__identity&,__identity&,long,long);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-random-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __search_random_access_impl<_ClassicAlgPolicy,P,P,P,P,__equal_to,__identity,__identity,long,long>(P a,P,P,P,__equal_to&,__identity&,__identity&,long,long){return {a,a};}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P search<P,P>(P a,P,P,P);}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-search-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P search<P,P>(P a,P,P,P){return a;}}}
+auto selected(P a,P b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::search(a,a+1,b,b+1);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P);F selected(){using std::search;return &search<P,P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-search-runtime-guard-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-search-runtime-guard-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
