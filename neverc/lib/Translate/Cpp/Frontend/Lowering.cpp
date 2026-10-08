@@ -8115,7 +8115,7 @@ class FunctionLowering {
         }
       }
       const auto Wrapper =
-          !ListResult && Call->getNumArgs() == 2
+          (ListResult ? Call->getNumArgs() == 1 : Call->getNumArgs() == 2)
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     RangePointer->getPointeeType()->getAsCXXRecordDecl(),

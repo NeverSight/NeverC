@@ -20948,7 +20948,8 @@ public:
   }
 
   bool callable(const Expr *E, QualType Comparator, QualType Element,
-                QualType SecondElement = QualType()) const {
+                QualType SecondElement = QualType(),
+                bool ValueArguments = false) const {
     if (SecondElement.isNull())
       SecondElement = Element;
     const auto *Ref =
@@ -20960,8 +20961,9 @@ public:
                         : nullptr;
     const auto ComparatorRef = Context.getLValueReferenceType(Comparator);
     const QualType ElementRefs[] = {
-        Context.getLValueReferenceType(Element),
-        Context.getLValueReferenceType(SecondElement)};
+        ValueArguments ? Element : Context.getLValueReferenceType(Element),
+        ValueArguments ? SecondElement
+                       : Context.getLValueReferenceType(SecondElement)};
     auto Arguments = [&](const TemplateArgumentList *A, bool Helper) {
       if (!A || A->size() != (Helper ? 3u : 2u) ||
           A->get(0).getKind() != TemplateArgument::Type ||
@@ -31263,6 +31265,82 @@ static bool utilityWrapperMinmaxValue(const State &S, const SourceManager &SM,
 }
 
 // Verify the pinned list minimum and its selected SDK comparator overload.
+static bool utilityWrapperListEndpoint(const State &S, const SourceManager &SM,
+                                       const FunctionDecl *Definition,
+                                       const UtilityInitializerListRecord &List,
+                                       const ASTContext &Context,
+                                       const Expr *Expression, bool End) {
+  const auto Element = List.ElementType;
+  const auto ListType = Context.getRecordType(List.Record);
+  const auto Pointer = Context.getPointerType(Element.withConst());
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  const auto *D = Method ? Method->getDefinition() : nullptr;
+  const auto *Pattern =
+      Method ? Method->getInstantiatedFromMemberFunction() : nullptr;
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Receiver =
+      Call ? dyn_cast_or_null<DeclRefExpr>(functionalInvokeStrippedExpression(
+                 Call->getImplicitObjectArgument()))
+           : nullptr;
+  const auto *Member =
+      Call ? dyn_cast_or_null<MemberExpr>(
+                 functionalInvokeStrippedExpression(Call->getCallee()))
+           : nullptr;
+  if (!Call || Call->getNumArgs() || !Call->isPRValue() ||
+      !Same(Call->getType(), Pointer) || !Method || !D || !Pattern ||
+      !Method->getIdentifier() ||
+      Method->getName() != (End ? "end" : "begin") || Method->isStatic() ||
+      !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
+      !Method->isConstexpr() || Method->getNumParams() ||
+      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
+      !Prototype || !Prototype->isNothrow() ||
+      !Same(Method->getReturnType(), Pointer) ||
+      Method->getParent()->getCanonicalDecl() !=
+          List.Record->getCanonicalDecl() ||
+      !Receiver || Receiver->getDecl() != Definition->getParamDecl(0) ||
+      !Receiver->isLValue() || !Same(Receiver->getType(), ListType) ||
+      !Member ||
+      Member->getMemberDecl()->getCanonicalDecl() !=
+          Method->getCanonicalDecl() ||
+      !Origin(D, "initializer_list") || !Origin(Pattern, "initializer_list") ||
+      !Origin(Pattern->getDefinition(), "initializer_list"))
+    return false;
+  for (const auto *R : Method->redecls())
+    if (!Origin(R, "initializer_list"))
+      return false;
+  for (const auto *R : Pattern->redecls())
+    if (!Origin(R, "initializer_list"))
+      return false;
+  const auto *B = dyn_cast<CompoundStmt>(D->getBody());
+  const auto *R =
+      B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
+  const auto *Value =
+      R ? functionalInvokeStrippedExpression(R->getRetValue()) : nullptr;
+  auto Field = [&](const Expr *E, const FieldDecl *F) {
+    const auto *M =
+        dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(E));
+    return M &&
+           M->getMemberDecl()->getCanonicalDecl() == F->getCanonicalDecl() &&
+           isa<CXXThisExpr>(functionalInvokeStrippedExpression(M->getBase())) &&
+           M->isLValue();
+  };
+  if (!End)
+    return Field(Value, List.Begin);
+  const auto *Sum = dyn_cast_or_null<BinaryOperator>(Value);
+  return Sum && Sum->getOpcode() == BO_Add && Same(Sum->getType(), Pointer) &&
+         Field(Sum->getLHS(), List.Begin) && Field(Sum->getRHS(), List.Size);
+}
+
 static bool utilityWrapperMinList(const State &S, const SourceManager &SM,
                                   const FunctionDecl *Function,
                                   const UtilityInitializerListRecord &List,
@@ -31274,10 +31352,6 @@ static bool utilityWrapperMinList(const State &S, const SourceManager &SM,
   const auto Pointer = Context.getPointerType(Element.withConst());
   auto Same = [&](QualType A, QualType B) {
     return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
-  };
-  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
-    return D && approvedStandardSDKDeclaration(S, SM, D) &&
-           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
   };
   const auto *Arguments =
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
@@ -31321,71 +31395,10 @@ static bool utilityWrapperMinList(const State &S, const SourceManager &SM,
       Selection->getNumArgs() != 3 || !Selection->isPRValue() ||
       !Same(Selection->getType(), Pointer))
     return false;
-  auto ListEndpoint = [&](const Expr *Expression, bool End) {
-    const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
-        functionalInvokeStrippedExpression(Expression));
-    const auto *Method = Call ? Call->getMethodDecl() : nullptr;
-    const auto *D = Method ? Method->getDefinition() : nullptr;
-    const auto *Pattern =
-        Method ? Method->getInstantiatedFromMemberFunction() : nullptr;
-    const auto *Prototype =
-        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
-    const auto *Receiver =
-        Call ? dyn_cast_or_null<DeclRefExpr>(functionalInvokeStrippedExpression(
-                   Call->getImplicitObjectArgument()))
-             : nullptr;
-    const auto *Member =
-        Call ? dyn_cast_or_null<MemberExpr>(
-                   functionalInvokeStrippedExpression(Call->getCallee()))
-             : nullptr;
-    if (!Call || Call->getNumArgs() || !Call->isPRValue() ||
-        !Same(Call->getType(), Pointer) || !Method || !D || !Pattern ||
-        !Method->getIdentifier() ||
-        Method->getName() != (End ? "end" : "begin") || Method->isStatic() ||
-        !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
-        !Method->isConstexpr() || Method->getNumParams() ||
-        Method->getPrimaryTemplate() ||
-        Method->getDescribedFunctionTemplate() || !Prototype ||
-        !Prototype->isNothrow() || !Same(Method->getReturnType(), Pointer) ||
-        Method->getParent()->getCanonicalDecl() !=
-            List.Record->getCanonicalDecl() ||
-        !Receiver || Receiver->getDecl() != Definition->getParamDecl(0) ||
-        !Receiver->isLValue() || !Same(Receiver->getType(), ListType) ||
-        !Member ||
-        Member->getMemberDecl()->getCanonicalDecl() !=
-            Method->getCanonicalDecl() ||
-        !Origin(D, "initializer_list") ||
-        !Origin(Pattern, "initializer_list") ||
-        !Origin(Pattern->getDefinition(), "initializer_list"))
-      return false;
-    for (const auto *R : Method->redecls())
-      if (!Origin(R, "initializer_list"))
-        return false;
-    for (const auto *R : Pattern->redecls())
-      if (!Origin(R, "initializer_list"))
-        return false;
-    const auto *B = dyn_cast<CompoundStmt>(D->getBody());
-    const auto *R =
-        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
-    const auto *Value =
-        R ? functionalInvokeStrippedExpression(R->getRetValue()) : nullptr;
-    auto Field = [&](const Expr *E, const FieldDecl *F) {
-      const auto *M =
-          dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(E));
-      return M &&
-             M->getMemberDecl()->getCanonicalDecl() == F->getCanonicalDecl() &&
-             isa<CXXThisExpr>(
-                 functionalInvokeStrippedExpression(M->getBase())) &&
-             M->isLValue();
-    };
-    if (!End)
-      return Field(Value, List.Begin);
-    const auto *Sum = dyn_cast_or_null<BinaryOperator>(Value);
-    return Sum && Sum->getOpcode() == BO_Add && Same(Sum->getType(), Pointer) &&
-           Field(Sum->getLHS(), List.Begin) && Field(Sum->getRHS(), List.Size);
-  };
-  return ListEndpoint(Selection->getArg(0), false) &&
-         ListEndpoint(Selection->getArg(1), true) &&
+  return utilityWrapperListEndpoint(S, SM, Definition, List, Context,
+                                    Selection->getArg(0), false) &&
+         utilityWrapperListEndpoint(S, SM, Definition, List, Context,
+                                    Selection->getArg(1), true) &&
          utilityWrapperMinElement(S, SM, Delegate, Pointer, Context, Selection);
 }
 
@@ -31401,10 +31414,6 @@ static bool utilityWrapperMaxList(const State &S, const SourceManager &SM,
   const auto Pointer = Context.getPointerType(Element.withConst());
   auto Same = [&](QualType A, QualType B) {
     return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
-  };
-  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
-    return D && approvedStandardSDKDeclaration(S, SM, D) &&
-           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
   };
   const auto *Arguments =
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
@@ -31448,72 +31457,284 @@ static bool utilityWrapperMaxList(const State &S, const SourceManager &SM,
       Selection->getNumArgs() != 3 || !Selection->isPRValue() ||
       !Same(Selection->getType(), Pointer))
     return false;
-  auto ListEndpoint = [&](const Expr *Expression, bool End) {
-    const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
-        functionalInvokeStrippedExpression(Expression));
-    const auto *Method = Call ? Call->getMethodDecl() : nullptr;
-    const auto *D = Method ? Method->getDefinition() : nullptr;
-    const auto *Pattern =
-        Method ? Method->getInstantiatedFromMemberFunction() : nullptr;
-    const auto *Prototype =
-        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
-    const auto *Receiver =
-        Call ? dyn_cast_or_null<DeclRefExpr>(functionalInvokeStrippedExpression(
-                   Call->getImplicitObjectArgument()))
-             : nullptr;
-    const auto *Member =
-        Call ? dyn_cast_or_null<MemberExpr>(
-                   functionalInvokeStrippedExpression(Call->getCallee()))
-             : nullptr;
-    if (!Call || Call->getNumArgs() || !Call->isPRValue() ||
-        !Same(Call->getType(), Pointer) || !Method || !D || !Pattern ||
-        !Method->getIdentifier() ||
-        Method->getName() != (End ? "end" : "begin") || Method->isStatic() ||
-        !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
-        !Method->isConstexpr() || Method->getNumParams() ||
-        Method->getPrimaryTemplate() ||
-        Method->getDescribedFunctionTemplate() || !Prototype ||
-        !Prototype->isNothrow() || !Same(Method->getReturnType(), Pointer) ||
-        Method->getParent()->getCanonicalDecl() !=
-            List.Record->getCanonicalDecl() ||
-        !Receiver || Receiver->getDecl() != Definition->getParamDecl(0) ||
-        !Receiver->isLValue() || !Same(Receiver->getType(), ListType) ||
-        !Member ||
-        Member->getMemberDecl()->getCanonicalDecl() !=
-            Method->getCanonicalDecl() ||
-        !Origin(D, "initializer_list") ||
-        !Origin(Pattern, "initializer_list") ||
-        !Origin(Pattern->getDefinition(), "initializer_list"))
-      return false;
-    for (const auto *R : Method->redecls())
-      if (!Origin(R, "initializer_list"))
-        return false;
-    for (const auto *R : Pattern->redecls())
-      if (!Origin(R, "initializer_list"))
-        return false;
-    const auto *B = dyn_cast<CompoundStmt>(D->getBody());
-    const auto *R =
-        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
-    const auto *Value =
-        R ? functionalInvokeStrippedExpression(R->getRetValue()) : nullptr;
-    auto Field = [&](const Expr *E, const FieldDecl *F) {
-      const auto *M =
-          dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(E));
-      return M &&
-             M->getMemberDecl()->getCanonicalDecl() == F->getCanonicalDecl() &&
-             isa<CXXThisExpr>(
-                 functionalInvokeStrippedExpression(M->getBase())) &&
-             M->isLValue();
-    };
-    if (!End)
-      return Field(Value, List.Begin);
-    const auto *Sum = dyn_cast_or_null<BinaryOperator>(Value);
-    return Sum && Sum->getOpcode() == BO_Add && Same(Sum->getType(), Pointer) &&
-           Field(Sum->getLHS(), List.Begin) && Field(Sum->getRHS(), List.Size);
-  };
-  return ListEndpoint(Selection->getArg(0), false) &&
-         ListEndpoint(Selection->getArg(1), true) &&
+  return utilityWrapperListEndpoint(S, SM, Definition, List, Context,
+                                    Selection->getArg(0), false) &&
+         utilityWrapperListEndpoint(S, SM, Definition, List, Context,
+                                    Selection->getArg(1), true) &&
          utilityWrapperMaxElement(S, SM, Delegate, Pointer, Context, Selection);
+}
+
+static bool utilityWrapperMinmaxList(const State &S, const SourceManager &SM,
+                                     const FunctionDecl *Function,
+                                     const UtilityInitializerListRecord &List,
+                                     const ASTContext &Context) {
+  const auto Element = List.ElementType;
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  const auto ListType = Context.getRecordType(List.Record);
+  const auto Pointer = Context.getPointerType(Element.withConst());
+  const auto PairType = Function ? Function->getReturnType() : QualType();
+  const auto Pair = PairType.isNull()
+                        ? std::nullopt
+                        : approvedUtilityPairRecord(
+                              S, SM, PairType->getAsCXXRecordDecl(), Context);
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  auto Signature = [&](const FunctionDecl *F,
+                       llvm::ArrayRef<QualType> Arguments,
+                       llvm::ArrayRef<QualType> Parameters) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, "minmax", "__algorithm/minmax.h") ||
+        !Same(F->getReturnType(), PairType) || !A ||
+        A->size() != Arguments.size() || F->getNumParams() != Parameters.size())
+      return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    return true;
+  };
+  if (!Wrapper || Element.hasQualifiers() ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true) ||
+      !Pair || !Same(Pair->First->getType(), Element) ||
+      !Same(Pair->Second->getType(), Element) ||
+      !Same(PairType, Context.getRecordType(Pair->Record)) ||
+      !Signature(Function, {Element}, {ListType}))
+    return false;
+  const auto *Definition = Function->getDefinition();
+  const auto *Body =
+      Definition ? dyn_cast<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Outer =
+      Return ? dyn_cast_or_null<CallExpr>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  const auto *Delegate = Outer ? Outer->getDirectCallee() : nullptr;
+  const auto *ListCopy =
+      Outer && Outer->getNumArgs() == 2
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Outer->getArg(0)))
+          : nullptr;
+  const auto *Construction =
+      Outer && Outer->getNumArgs() == 2
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Outer->getArg(1)))
+          : nullptr;
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Predicate = Construction ? Construction->getType() : QualType();
+  const auto *Record = Predicate.isNull()
+                           ? nullptr
+                           : dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                                 Predicate->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Outer || !Outer->isPRValue() || !Same(Outer->getType(), PairType) ||
+      !utilityAlgorithmSDKReference(S, SM, Outer, Delegate) ||
+      !Signature(Delegate, {Element, Predicate}, {ListType, Predicate}) ||
+      !ListCopy || ListCopy->getNumArgs() != 1 ||
+      !Same(ListCopy->getType(), ListType) ||
+      approvedUtilityInitializerListConstruction(S, SM, ListCopy, Context) !=
+          UtilityInitializerListConstruction::CopyOrMove ||
+      !utilityAlgorithmReference(ListCopy->getArg(0),
+                                 Definition->getParamDecl(0), Context) ||
+      !Construction || Construction->getNumArgs() || !Ctor ||
+      !Ctor->isImplicit() || !Ctor->isDefaultConstructor() ||
+      !Ctor->isTrivial() || Predicate.hasQualifiers() || !Record || !Primary ||
+      Record->getName() != "__less" || !Record->isCompleteDefinition() ||
+      !Record->isTrivial() || !Record->isEmpty() || !Record->field_empty() ||
+      Record->getNumBases() ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Record->getTemplateArgs().size() != 2 ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  for (const auto &A : Record->getTemplateArgs().asArray())
+    if (A.getKind() != TemplateArgument::Type || !A.getAsType()->isVoidType())
+      return false;
+  for (const auto *D : Record->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D, "__algorithm/comp.h") ||
+        !Origin(D->getTemplatedDecl(), "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Ctor->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  const auto *D = Delegate->getDefinition();
+  const auto *B = D ? dyn_cast<CompoundStmt>(D->getBody()) : nullptr;
+  if (!B || B->size() != 4)
+    return false;
+  auto Local = [&](const Stmt *S) -> const VarDecl * {
+    const auto *DS = dyn_cast_or_null<DeclStmt>(S);
+    const auto *V = DS && DS->isSingleDecl()
+                        ? dyn_cast<VarDecl>(DS->getSingleDecl())
+                        : nullptr;
+    return V && V->hasLocalStorage() && !V->isImplicit() &&
+                   V->getDeclContext() == D
+               ? V
+               : nullptr;
+  };
+  const auto *AS = dyn_cast<DeclStmt>(B->body_begin()[0]);
+  const auto *Assertion = AS && AS->isSingleDecl()
+                              ? dyn_cast<StaticAssertDecl>(AS->getSingleDecl())
+                              : nullptr;
+  const UtilityWrapperEqualRangeProof RangeProof(S, SM, Context);
+  if (!Assertion || Assertion->isFailed() ||
+      !Origin(Assertion, "__algorithm/minmax.h") ||
+      !RangeProof.callable(Assertion->getAssertExpr(), Predicate, Element,
+                           QualType(), true))
+    return false;
+  const auto *Projection = Local(B->body_begin()[1]);
+  const auto *PC =
+      Projection ? dyn_cast<CXXConstructExpr>(Projection->getInit()) : nullptr;
+  const auto *ProjectionCtor = PC ? PC->getConstructor() : nullptr;
+  const auto ProjectionType = Projection ? Projection->getType() : QualType();
+  const auto *ProjectionRecord =
+      ProjectionType.isNull() ? nullptr : ProjectionType->getAsCXXRecordDecl();
+  if (!Projection || ProjectionType.hasQualifiers() || !PC ||
+      PC->getNumArgs() || !ProjectionCtor || !ProjectionCtor->isImplicit() ||
+      !ProjectionCtor->isDefaultConstructor() || !ProjectionCtor->isTrivial() ||
+      !ProjectionRecord || ProjectionRecord->getName() != "__identity" ||
+      !ProjectionRecord->isTrivial() || !ProjectionRecord->isEmpty() ||
+      !ProjectionRecord->field_empty() || ProjectionRecord->getNumBases() ||
+      ProjectionCtor->getParent()->getCanonicalDecl() !=
+          ProjectionRecord->getCanonicalDecl())
+    return false;
+  for (const auto *Decl : ProjectionRecord->redecls())
+    if (!Origin(Decl, "__functional/identity.h"))
+      return false;
+  for (const auto *Decl : ProjectionCtor->redecls())
+    if (!Origin(Decl, "__functional/identity.h"))
+      return false;
+  const auto *Selected = Local(B->body_begin()[2]);
+  const auto *Inner =
+      Selected ? dyn_cast<CallExpr>(Selected->getInit()) : nullptr;
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  const auto PointerPairType = Selected ? Selected->getType() : QualType();
+  const auto PointerPair =
+      PointerPairType.isNull()
+          ? std::nullopt
+          : approvedUtilityPairRecord(
+                S, SM, PointerPairType->getAsCXXRecordDecl(), Context);
+  const auto *HelperArgs =
+      Helper ? Helper->getTemplateSpecializationArgs() : nullptr;
+  const QualType HelperArguments[] = {Pointer, Pointer, ProjectionType,
+                                      Predicate};
+  const QualType HelperParameters[] = {
+      Pointer, Pointer, Context.getLValueReferenceType(Predicate),
+      Context.getLValueReferenceType(ProjectionType)};
+  if (!Selected || !Inner || Inner->getNumArgs() != 4 || !Inner->isPRValue() ||
+      !Same(Inner->getType(), PointerPairType) || !PointerPair ||
+      !Same(PointerPairType, Context.getRecordType(PointerPair->Record)) ||
+      !Same(PointerPair->First->getType(), Pointer) ||
+      !Same(PointerPair->Second->getType(), Pointer) ||
+      !utilitySwapSDKFunction(S, SM, Helper, "__minmax_element_impl",
+                              "__algorithm/minmax_element.h") ||
+      !Same(Helper->getReturnType(), PointerPairType) ||
+      Helper->getNumParams() != 4 || !HelperArgs || HelperArgs->size() != 4 ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) ||
+      !utilityWrapperListEndpoint(S, SM, D, List, Context, Inner->getArg(0),
+                                  false) ||
+      !utilityWrapperListEndpoint(S, SM, D, List, Context, Inner->getArg(1),
+                                  true) ||
+      !utilityAlgorithmReference(Inner->getArg(2), D->getParamDecl(1),
+                                 Context) ||
+      !utilityAlgorithmReference(Inner->getArg(3), Projection, Context))
+    return false;
+  for (unsigned I = 0; I != 4; ++I)
+    if (HelperArgs->get(I).getKind() != TemplateArgument::Type ||
+        !Same(HelperArgs->get(I).getAsType(), HelperArguments[I]) ||
+        !Same(Helper->getParamDecl(I)->getType(), HelperParameters[I]))
+      return false;
+  if (!utilityWrapperMinmaxLoop(S, SM, Helper, Pointer, Predicate,
+                                ProjectionType, Record, *Wrapper, Context))
+    return false;
+  const auto *R = dyn_cast<ReturnStmt>(B->body_begin()[3]);
+  const auto *C = R ? dyn_cast_or_null<CXXConstructExpr>(
+                          functionalInvokeStrippedExpression(R->getRetValue()))
+                    : nullptr;
+  const auto *PairCtor = C ? C->getConstructor() : nullptr;
+  const auto *PairDefinition =
+      PairCtor ? dyn_cast_or_null<CXXConstructorDecl>(PairCtor->getDefinition())
+               : nullptr;
+  const auto *PairBody = PairDefinition
+                             ? dyn_cast<CompoundStmt>(PairDefinition->getBody())
+                             : nullptr;
+  const auto *PairPrimary = PairCtor ? PairCtor->getPrimaryTemplate() : nullptr;
+  const auto *PairArguments =
+      PairCtor ? PairCtor->getTemplateSpecializationArgs() : nullptr;
+  const auto Reference = Context.getLValueReferenceType(Element.withConst());
+  if (!C || !C->isPRValue() || !Same(C->getType(), PairType) ||
+      C->getNumArgs() != 2 || !PairCtor || !PairDefinition || !PairBody ||
+      !PairBody->body_empty() || PairCtor->isVariadic() ||
+      !PairCtor->isConstexpr() || PairCtor->getNumParams() != 2 ||
+      PairCtor->getParent()->getCanonicalDecl() !=
+          Pair->Record->getCanonicalDecl() ||
+      !Same(PairCtor->getParamDecl(0)->getType(), Reference) ||
+      !Same(PairCtor->getParamDecl(1)->getType(), Reference) ||
+      PairDefinition->getNumCtorInitializers() != 2 || !PairPrimary ||
+      !PairArguments || PairArguments->size() != 2 ||
+      PairArguments->get(0).getKind() != TemplateArgument::Integral ||
+      !PairArguments->get(0).getIntegralType()->isBooleanType() ||
+      PairArguments->get(0).getAsIntegral().getZExtValue() != 1 ||
+      PairArguments->get(1).getKind() != TemplateArgument::Integral ||
+      !Same(PairArguments->get(1).getIntegralType(), Context.IntTy) ||
+      !PairArguments->get(1).getAsIntegral().isZero() ||
+      approvedUtilityPairConstruction(S, SM, C, Context) !=
+          UtilityPairConstruction::Elements)
+    return false;
+  for (const auto *Decl : PairCtor->redecls())
+    if (!Origin(Decl, "__utility/pair.h"))
+      return false;
+  for (const auto *Decl : PairPrimary->redecls())
+    if (!Origin(Decl, "__utility/pair.h") ||
+        !Origin(Decl->getTemplatedDecl(), "__utility/pair.h"))
+      return false;
+  auto It = PairDefinition->init_begin();
+  for (unsigned I = 0; I != 2; ++I, ++It) {
+    const auto *Init = *It;
+    const auto *Copy =
+        Init && Init->isMemberInitializer()
+            ? dyn_cast_or_null<CXXConstructExpr>(
+                  functionalInvokeStrippedExpression(Init->getInit()))
+            : nullptr;
+    if (!Init || !Init->isMemberInitializer() ||
+        Init->getMember()->getCanonicalDecl() !=
+            (I ? Pair->Second : Pair->First)->getCanonicalDecl() ||
+        !Copy || Copy->getNumArgs() != 1 || !Same(Copy->getType(), Element) ||
+        approvedFunctionalReferenceConstruction(S, SM, Copy, Context) !=
+            FunctionalReferenceConstruction::CopyOrMove ||
+        !utilityAlgorithmReference(Copy->getArg(0),
+                                   PairDefinition->getParamDecl(I), Context))
+      return false;
+    const auto *Read = dyn_cast_or_null<UnaryOperator>(
+        functionalInvokeStrippedExpression(C->getArg(I)));
+    const auto *Member =
+        Read ? dyn_cast_or_null<MemberExpr>(
+                   functionalInvokeStrippedExpression(Read->getSubExpr()))
+             : nullptr;
+    if (!Read || Read->getOpcode() != UO_Deref || !Read->isLValue() ||
+        !Same(Read->getType(), Element.withConst()) || !Member ||
+        Member->isArrow() || !Member->isLValue() ||
+        !Same(Member->getType(), Pointer) ||
+        Member->getMemberDecl()->getCanonicalDecl() !=
+            (I ? PointerPair->Second : PointerPair->First)
+                ->getCanonicalDecl() ||
+        !utilityAlgorithmReference(Member->getBase(), Selected, Context))
+      return false;
+  }
+  return true;
 }
 
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
@@ -45499,6 +45720,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Element.withConst()) &&
         utilityWrapperMinmaxValue(S, SM, Function, Element, Context))
       return UtilityOperation::AlgorithmMinmax;
+  }
+  if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (List && Pair &&
+        Same(Function->getParamDecl(0)->getType(),
+             Context.getRecordType(List->Record)) &&
+        Same(Call->getType(), Function->getReturnType()) &&
+        Same(Pair->First->getType(), List->ElementType) &&
+        Same(Pair->Second->getType(), List->ElementType) &&
+        utilityWrapperMinmaxList(S, SM, Function, *List, Context))
+      return UtilityOperation::AlgorithmMinmaxList;
   }
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
       (Call->getNumArgs() == 1 || Call->getNumArgs() == 2) &&
