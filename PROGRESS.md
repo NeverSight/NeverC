@@ -1,5 +1,76 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-08
+
+- Cutoff: **2026-10-08 02:11 UTC / 10:11 Asia/Shanghai (UTC+08:00)**.
+- Source branch: `dev`; reviewed revision: [68c4b2fd](https://github.com/NeverSight/NeverC/commit/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5).
+- Change window: [8e7b469a…68c4b2fd](https://github.com/NeverSight/NeverC/compare/8e7b469a92c20d9f7d95dea2b52360c1f6be9864...68c4b2fd07b7fdf55a0203787c90e15e6e8946c5), **39 commits / 18 paths**. Excluding the October 7 report-only commit and PROGRESS.md: **38 product commits / 17 paths**.
+- Result: both previously confirmed function-reference lowering defects were fixed by the repository author in [ff6dc23c](https://github.com/NeverSight/NeverC/commit/ff6dc23cfd070d88ebe7805c09f64d7601f46aad) and remain fixed in this source revision. No additional proven source defect or new code patch was produced by this review.
+- Strictly static review: source, diff, caller/contract and existing CI reads only. No project execution, build, test, benchmark, repository script, active CI dispatch/rerun, dependency/security change, issue mutation, merge or deployment.
+
+### Activity and coverage
+
+**9 open issues / 0 open PRs**, unchanged from the preceding snapshot. The full issues collection contains 18 records including PRs; the full PR collection contains 8 historical PRs. Both collections exhausted at page 2 (100 records/page). No newly opened, closed or merged issue/PR appeared since October 7 01:01 UTC; no recent issue conversation or inline review comments were returned. Latest PR #20 remains merged with zero submitted reviews; no open PR awaits review. Existing roadmap issues #7–#12 and #16–#18 have no assigned owner or milestone.
+
+Read root AGENTS.md, local-development instructions and the compiler-development skill/pipeline reference. Explicit ancestor checks found no nested AGENTS on the inspected compiler/test paths; root, .github and docs CONTRIBUTING checks found no separate guide. The repository's execution guidance is deliberately not exercised because this review is static-only.
+
+Enumerated all 39 commit subjects and changed-path metadata. Incoming work adds borrowed wrapper signature queries and wrapper swap/copy/move/fill/search/comparison/minimum algorithms; these descriptions do not establish native verification. The changed paths comprise Frontend.cpp, Frontend.h, Lowering.cpp, MathSDK.cpp, TranslateTests.cpp, the cpp-core-v2 guide and 11 translated/main translate.md pages, plus the prior report.
+
+Targeted inspection:
+- Read the 14-line function-reference fix and all 324 added regression-source lines in ff6dc23c. Re-traced current [bind](https://github.com/NeverSight/NeverC/blob/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L146-L166), [functionValue](https://github.com/NeverSight/NeverC/blob/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L606-L704), [static-member lvalue](https://github.com/NeverSight/NeverC/blob/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L405-L459), and [transparent reference-list validation](https://github.com/NeverSight/NeverC/blob/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L1600-L1614).
+- Inspected aggregate Lowering.cpp changed hunks for wrapper exchange, referent comparisons, find/count/equal/mismatch, remove/replace/unique and find-first-of. Read the complete current minimum/maximum lowering block (roughly lines 5868–5961): empty input branches before dereference, strict less-than retains the first minimum, and returned storage remains the original iterator.
+- Read the latest commit's MathSDK.cpp patch: scalar comparison proof, callable/iterator category proof, comparator-reference alias provenance, pinned minimum delegate/identity/loop authentication and operation admission. Inspected selected minimum regression-source cases for empty ranges, equal minima, live/aliased/const referents, argument effects, cleanup and negative source/lifetime boundaries. Source fixtures and author-reported counts are not executed results from this review.
+- Inspected the changed Frontend.h declaration and selected Frontend.cpp borrowed-query preparation/admission hunks. Re-read [IsolateMathCoffSymbols.py](https://github.com/NeverSight/NeverC/blob/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5/neverc/lib/Translate/Cpp/Frontend/IsolateMathCoffSymbols.py) and [BundleArchive.cmake](https://github.com/NeverSight/NeverC/blob/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5/neverc/lib/Translate/Cpp/Frontend/BundleArchive.cmake) against the current Windows failure.
+
+**Limits:** not a whole-repository audit or complete audit of all 38 product commits. Earlier algorithm authentication changes, all wrapper compositions, remaining frontend query paths, the full 26,684-line test addition, and multilingual prose were not exhaustively reviewed. The aggregate MathSDK/test patches were omitted by GitHub due to size; bounded commit patches and exact source blobs were used where inspected. No new end-to-end audit of LLVM/DynCode, runtime/std or unrelated packaging occurred.
+
+### Resolved findings and current blockers
+
+1. **Resolved in source by author ff6dc23c:** braced function-reference binding now unwraps only an authenticated transparent single-element InitListExpr before recursively lowering its initializer. Object-qualified static function-reference VarDecls now use the existing lvalue/storage path rather than the FunctionDecl path. Receiver effects and full-expression cleanup follow the existing lvalue implementation. Current remote diff and source confirm both changes; the added positive/negative regression source was inspected but not run here. The former proposed patch is superseded and must not be reapplied.
+2. **Observed current-head Windows x64 packaging failure:** [job 113028001975](https://github.com/NeverSight/NeverC/actions/runs/37690055653/job/113028001975) reports at October 7 23:32 UTC: `Math COFF isolation: member 0 ... Frontend.cpp.obj: object header changed`, followed by BundleArchive.cmake:81. Its 17 math-isolation fixture tests passed immediately before the real archive failed. The verifier compares machine, timestamp, characteristics and bigobj together; this log does **not** identify which field differs. The previously identified bigobj-format compatibility risk is relevant but is not proved to be this failure's unique root cause. Do not relax header/symbol/auxiliary/index invariants without actual before/after evidence. No speculative fix was made.
+3. **Other exact-head CI failures need separate diagnosis.** Linux x64 build/install/package/archive relocation and plugin steps completed; its test-running step is marked success but the later `Fail if tests failed` step fails. Thus a green test-running step is not proof all tests passed. Large Linux job logs could not be retrieved through the connector (transport closed twice); exact failing test names/root causes remain unverified. Other platform failures below were inventoried, not individually diagnosed.
+
+### Existing CI at the exact reviewed source
+
+Observed October 8 **02:09–02:11 UTC** for 68c4b2fd07b7fdf55a0203787c90e15e6e8946c5. **11 workflows: 2 success, 8 failure, 1 in progress. 24 checks: 11 success, 10 failure, 2 skipped, 1 in progress.** Collections returned their complete reported totals on one 100-item page. There are no open PR heads; this is dev/source CI, not newly executed review validation.
+
+| Workflow | State |
+| --- | --- |
+| [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/37690055674) | success |
+| [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/37690055682) | success |
+| [Windows ARM64 Clang/LTO](https://github.com/NeverSight/NeverC/actions/runs/37690055677) | in progress |
+| [Windows x64](https://github.com/NeverSight/NeverC/actions/runs/37690055653) | failure |
+| [Windows ARM64](https://github.com/NeverSight/NeverC/actions/runs/37690055778) | failure |
+| [Windows x64 Clang/LTO](https://github.com/NeverSight/NeverC/actions/runs/37690055675) | failure |
+| [Linux x64](https://github.com/NeverSight/NeverC/actions/runs/37690055999) | failure |
+| [Linux ARM64](https://github.com/NeverSight/NeverC/actions/runs/37690055590) | failure |
+| [macOS ARM64](https://github.com/NeverSight/NeverC/actions/runs/37690055678) | failure |
+| [Python plugin bindings](https://github.com/NeverSight/NeverC/actions/runs/37690055652) | failure (mixed matrix outcomes) |
+| [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/37690055589) | failure; differential runtime skipped |
+
+The current Windows ARM64 Clang/LTO job has passed its real-COFF witness, compiler build, postbuild evidence, runtime build, packaging, both relocated archives and Plugin SDK load. Its compiler tests were still running; no full success is asserted. The old pow witness failure is not a current-head failure.
+
+The current docs navigation log independently confirms **16 layout tests passed; 736 pages / 11 locales / 1,201 resolving reference definitions; 82 unfinished translations**. Documentation facts also passed. Successful archive-audit fixtures do not override the real Windows x64 isolation failure. Latest commit validation counts remain author-reported unless backed by separately read CI evidence.
+
+### Suggested priorities (not delivery commitments)
+
+1. **Resolve the Windows x64 math-archive header mismatch.** Dependency: actual before/after header and symbol/auxiliary metadata for the failing member. Acceptance: a narrowly explained preservation change and existing/authorized later exact-SHA native archive evidence, with all isolation invariants retained. Root cause must be narrowed before code changes.
+2. **Classify current platform and test failures.** Dependency: readable exact-job logs/artifacts, including Linux's final test gate. Acceptance: failing test/build stage mapped to exact revision and underlying cause; ARM64 Clang/LTO's final result recorded separately. No manual rerun is part of this static review.
+3. **Reconcile #16 acceptance with the new wrapper algorithms and resolved reference fixes.** Dependency: exact-SHA positive/negative fixture and installed-package/platform evidence. Acceptance: distinguish implemented, statically inspected and natively verified behavior, retaining unsupported boundaries. No inferred owner, percentage or deadline.
+
+### Daily log — 2026-10-08
+
+- Kept 9 open issues / 0 open PRs; no new/closed/merged items or review queue.
+- Enumerated 39 commits / 18 paths since 8e7b469a; excluded one report-only commit/path from product progress.
+- Verified author ff6dc23c resolves the two earlier reference-binding defects; no duplicate fix or blocked code-write retry.
+- Completed the bounded static scope above with no new proven source bug; no code/tests authored.
+- Recorded current Windows x64 header-isolation failure without guessing its exact field/root cause, Linux final test-gate failure with unavailable detailed logs, and incomplete ARM64 Clang/LTO results.
+- Preserved all earlier snapshots and manual text below. This publication changes only PROGRESS.md.
+
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
 ## Current snapshot — 2026-10-07
 
 - Snapshot: **2026-10-07 01:01 UTC** / **2026-10-07 09:01 Asia/Shanghai (UTC+08:00)**
@@ -589,5 +660,7 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
 
 </details>
