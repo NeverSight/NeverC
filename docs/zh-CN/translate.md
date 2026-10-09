@@ -55,6 +55,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 
 
+`std::transform_inclusive_scan` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 为受支持的内置标量，输入和 referent 均可为 const。六参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`；独立的累加器与输出类型可为不超过 64 位的受支持非布尔整数、float 或 double。经校验的 C++17 SDK 循环按通常一元提升规则对当前 referent 取负，与左值累加器相加，将每步的和转换回累加器类型，再写出更新后的累加值。先读取和更新再输出，以保留别名语义；空区间不写输出并返回原输出指针。保留绑定、referent、操作数单次求值和清理，校验两个初始化、转发、转换及完整 SDK 循环。仍拒绝源码替换及自定义、带类型、已保存或动态生成的运算对象。
+
 `std::transform_exclusive_scan` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 为受支持的内置标量，输入和 referent 均可为 const。六参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`；独立的累加器与输出类型可为不超过 64 位的受支持非布尔整数、float 或 double。经校验的 C++17 SDK 循环按通常一元提升规则对当前 referent 取负，与左值累加器相加，将每步的和转换回累加器类型，再写出已保存的上一轮值。先读取和更新再输出，以保留别名语义；空区间不写输出并返回原输出指针。保留绑定、referent、操作数单次求值和清理，校验两个初始化、转发、转换及完整的保存值 SDK 循环。仍拒绝源码替换及自定义、带类型、已保存或动态生成的运算对象。
 
 一元 `std::transform_reduce` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 可为受支持的内置标量，输入和 referent 均可为 const。五参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`，累加器可为不超过 64 位的受支持非布尔整数、float 或 double。经校验的 C++17 SDK 循环按通常的一元提升规则对当前 referent 取负，与移动后的累加器相加，并在每一步将和转换回累加器类型；空区间返回初值。保留绑定、referent、操作数单次求值和清理语义，并校验两个运算对象的初始化、转发、转换及完整 SDK 循环。仍拒绝自定义、带类型、已保存或动态生成的运算对象及源码替换。

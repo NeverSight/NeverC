@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+`std::transform_inclusive_scan` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 為受支援的內建純量，輸入與 referent 均可為 const。六參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`；獨立的累加器與輸出型別可為不超過 64 位元的受支援非布林整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常一元提升規則對目前 referent 取負，與左值累加器相加，將每步的和轉換回累加器型別，再寫出更新後的累加值。先讀取與更新再輸出，以保留別名語義；空區間不寫輸出並傳回原輸出指標。保留繫結、referent、運算元單次求值與清理，驗證兩個初始化、轉送、轉換及完整 SDK 迴圈。仍拒絕原始碼替換及自訂、帶型別、已儲存或動態產生的運算物件。
+
 `std::transform_exclusive_scan` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 為受支援的內建純量，輸入與 referent 均可為 const。六參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`；獨立的累加器與輸出型別可為不超過 64 位元的受支援非布林整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常一元提升規則對目前 referent 取負，與左值累加器相加，將每步的和轉換回累加器型別，再寫出已保存的上一輪值。先讀取與更新再輸出，以保留別名語義；空區間不寫輸出並傳回原輸出指標。保留繫結、referent、運算元單次求值與清理，驗證兩個初始化、轉送、轉換及完整的保存值 SDK 迴圈。仍拒絕原始碼替換及自訂、帶型別、已儲存或動態產生的運算物件。
 
 一元 `std::transform_reduce` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 可為受支援的內建純量，輸入與 referent 均可為 const。五參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`，累加器可為不超過 64 位元的受支援非布林整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常的一元提升規則對目前 referent 取負，與移動後的累加器相加，並在每一步將和轉換回累加器型別；空區間傳回初值。保留繫結、referent、運算元單次求值與清理語義，並驗證兩個運算物件的初始化、轉送、轉換及完整 SDK 迴圈。仍拒絕自訂、帶型別、已儲存或動態產生的運算物件及原始碼替換。

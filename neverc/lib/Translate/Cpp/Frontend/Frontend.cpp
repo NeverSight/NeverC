@@ -14645,6 +14645,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__numeric/adjacent_difference.h";
       else if (Name->getName() == "transform_exclusive_scan")
         ExpectedPath = "__numeric/transform_exclusive_scan.h";
+      else if (Name->getName() == "transform_inclusive_scan")
+        ExpectedPath = "__numeric/transform_inclusive_scan.h";
       else if (Name->getName() == "exclusive_scan")
         ExpectedPath = "__numeric/exclusive_scan.h";
       else if (Name->getName() == "inner_product")

@@ -241357,3 +241357,1019 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>(),std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeAliasedOutput) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-aliased-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-aliased-output.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={3,1,2};R a[]={v[0],v[1],v[2]};auto p=std::transform_inclusive_scan(a,a+3,v,std::plus<>{},std::negate<>{},0);return p!=v+3||v[0]!=-3||v[1]!=-4||v[2]!=-6||&a[0].get()!=v||&a[1].get()!=v+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-aliased-output" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-6||out[2]!=-8||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&x||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-bool.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};int out[]={9,9,9};auto p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-1||out[1]!=-1||out[2]!=-2||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};double out[]={9,9,9};auto p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0.0);return p!=out+3||out[0]!=-3.5||out[1]!=-5||out[2]!=-7.5||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a,out,std::plus<>{},std::negate<>{},7);return p!=out||out[0]!=9||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};x=8;y=-1;int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-8||out[1]!=-7||out[2]!=-9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-live-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeNan) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-nan.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double out[]={9,9,9};auto p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0.0);return p!=out+3||out[0]==out[0]||out[1]==out[1]||out[2]==out[2]||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeNarrowAccumulator) {
+  const auto Source = tmpFile(
+      "wrapper-transform-inclusive-scan-runtime-narrow-accumulator.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-narrow-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=1.25,y=1.25,z=1.25;R a[]={x,y,z};int out[]={9,9,9,9};auto p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},(unsigned char)250);return p!=out+3||out[0]!=248||out[1]!=246||out[2]!=244||out[3]!=9||x!=1.25||y!=1.25||z!=1.25||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-narrow-accumulator" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=3||out[1]!=2||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-negative-values" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeNonzeroInitial) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-nonzero-initial.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-nonzero-initial.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},4);return p!=out+3||out[0]!=1||out[1]!=0||out[2]!=-2||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-nonzero-initial" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct B{int*p;int*get(){return p;}~B(){++n;}};struct I{int get(){return 0;}~I(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(A{a}.get(),A{a+3}.get(),B{out}.get(),std::plus<>{},std::negate<>{},I{}.get());return n!=4||p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-operand-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int*output(int*p){++n;return p;}int init(){++n;return 0;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(read(a),read(a+3),output(out),std::plus<>{},std::negate<>{},init());return n!=4||p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int add(int a,int b){return a+b;}int main(){int a[]={3,1,2},out[]={9,9,9};return std::inclusive_scan(a,a+3,out,add,0)!=out+3||out[0]!=3||out[1]!=4||out[2]!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-record-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int*select(R*a,R*last,int*out,int i){return std::transform_inclusive_scan(a,last,out,std::plus<>{},std::negate<>{},i);}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=select(a,a+3,out,0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2},out[]={9,9,9};return std::inclusive_scan(a,a+3,out)!=out+3||out[0]!=3||out[1]!=4||out[2]!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-scalar-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-short.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};short out[]={9,9,9,9};short*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0;R a[]={x};double out[]={9};auto p=std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},-0.0);return p!=out+1||!(1.0/out[0]<0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);return p!=out+1||out[0]!=-3||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};auto p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-stored-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeTransformInclusiveScan) {
+  const auto Source = tmpFile(
+      "wrapper-transform-inclusive-scan-runtime-transform-inclusive-scan.cpp");
+  const auto Output = tmpFile(
+      "wrapper-transform-inclusive-scan-runtime-transform-inclusive-scan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-transform-inclusive-scan" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformInclusiveScanRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2;R a[]={x,y,z};unsigned out[]={9,9,9,9};auto p=std::transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0u);return p!=out+3||out[0]!=4294967293u||out[1]!=4294967292u||out[2]!=4294967290u||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-inclusive-scan-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformInclusiveScanRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-inclusive-scan-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::transform_inclusive_scan;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=transform_inclusive_scan(a,a+3,out,std::plus<>{},std::negate<>{},0);return p!=out+3||out[0]!=-3||out[1]!=-4||out[2]!=-6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-inclusive-scan-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},false);}
+)cpp"},
+      {"bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,std::plus<void>,std::negate<void>,int);auto selected(P a,P b,int*out){return static_cast<F>(&std::transform_inclusive_scan<P,int*,int,std::plus<void>,std::negate<void>>)(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,int b){return a+b;}int mul(const W&a){return -a.get();}auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,add,mul,0);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,int b)const{return a+b;}};struct Mul{int operator()(const W&a)const{return -a.get();}};auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,Add{},Mul{},0);}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator+(E a,int b){return E(int(a)+b);}auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},Zero);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"expression-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},(++effects,std::negate<>{}),0);}
+)cpp"},
+      {"expression-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,(++effects,std::plus<>{}),std::negate<>{},0);}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},__int128(0));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,std::plus<void>,std::negate<void>,int);auto selected(P a,P b,int*out){F f=&std::transform_inclusive_scan<P,int*,int,std::plus<void>,std::negate<void>>;return f(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0.0L);}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0.0L);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator-(const W&a){return -a.get().get();}}}
+auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"returned-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::negate<> op(){return std::negate<>{};}auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},op(),0);}
+)cpp"},
+      {"returned-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::plus<> op(){return std::plus<>{};}auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,op(),std::negate<>{},0);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,int*out){std::transform_inclusive_scan(&source(a),&a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept{return static_cast<int&>(t);}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-term-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-term", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-negate-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&a)const noexcept(noexcept(-std::forward<W&>(a)))->decltype(-std::forward<W&>(a));}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-negate-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&a)const noexcept(noexcept(-std::forward<W&>(a)))->decltype(-std::forward<W&>(a)){return -a.get();}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-negate-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct negate;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-negate-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct negate<void>;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-negation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator-(const W&a){return -a.get();}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,int*out){return std::transform_inclusive_scan(&source(a),&a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,int*out){std::transform_inclusive_scan(&source(a),&a+1,out,std::plus<>{},std::negate<>{},0);}int main(){return 0;}
+)cpp"},
+      {"source-plus-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)+std::forward<int>(b)))->decltype(std::forward<int&>(a)+std::forward<int>(b));}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-plus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)+std::forward<int>(b)))->decltype(std::forward<int&>(a)+std::forward<int>(b)){return a+b;}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-plus-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct plus;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-plus-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct plus<void>;}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class O,class T,class B,class U>O transform_inclusive_scan(I,I,O,B,U,T);}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int* transform_inclusive_scan<P,int*,int,plus<void>,negate<void>>(P,P,int*,plus<void>,negate<void>,int);}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int* transform_inclusive_scan<P,int*,int,plus<void>,negate<void>>(P a,P,int*out,plus<void>,negate<void>,int n){*out=n-a->get();return out;}}}
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+struct R{long double n;};int operator-(const R&a){return -int(a.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+      {"stored-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}
+)cpp"},
+      {"stored-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}
+)cpp"},
+      {"typed-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<int>{},0);}
+)cpp"},
+      {"typed-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<int>{},std::negate<>{},0);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,std::plus<void>,std::negate<void>,int);F selected(){using std::transform_inclusive_scan;return &transform_inclusive_scan<P,int*,int,std::plus<void>,std::negate<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,int*out){return std::transform_inclusive_scan(a,b,out,std::plus<>{},std::negate<>{},0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-transform-inclusive-scan-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-transform-inclusive-scan-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
