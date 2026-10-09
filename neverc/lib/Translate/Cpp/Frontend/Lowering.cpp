@@ -9650,6 +9650,70 @@ class FunctionLowering {
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
+      const auto LogicalNotFunctionalObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(2)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto *LogicalNotObject =
+          LogicalNotFunctionalObject
+              ? dyn_cast<ClassTemplateSpecializationDecl>(
+                    LogicalNotFunctionalObject->Record)
+              : nullptr;
+      const bool TransparentLogicalNot =
+          LogicalNotObject && LogicalNotObject->getName() == "logical_not" &&
+          LogicalNotObject->getTemplateArgs().size() == 1 &&
+          LogicalNotObject->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          LogicalNotObject->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto LogicalNotWrapper =
+          TransparentLogicalNot
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    CurrentRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (LogicalNotWrapper) {
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto PointerType = type(CurrentRange.second, L);
+        auto Count = temporary(DifferenceType, L);
+        const auto Check = labelName(), Test = labelName();
+        const auto Increment = labelName(), Advance = labelName();
+        const auto End = labelName();
+        assign(Count, quantity(0, DifferenceType, L), L);
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Current, Last, "bool", L), Test, End, L);
+        label(Test, L);
+        {
+          auto Referent = dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(LogicalNotWrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{dereference(Current, L)}},
+                         {"loc", A.loc(L)}},
+              L);
+          auto Selected = Expression{
+              {"kind", "unary"},
+              {"type", "bool"},
+              {"operator", "!"},
+              {"args", json::Array{cast(std::move(Referent), "bool", L)}},
+              {"loc", A.loc(L)}};
+          branch(std::move(Selected), Increment, Advance, L);
+        }
+        label(Increment, L);
+        assign(Count,
+               binary("+", Count, quantity(1, DifferenceType, L),
+                      DifferenceType, L),
+               L);
+        jump(Advance, L);
+        label(Advance, L);
+        assign(Current,
+               binary("+", Current, quantity(1, DifferenceType, L), PointerType,
+                      L),
+               L);
+        jump(Check, L);
+        label(End, L);
+        return Count;
+      }
       auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(CurrentRange.second, L);
