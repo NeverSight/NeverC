@@ -1,5 +1,77 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-09
+
+- Cutoff: **2026-10-09 01:10 UTC / 09:10 Asia/Shanghai (UTC+08:00)**.
+- Source branch: `dev`; reviewed revision: [76d092f9](https://github.com/NeverSight/NeverC/commit/76d092f99b5f40f22c0b14fe8251c34eda3dcee9).
+- Change window: [68c4b2fd…76d092f9](https://github.com/NeverSight/NeverC/compare/68c4b2fd07b7fdf55a0203787c90e15e6e8946c5...76d092f99b5f40f22c0b14fe8251c34eda3dcee9), **35 commits / 17 paths**. Excluding the October 8 report-only commit and PROGRESS.md: **34 product commits / 16 paths**.
+- Result: **no newly proven defect and no new source patch** in the bounded scope below. The author's [849bb7c2](https://github.com/NeverSight/NeverC/commit/849bb7c284285e82e9875bd7036cc8863827434e) fixes default-layout short-string size decoding; this review checked its source and regression fixtures, not execution.
+- Method: strictly static source, diff, caller/interface, fixture-source and existing-CI reads. No project execution, build, test, benchmark, repository script, manual CI dispatch/rerun, dependency/security change, issue mutation, merge or deployment. Repository build/test guidance was read but not exercised under this review's static-only constraint.
+
+### Activity and coverage
+
+**9 open issues / 0 open PRs**, unchanged. The complete issues collection has 18 records including PRs; the complete PR collection has 8 historical PRs. Both exhausted at page 2 with 100 records/page. No newly created, closed or merged item since the preceding October 8 02:11 UTC snapshot. No issue conversation or PR inline review comments were returned for that interval. Latest PR #20 remains merged and has no submitted reviews. There is no open-PR review queue; open issues #7–#12 and #16–#18 remain roadmap work rather than assigned delivery commitments.
+
+Read root AGENTS.md, docs/local-dev.md and the compiler-development skill/pipeline reference. Direct ancestor checks found no nested AGENTS on the inspected compiler/test paths; root, .github and docs CONTRIBUTING checks found no separate guide. All operations used the GitHub connector.
+
+Enumerated all 35 commit subjects and changed-path metadata. Incoming author work expands reference-wrapper algorithms through max/minmax, sorted/heap queries, lexicographical comparison, merge/set operations, bounds/search, list selection and numeric accumulation/product/scan/reduction. These are implementation descriptions, not release certification.
+
+Targeted static inspection:
+- Read all aggregate Frontend.cpp changed hunks (60 added lines) and Lowering.cpp hunks (424 additions / 118 deletions), checking wrapper referent extraction, comparator fallback, result/reference storage and the shared short-string decoder.
+- Read complete current numeric lowering around [lines 4585–5165](https://github.com/NeverSight/NeverC/blob/76d092f99b5f40f22c0b14fe8251c34eda3dcee9/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L4585-L5165): reduction input/accumulator evaluation, empty-range guard before dereference, separate product and sum conversions, wrapper adjacent-difference storage, and exclusive-scan input capture before output writes.
+- Read the latest commit's entire 327-line MathSDK.cpp addition for [transform-reduce authentication](https://github.com/NeverSight/NeverC/blob/76d092f99b5f40f22c0b14fe8251c34eda3dcee9/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L34200-L34509) and operation admission. Checked exact public/delegate signatures, SDK origin/redeclarations, transparent plus/multiplies, forwarding and referent conversions, loop condition/increments, accumulator assignment and return. Re-read the shared arithmetic promotion/conversion helper at lines 3107–3202.
+- Read all 972 added lines of the latest commit's regression source: live/aliased/const and mixed-type referents, empty input, signed zero/NaN, narrow accumulator, operand effects/cleanup, and negative source/lifetime boundaries. Fixture names and commit-message validation counts are not results produced by this review.
+- Read the complete [849bb7c2 patch](https://github.com/NeverSight/NeverC/commit/849bb7c284285e82e9875bd7036cc8863827434e), including its 148 regression-source lines. Re-traced current string layout admission (MathSDK.cpp lines 6375–6508) and the shared decoder/callers in Lowering.cpp. Default layout now masks the metadata byte before dividing by two, so character bytes sharing the size_t word no longer inflate the length; alternate-layout decoding remains separate.
+
+**Limits:** not a whole-repository audit or an exhaustive audit of all 34 product commits. Most of the aggregate 10,766 added MathSDK lines and 32,538 added test-source lines remain unreviewed; earlier algorithm authentication, all wrapper compositions, multilingual prose and native platform behavior are not fully covered. Aggregate MathSDK/test patches were omitted by GitHub due to size; the latest bounded commit patch and exact source blobs were used for inspected portions. A contents-range read of the large Lowering.cpp returned empty and was replaced with its exact blob. LLVM/DynCode, runtime/std and unrelated packaging were not newly audited end-to-end.
+
+### Findings, changes and remaining evidence gaps
+
+1. **Author-fixed short-string defect:** [849bb7c2](https://github.com/NeverSight/NeverC/commit/849bb7c284285e82e9875bd7036cc8863827434e) centralizes short-size extraction for access, copies, mutation, iteration and container comparisons. The trigger was a default-layout short string with character data in the same machine word as its metadata. The source patch masks with 255 before dividing by 2; the source fixtures cover both layouts and short/long boundaries. No duplicate patch was made and no runtime pass is claimed.
+2. **Earlier reference-binding defects remain author-resolved:** ff6dc23c is historical completed work, not an outstanding blocked patch. The present delta does not modify its binding/functionValue regions.
+3. **Yesterday's incomplete Windows ARM64 Clang/LTO run is now final:** [job 113027948738](https://github.com/NeverSight/NeverC/actions/runs/37690055677/job/113027948738), on the old source 68c4b2fd, failed its final `Fail if tests failed` gate at **October 8 02:44 UTC**. Compiler/runtime build, packaging, relocated archives and Plugin SDK steps succeeded; the test-running step itself is marked success, but the final gate is failure. Individual failing tests/root cause were not established here. The old source now has **2 successful / 9 failed workflows**, replacing yesterday's 2 success / 8 failure / 1 running snapshot.
+4. **No current-head failure has yet been established.** Earlier Windows x64 COFF header-mismatch and Linux test-gate failures remain historical diagnostic leads, not automatically failures of 76d092f9. No speculative weakening of archive invariants or test gates was made.
+
+### Existing CI at the reviewed source
+
+Sampled **2026-10-09 01:09–01:10 UTC**, exact source `76d092f99b5f40f22c0b14fe8251c34eda3dcee9`. **11 workflows: 7 in progress / 4 queued; none complete.** **15 checks: 3 success / 7 in progress / 5 queued.** Both 100-item responses contain their complete reported totals; additional checks can appear as workflows advance. This is dev/source CI, with no open PR head. It is not validation run by this review.
+
+| Workflow | Sampled state |
+| --- | --- |
+| [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/37868129317) | queued |
+| [linux-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37868129265) | in progress |
+| [windows-arm64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/37868128708) | queued |
+| [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/37868128661) | in progress |
+| [windows-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37868128691) | in progress |
+| [windows-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37868128801) | queued |
+| [windows-x64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/37868128626) | in progress |
+| [python-plugin-bindings](https://github.com/NeverSight/NeverC/actions/runs/37868128870) | queued |
+| [macos-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37868128670) | in progress |
+| [linux-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37868128628) | in progress |
+| [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/37868128630) | in progress |
+
+The successful checks are documentation facts, Ubuntu archive-audit and the non-interactive VBS signing bootstrap. Their success is not success of the compiler/platform suites. The report-only commit can receive automatic workflows; none are manually triggered, rerun, modified or disabled.
+
+### Suggested priorities (not delivery commitments)
+
+1. **Classify exact-head native CI before treating the new algorithms as verified.** Dependency: completed 76d092f9 workflow/job evidence. Acceptance: record terminal platform results and specific failing stages/tests, distinguishing old 68c4b2fd failures. No manual CI action is part of this review.
+2. **Narrow the historical COFF/test-gate diagnostic leads if reproduced on the new head.** Dependency: before/after metadata for the failing archive member and readable failed-test evidence. Acceptance: a statically justified minimal fix or a precise unresolved cause; retain header/symbol/auxiliary invariants and do not equate a green test-running step with a green final gate.
+3. **Reconcile [#16](https://github.com/NeverSight/NeverC/issues/16) acceptance with the expanded wrapper/numeric surface.** Dependency: source-boundary fixtures and exact-SHA native/installed-package evidence, including both string layouts and mixed-type numeric conversions. Acceptance: separate implemented, statically inspected and executed evidence while retaining unsupported boundaries; no inferred percentage, owner or deadline.
+
+### Daily log — 2026-10-09
+
+- Kept 9 open issues / 0 open PRs; no new/closed/merged activity or review queue.
+- Enumerated 35 commits / 17 paths; excluded one prior report-only commit/path from product progress.
+- Completed the bounded source review above; no newly proven defect, code fix, test edit or PR.
+- Verified the author's short-string decoding fix in source and inspected its unexecuted regression fixtures.
+- Closed the old ARM64 Clang/LTO status uncertainty: final test gate failed on 68c4b2fd; today's 76d092f9 workflows remain incomplete.
+- Preserved all previous snapshots and contributor text verbatim below. Publication changes only PROGRESS.md.
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-08
 
 - Cutoff: **2026-10-08 02:11 UTC / 10:11 Asia/Shanghai (UTC+08:00)**.
@@ -660,6 +732,8 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
 
 </details>
 
