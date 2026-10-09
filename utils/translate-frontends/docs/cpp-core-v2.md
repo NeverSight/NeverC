@@ -389,6 +389,22 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct `std::transform_reduce` with transparent `std::plus<>` and `std::multiplies<>` admits
+two raw-pointer input ranges of checked SDK `std::reference_wrapper<T>` with
+built-in scalar referents, including const inputs and referents, and an
+independent supported non-boolean integer (up to 64 bits), float or double
+accumulator. Its six-argument form requires both operations to be directly
+initialized transparent SDK objects. The selected C++17 loop uses a moved
+accumulator, reads current referents for every product, applies the usual
+arithmetic conversions independently to multiplication and addition, and
+converts each sum back to the accumulator type. Empty input returns the
+initial value. Bindings and referents, single operand evaluation and cleanup
+are preserved. Both initializations and operations, scalar and wrapper
+forwarding, conversions and the complete SDK loop are verified. Source
+replacements, custom, typed, stored or dynamically produced operations,
+enum or nested-wrapper referents, unsupported accumulator types and indirect
+or casted callees remain rejected.
+
 Direct `std::inner_product` with transparent `std::plus<>` and `std::multiplies<>` admits
 two raw-pointer input ranges of checked SDK `std::reference_wrapper<T>` with
 built-in scalar referents, including const inputs and referents, and an

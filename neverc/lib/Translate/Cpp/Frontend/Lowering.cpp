@@ -4697,7 +4697,8 @@ class FunctionLowering {
            ((Operation == UtilityOperation::NumericInnerProduct ||
              Operation == UtilityOperation::NumericTransformReduce) &&
             Call->getNumArgs() == 4) ||
-           (Operation == UtilityOperation::NumericInnerProduct &&
+           ((Operation == UtilityOperation::NumericInnerProduct ||
+             Operation == UtilityOperation::NumericTransformReduce) &&
             Call->getNumArgs() == 6))
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
@@ -4725,7 +4726,8 @@ class FunctionLowering {
         ReductionCallback = snapshot(expression(Call->getArg(4)), L);
         TransformCallback = snapshot(expression(Call->getArg(5)), L);
       } else if (TransformReduce && Call->getNumArgs() >= 5 &&
-                 !DefaultFunctionalPair && !DefaultUnaryFunctionalPair) {
+                 !DefaultFunctionalPair && !DefaultUnaryFunctionalPair &&
+                 !Wrapper) {
         const unsigned ReductionIndex = UnaryTransformReduce ? 3 : 4;
         const unsigned TransformIndex = UnaryTransformReduce ? 4 : 5;
         ReductionCallbackType = Call->getArg(ReductionIndex)->getType();
