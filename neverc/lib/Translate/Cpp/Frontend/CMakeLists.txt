@@ -241,7 +241,7 @@ set(_setup_contract_dependencies)
 if(WIN32)
   # COFF weak externals carry a fallback symbol in auxiliary records that nm's
   # one-character type cannot represent. This reader is a build tool only.
-  list(APPEND _audit_tools llvm-readobj llvm-objcopy)
+  list(APPEND _audit_tools llvm-readobj)
   list(APPEND _coff_audit_arguments --coff-readobj "$<TARGET_FILE:llvm-readobj>")
   file(GENERATE OUTPUT "${LLVM_BINARY_DIR}/neverc-cpp-readobj-$<CONFIG>.txt"
     CONTENT "$<TARGET_FILE:llvm-readobj>\n")
@@ -250,7 +250,6 @@ if(WIN32)
     "-DNM=$<TARGET_FILE:llvm-nm>" "-DREADOBJ=$<TARGET_FILE:llvm-readobj>"
     "-DWRITER=${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbols.py"
     "-DWRITER_TESTS=${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbolsTests.py"
-    "-DOBJCOPY=$<TARGET_FILE:llvm-objcopy>"
     "-DMATH_WRITER=${CMAKE_CURRENT_SOURCE_DIR}/IsolateMathCoffSymbols.py"
     "-DMATH_TESTS=${CMAKE_CURRENT_SOURCE_DIR}/IsolateMathCoffSymbolsTests.py"
     "-DAUDITOR=${CMAKE_CURRENT_SOURCE_DIR}/AuditArchive.py"

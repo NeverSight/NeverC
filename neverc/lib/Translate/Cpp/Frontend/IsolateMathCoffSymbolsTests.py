@@ -4,13 +4,16 @@
 import ast
 from dataclasses import replace
 import hashlib
+import io
 from pathlib import Path
 import struct
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import IsolateMathCoffSymbols as math
+import HostCoffSymbols as archive_reader
 from RewriteSetupCoffSymbols import CoffObject, CoffSection, CoffSymbol, inspect_archive
 from RewriteSetupCoffSymbolsTests import GUIDS, archive_bytes, bigobj_bytes, object_bytes
 
@@ -101,6 +104,178 @@ class MathIsolationTests(unittest.TestCase):
                       ["??$log10@_J$0A@@@YAM_J@Z"], [old, new], [new]):
             with self.subTest(names=names), self.assertRaises(ValueError):
                 math.checked_names(names)
+
+
+class LosslessArchiveTests(unittest.TestCase):
+    def long_archive(self, members):
+        names = b"".join(name.encode() + b"\0" for name, _, _ in members)
+        pairs = [(name, i) for i, (_, _, exports) in enumerate(members) for name in exports]
+        ordered = sorted(pairs)
+        first_names = b"".join(name.encode() + b"\0" for name, _ in pairs)
+        second_names = b"".join(name.encode() + b"\0" for name, _ in ordered)
+        first_size = 4 + 4 * len(pairs) + len(first_names)
+        second_size = 8 + 4 * len(members) + 2 * len(pairs) + len(second_names)
+        offset = 8 + sum(60 + size + (size & 1) for size in (first_size, second_size, len(names)))
+        offsets = []
+        for _, payload, _ in members:
+            offsets.append(offset)
+            offset += 60 + len(payload) + (len(payload) & 1)
+
+        def member(name, payload):
+            header = (name.ljust(16, b" ") + b"123".ljust(12, b" ") +
+                      b"2".ljust(6, b" ") + b"3".ljust(6, b" ") +
+                      b"100644".ljust(8, b" ") + str(len(payload)).encode().ljust(10, b" ") + b"`\n")
+            return header + payload + (b"\n" if len(payload) & 1 else b"")
+
+        first = struct.pack(">I", len(pairs))
+        first += b"".join(struct.pack(">I", offsets[i]) for _, i in pairs) + first_names
+        second = struct.pack("<I", len(members))
+        second += b"".join(struct.pack("<I", offset) for offset in offsets)
+        second += struct.pack("<I", len(pairs))
+        second += b"".join(struct.pack("<H", i + 1) for _, i in ordered) + second_names
+        result = b"!<arch>\n" + member(b"/", first) + member(b"/", second) + member(b"//", names)
+        name_at = 0
+        for name, payload, _ in members:
+            result += member(("/" + str(name_at)).encode(), payload)
+            name_at += len(name.encode()) + 1
+        return result
+
+    def rewrite(self, data):
+        temporary = tempfile.TemporaryDirectory(prefix="neverc-math-lossless-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        source, output = root / "before.lib", root / "after.lib"
+        source.write_bytes(data)
+        before = inspect_archive(source)
+        mapping = math.checked_names({s.name for _, obj in before.members for s in obj.symbols})
+        math.write_lossless_archive(source, output, before, mapping)
+        after = inspect_archive(output)
+        math.verify_pair(before, after, mapping)
+        self.assertEqual(source.read_bytes(), data)
+        return before, after, output.read_bytes()
+
+    def payloads(self, data):
+        stream = io.BytesIO(data)
+        return [(entry.name, data[entry.offset:entry.offset + 60],
+                 data[entry.offset + 60:entry.offset + 60 + entry.size])
+                for entry in archive_reader._members(stream, len(data))]
+
+    def assert_object_bytes(self, old_data, new_data, obj):
+        symbol_at, count = struct.unpack_from("<II", old_data, 48 if obj.bigobj else 8)
+        width = 20 if obj.bigobj else 18
+        string_at = symbol_at + count * width
+        old_size = struct.unpack_from("<I", old_data, string_at)[0]
+        new_size = struct.unpack_from("<I", new_data, string_at)[0]
+        restored = bytearray(new_data[:string_at + old_size])
+        struct.pack_into("<I", restored, string_at, old_size)
+        for symbol in obj.symbols:
+            if symbol.name in math.MATH_RENAMES:
+                at = symbol_at + symbol.index * width
+                restored[at:at + 8] = old_data[at:at + 8]
+        self.assertEqual(bytes(restored), old_data[:string_at + old_size])
+        self.assertEqual(new_data[string_at + new_size:], old_data[string_at + old_size:])
+
+    def test_preserves_ordinary_and_bigobj_bytes_on_both_machines(self):
+        old = next(iter(math.MATH_RENAMES))
+        for bigobj in (False, True):
+            for machine in (0x8664, 0xAA64):
+                with self.subTest(bigobj=bigobj, machine=machine):
+                    auxiliary = struct.pack("<IHHIHBBH", len(GUIDS) * 16, 0, 0, 0, 0, 0, 0, 0)
+                    if bigobj:
+                        data = bytearray(bigobj_bytes(extras=(
+                            (old, 0, 1, 0x20, 2, ()),
+                            (".rdata", 0, 1, 0, 3, (auxiliary + bytes(2),)))))
+                        struct.pack_into("<H", data, 6, machine)
+                    else:
+                        data = bytearray(object_bytes(machine=machine, extras=(
+                            (old, 0, 1, 0x20, 2, ()),
+                            (".file", 0, -2, 0, 103, (b"source.cpp".ljust(18, b"\0"),)),
+                            (".rdata", 0, 1, 0, 3, (auxiliary,)))))
+                    data += bytes(3)
+                    original = archive_bytes([("math.obj", bytes(data), (*GUIDS, old))])
+                    before, after, changed = self.rewrite(original)
+                    self.assertEqual(after.members[0][1].bigobj, bigobj)
+                    self.assertEqual(after.machine, machine)
+                    self.assert_object_bytes(bytes(data), self.payloads(changed)[2][2], before.members[0][1])
+
+    def test_renames_references_and_preserves_duplicate_representatives(self):
+        names = tuple(math.MATH_RENAMES)
+        definitions = object_bytes((), contents=b"\xc3", section_name=".text",
+                                   extras=tuple((name, 0, 1, 0x20, 2, ()) for name in names))
+        references = object_bytes((), contents=bytes(8), relocations=((0, 0, 1),),
+                                  extras=tuple((name, 0, 0, 0, 2, ()) for name in names))
+        untouched = object_bytes(("unchanged",), contents=b"\xc3")
+        members = [("same.obj", definitions, names), ("same.obj", definitions, names),
+                   ("caller.obj", references, ()), ("plain.obj", untouched, ("unchanged",))]
+        indexed = [(name, 1) for name in names] + [(names[0], 1), ("unchanged", 3)]
+        original = archive_bytes(members, indexed=indexed)
+        before, after, changed = self.rewrite(original)
+        self.assertEqual(math.verify_pair(before, after, math.MATH_RENAMES),
+                         {name: 3 for name in names})
+        self.assertEqual(self.payloads(changed)[-1][2], untouched)
+        for (_, old_header, _), (_, new_header, _) in zip(self.payloads(original), self.payloads(changed)):
+            self.assertEqual(old_header[:48], new_header[:48])
+            self.assertEqual(old_header[58:], new_header[58:])
+        for i in range(3):
+            self.assert_object_bytes(members[i][1], self.payloads(changed)[i + 2][2], before.members[i][1])
+
+    def test_name_change_resorts_second_index(self):
+        old = next(iter(math.MATH_RENAMES))
+        other = "??$m@H@@YAHH@Z"
+        payload = object_bytes((), contents=b"\xc3", extras=(
+            (old, 0, 1, 0x20, 2, ()), (other, 0, 1, 0x20, 2, ())))
+        before, after, _ = self.rewrite(archive_bytes([("math.obj", payload, (old, other))]))
+        self.assertEqual([name for name, _, _ in before.second_index], [old, other])
+        self.assertEqual([name for name, _, _ in after.second_index], [other, math.MATH_RENAMES[old]])
+
+    def test_preserves_long_member_names_and_header_metadata(self):
+        old = next(iter(math.MATH_RENAMES))
+        data = object_bytes((old,), contents=b"\xc3")
+        name = "tools\\neverc_cpp\\CMakeFiles\\nevercCppFrontendBridge.dir\\Frontend.cpp.obj"
+        original = self.long_archive([(name, data, (old,))])
+        before, after, changed = self.rewrite(original)
+        self.assertEqual(after.members[0][0], name)
+        self.assertEqual(self.payloads(original)[2], self.payloads(changed)[2])
+        for (_, left, _), (_, right, _) in zip(self.payloads(original), self.payloads(changed)):
+            self.assertEqual(left[:48], right[:48])
+            self.assertEqual(left[58:], right[58:])
+        self.assert_object_bytes(data, self.payloads(changed)[3][2], before.members[0][1])
+
+    def test_malformed_and_unknown_templates_fail_before_output(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-math-reject-") as directory:
+            source, output = Path(directory) / "before.lib", Path(directory) / "after.lib"
+            unknown = "??$pow@NN$0A@@@YANNN@Z"
+            for data in (b"broken", archive_bytes([("math.obj", object_bytes((unknown,), contents=b"x"), (unknown,))])):
+                with self.subTest(size=len(data)):
+                    source.write_bytes(data)
+                    with mock.patch.object(math, "run") as run:
+                        with self.assertRaises(ValueError):
+                            math.isolate(source, output, "nm")
+                    run.assert_not_called()
+                    self.assertFalse(output.exists())
+                    self.assertEqual(source.read_bytes(), data)
+
+    def test_isolation_copies_unmapped_archive_and_cleans_failed_staging(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-math-staging-") as directory:
+            source, output = Path(directory) / "before.lib", Path(directory) / "after.lib"
+            original = archive_bytes([("plain.obj", object_bytes(("plain",), contents=b"x"), ("plain",))])
+            source.write_bytes(original)
+            with mock.patch.object(math, "run", return_value="plain D 0 0\n"):
+                report = math.isolate(source, output, "nm")
+            self.assertEqual(output.read_bytes(), original)
+            self.assertEqual(report["renames"], {})
+            with self.assertRaisesRegex(ValueError, "fresh staging"):
+                math.isolate(source, output, "nm")
+            self.assertEqual(output.read_bytes(), original)
+            output.unlink()
+            old = next(iter(math.MATH_RENAMES))
+            source.write_bytes(archive_bytes([("math.obj", object_bytes((old,), contents=b"x"), (old,))]))
+            original = source.read_bytes()
+            with mock.patch.object(math, "run", side_effect=[old + " D 0 0\n", "wrong D 0 0\n"]):
+                with self.assertRaisesRegex(ValueError, "native nm"):
+                    math.isolate(source, output, "nm")
+            self.assertFalse(output.exists())
+            self.assertEqual(source.read_bytes(), original)
 
 
 class SectionNumberRestorationTests(unittest.TestCase):

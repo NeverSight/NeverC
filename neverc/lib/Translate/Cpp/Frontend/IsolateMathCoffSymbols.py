@@ -171,7 +171,98 @@ def run(command):
     return result.stdout
 
 
-def isolate(source, output, objcopy, nm):
+def renamed_object(data, obj, mapping):
+    # Retain the original ordinary/bigobj header and every existing byte.
+    # Only renamed symbol name slots and the string-table size may change.
+    names = sorted({symbol.name for symbol in obj.symbols if symbol.name in mapping})
+    if not names:
+        return data
+    symbol_at, symbol_count = struct.unpack_from("<II", data, 48 if obj.bigobj else 8)
+    width = 20 if obj.bigobj else 18
+    string_at = symbol_at + symbol_count * width
+    string_size = struct.unpack_from("<I", data, string_at)[0]
+    string_end = string_at + string_size
+    result = bytearray(data[:string_end])
+    offsets = {}
+    for name in names:
+        offsets[name] = len(result) - string_at
+        result.extend(mapping[name].encode("utf-8") + b"\0")
+    if len(result) + len(data) - string_end > 512 * 1024 * 1024:
+        fail("renamed object exceeds object limit")
+    for symbol in obj.symbols:
+        if symbol.name in offsets:
+            struct.pack_into("<II", result, symbol_at + symbol.index * width,
+                             0, offsets[symbol.name])
+    struct.pack_into("<I", result, string_at, len(result) - string_at)
+    result.extend(data[string_end:])
+    return bytes(result)
+
+
+def write_lossless_archive(source, output, before, mapping):
+    # Rebuild both linker indices as member offsets move. Preserve duplicate
+    # representatives, member headers, long names and untouched object bytes.
+    import HostCoffSymbols as archive_reader
+    with Path(source).open("rb") as stream:
+        entries = archive_reader._members(stream, before.size)
+        start = 3 if entries[2].name == b"//" else 2
+        ordinals = {offset: i for i, offset in enumerate(before.member_offsets)}
+        first_pairs = [(mapping.get(name, name), ordinals[offset])
+                       for name, offset, _ in before.first_index]
+        second_pairs = sorted((mapping.get(name, name), ordinals[offset])
+                              for name, offset, _ in before.second_index)
+        first_tail = entries[0].offset + 60 + 4 + 4 * len(first_pairs)
+        first_tail += sum(len(name.encode("utf-8")) + 1
+                          for name, _, _ in before.first_index)
+        first_padding = archive_reader._read(
+            stream, before.size, first_tail,
+            entries[0].offset + 60 + entries[0].size - first_tail)
+        sizes = [entry.size for entry in entries]
+        sizes[0] = 4 + 4 * len(first_pairs) + len(first_padding)
+        sizes[0] += sum(len(name.encode("utf-8")) + 1 for name, _ in first_pairs)
+        sizes[1] = 8 + 4 * len(before.members) + 2 * len(second_pairs)
+        sizes[1] += sum(len(name.encode("utf-8")) + 1 for name, _ in second_pairs)
+        sizes[1] += len(before.second_padding)
+        for i, (_, obj) in enumerate(before.members):
+            names = {symbol.name for symbol in obj.symbols if symbol.name in mapping}
+            sizes[start + i] += sum(len(mapping[name].encode("utf-8")) + 1 for name in names)
+        offsets, cursor = [], 8
+        for size in sizes:
+            offsets.append(cursor)
+            cursor += 60 + size + (size & 1)
+        if cursor > 0xFFFFFFFF:
+            fail("renamed archive exceeds COFF offset limit")
+        member_offsets = offsets[start:]
+        first = struct.pack(">I", len(first_pairs))
+        first += b"".join(struct.pack(">I", member_offsets[i]) for _, i in first_pairs)
+        first += b"".join(name.encode("utf-8") + b"\0" for name, _ in first_pairs) + first_padding
+        second = struct.pack("<I", len(member_offsets))
+        second += b"".join(struct.pack("<I", offset) for offset in member_offsets)
+        second += struct.pack("<I", len(second_pairs))
+        second += b"".join(struct.pack("<H", i + 1) for _, i in second_pairs)
+        second += b"".join(name.encode("utf-8") + b"\0" for name, _ in second_pairs)
+        second += before.second_padding
+        with Path(output).open("xb") as target:
+            target.write(b"!<arch>\n")
+            for i, entry in enumerate(entries):
+                header = archive_reader._read(stream, before.size, entry.offset, 60)
+                if i < 2:
+                    payload = first if i == 0 else second
+                else:
+                    payload = archive_reader._read(stream, before.size, entry.offset + 60, entry.size)
+                    if i >= start:
+                        payload = renamed_object(payload, before.members[i - start][1], mapping)
+                if len(payload) != sizes[i] or target.tell() != offsets[i]:
+                    fail("archive layout differs from rename plan")
+                target.write(header[:48] + str(len(payload)).encode().ljust(10, b" ") + header[58:])
+                target.write(payload)
+                if len(payload) & 1:
+                    padding = (archive_reader._read(stream, before.size,
+                               entry.offset + 60 + entry.size, 1)
+                               if entry.size & 1 else b"\n")
+                    target.write(padding)
+
+
+def isolate(source, output, nm):
     source, output = Path(source), Path(output)
     if output.exists() or output.is_symlink():
         fail("output must be a fresh staging path")
@@ -181,14 +272,10 @@ def isolate(source, output, objcopy, nm):
     inventory = Counter(symbol_rows(run([nm, "--extern-only", "--format=posix", source])))
     try:
         if mapping:
-            run([objcopy, *("--redefine-sym=" + old + "=" + new
-                            for old, new in mapping.items()), source, output])
+            write_lossless_archive(source, output, before, mapping)
         else:
             shutil.copyfile(source, output)
         after = inspect_archive(output)
-        restored = restore_section_numbers(before, after, mapping, output)
-        if restored:
-            after = inspect_archive(output)
         hits = verify_pair(before, after, mapping)
         expected = Counter()
         for (name, kind), count in inventory.items():
@@ -205,7 +292,7 @@ def isolate(source, output, objcopy, nm):
         return {"schema": "neverc.math-coff-isolation.v1",
                 "input_sha256": before.sha256, "output_sha256": after.sha256,
                 "members": len(after.members), "renames": mapping,
-                "restored_section_numbers": restored,
+                "restored_section_numbers": 0,
                 "symbol_hits": hits, "section_and_auxiliary_checks": "passed",
                 "native_nm_inventory": "passed"}
     except BaseException:
@@ -217,12 +304,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--objcopy", required=True, type=Path)
     parser.add_argument("--nm", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
     try:
-        report = isolate(args.input, args.output, args.objcopy, args.nm)
+        report = isolate(args.input, args.output, args.nm)
         args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         parser.exit(1, str(error) + "\n")

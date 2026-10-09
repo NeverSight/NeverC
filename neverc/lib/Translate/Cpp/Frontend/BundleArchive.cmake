@@ -60,7 +60,8 @@ endif()
 if(COFF)
   # Preserve the actual SDK templates, including integer-exponent shortcuts.
   # Rename their compiled definitions and references before the Setup writer;
-  # independent record/section proofs and the usual ABI audits still apply.
+  # retain ordinary/bigobj bytes and rebuild both linker indices directly.
+  # Independent record/section proofs and the usual ABI audits still apply.
   _setup_stage(started math-tests 0)
   execute_process(COMMAND "${PYTHON}" -E -B "${MATH_TESTS}"
     RESULT_VARIABLE _result TIMEOUT 120)
@@ -73,7 +74,7 @@ if(COFF)
   _setup_stage(started math-isolation 0)
   execute_process(COMMAND "${PYTHON}" -E -B "${MATH_WRITER}"
     --input "${_temporary}" --output "${_math_isolated}"
-    --objcopy "${OBJCOPY}" --nm "${NM}"
+    --nm "${NM}"
     --report "${OUTPUT}.math-isolation.json"
     RESULT_VARIABLE _result TIMEOUT 600)
   if(NOT _result EQUAL 0)
