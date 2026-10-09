@@ -4928,7 +4928,7 @@ class FunctionLowering {
       auto OutputRange = AlgorithmRangeValue(2);
       auto Output = std::move(OutputRange.first);
       const auto Wrapper =
-          ((Adjacent && Call->getNumArgs() == 3) ||
+          ((Adjacent && (Call->getNumArgs() == 3 || Call->getNumArgs() == 4)) ||
            (Operation == UtilityOperation::NumericInclusiveScan &&
             Call->getNumArgs() == 5))
               ? approvedFunctionalReferenceRecord(

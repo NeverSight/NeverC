@@ -236239,3 +236239,1017 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeAdjacentDifferenceMinus) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-minus-runtime-"
+                              "adjacent-difference-minus.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-minus-runtime-adjacent-difference-minus.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-adjacent-difference-minus" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeAliasedOutput) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-aliased-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-aliased-output.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={3,1,2};R a[]={v[0],v[1],v[2]};auto p=std::adjacent_difference(a,a+3,v,std::minus<>{});return p!=v+3||v[0]!=3||v[1]!=-2||v[2]!=4||&a[0].get()!=v||&a[1].get()!=v+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-aliased-output" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeAliasedReferents) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-minus-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=0||out[2]!=-1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&x||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-bool.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};int out[]={9,9,9};auto p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=1||out[1]!=-1||out[2]!=1||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};double out[]={9,9,9};auto p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3.5||out[1]!=-2||out[2]!=1||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a,out,std::minus<>{});return p!=out||out[0]!=9||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};x=8;y=-1;int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=8||out[1]!=-9||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-live-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeMixedOutput) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-mixed-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-mixed-output.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};double out[]={9,9,9,9};double*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-mixed-output" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeNan) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-nan.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double out[]={9,9,9};auto p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]==out[0]||out[1]==out[1]||out[2]!=1||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeNarrowOutput) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-narrow-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-narrow-output.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};short out[]={9,9,9,9};short*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-narrow-output" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=-3||out[1]!=4||out[2]!=-3||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-negative-values" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct B{int*p;int*get(){return p;}~B(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(A{a}.get(),A{a+3}.get(),B{out}.get(),std::minus<>{});return n!=3||p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-operand-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int*output(int*p){++n;return p;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(read(a),read(a+3),output(out),std::minus<>{});return n!=3||p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int sub(int a,int b){return a-b;}int main(){int a[]={3,1,2},out[]={9,9,9};return std::adjacent_difference(a,a+3,out,sub)!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-record-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int*select(R*a,R*last,int*out){return std::adjacent_difference(a,last,out,std::minus<>{});}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=select(a,a+3,out);return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2},out[]={9,9,9};return std::adjacent_difference(a,a+3,out)!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-scalar-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-short.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0,y=-0.0,z=-0.0;R a[]={x,y,z};double out[]={9,9,9};auto p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||!(1.0/out[0]>0.0)||!(1.0/out[1]<0.0)||!(1.0/out[2]>0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+1,out,std::minus<>{});return p!=out+1||out[0]!=3||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};auto p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-stored-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceMinusRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=1,y=3,z=4;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=1||out[1]!=2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=1||y!=3||z!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-minus-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceMinusRuntimeUsingDeclaration) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-minus-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-difference-minus-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::adjacent_difference;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=adjacent_difference(a,a+3,out,std::minus<>{});return p!=out+3||out[0]!=3||out[1]!=-2||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-minus-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperAdjacentDifferenceMinusRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+auto selected(P a,P b,bool*c){return std::adjacent_difference(a,b,c,std::minus<>{});}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,std::minus<void>);auto selected(P a,P b){return static_cast<F>(&std::adjacent_difference<P,int*,std::minus<void>>)(a,b,out,std::minus<>{});}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,const W&b){return a+b.get();}auto selected(P a,P b){return std::adjacent_difference(a,b,out,add);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,const W&b)const{return a+b.get();}};auto selected(P a,P b){return std::adjacent_difference(a,b,out,Add{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
+)cpp"},
+      {"extended-integer-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+auto selected(P a,P b,__int128*c){return std::adjacent_difference(a,b,c,std::minus<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,std::minus<void>);auto selected(P a,P b){F f=&std::adjacent_difference<P,int*,std::minus<void>>;return f(a,b,out,std::minus<>{});}
+)cpp"},
+      {"long-double-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+auto selected(P a,P b,long double*c){return std::adjacent_difference(a,b,c,std::minus<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"operation-expression", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+int effects=0;auto selected(P a,P b){return std::adjacent_difference(a,b,out,(++effects,std::minus<>{}));}
+)cpp"},
+      {"record-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+struct O{int n;O&operator=(int v){n=v;return *this;}};auto selected(P a,P b,O*c){return std::adjacent_difference(a,b,c,std::minus<>{});}
+)cpp"},
+      {"returned-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+std::minus<> op(){return std::minus<>{};}auto selected(P a,P b){return std::adjacent_difference(a,b,out,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::adjacent_difference(&source(a),&a+1,out,std::minus<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-iterator-traits-partial-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class T>struct iterator_traits<T*>;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-iterator-traits-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>struct iterator_traits<P>{using difference_type=long;using value_type=W;using pointer=P;using reference=W&;using iterator_category=random_access_iterator_tag;};}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-iterator-traits-value-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>struct iterator_traits<P>{using difference_type=long;using value_type=long;using pointer=P;using reference=W&;using iterator_category=random_access_iterator_tag;};}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-minus-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)-std::forward<W&>(b)))->decltype(std::forward<W&>(a)-std::forward<W&>(b));}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-minus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)-std::forward<W&>(b)))->decltype(std::forward<W&>(a)-std::forward<W&>(b)){return a.get()-b.get();}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-minus-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<class T>struct minus;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-minus-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>struct minus<void>;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-move-wrapper-body", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr W&&move<W&>(W&x)noexcept{return static_cast<W&&>(x);}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-move-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr W&&move<W&>(W&)noexcept;}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::adjacent_difference(&source(a),&a+1,out,std::minus<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::adjacent_difference(&source(a),&a+1,out,std::minus<>{});}int main(){return 0;}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<class I,class O,class B>O adjacent_difference(I,I,O,B);}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>int*adjacent_difference<P,int*,minus<void>>(P,P,int*,minus<void>);}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>int*adjacent_difference<P,int*,minus<void>>(P a,P,int*p,minus<void>){*p=a->get();return p+1;}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <numeric>
+#include <functional>
+struct R{long double n;};using W=std::reference_wrapper<R>;namespace std{inline namespace __1{R operator-(const W&a,const W&b){return R{a.get().n-b.get().n};}}}
+auto selected(W*a,W*b,R*out){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
+)cpp"},
+      {"source-subtraction", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator-(int a,const W&b){return a+b.get();}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
+)cpp"},
+      {"stored-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){std::minus<> op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"typed-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::minus<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,std::minus<void>);F selected(){using std::adjacent_difference;return &adjacent_difference<P,int*,std::minus<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::adjacent_difference(a,b,out,std::minus<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-adjacent-difference-minus-runtime-guard-") +
+        Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-adjacent-difference-minus-runtime-guard-") +
+        Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

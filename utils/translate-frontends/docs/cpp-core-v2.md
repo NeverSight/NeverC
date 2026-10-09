@@ -389,6 +389,22 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct `std::adjacent_difference` with transparent `std::minus<>` admits a raw-pointer input range of
+checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
+including const inputs and referents, and a writable non-boolean arithmetic
+output range of supported integers up to 64 bits, float or double. Its four-argument form requires a directly initialized transparent
+`std::minus<>`. Its saved values copy wrapper bindings. The first output reads the first binding; each
+subsequent subtraction reads the current referents of the new and saved
+bindings, with checked arithmetic promotion and output conversions. Saved
+bindings observe changed values when output overlaps referents. Empty input
+returns the original output pointer; other inputs return the advanced pointer.
+Operand evaluation and cleanup are preserved. SDK iterator value types, wrapper
+copies, scalar conversions, moves, minus initialization and operation,
+forwarding of both wrapper operands and the complete loop are verified. Source
+replacements, custom, typed, stored or dynamically produced operations,
+enum or nested-wrapper referents, unsupported
+output types and indirect or casted callees remain rejected.
+
 Direct `std::accumulate` with transparent `std::plus<>` admits a raw-pointer input
 range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
 including const inputs and referents, and an independent supported non-boolean
