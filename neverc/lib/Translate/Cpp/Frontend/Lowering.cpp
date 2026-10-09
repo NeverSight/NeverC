@@ -4718,7 +4718,8 @@ class FunctionLowering {
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
       const auto Wrapper =
-          ((Operation == UtilityOperation::NumericAccumulate &&
+          (((Operation == UtilityOperation::NumericAccumulate ||
+             Operation == UtilityOperation::NumericReduce) &&
             Call->getNumArgs() == 3) ||
            (Operation == UtilityOperation::NumericInnerProduct &&
             Call->getNumArgs() == 4))

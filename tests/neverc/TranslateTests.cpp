@@ -230678,3 +230678,887 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeAliasedReferents) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int r=std::reduce(a,a+3,0);return r!=8||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeBool) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};return std::reduce(a,a+3,0)!=2||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int r=std::reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};return std::reduce(a,a+3,0.0)!=7.5||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a,7);return r!=7||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};x=8;y=-1;int r=std::reduce(a,a+3,0);return r!=9||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeMixedAccumulator) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-mixed-accumulator.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-mixed-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};double r=std::reduce(a,a+3,0.5);return r!=6.5||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-mixed-accumulator" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeNan) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double r=std::reduce(a,a+3,0.0);return r==r||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeNarrowAccumulator) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-narrow-accumulator.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-narrow-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};short r=std::reduce(a,a+3,short(0));return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-narrow-accumulator" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeNegativeValues) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-negative-values.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int r=std::reduce(a,a+3,0);return r!=-4||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeNonzeroInitial) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-nonzero-initial.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-nonzero-initial.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+3,4);return r!=10||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-nonzero-initial" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 0;}~I(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(A{a}.get(),A{a+3}.get(),I{}.get());return n!=3||r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 0;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(read(a),read(a+3),init());return n!=3||r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+struct Add{int operator()(int a,int b)const noexcept{return a+b;}};int main(){int a[]={3,1,2};return std::reduce(a,a+3,0,Add{})!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeReduce) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-reduce.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-reduce.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-reduce" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int select(R*a,R*b,int i){return std::reduce(a,b,i);}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=select(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2};return std::reduce(a,a+3,0)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeShort) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeSignedZero) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-signed-zero.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0;R a[]={x};double r=std::reduce(a,a+1,-0.0);return !(1.0/r<0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+1,0);return r!=3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeStoredResult) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-stored-result.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};auto r=std::reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeUnsigned) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-unsigned.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2;R a[]={x,y,z};int r=std::reduce(a,a+3,0u);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-reduce-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-reduce-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::reduce;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=reduce(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperReduceRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::reduce(a,b,false);}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int);auto selected(P a,P b){return static_cast<F>(&std::reduce<P,int>)(a,b,0);}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,const W&b){return a+b.get();}auto selected(P a,P b){return std::reduce(a,b,0,add);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,const W&b)const{return a+b.get();}};auto selected(P a,P b){return std::reduce(a,b,0,Add{});}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator+(E a,const W&b){return E(int(a)+b.get());}auto selected(P a,P b){return std::reduce(a,b,Zero);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::reduce(a,b,__int128(0));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int);auto selected(P a,P b){F f=&std::reduce<P,int>;return f(a,b,0);}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::reduce(a,b,0.0L);}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::reduce(a,b,0.0L);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator+(int a,const W&b){return a+b.get().get();}}}
+auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"source-addition", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator+(int a,const W&b){return a+b.get();}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"source-delegate-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class B>T reduce(I,I,T,B);}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-delegate-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int reduce<P,int,plus<void>>(P,P,int,plus<void>);}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-delegate-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int reduce<P,int,plus<void>>(P a,P,int n,plus<void>){return n+a->get();}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::reduce(&source(a),&a+1,0);}
+)cpp"},
+      {"source-forward-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-forward-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-move-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&move<int&>(int&t)noexcept;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-move-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&move<int&>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::reduce(&source(a),&a+1,0);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::reduce(&source(a),&a+1,0);}int main(){return 0;}
+)cpp"},
+      {"source-plus-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)+std::forward<W&>(b)))->decltype(std::forward<int>(a)+std::forward<W&>(b));}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-plus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)+std::forward<W&>(b)))->decltype(std::forward<int>(a)+std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-plus-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct plus;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-plus-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct plus<void>;}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T>T reduce(I,I,T);}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int reduce<P,int>(P,P,int);}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int reduce<P,int>(P a,P,int n){return n+a->get();}}}
+auto selected(P a,P b){return std::reduce(a,b,0);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+struct R{long double n;};int operator+(int a,const R&b){return a+int(b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::reduce(a,a+1,0);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int);F selected(){using std::reduce;return &reduce<P,int>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::reduce(a,b,0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-reduce-runtime-guard-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-reduce-runtime-guard-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
