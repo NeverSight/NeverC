@@ -389,6 +389,20 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct `std::accumulate` with transparent `std::plus<>` admits a raw-pointer input
+range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
+including const inputs and referents, and an independent supported non-boolean
+integer (up to 64 bits), float or double initial accumulator. Its four-argument
+form requires a directly initialized transparent `std::plus<>`. The
+selected SDK loop reads current referent values in order, applies the usual
+arithmetic conversions and converts each sum back to the accumulator type.
+Empty input returns the initial value. Bindings and referents, single operand
+evaluation and cleanup are preserved. The selected SDK loop, plus construction
+and operation, lvalue accumulator forwarding and wrapper conversion are
+verified against the selected C++17 implementation. Source replacements, custom, typed, stored or dynamically produced
+operations, enum or nested-wrapper referents, unsupported accumulator types
+and indirect or casted callees remain rejected.
+
 Direct `std::reduce` with transparent `std::plus<>` admits a raw-pointer input
 range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
 including const inputs and referents, and an independent supported non-boolean

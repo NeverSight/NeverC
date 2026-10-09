@@ -4691,7 +4691,8 @@ class FunctionLowering {
           (((Operation == UtilityOperation::NumericAccumulate ||
              Operation == UtilityOperation::NumericReduce) &&
             Call->getNumArgs() == 3) ||
-           (Operation == UtilityOperation::NumericReduce &&
+           ((Operation == UtilityOperation::NumericAccumulate ||
+             Operation == UtilityOperation::NumericReduce) &&
             Call->getNumArgs() == 4) ||
            ((Operation == UtilityOperation::NumericInnerProduct ||
              Operation == UtilityOperation::NumericTransformReduce) &&
