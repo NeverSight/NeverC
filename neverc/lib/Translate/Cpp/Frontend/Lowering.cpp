@@ -4696,7 +4696,9 @@ class FunctionLowering {
             Call->getNumArgs() == 4) ||
            ((Operation == UtilityOperation::NumericInnerProduct ||
              Operation == UtilityOperation::NumericTransformReduce) &&
-            Call->getNumArgs() == 4))
+            Call->getNumArgs() == 4) ||
+           (Operation == UtilityOperation::NumericInnerProduct &&
+            Call->getNumArgs() == 6))
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
@@ -4716,7 +4718,8 @@ class FunctionLowering {
           ReductionCallback = std::move(Captured.Storage);
         }
       } else if (Operation == UtilityOperation::NumericInnerProduct &&
-                 Call->getNumArgs() == 6 && !DefaultFunctionalPair) {
+                 Call->getNumArgs() == 6 && !DefaultFunctionalPair &&
+                 !Wrapper) {
         ReductionCallbackType = Call->getArg(4)->getType();
         TransformCallbackType = Call->getArg(5)->getType();
         ReductionCallback = snapshot(expression(Call->getArg(4)), L);

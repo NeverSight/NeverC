@@ -237253,3 +237253,1038 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={x,x,z};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=16||&a[0].get()!=&x||&b[0].get()!=&x||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-bool.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;using S=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true,u=false,v=true,q=true;R a[]={x,y,z};S b[]={u,v,q};return std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{})!=1||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;const R a[]={x,y,z};const S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;using S=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;using S=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};return std::inner_product(a,a+3,b,0.0,std::plus<>{},std::multiplies<>{})!=15.5||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a,b,7,std::plus<>{},std::multiplies<>{});return r!=7||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeInnerProductOperations) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-operations-runtime-inner-product-operations.cpp");
+  const auto Output = tmpFile(
+      "wrapper-inner-product-operations-runtime-inner-product-operations.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-inner-product-operations" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};x=8;y=-1;int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=14||&a[0].get()!=&x||&b[0].get()!=&u||x!=8||u!=2||y!=-1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-live-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeMixedReferents) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-mixed-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-mixed-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<double>;
+int main(){int x=3,y=1,z=2;double u=2.5,v=4.5,q=1.5;R a[]={x,y,z};S b[]={u,v,q};double r=std::inner_product(a,a+3,b,0.0,std::plus<>{},std::multiplies<>{});return r!=15||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-mixed-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeNan) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-nan.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;using S=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,u=2;R a[]={x};S b[]={u};double r=std::inner_product(a,a+1,b,0.0,std::plus<>{},std::multiplies<>{});return r==r||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeNarrowAccumulator) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-operations-runtime-narrow-accumulator.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-narrow-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};short r=std::inner_product(a,a+3,b,short(0),std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-narrow-accumulator" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=-4||&a[0].get()!=&x||&b[0].get()!=&u||x!=-3||u!=2||y!=1||v!=4||z!=-2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-negative-values" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeNonzeroInitial) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-nonzero-initial.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-nonzero-initial.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,5,std::plus<>{},std::multiplies<>{});return r!=17||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-nonzero-initial" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 0;}~I(){++n;}};int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(A{a}.get(),A{a+3}.get(),A{b}.get(),I{}.get(),std::plus<>{},std::multiplies<>{});return n!=4||r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-operand-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 0;}int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(read(a),read(a+3),read(b),init(),std::plus<>{},std::multiplies<>{});return n!=4||r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+struct T{int n;};int add(int a,int b){return a+b;}int mul(const T&a,int b){return a.n*b;}int main(){T a[]={{3},{1},{2}};int b[]={2,4,1};return std::inner_product(a,a+3,b,0,add,mul)!=12;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-record-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int select(R*a,R*last,S*b,int i){return std::inner_product(a,last,b,i,std::plus<>{},std::multiplies<>{});}int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=select(a,a+3,b,0);return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2},b[]={2,4,1};return std::inner_product(a,a+3,b,0)!=12;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-scalar-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-short.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;using S=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;using S=std::reference_wrapper<double>;
+int main(){double x=-0.0,u=1;R a[]={x};S b[]={u};double r=std::inner_product(a,a+1,b,-0.0,std::plus<>{},std::multiplies<>{});return !(1.0/r<0.0)||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+1,b,0,std::plus<>{},std::multiplies<>{});return r!=6||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};auto r=std::inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-stored-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;using S=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=std::inner_product(a,a+3,b,0u,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-operations-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductOperationsRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-inner-product-operations-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-operations-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+using std::inner_product;int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int r=inner_product(a,a+3,b,0,std::plus<>{},std::multiplies<>{});return r!=12||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-operations-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperInnerProductOperationsRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,false,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,P,int,std::plus<void>,std::multiplies<void>);auto selected(P a,P b){return static_cast<F>(&std::inner_product<P,P,int,std::plus<void>,std::multiplies<void>>)(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,int b){return a+b;}int mul(const W&a,const W&b){return a.get()*b.get();}auto selected(P a,P b){return std::inner_product(a,b,a,0,add,mul);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,int b)const{return a+b;}};struct Mul{int operator()(const W&a,const W&b)const{return a.get()*b.get();}};auto selected(P a,P b){return std::inner_product(a,b,a,0,Add{},Mul{});}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator+(E a,int b){return E(int(a)+b);}auto selected(P a,P b){return std::inner_product(a,b,a,Zero,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"expression-multiply", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},(++effects,std::multiplies<>{}));}
+)cpp"},
+      {"expression-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b){return std::inner_product(a,b,a,0,(++effects,std::plus<>{}),std::multiplies<>{});}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,__int128(0),std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,P,int,std::plus<void>,std::multiplies<void>);auto selected(P a,P b){F f=&std::inner_product<P,P,int,std::plus<void>,std::multiplies<void>>;return f(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0.0L,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::inner_product(a,b,a,0.0L,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator*(const W&a,const W&b){return a.get().get()*b.get().get();}}}
+auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"raw-first-range", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(int*a,int*b,P c){return std::inner_product(a,b,c,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"raw-second-range", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*c){return std::inner_product(a,b,c,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"returned-multiply", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::multiplies<> op(){return std::multiplies<>{};}auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},op());}
+)cpp"},
+      {"returned-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::plus<> op(){return std::plus<>{};}auto selected(P a,P b){return std::inner_product(a,b,a,0,op(),std::multiplies<>{});}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::inner_product(&source(a),&a+1,&a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept{return static_cast<int&>(t);}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-product-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-product", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)*std::forward<W&>(b)))->decltype(std::forward<W&>(a)*std::forward<W&>(b));}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)*std::forward<W&>(b)))->decltype(std::forward<W&>(a)*std::forward<W&>(b)){return a.get()*b.get();}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct multiplies;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct multiplies<void>;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::inner_product(&source(a),&a+1,&a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::inner_product(&source(a),&a+1,&a,0,std::plus<>{},std::multiplies<>{});}int main(){return 0;}
+)cpp"},
+      {"source-plus-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)+std::forward<int>(b)))->decltype(std::forward<int&>(a)+std::forward<int>(b));}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-plus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)+std::forward<int>(b)))->decltype(std::forward<int&>(a)+std::forward<int>(b)){return a+b;}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-plus-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct plus;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-plus-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct plus<void>;}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-product", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator*(const W&a,const W&b){return a.get()*b.get();}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class T,class B,class M>T inner_product(I,I,J,T,B,M);}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int inner_product<P,P,int,plus<void>,multiplies<void>>(P,P,P,int,plus<void>,multiplies<void>);}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int inner_product<P,P,int,plus<void>,multiplies<void>>(P a,P,P c,int n,plus<void>,multiplies<void>){return n+a->get()*c->get();}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+struct R{long double n;};int operator*(const R&a,const R&b){return int(a.n*b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-second-conversion-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept;}}auto selected(P a,P b,std::reference_wrapper<short>*c){return std::inner_product(a,b,c,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-second-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept{return get();}}}auto selected(P a,P b,std::reference_wrapper<short>*c){return std::inner_product(a,b,c,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+      {"stored-multiply", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::inner_product(a,b,a,0,std::plus<>{},op);}
+)cpp"},
+      {"stored-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::plus<> op;return std::inner_product(a,b,a,0,op,std::multiplies<>{});}
+)cpp"},
+      {"typed-multiply", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<int>{});}
+)cpp"},
+      {"typed-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<int>{},std::multiplies<>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,P,int,std::plus<void>,std::multiplies<void>);F selected(){using std::inner_product;return &inner_product<P,P,int,std::plus<void>,std::multiplies<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::inner_product(a,b,a,0,std::plus<>{},std::multiplies<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-inner-product-operations-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-inner-product-operations-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
