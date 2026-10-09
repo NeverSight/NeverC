@@ -14635,6 +14635,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/lexicographical_compare.h";
       else if (Name->getName() == "is_sorted")
         ExpectedPath = "__algorithm/is_sorted.h";
+      else if (Name->getName() == "transform_reduce")
+        ExpectedPath = "__numeric/transform_reduce.h";
       else if (Name->getName() == "reduce")
         ExpectedPath = "__numeric/reduce.h";
       else if (Name->getName() == "adjacent_difference")

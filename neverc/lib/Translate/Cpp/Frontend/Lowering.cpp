@@ -4721,7 +4721,8 @@ class FunctionLowering {
           (((Operation == UtilityOperation::NumericAccumulate ||
              Operation == UtilityOperation::NumericReduce) &&
             Call->getNumArgs() == 3) ||
-           (Operation == UtilityOperation::NumericInnerProduct &&
+           ((Operation == UtilityOperation::NumericInnerProduct ||
+             Operation == UtilityOperation::NumericTransformReduce) &&
             Call->getNumArgs() == 4))
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
@@ -4729,7 +4730,8 @@ class FunctionLowering {
                     A.Context)
               : std::nullopt;
       const auto Wrapper2 =
-          Wrapper && Operation == UtilityOperation::NumericInnerProduct
+          Wrapper && (Operation == UtilityOperation::NumericInnerProduct ||
+                      Operation == UtilityOperation::NumericTransformReduce)
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     SecondRangeType->getPointeeType()->getAsCXXRecordDecl(),

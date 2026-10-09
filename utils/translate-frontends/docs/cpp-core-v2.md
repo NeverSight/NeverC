@@ -389,6 +389,20 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::transform_reduce` admits two raw-pointer ranges of checked
+SDK `std::reference_wrapper<T>` with built-in scalar referents, including const
+inputs and referents and different referent types, and supported non-boolean
+integer (up to 64 bits), float or double accumulators in its four-argument form.
+The selected SDK loop reads current referents in order, applies the usual
+arithmetic conversions separately to each product and sum, and converts each
+sum back to the accumulator type. An empty first range returns the initial
+value. Wrapper bindings and referents, single operand evaluation and cleanup
+are preserved. SDK delegation, transparent plus and multiplies construction
+and operations, scalar moves and forwarding, both wrapper conversions and the
+complete loop are verified. Source replacements, custom operations, enum or
+nested-wrapper referents, unsupported accumulator types, mixed raw-scalar and
+wrapper ranges, and indirect or casted callees remain rejected.
+
 Direct default `std::reduce` admits a raw-pointer input range of checked SDK
 `std::reference_wrapper<T>` with built-in scalar referents, including const
 inputs and referents, when an independent supported non-boolean integer
