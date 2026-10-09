@@ -239336,3 +239336,1008 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformReduceUnaryRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-8||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-transform-reduce-unary-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};return std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{})!=-2||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};return std::transform_reduce(a,a+3,0.0,std::plus<>{},std::negate<>{})!=-7.5||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a,7,std::plus<>{},std::negate<>{});return r!=7||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};x=8;y=-1;int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-9||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformReduceUnaryRuntimeMixedAccumulator) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-mixed-accumulator.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-mixed-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};double r=std::transform_reduce(a,a+3,0.5,std::plus<>{},std::negate<>{});return r!=-5.5||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-mixed-accumulator" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeNan) {
+  const auto Source = tmpFile("wrapper-transform-reduce-unary-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-transform-reduce-unary-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double r=std::transform_reduce(a,a+3,0.0,std::plus<>{},std::negate<>{});return r==r||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformReduceUnaryRuntimeNarrowAccumulator) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-narrow-accumulator.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-narrow-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=1.25,y=1.25,z=1.25;R a[]={x,y,z};unsigned char r=std::transform_reduce(a,a+3,(unsigned char)250,std::plus<>{},std::negate<>{});return r!=244||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=1.25||y!=1.25||z!=1.25;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-narrow-accumulator" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=4||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-negative-values" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeNonzeroInitial) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-nonzero-initial.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-nonzero-initial.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a+3,4,std::plus<>{},std::negate<>{});return r!=-2||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-nonzero-initial" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 0;}~I(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(A{a}.get(),A{a+3}.get(),I{}.get(),std::plus<>{},std::negate<>{});return n!=3||r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-operand-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 0;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(read(a),read(a+3),init(),std::plus<>{},std::negate<>{});return n!=3||r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+struct T{int n;};int add(int v,const T&t){return v+t.n;}int main(){T a[]={{3},{1},{2}};return std::accumulate(a,a+3,0,add)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int select(R*a,R*b,int i){return std::transform_reduce(a,b,i,std::plus<>{},std::negate<>{});}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=select(a,a+3,0);return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2};return std::accumulate(a,a+3,0)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-short.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0;R a[]={x};double r=std::transform_reduce(a,a+1,-0.0,std::plus<>{},std::negate<>{});return !(1.0/r<0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});return r!=-3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};auto r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformReduceUnaryRuntimeTransformReduceUnary) {
+  const auto Source = tmpFile(
+      "wrapper-transform-reduce-unary-runtime-transform-reduce-unary.cpp");
+  const auto Output = tmpFile(
+      "wrapper-transform-reduce-unary-runtime-transform-reduce-unary.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-transform-reduce-unary" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2;R a[]={x,y,z};unsigned r=std::transform_reduce(a,a+3,0u,std::plus<>{},std::negate<>{});return r!=4294967290u||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-reduce-unary-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformReduceUnaryRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-transform-reduce-unary-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-reduce-unary-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::transform_reduce;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=transform_reduce(a,a+3,0,std::plus<>{},std::negate<>{});return r!=-6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-reduce-unary-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,false,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int,std::plus<void>,std::negate<void>);auto selected(P a,P b){return static_cast<F>(&std::transform_reduce<P,int,std::plus<void>,std::negate<void>>)(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,int b){return a+b;}int mul(const W&a){return -a.get();}auto selected(P a,P b){return std::transform_reduce(a,b,0,add,mul);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,int b)const{return a+b;}};struct Mul{int operator()(const W&a)const{return -a.get();}};auto selected(P a,P b){return std::transform_reduce(a,b,0,Add{},Mul{});}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator+(E a,int b){return E(int(a)+b);}auto selected(P a,P b){return std::transform_reduce(a,b,Zero,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"expression-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},(++effects,std::negate<>{}));}
+)cpp"},
+      {"expression-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b){return std::transform_reduce(a,b,0,(++effects,std::plus<>{}),std::negate<>{});}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,__int128(0),std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int,std::plus<void>,std::negate<void>);auto selected(P a,P b){F f=&std::transform_reduce<P,int,std::plus<void>,std::negate<void>>;return f(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,0.0L,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::transform_reduce(a,b,0.0L,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator-(const W&a){return -a.get().get();}}}
+auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"returned-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::negate<> op(){return std::negate<>{};}auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},op());}
+)cpp"},
+      {"returned-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::plus<> op(){return std::plus<>{};}auto selected(P a,P b){return std::transform_reduce(a,b,0,op(),std::negate<>{});}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::transform_reduce(&source(a),&a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-forward-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-forward-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&forward<int>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-move-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&move<int&>(int&t)noexcept;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-move-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&&move<int&>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-negate-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&a)const noexcept(noexcept(-std::forward<W&>(a)))->decltype(-std::forward<W&>(a));}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-negate-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&a)const noexcept(noexcept(-std::forward<W&>(a)))->decltype(-std::forward<W&>(a)){return -a.get();}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-negate-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct negate;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-negate-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct negate<void>;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-negation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator-(const W&a){return -a.get();}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::transform_reduce(&source(a),&a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::transform_reduce(&source(a),&a+1,0,std::plus<>{},std::negate<>{});}int main(){return 0;}
+)cpp"},
+      {"source-plus-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)+std::forward<int>(b)))->decltype(std::forward<int>(a)+std::forward<int>(b));}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-plus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)+std::forward<int>(b)))->decltype(std::forward<int>(a)+std::forward<int>(b)){return a+b;}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-plus-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct plus;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-plus-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct plus<void>;}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class B,class U>T transform_reduce(I,I,T,B,U);}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int transform_reduce<P,int,plus<void>,negate<void>>(P,P,int,plus<void>,negate<void>);}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int transform_reduce<P,int,plus<void>,negate<void>>(P a,P,int n,plus<void>,negate<void>){return n-a->get();}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+struct R{long double n;};int operator-(const R&a){return -int(a.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"stored-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
+)cpp"},
+      {"stored-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+)cpp"},
+      {"typed-negate", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<int>{});}
+)cpp"},
+      {"typed-plus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<int>{},std::negate<>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int,std::plus<void>,std::negate<void>);F selected(){using std::transform_reduce;return &transform_reduce<P,int,std::plus<void>,std::negate<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::transform_reduce(a,b,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-transform-reduce-unary-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-transform-reduce-unary-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

@@ -4699,7 +4699,8 @@ class FunctionLowering {
             Call->getNumArgs() == 4) ||
            ((Operation == UtilityOperation::NumericInnerProduct ||
              Operation == UtilityOperation::NumericTransformReduce) &&
-            Call->getNumArgs() == 6))
+            Call->getNumArgs() == 6) ||
+           (UnaryTransformReduce && DefaultUnaryFunctionalPair))
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
@@ -4738,8 +4739,9 @@ class FunctionLowering {
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
       const auto Wrapper2 =
-          Wrapper && (Operation == UtilityOperation::NumericInnerProduct ||
-                      Operation == UtilityOperation::NumericTransformReduce)
+          Wrapper && !UnaryTransformReduce &&
+                  (Operation == UtilityOperation::NumericInnerProduct ||
+                   Operation == UtilityOperation::NumericTransformReduce)
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     SecondRangeType->getPointeeType()->getAsCXXRecordDecl(),
@@ -4821,7 +4823,8 @@ class FunctionLowering {
         Term = ReferentValue(std::move(Term), *Wrapper);
       if (DefaultUnaryFunctionalPair) {
         auto InputType =
-            TypedTransformType.isNull()
+            Wrapper ? Wrapper->ReferentType.getUnqualifiedType()
+            : TypedTransformType.isNull()
                 ? FirstRange.second->getPointeeType().getUnqualifiedType()
                 : TypedTransformType;
         auto Promoted = LogicalNotTransform ? A.Context.BoolTy : InputType;
