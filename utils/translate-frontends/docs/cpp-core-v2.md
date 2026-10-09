@@ -389,6 +389,24 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct `std::transform_exclusive_scan` with transparent `std::plus<>` and `std::negate<>` admits
+a raw-pointer input range of checked SDK `std::reference_wrapper<T>` with
+supported built-in scalar referents, including const inputs and referents,
+and independent supported non-boolean integer (up to 64 bits), float or double
+accumulator and output types. Its six-argument form requires both operations
+to be directly initialized transparent SDK objects. The checked C++17 loop
+negates the current referent using the usual unary promotions, adds it to the
+lvalue accumulator using the usual arithmetic conversions, converts each sum
+back to the accumulator type and writes the saved previous value converted
+to the output type. Reading and updating before output preserves aliasing.
+Empty input returns the original output pointer without writes. Bindings and
+referents, single operand evaluation and cleanup are preserved. Both
+initializations and operations, scalar and wrapper forwarding, conversions
+and the complete saved-value SDK loop are verified. Source replacements,
+custom, typed, stored or dynamically produced operations, enum or nested-wrapper
+referents, unsupported accumulator or output types and indirect or casted
+callees remain rejected.
+
 Direct unary `std::transform_reduce` with transparent `std::plus<>` and `std::negate<>` admits
 a raw-pointer range of checked SDK `std::reference_wrapper<T>` with supported
 built-in scalar referents, including const inputs and referents, and an
