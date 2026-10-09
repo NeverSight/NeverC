@@ -4687,12 +4687,26 @@ class FunctionLowering {
              HasInitial ? expression(Call->getArg(InitialIndex))
                         : A.zero(ResultQualType, L),
              L);
+      const auto Wrapper =
+          (((Operation == UtilityOperation::NumericAccumulate ||
+             Operation == UtilityOperation::NumericReduce) &&
+            Call->getNumArgs() == 3) ||
+           (Operation == UtilityOperation::NumericReduce &&
+            Call->getNumArgs() == 4) ||
+           ((Operation == UtilityOperation::NumericInnerProduct ||
+             Operation == UtilityOperation::NumericTransformReduce) &&
+            Call->getNumArgs() == 4))
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
       std::optional<Expression> ReductionCallback, TransformCallback;
       std::optional<QualType> ReductionCallbackType, TransformCallbackType;
       std::optional<CapturedAlgorithmPredicate> ReductionObject;
       if ((Operation == UtilityOperation::NumericAccumulate ||
            Operation == UtilityOperation::NumericReduce) &&
-          Call->getNumArgs() == 4) {
+          Call->getNumArgs() == 4 && !Wrapper) {
         auto Captured = captureUnaryPredicate(Call, Operation, 3);
         if (Captured.Method)
           ReductionObject = std::move(Captured);
@@ -4717,18 +4731,6 @@ class FunctionLowering {
         TransformCallback =
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
-      const auto Wrapper =
-          (((Operation == UtilityOperation::NumericAccumulate ||
-             Operation == UtilityOperation::NumericReduce) &&
-            Call->getNumArgs() == 3) ||
-           ((Operation == UtilityOperation::NumericInnerProduct ||
-             Operation == UtilityOperation::NumericTransformReduce) &&
-            Call->getNumArgs() == 4))
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
       const auto Wrapper2 =
           Wrapper && (Operation == UtilityOperation::NumericInnerProduct ||
                       Operation == UtilityOperation::NumericTransformReduce)
