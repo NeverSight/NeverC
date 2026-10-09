@@ -245036,3 +245036,911 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-transform-multiplies-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>());return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeAliasedOutput) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-aliased-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-aliased-output.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={3,2,2};R a[]={v[0],v[0],v[2]},b[]={v[1],v[2],v[0]};auto p=std::transform(a,a+3,b,v,std::multiplies<>{});return p!=v+3||v[0]!=6||v[1]!=12||v[2]!=12||&a[1].get()!=v||&b[2].get()!=v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-aliased-output" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={x,x,z};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=9||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&x||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeBool) {
+  const auto Source = tmpFile("wrapper-transform-multiplies-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;using S=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true,u=false,v=true,q=true;R a[]={x,y,z};S b[]={u,v,q};bool out[]={true,true,true,true};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||!out[3]||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;const R a[]={x,y,z};const S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;using S=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;using S=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};double out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=7||out[1]!=6||out[2]!=2.5||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-transform-multiplies-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a,b,out,std::multiplies<>{});return p!=out||out[0]!=9||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};x=8;y=-1;int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=16||out[1]!=-4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=8||u!=2||y!=-1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeMixedReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-mixed-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-mixed-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<double>;
+int main(){int x=3,y=1,z=2;double u=2.5,v=4.5,q=1.5;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=7||out[1]!=4||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-mixed-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeNan) {
+  const auto Source = tmpFile("wrapper-transform-multiplies-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;using S=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,u=2;R a[]={x};S b[]={u};double out[]={9,9,9,9};auto p=std::transform(a,a+1,b,out,std::multiplies<>{});return p!=out+1||out[0]==out[0]||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeNarrowOutput) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-narrow-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-narrow-output.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=200,y=100,z=100,u=2,v=3,q=4;R a[]={x,y,z},b[]={u,v,q};unsigned char out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=144||out[1]!=44||out[2]!=144||out[3]!=9||x!=200||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-narrow-output" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=-6||out[1]!=4||out[2]!=-2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=-3||u!=2||y!=1||v!=4||z!=-2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 0;}~I(){++n;}};struct B{int*p;int*get(){return p;}~B(){++n;}};int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(A{a}.get(),A{a+3}.get(),A{b}.get(),B{out}.get(),std::multiplies<>{});return n!=4||p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 0;}int*output(int*p){++n;return p;}int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(read(a),read(a+3),read(b),output(out),std::multiplies<>{});return n!=4||p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct T{int n;};int mul(const T&a,int b){return a.n*b;}int main(){T a[]={{3},{1},{2}};int b[]={2,4,1},out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,mul);return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int*select(R*a,R*last,S*b,int*out){return std::transform(a,last,b,out,std::multiplies<>{});}int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=select(a,a+3,b,out);return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int a[]={3,1,2},b[]={2,4,1},out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeShort) {
+  const auto Source = tmpFile("wrapper-transform-multiplies-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;using S=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;using S=std::reference_wrapper<double>;
+int main(){double x=-0.0,u=1;R a[]={x};S b[]={u};double out[]={9,9,9,9};auto p=std::transform(a,a+1,b,out,std::multiplies<>{});return p!=out+1||!(1.0/out[0]<0.0)||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-transform-multiplies-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+1,b,out,std::multiplies<>{});return p!=out+1||out[0]!=6||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-multiplies-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformMultipliesRuntimeTransformMultiplies) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-transform-multiplies.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-transform-multiplies.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-transform-multiplies" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;using S=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-transform-multiplies-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-multiplies-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+using std::transform;int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=transform(a,a+3,b,out,std::multiplies<>{});return p!=out+3||out[0]!=6||out[1]!=4||out[2]!=2||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-multiplies-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperTransformMultipliesRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,P,int*,std::multiplies<void>);auto selected(P a,P b,int*out){return static_cast<F>(&std::transform<P,P,int*,std::multiplies<void>>)(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"expression-multiply", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,int*out){return std::transform(a,b,a,out,(++effects,std::multiplies<>{}));}
+)cpp"},
+      {"extended-integer-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,__int128*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,P,int*,std::multiplies<void>);auto selected(P a,P b,int*out){F f=&std::transform<P,P,int*,std::multiplies<void>>;return f(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"long-double-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,long double*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator*(const W&a,const W&b){return a.get().get()*b.get().get();}}}
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"raw-first-range", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(int*a,int*b,P c,int*out){return std::transform(a,b,c,out,std::multiplies<>{});}
+)cpp"},
+      {"raw-second-range", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*c,int*out){return std::transform(a,b,c,out,std::multiplies<>{});}
+)cpp"},
+      {"record-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+struct O{int value;O&operator=(int n){value=n;return*this;}};auto selected(W*a,W*b,W*c,O*out){return std::transform(a,b,c,out,std::multiplies<>{});}
+)cpp"},
+      {"returned-multiply", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::multiplies<> op(){return std::multiplies<>{};}auto selected(P a,P b,int*out){return std::transform(a,b,a,out,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,int*out){std::transform(&source(a),&a+1,&a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)*std::forward<W&>(b)))->decltype(std::forward<W&>(a)*std::forward<W&>(b));}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)*std::forward<W&>(b)))->decltype(std::forward<W&>(a)*std::forward<W&>(b)){return a.get()*b.get();}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct multiplies;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct multiplies<void>;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,int*out){return std::transform(&source(a),&a+1,&a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,int*out){std::transform(&source(a),&a+1,&a,out,std::multiplies<>{});}int main(){return 0;}
+)cpp"},
+      {"source-product", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator*(const W&a,const W&b){return a.get()*b.get();}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O,class M>O transform(I,I,J,O,M);}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int* transform<P,P,int*,multiplies<void>>(P,P,P,int*,multiplies<void>);}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int* transform<P,P,int*,multiplies<void>>(P a,P,P c,int*out,multiplies<void>){*out=a->get()*c->get();return out;}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};int operator*(const R&a,const R&b){return int(a.n*b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"source-second-conversion-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept;}}auto selected(P a,P b,std::reference_wrapper<short>*c,int*out){return std::transform(a,b,c,out,std::multiplies<>{});}
+)cpp"},
+      {"source-second-conversion", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept{return get();}}}auto selected(P a,P b,std::reference_wrapper<short>*c,int*out){return std::transform(a,b,c,out,std::multiplies<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
+)cpp"},
+      {"stored-multiply", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::multiplies<> op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"typed-multiply", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::multiplies<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,P,int*,std::multiplies<void>);F selected(){using std::transform;return &transform<P,P,int*,std::multiplies<void>>;}
+)cpp"},
+      {"volatile-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,W*c,volatile int*out){return std::transform(a,b,c,out,std::multiplies<>{});}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,int*out){return std::transform(a,b,a,out,std::multiplies<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-transform-multiplies-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-transform-multiplies-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
