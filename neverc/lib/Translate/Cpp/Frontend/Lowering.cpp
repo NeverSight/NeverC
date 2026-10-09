@@ -10419,6 +10419,71 @@ class FunctionLowering {
         label(End, L);
         return AlgorithmIteratorResult(std::move(Output), 2);
       }
+      const auto LogicalNotFunctionalObject =
+          !Binary
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(3)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *LogicalNotObject =
+          LogicalNotFunctionalObject
+              ? dyn_cast<ClassTemplateSpecializationDecl>(
+                    LogicalNotFunctionalObject->Record)
+              : nullptr;
+      const bool TransparentLogicalNot =
+          LogicalNotObject && LogicalNotObject->getName() == "logical_not" &&
+          LogicalNotObject->getTemplateArgs().size() == 1 &&
+          LogicalNotObject->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          LogicalNotObject->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto LogicalNotWrapper =
+          TransparentLogicalNot
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (LogicalNotWrapper) {
+        const auto TermType = type(A.Context.BoolTy, L);
+        const auto FirstType = type(FirstRange.second, L);
+        const auto OutputType = type(OutputRange.second, L);
+        const auto OutputElementType =
+            type(OutputRange.second->getPointeeType(), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        auto Term = temporary(TermType, L);
+        const auto Check = labelName(), Store = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", First, Last, "bool", L), Store, End, L);
+        label(Store, L);
+        auto Referent = dereference(
+            Expression{{"kind", "member"},
+                       {"type", type(LogicalNotWrapper->PointerType, L)},
+                       {"name", "nct_reference_wrapper_pointer"},
+                       {"args", json::Array{dereference(First, L)}},
+                       {"loc", A.loc(L)}},
+            L);
+        assign(Term,
+               Expression{{"kind", "unary"},
+                          {"type", TermType},
+                          {"operator", "!"},
+                          {"args",
+                           json::Array{cast(std::move(Referent), TermType, L)}},
+                          {"loc", A.loc(L)}},
+               L);
+        assign(dereference(Output, L),
+               cast(json::Object(Term), OutputElementType, L), L);
+        assign(First,
+               binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+               L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+        jump(Check, L);
+        label(End, L);
+        return AlgorithmIteratorResult(std::move(Output), 2);
+      }
       auto Callback = captureUnaryPredicate(Call, Operation, CallbackIndex);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(FirstRange.second, L);
