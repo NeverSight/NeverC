@@ -43,8 +43,7 @@ class CppFrontendToolchainTests(unittest.TestCase):
         cls.msvc = shutil.which("cl.exe")
         if not cls.msvc:
             raise FileNotFoundError("The MSVC developer environment is required")
-        for tool in (cls.clang, cls.librarian, cls.nm, cls.readobj,
-                     cls.llvm_root / "bin/llvm-objcopy.exe"):
+        for tool in (cls.clang, cls.librarian, cls.nm, cls.readobj):
             if not tool.is_file():
                 raise FileNotFoundError(f"Required CI tool is missing: {tool}")
 
@@ -2844,7 +2843,6 @@ int main() {
                     self.require_success([
                         sys.executable, "-E", "-B", math_writer,
                         "--input", changed_input, "--output", changed,
-                        "--objcopy", self.llvm_root / "bin/llvm-objcopy.exe",
                         "--nm", self.nm, "--report", math_report])
                     report = json.loads(math_report.read_text(encoding="utf-8"))
                     self.assertEqual(set(report["renames"]), set(expected))
