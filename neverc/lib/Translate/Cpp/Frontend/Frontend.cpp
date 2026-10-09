@@ -14649,6 +14649,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/none_of.h";
       else if (Name->getName() == "copy_if")
         ExpectedPath = "__algorithm/copy_if.h";
+      else if (Name->getName() == "remove_copy_if")
+        ExpectedPath = "__algorithm/remove_copy_if.h";
       else if (Name->getName() == "transform")
         ExpectedPath = "__algorithm/transform.h";
       else if (Name->getName() == "inclusive_scan")
