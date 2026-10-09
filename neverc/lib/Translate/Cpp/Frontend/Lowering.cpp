@@ -5101,10 +5101,17 @@ class FunctionLowering {
       auto OutputRange = AlgorithmRangeValue(2);
       auto Output = std::move(OutputRange.first);
       auto Value = snapshot(expression(Call->getArg(3)), L);
+      const auto Wrapper =
+          (Call->getNumArgs() == 4 || Call->getNumArgs() == 5)
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
       std::optional<Expression> Callback;
       std::optional<QualType> CallbackType;
       std::optional<CapturedAlgorithmPredicate> OperationObject;
-      if (Call->getNumArgs() == 5) {
+      if (Call->getNumArgs() == 5 && !Wrapper) {
         auto Captured = captureUnaryPredicate(Call, Operation, 4);
         if (Captured.Method)
           OperationObject = std::move(Captured);
@@ -5116,13 +5123,6 @@ class FunctionLowering {
       const auto FirstType = type(FirstRange.second, L);
       const auto OutputType = type(OutputRange.second, L);
       const auto ValueQualType = Call->getArg(3)->getType();
-      const auto Wrapper =
-          Call->getNumArgs() == 4
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
       const auto ElementQualType =
           Wrapper ? Wrapper->ReferentType.getUnqualifiedType()
                   : FirstRange.second->getPointeeType();
