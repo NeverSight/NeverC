@@ -11254,6 +11254,95 @@ class FunctionLowering {
         label(End, L);
         return AlgorithmIteratorResult(std::move(Output), 3);
       }
+      const auto LogicalOrFunctionalObject =
+          Binary
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(4)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *LogicalOrObject =
+          LogicalOrFunctionalObject ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                          LogicalOrFunctionalObject->Record)
+                                    : nullptr;
+      const bool TransparentLogicalOr =
+          LogicalOrObject && LogicalOrObject->getName() == "logical_or" &&
+          LogicalOrObject->getTemplateArgs().size() == 1 &&
+          LogicalOrObject->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          LogicalOrObject->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto LogicalOrLeftWrapper =
+          TransparentLogicalOr
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      const auto LogicalOrRightWrapper =
+          TransparentLogicalOr
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    SecondRangeType->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (LogicalOrLeftWrapper && LogicalOrRightWrapper) {
+        const auto ProductQualType = utilityScalarComparisonType(
+            A.Context, LogicalOrLeftWrapper->ReferentType,
+            LogicalOrRightWrapper->ReferentType, false);
+        if (!ProductQualType)
+          reject(L, "transform",
+                 "The referents have no common arithmetic type.");
+        const auto ProductType = type(A.Context.BoolTy, L);
+        const auto FirstType = type(FirstRange.second, L);
+        const auto SecondType = type(SecondRangeType, L);
+        const auto OutputType = type(OutputRange.second, L);
+        const auto OutputElementType =
+            type(OutputRange.second->getPointeeType(), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        auto Product = temporary(ProductType, L);
+        const auto Check = labelName(), ReadLeft = labelName(),
+                   ReadRight = labelName(), Store = labelName(),
+                   End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", First, Last, "bool", L), ReadLeft, End, L);
+        label(ReadLeft, L);
+        auto Left = dereference(
+            Expression{{"kind", "member"},
+                       {"type", type(LogicalOrLeftWrapper->PointerType, L)},
+                       {"name", "nct_reference_wrapper_pointer"},
+                       {"args", json::Array{dereference(First, L)}},
+                       {"loc", A.loc(L)}},
+            L);
+        auto Right = dereference(
+            Expression{{"kind", "member"},
+                       {"type", type(LogicalOrRightWrapper->PointerType, L)},
+                       {"name", "nct_reference_wrapper_pointer"},
+                       {"args", json::Array{dereference(*Second, L)}},
+                       {"loc", A.loc(L)}},
+            L);
+        assign(Product, cast(std::move(Left), ProductType, L), L);
+        branch(json::Object(Product), Store, ReadRight, L);
+        label(ReadRight, L);
+        assign(Product, cast(std::move(Right), ProductType, L), L);
+        jump(Store, L);
+        label(Store, L);
+        assign(dereference(Output, L),
+               cast(json::Object(Product), OutputElementType, L), L);
+        assign(First,
+               binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+               L);
+        assign(
+            *Second,
+            binary("+", *Second, quantity(1, DifferenceType, L), SecondType, L),
+            L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+        jump(Check, L);
+        label(End, L);
+        return AlgorithmIteratorResult(std::move(Output), 3);
+      }
       auto Callback = captureUnaryPredicate(Call, Operation, CallbackIndex);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(FirstRange.second, L);
