@@ -4924,10 +4924,19 @@ class FunctionLowering {
       auto Last = std::move(AlgorithmRangeValue(1).first);
       auto OutputRange = AlgorithmRangeValue(2);
       auto Output = std::move(OutputRange.first);
+      const auto Wrapper =
+          ((Adjacent && Call->getNumArgs() == 3) ||
+           (Operation == UtilityOperation::NumericInclusiveScan &&
+            Call->getNumArgs() == 5))
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
       std::optional<Expression> Callback;
       std::optional<QualType> CallbackType;
       std::optional<CapturedAlgorithmPredicate> OperationObject;
-      if (Call->getNumArgs() >= 4) {
+      if (Call->getNumArgs() >= 4 && !Wrapper) {
         if (Operation == UtilityOperation::NumericPartialSum ||
             Operation == UtilityOperation::NumericAdjacentDifference ||
             (Operation == UtilityOperation::NumericInclusiveScan &&
@@ -4944,13 +4953,6 @@ class FunctionLowering {
           Callback = snapshot(expression(Call->getArg(3)), L);
         }
       }
-      const auto Wrapper =
-          Adjacent && Call->getNumArgs() == 3
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
       auto ReferentValue = [&](Expression Value) {
         if (!Wrapper)
           return Value;
@@ -4963,7 +4965,11 @@ class FunctionLowering {
       };
       const auto FirstType = type(FirstRange.second, L);
       const auto OutputType = type(OutputRange.second, L);
-      const auto ElementType = type(FirstRange.second->getPointeeType(), L);
+      const auto ElementType =
+          type(Wrapper && Operation == UtilityOperation::NumericInclusiveScan
+                   ? Wrapper->ReferentType.getUnqualifiedType()
+                   : FirstRange.second->getPointeeType(),
+               L);
       const auto OutputElementType =
           type(OutputRange.second->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -4978,9 +4984,20 @@ class FunctionLowering {
         label(Check, L);
         branch(binary("!=", First, Last, "bool", L), Store, End, L);
         label(Store, L);
-        assign(CurrentValue, dereference(First, L), L);
+        assign(CurrentValue, ReferentValue(dereference(First, L)), L);
         Expression Next;
-        if (OperationObject) {
+        if (Wrapper) {
+          const auto Common =
+              utilityScalarComparisonType(A.Context, Call->getArg(4)->getType(),
+                                          Wrapper->ReferentType, false);
+          if (!Common)
+            reject(L, "inclusive scan",
+                   "The accumulator and input have no arithmetic common type.");
+          const auto CommonType = type(*Common, L);
+          Next = binary("+", cast(json::Object(Value), CommonType, L),
+                        cast(json::Object(CurrentValue), CommonType, L),
+                        CommonType, L);
+        } else if (OperationObject) {
           Next = emitBinaryCallable(*OperationObject, json::Object(Value),
                                     json::Object(CurrentValue), L);
         } else {

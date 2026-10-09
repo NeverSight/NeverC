@@ -389,6 +389,22 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct initialized `std::inclusive_scan` admits a raw-pointer input range of
+checked SDK `std::reference_wrapper<T>` with built-in scalar referents, including
+const inputs and referents, and a writable raw-pointer scalar output range.
+Its five-argument form requires a directly initialized transparent
+`std::plus<>` and supported non-boolean integer (up to 64 bits), float or double
+accumulator and output types. It reads current referents before each output
+write, applies the usual arithmetic conversions, converts every sum back to
+the accumulator type and converts each output separately. Empty input writes
+nothing and returns the original output pointer; otherwise it returns the
+output end. Outputs may alias referents. Wrapper bindings, single operand
+evaluation and cleanup are preserved. The selected SDK loop, plus construction
+and operation, forwarding and wrapper conversion are verified. Source
+replacements, custom, typed, stored or dynamically produced operations, enum
+or nested-wrapper referents, unsupported scalar types and indirect or casted
+callees remain rejected.
+
 Direct default `std::transform_reduce` admits two raw-pointer ranges of checked
 SDK `std::reference_wrapper<T>` with built-in scalar referents, including const
 inputs and referents and different referent types, and supported non-boolean
