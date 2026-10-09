@@ -251353,3 +251353,909 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>());return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeAliasedOutput) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-aliased-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-aliased-output.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={8,3,5};R a[]={v[0],v[0],v[2]},b[]={v[1],v[2],v[0]};auto p=std::transform(a,a+3,b,v,std::bit_xor<>{});return p!=v+3||v[0]!=11||v[1]!=14||v[2]!=14||&a[1].get()!=v||&b[2].get()!=v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-aliased-output" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={x,x,z};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=0||out[1]!=2||out[2]!=0||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&x||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeBool) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;using S=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true,u=true,v=true,q=true;R a[]={x,y,z};S b[]={u,v,q};bool out[]={true,true,true,true};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||!out[3]||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;const R a[]={x,y,z};const S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;using S=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<long long>;using S=std::reference_wrapper<long long>;
+int main(){long long x=7,y=5,z=3,u=3,v=2,q=2;R a[]={x,y,z};S b[]={u,v,q};double out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=4||out[1]!=7||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a,b,out,std::bit_xor<>{});return p!=out||out[0]!=9||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeIntegerPromotion) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-integer-promotion.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-integer-promotion.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned char>;using S=std::reference_wrapper<unsigned char>;
+int main(){unsigned char x=255,u=4;R a[]={x};S b[]={u};int out[]={9,9,9,9};auto p=std::transform(a,a+1,b,out,std::bit_xor<>{});return p!=out+1||out[0]!=251||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-integer-promotion" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};x=8;y=-1;int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=10||out[1]!=-5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=8||u!=2||y!=-1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeMixedReferents) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-mixed-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-mixed-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;using S=std::reference_wrapper<unsigned>;
+int main(){short x=3,y=1,z=2;unsigned u=2,v=4,q=3;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=1||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-mixed-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeNarrowOutput) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-narrow-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-narrow-output.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=771,y=1028,z=1285,u=1000,v=1100,q=1400;R a[]={x,y,z},b[]={u,v,q};unsigned char out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=235||out[1]!=72||out[2]!=125||out[3]!=9||x!=771||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-narrow-output" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=-1||out[1]!=5||out[2]!=-1||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=-3||u!=2||y!=1||v!=4||z!=-2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 0;}~I(){++n;}};struct B{int*p;int*get(){return p;}~B(){++n;}};int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(A{a}.get(),A{a+3}.get(),A{b}.get(),B{out}.get(),std::bit_xor<>{});return n!=4||p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 0;}int*output(int*p){++n;return p;}int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(read(a),read(a+3),read(b),output(out),std::bit_xor<>{});return n!=4||p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct T{int n;};int mul(const T&a,int b){return a.n^b;}int main(){T a[]={{3},{1},{2}};int b[]={2,4,1},out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,mul);return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int*select(R*a,R*last,S*b,int*out){return std::transform(a,last,b,out,std::bit_xor<>{});}int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=select(a,a+3,b,out);return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int a[]={3,1,2},b[]={2,4,1},out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeShort) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;using S=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+1,b,out,std::bit_xor<>{});return p!=out+1||out[0]!=1||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeTransformBitXor) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-transform-bit-xor.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-transform-bit-xor.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-transform-bit-xor" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeUnsigned) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-unsigned.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;using S=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=std::transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-transform-bit-xor-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-bit-xor-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+using std::transform;int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S b[]={u,v,q};int out[]={9,9,9,9};auto p=transform(a,a+3,b,out,std::bit_xor<>{});return p!=out+3||out[0]!=1||out[1]!=5||out[2]!=3||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u||x!=3||u!=2||y!=1||v!=4||z!=2||q!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-bit-xor-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformBitXorRuntimeZero) {
+  const auto Source = tmpFile("wrapper-transform-bit-xor-runtime-zero.cpp");
+  const auto Output = tmpFile("wrapper-transform-bit-xor-runtime-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using S=std::reference_wrapper<int>;
+int main(){int x=0,u=1;R a[]={x};S b[]={u};int out[]={9,9,9,9};auto p=std::transform(a,a+1,b,out,std::bit_xor<>{});return p!=out+1||out[0]!=1||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-bit-xor-runtime-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformBitXorRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,P,int*,std::bit_xor<void>);auto selected(P a,P b,int*out){return static_cast<F>(&std::transform<P,P,int*,std::bit_xor<void>>)(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"expression-bit-xor", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,int*out){return std::transform(a,b,a,out,(++effects,std::bit_xor<>{}));}
+)cpp"},
+      {"extended-integer-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,__int128*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"floating-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<double>;namespace std{inline namespace __1{int operator^(W a,W b){return int(a.get())^int(b.get());}}}
+auto selected(W*a,W*b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,P,int*,std::bit_xor<void>);auto selected(P a,P b,int*out){F f=&std::transform<P,P,int*,std::bit_xor<void>>;return f(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"long-double-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,long double*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator^(reference_wrapper<long double>a,reference_wrapper<long double>b){return int(a.get())^int(b.get());}}}
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator^(const W&a,const W&b){return a.get().get()^b.get().get();}}}
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"raw-first-range", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(int*a,int*b,P c,int*out){return std::transform(a,b,c,out,std::bit_xor<>{});}
+)cpp"},
+      {"raw-second-range", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*c,int*out){return std::transform(a,b,c,out,std::bit_xor<>{});}
+)cpp"},
+      {"record-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+struct O{int value;O&operator=(int n){value=n;return*this;}};auto selected(W*a,W*b,W*c,O*out){return std::transform(a,b,c,out,std::bit_xor<>{});}
+)cpp"},
+      {"returned-bit-xor", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_xor<> op(){return std::bit_xor<>{};}auto selected(P a,P b,int*out){return std::transform(a,b,a,out,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-bit-xor-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_xor<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)^std::forward<W&>(b)))->decltype(std::forward<W&>(a)^std::forward<W&>(b));}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-bit-xor-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_xor<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)^std::forward<W&>(b)))->decltype(std::forward<W&>(a)^std::forward<W&>(b)){return a.get()^b.get();}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-bit-xor-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct bit_xor;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-bit-xor-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct bit_xor<void>;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-bit-xor", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator^(const W&a,const W&b){return a.get()^b.get();}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,int*out){std::transform(&source(a),&a+1,&a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,int*out){return std::transform(&source(a),&a+1,&a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,int*out){std::transform(&source(a),&a+1,&a,out,std::bit_xor<>{});}int main(){return 0;}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O,class M>O transform(I,I,J,O,M);}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int* transform<P,P,int*,bit_xor<void>>(P,P,P,int*,bit_xor<void>);}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int* transform<P,P,int*,bit_xor<void>>(P a,P,P c,int*out,bit_xor<void>){*out=a->get()*c->get();return out;}}}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};int operator^(const R&a,const R&b){return int(a.n)^int(b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-second-conversion-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept;}}auto selected(P a,P b,std::reference_wrapper<short>*c,int*out){return std::transform(a,b,c,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-second-conversion", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept{return get();}}}auto selected(P a,P b,std::reference_wrapper<short>*c,int*out){return std::transform(a,b,c,out,std::bit_xor<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
+)cpp"},
+      {"stored-bit-xor", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_xor<> op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"typed-bit-xor", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::bit_xor<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,P,int*,std::bit_xor<void>);F selected(){using std::transform;return &transform<P,P,int*,std::bit_xor<void>>;}
+)cpp"},
+      {"volatile-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,W*c,volatile int*out){return std::transform(a,b,c,out,std::bit_xor<>{});}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,int*out){return std::transform(a,b,a,out,std::bit_xor<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-transform-bit-xor-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-transform-bit-xor-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
