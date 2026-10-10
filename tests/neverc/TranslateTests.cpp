@@ -270034,7 +270034,7 @@ auto selected(P a,P b,int*out,W*other){return std::partition_copy(a,b,out,other,
 #include <algorithm>
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -270044,6 +270044,946 @@ auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical
         Case.first + ".cpp");
     const auto Output = tmpFile(
         std::string("wrapper-partition-copy-logical-not-runtime-guard-") +
+        Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using L=std::logical_not<void>;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,L());return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeAliasedReferents) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[0],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+3||p.second!=no+0||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[0]||&yes[2].get()!=&v[2]||&yes[3].get()!=&sentinel||&no[0].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-aliased-referents" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-bool.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;int main(){bool v[]={false,true,false};bool sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeByte) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-byte.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-byte.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned char>;int main(){unsigned char v[]={0,2,0};unsigned char sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-byte" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9;const R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-const-input" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeConstReferents) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-const-referents.cpp");
+  const auto Output = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;int main(){const int v[]={0,2,0};const int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double v[]={0,2,0};double sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a,yes,no,std::logical_not<>{});return p.first!=yes+0||p.second!=no+0||&yes[0].get()!=&sentinel||&no[0].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeFloat) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-float.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<float>;int main(){float v[]={0,2,0};float sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeLiveReferents) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};v[1]=0;auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+3||p.second!=no+0||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[1]||&yes[2].get()!=&v[2]||&yes[3].get()!=&sentinel||&no[0].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-live-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeLongLong) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-long-long.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-long-long.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<long long>;int main(){long long v[]={0,2,0};long long sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-long-long" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeNan) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-nan.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double v[]={(0.0 / 0.0),0,-1};double sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+1||p.second!=no+2||&yes[0].get()!=&v[1]||&yes[1].get()!=&sentinel||&no[0].get()!=&v[0]||&no[1].get()!=&v[2]||&no[2].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeNegativeValues) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-negative-values.cpp");
+  const auto Output = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={-1,-2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+1||p.second!=no+2||&yes[0].get()!=&v[2]||&yes[1].get()!=&sentinel||&no[0].get()!=&v[0]||&no[1].get()!=&v[1]||&no[2].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-negative-values" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeNoZero) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-no-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-no-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={1,2,3};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+0||p.second!=no+3||&yes[0].get()!=&sentinel||&no[0].get()!=&v[0]||&no[1].get()!=&v[1]||&no[2].get()!=&v[2]||&no[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-no-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeOperandEffects) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-operand-effects.cpp");
+  const auto Output = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int calls=0;R*get(R*p){++calls;return p;}int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(get(a),get(a+3),yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel||calls!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimePartitionCopyRecordOutput) {
+  const auto Source = tmpFile("wrapper-partition-copy-record-output-runtime-"
+                              "partition-copy-record-output.cpp");
+  const auto Output = tmpFile("wrapper-partition-copy-record-output-runtime-"
+                              "partition-copy-record-output.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-partition-copy-record-output-"
+                                    "runtime-partition-copy-record-output" +
+                                    Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeRecordControl) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+struct P{bool operator()(int x)const{return x==0;}};int main(){int a[]={0,2,0},yes[]={9,9,9,9},no[]={9,9,9,9};auto p=std::partition_copy(a,a+3,yes,no,P{});return p.first!=yes+2||p.second!=no+1||yes[0]!=0||yes[1]!=0||yes[2]!=9||no[0]!=2||no[1]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-record-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeReturnedResult) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-returned-result.cpp");
+  const auto Output = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int cleanups=0;struct A{R*p;R*get(){return p;}~A(){++cleanups;}};std::pair<R*,R*>run(R*a,R*yes,R*no){return std::partition_copy(A{a}.get(),A{a+3}.get(),yes,no,std::logical_not<>{});}int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=run(a,yes,no);return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel||cleanups!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeScalarControl) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int a[]={0,2,0},yes[]={9,9,9,9},no[]={9,9,9,9};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||yes[0]!=0||yes[1]!=0||yes[2]!=9||no[0]!=2||no[1]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-scalar-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-short.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;int main(){short v[]={0,2,0};short sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double v[]={-0.0,0.0,2.0};double sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[1]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[2]||&no[1].get()!=&sentinel||!((1.0 / (yes[0].get())) < 0.0)||((1.0 / (yes[1].get())) < 0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-signed-zero" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+1,yes,no,std::logical_not<>{});return p.first!=yes+1||p.second!=no+0||&yes[0].get()!=&v[0]||&yes[1].get()!=&sentinel||&no[0].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int cleanups=0;struct A{R*p;R*get(){return p;}~A(){++cleanups;}};int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(A{a}.get(),A{a+3}.get(),yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel||cleanups!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-copy-record-output-runtime-stored-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionCopyRecordOutputRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-partition-copy-record-output-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-copy-record-output-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;int main(){unsigned v[]={0,2,0};unsigned sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=std::partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionCopyRecordOutputRuntimeUsingDeclaration) {
+  const auto Source = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-using-declaration.cpp");
+  const auto Output = tmpFile(
+      "wrapper-partition-copy-record-output-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using std::partition_copy;int main(){int v[]={0,2,0};int sentinel=9;R a[]={v[0],v[1],v[2]};R yes[]={sentinel,sentinel,sentinel,sentinel},no[]={sentinel,sentinel,sentinel,sentinel};auto p=partition_copy(a,a+3,yes,no,std::logical_not<>{});return p.first!=yes+2||p.second!=no+1||&yes[0].get()!=&v[0]||&yes[1].get()!=&v[2]||&yes[2].get()!=&sentinel||&no[0].get()!=&v[1]||&no[1].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-copy-record-output-runtime-using-declaration" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperPartitionCopyRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<W*,W*>(*)(P,P,W*,W*,std::logical_not<void>);auto selected(P a,P b,W*out){return static_cast<F>(&std::partition_copy<P,W*,W*,std::logical_not<void>>)(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"expression-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,(++effects,std::logical_not<>{}));}
+)cpp"},
+      {"extended-integer-false-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,__int128*other){return std::partition_copy(a,b,out,other,std::logical_not<>{});}
+)cpp"},
+      {"extended-integer-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,__int128*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<W*,W*>(*)(P,P,W*,W*,std::logical_not<void>);auto selected(P a,P b,W*out){F f=&std::partition_copy<P,W*,W*,std::logical_not<void>>;return f(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"long-double-false-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,long double*other){return std::partition_copy(a,b,out,other,std::logical_not<>{});}
+)cpp"},
+      {"long-double-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,long double*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,std::reference_wrapper<long double>*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator!(const W&a){return !a.get().get();}}}
+auto selected(W*a,W*b,I*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"record-false-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct R{R&operator=(int){return *this;}};auto selected(P a,P b,W*out,R*other){return std::partition_copy(a,b,out,other,std::logical_not<>{});}
+)cpp"},
+      {"record-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct R{R&operator=(int){return *this;}};auto selected(P a,P b,R*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"returned-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<> op(){return std::logical_not<>{};}auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,W*out){std::partition_copy(&source(a),&a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-negation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator!(const W&a){return !a.get();}}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a));}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a)){return !a.get();}}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct logical_not<void>;}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,W*out){return std::partition_copy(&source(a),&a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,W*out){std::partition_copy(&source(a),&a+1,out,out,std::logical_not<>{});}int main(){return 0;}
+)cpp"},
+      {"source-pair-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct pair;}}
+auto selected(P a,P b,W*out,W*other){return std::partition_copy(a,b,out,other,std::logical_not<>{});}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class O,class Q,class U>pair<O,Q> partition_copy(I,I,O,Q,U);}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<W*,W*> partition_copy<P,W*,W*,logical_not<void>>(P,P,W*,W*,logical_not<void>);}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<W*,W*> partition_copy<P,W*,W*,logical_not<void>>(P a,P,W*out,W*other,logical_not<void>){return {out,other};}}}
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};int operator!(const R&a){return !int(a.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,R*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
+)cpp"},
+      {"stored-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}
+)cpp"},
+      {"typed-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){return std::partition_copy(a,b,out,out,std::logical_not<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<W*,W*>(*)(P,P,W*,W*,std::logical_not<void>);F selected(){using std::partition_copy;return &partition_copy<P,W*,W*,std::logical_not<void>>;}
+)cpp"},
+      {"volatile-false-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,volatile int*other){return std::partition_copy(a,b,out,other,std::logical_not<>{});}
+)cpp"},
+      {"volatile-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile int*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,std::reference_wrapper<volatile int>*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+      {"wrapper-false-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,std::reference_wrapper<const int>*other){return std::partition_copy(a,b,out,other,std::logical_not<>{});}
+)cpp"},
+      {"wrapper-output", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::partition_copy(a,b,out,out,std::logical_not<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-partition-copy-record-output-runtime-guard-") +
+        Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-partition-copy-record-output-runtime-guard-") +
         Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
