@@ -10126,6 +10126,9 @@ class FunctionLowering {
                     A.Context)
               : std::nullopt;
       if (ReplaceWrapper) {
+        const auto ValueWrapper = approvedFunctionalReferenceRecord(
+            A.S, A.Sources, Call->getArg(4)->getType()->getAsCXXRecordDecl(),
+            A.Context);
         auto ValueAddress = snapshot(
             address(lvalue(Call->getArg(4)), Call->getArg(4)->getType(), L), L);
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -10162,8 +10165,21 @@ class FunctionLowering {
         if (OutputRange.second->getPointeeType()->isRecordType())
           assign(dereference(Output, L), dereference(ValueAddress, L), L);
         else
-          assign(dereference(Output, L),
-                 cast(dereference(ValueAddress, L), OutputElementType, L), L);
+          assign(
+              dereference(Output, L),
+              cast(ValueWrapper
+                       ? dereference(
+                             Expression{
+                                 {"kind", "member"},
+                                 {"type", type(ValueWrapper->PointerType, L)},
+                                 {"name", "nct_reference_wrapper_pointer"},
+                                 {"args",
+                                  json::Array{dereference(ValueAddress, L)}},
+                                 {"loc", A.loc(L)}},
+                             L)
+                       : dereference(ValueAddress, L),
+                   OutputElementType, L),
+              L);
         jump(Advance, L);
         label(Copy, L);
         if (OutputRange.second->getPointeeType()->isRecordType())
