@@ -10830,7 +10830,8 @@ class FunctionLowering {
       const bool TransparentWrapperUnary =
           EachRecord &&
           (EachRecord->getName() == "logical_not" ||
-           EachRecord->getName() == "negate") &&
+           EachRecord->getName() == "negate" ||
+           EachRecord->getName() == "bit_not") &&
           EachRecord->getTemplateArgs().size() == 1 &&
           EachRecord->getTemplateArgs().get(0).getKind() ==
               TemplateArgument::Type &&
@@ -10870,7 +10871,9 @@ class FunctionLowering {
         Expression Negated{
             {"kind", "unary"},
             {"type", TermType},
-            {"operator", LogicalNot ? "!" : "-"},
+            {"operator", LogicalNot                           ? "!"
+                         : EachRecord->getName() == "bit_not" ? "~"
+                                                              : "-"},
             {"args", json::Array{cast(std::move(Referent), TermType, L)}},
             {"loc", A.loc(L)}};
         snapshot(std::move(Negated), L);
