@@ -9962,8 +9962,11 @@ class FunctionLowering {
         branch(std::move(Selected), CopyMatches ? Copy : Advance,
                CopyMatches ? Advance : Copy, L);
         label(Copy, L);
-        assign(dereference(Output, L),
-               cast(ReadReferent(), OutputElementType, L), L);
+        if (OutputRange.second->getPointeeType()->isRecordType())
+          assign(dereference(Output, L), dereference(Input, L), L);
+        else
+          assign(dereference(Output, L),
+                 cast(ReadReferent(), OutputElementType, L), L);
         assign(
             Output,
             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
