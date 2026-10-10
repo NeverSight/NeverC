@@ -6435,7 +6435,28 @@ class FunctionLowering {
       auto Last = std::move(LastRange.first);
       std::optional<Expression> Predicate;
       std::optional<CapturedAlgorithmPredicate> SourcePredicate;
-      if (Call->getNumArgs() == 3) {
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      const auto FunctionalObject =
+          Call->getNumArgs() == 3
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *EqualTo = FunctionalObject
+                                ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      FunctionalObject->Record)
+                                : nullptr;
+      const bool TransparentEqualTo =
+          Wrapper && EqualTo && EqualTo->getName() == "equal_to" &&
+          EqualTo->getTemplateArgs().size() == 1 &&
+          EqualTo->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          EqualTo->getTemplateArgs().get(0).getAsType()->isVoidType();
+      if (TransparentEqualTo) {
+        discardFunctionalObject(Call->getArg(2));
+      } else if (Call->getNumArgs() == 3) {
         const auto Element = FirstRange.second->getPointeeType();
         if (const auto *Method = approvedAdjacentFindSourcePredicate(
                 A.S, A.Sources, Call, Element, A.Context)) {
@@ -6447,9 +6468,6 @@ class FunctionLowering {
           Predicate = snapshot(expression(Call->getArg(2)), L);
         }
       }
-      const auto Wrapper = approvedFunctionalReferenceRecord(
-          A.S, A.Sources,
-          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         if (Wrapper)
@@ -6463,7 +6481,7 @@ class FunctionLowering {
         return Value;
       };
       const auto SourceComparison =
-          !Predicate && !SourcePredicate
+          !Predicate && !SourcePredicate && !TransparentEqualTo
               ? approvedUtilityTrivialSourceComparison(
                     A.S, A.Sources, FirstRange.second->getPointeeType(),
                     OO_EqualEqual, A.Context)
