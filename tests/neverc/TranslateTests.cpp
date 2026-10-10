@@ -291112,3 +291112,1076 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using E=std::less_equal<void>;
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,E());return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2};using W=std::reference_wrapper<int>;W a[]={v[0],v[0],v[1]},b[]={v[0],v[0],v[1]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||&a[1].get()!=&v[0]||&a[2].get()!=&v[1]||&b[0].get()!=&v[0]||&b[1].get()!=&v[0]||&b[2].get()!=&v[1]||v[0]!=1||v[1]!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-bool.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){bool v[]={false,true,false},u[]={false,true,false};using W=std::reference_wrapper<bool>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(false)||&a[1].get()!=&v[1]||v[1]!=(true)||&a[2].get()!=&v[2]||v[2]!=(false)||&b[0].get()!=&u[0]||u[0]!=(false)||&b[1].get()!=&u[1]||u[1]!=(true)||&b[2].get()!=&u[2]||u[2]!=(false);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;const W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){const int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<const int>;const W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){double v[]={1.25,2.5,3.75},u[]={1.25,2.5,3.75};using W=std::reference_wrapper<double>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1.25)||&a[1].get()!=&v[1]||v[1]!=(2.5)||&a[2].get()!=&v[2]||v[2]!=(3.75)||&b[0].get()!=&u[0]||u[0]!=(1.25)||&b[1].get()!=&u[1]||u[1]!=(2.5)||&b[2].get()!=&u[2]||u[2]!=(3.75);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v=1,u=9;using W=std::reference_wrapper<int>;W a[]={v},b[]={u};auto r=std::mismatch(a,a,b,b,std::less_equal<>{});return r.first!=a+0||r.second!=b+0||&a[0].get()!=&v||&b[0].get()!=&u||v!=1||u!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeFirstMiddleLastFailure) {
+  const auto Source = tmpFile(
+      "wrapper-mismatch-four-comparison-runtime-first-middle-last-failure.cpp");
+  const auto Output = tmpFile(
+      "wrapper-mismatch-four-comparison-runtime-first-middle-last-failure.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={3,3,3},u[]={4,4,4};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};u[0]=3;auto first=std::mismatch(a,a+3,b,b+3,std::less<>{});u[0]=4;u[1]=3;auto middle=std::mismatch(a,a+3,b,b+3,std::less<>{});u[1]=4;u[2]=3;auto last=std::mismatch(a,a+3,b,b+3,std::less<>{});u[2]=4;return first.first!=a||first.second!=b||middle.first!=a+1||middle.second!=b+1||last.first!=a+2||last.second!=b+2||&a[0].get()!=&v[0]||&a[1].get()!=&v[1]||&a[2].get()!=&v[2]||&b[0].get()!=&u[0]||&b[1].get()!=&u[1]||&b[2].get()!=&u[2]||v[0]!=3||v[1]!=3||v[2]!=3||u[0]!=4||u[1]!=4||u[2]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-first-middle-last-failure" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeFloat) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-float.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){float v[]={1.25f,2.5f,3.75f},u[]={1.25f,2.5f,3.75f};using W=std::reference_wrapper<float>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1.25f)||&a[1].get()!=&v[1]||v[1]!=(2.5f)||&a[2].get()!=&v[2]||v[2]!=(3.75f)||&b[0].get()!=&u[0]||u[0]!=(1.25f)||&b[1].get()!=&u[1]||u[1]!=(2.5f)||&b[2].get()!=&u[2]||u[2]!=(3.75f);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeGreaterEqual) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-greater-equal.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-greater-equal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::greater_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||&b[0].get()!=&u[0]||v[0]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-greater-equal" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeGreater) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-greater.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-greater.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={0,1,2};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::greater<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||&b[0].get()!=&u[0]||v[0]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-greater" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeLengthBoundaries) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-length-boundaries.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-length-boundaries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={2,3,4,5};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2],u[3]};auto short2=std::mismatch(a,a+3,b,b+2,std::less<>{});auto long2=std::mismatch(a,a+3,b,b+4,std::less<>{});auto empty1=std::mismatch(a,a,b,b+3,std::less<>{});auto empty2=std::mismatch(a,a+3,b,b,std::less<>{});return short2.first!=a+2||short2.second!=b+2||long2.first!=a+3||long2.second!=b+3||empty1.first!=a||empty1.second!=b||empty2.first!=a||empty2.second!=b||&a[0].get()!=&v[0]||&a[1].get()!=&v[1]||&a[2].get()!=&v[2]||&b[0].get()!=&u[0]||&b[1].get()!=&u[1]||&b[2].get()!=&u[2]||&b[3].get()!=&u[3]||v[0]!=1||v[1]!=2||v[2]!=3||u[0]!=2||u[1]!=3||u[2]!=4||u[3]!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-length-boundaries" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeLessEqual) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-less-equal.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-less-equal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||&b[0].get()!=&u[0]||v[0]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-less-equal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeLess) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-less.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-less.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={2,3,4};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||&b[0].get()!=&u[0]||v[0]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-less" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={1,9,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};u[1]=2;auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-live-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeLongLong) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-long-long.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-long-long.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){long long v[]={-5,-2,3},u[]={-5,-2,3};using W=std::reference_wrapper<long long>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(-5)||&a[1].get()!=&v[1]||v[1]!=(-2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(-5)||&b[1].get()!=&u[1]||u[1]!=(-2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-long-long" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeMismatchFourComparison) {
+  const auto Source = tmpFile(
+      "wrapper-mismatch-four-comparison-runtime-mismatch-four-comparison.cpp");
+  const auto Output = tmpFile(
+      "wrapper-mismatch-four-comparison-runtime-mismatch-four-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-mismatch-four-comparison" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeNan) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-nan.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){double v=(0.0 / 0.0),u=(0.0 / 0.0);using W=std::reference_wrapper<double>;W a[]={v},b[]={u};auto r=std::mismatch(a,a+1,b,b+1,std::less_equal<>{});return r.first!=a+0||r.second!=b+0||v==v||u==u||&a[0].get()!=&v||&b[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeNotEqualTo) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-not-equal-to.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-not-equal-to.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={1,2,3},u[]={2,3,4};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::not_equal_to<>{});return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||&b[0].get()!=&u[0]||v[0]!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-not-equal-to" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int calls=0;R*get(R*p){++calls;return p;}
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(get(a),get(a+3),get(b),get(b+3),std::less_equal<>{});return calls!=4||r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+struct P{bool operator()(int x)const{return x==0;}};int main(){int a[]={2,0,0},out[]={9,9,9};auto p=std::replace_copy_if(a,a+3,out,P{},out[0]);return p!=out+3||out[0]!=2||out[1]!=2||out[2]!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-record-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMismatchFourComparisonRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;std::pair<R*,R*>same(R*a,R*b){return std::mismatch(a,a+3,b,b+3,std::less_equal<>{});}
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=same(a,b);return r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int a[]={1,2,3},b[]={1,2,3};return !std::equal(a,a+3,b,b+3)||a[0]!=1||a[1]!=2||a[2]!=3||b[0]!=1||b[1]!=2||b[2]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-scalar-control" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){double v[]={-0.0,0.0,2.0},u[]={0.0,-0.0,2.0};using W=std::reference_wrapper<double>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});return 1.0/v[0]>=0.0||1.0/u[1]>=0.0||r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(-0.0)||&a[1].get()!=&v[1]||v[1]!=(0.0)||&a[2].get()!=&v[2]||v[2]!=(2.0)||&b[0].get()!=&u[0]||u[0]!=(0.0)||&b[1].get()!=&u[1]||u[1]!=(-0.0)||&b[2].get()!=&u[2]||u[2]!=(2.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-mismatch-four-comparison-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMismatchFourComparisonRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-mismatch-four-comparison-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int destroyed=0;struct A{~A(){++destroyed;}};
+int main(){int v[]={1,2,3},u[]={1,2,3};using W=std::reference_wrapper<int>;W a[]={v[0],v[1],v[2]},b[]={u[0],u[1],u[2]};auto r=std::mismatch((A{},a),(A{},a+3),(A{},b),(A{},b+3),std::less_equal<>{});return destroyed!=4||r.first!=a+3||r.second!=b+3||&a[0].get()!=&v[0]||v[0]!=(1)||&a[1].get()!=&v[1]||v[1]!=(2)||&a[2].get()!=&v[2]||v[2]!=(3)||&b[0].get()!=&u[0]||u[0]!=(1)||&b[1].get()!=&u[1]||u[1]!=(2)||&b[2].get()!=&u[2]||u[2]!=(3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-mismatch-four-comparison-runtime-stored-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperMismatchFourComparisonRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<P,P>(*)(P,P,P,P,std::less_equal<void>);auto selected(P a,P b,W*out){return static_cast<F>(&std::mismatch<P,P,std::less_equal<void>>)(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"expression-equal-to", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,(++effects,std::less_equal<>{}));}
+)cpp"},
+      {"heterogeneous-wrapper-input", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+using O=std::reference_wrapper<const int>;auto selected(P a,P b,O*other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<P,P>(*)(P,P,P,P,std::less_equal<void>);auto selected(P a,P b,W*out){F f=&std::mismatch<P,P,std::less_equal<void>>;return f(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,std::reference_wrapper<long double>*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"mixed-input-qualification", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,const W*other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator<=(const W&a,const W&b){return a.get().get()<=b.get().get();}}}
+auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"returned-equal-to", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<> op(){return std::less_equal<>{};}auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-bound-helper-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <cstddef>
+using W=std::reference_wrapper<int>;using P=W*;using D=std::ptrdiff_t;
+namespace std{inline namespace __1{template<class I,class S,class J,class U,class A,class B>pair<I,J> __mismatch(I,S,J,U&,A&,B&);}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-bound-helper-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <cstddef>
+using W=std::reference_wrapper<int>;using P=W*;using D=std::ptrdiff_t;
+namespace std{inline namespace __1{template<>pair<P,P> __mismatch<P,P,P,less_equal<void>,__identity,__identity>(P,P,P,less_equal<void>&,__identity&,__identity&);}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator<=(const W&a,const W&b){return a.get()<=b.get();}}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-equal-to-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b));}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-equal-to-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return a.get()<=b.get();}}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-equal-to-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct less_equal;}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-equal-to-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct less_equal<void>;}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,W*out){std::mismatch(&source(a),&a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-greater-equal-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct greater_equal<void>;}}
+auto selected(P a,P b,P out){return std::mismatch(a,b,out,out+1,std::greater_equal<>{});}
+)cpp"},
+      {"source-greater-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>std::forward<W&>(b)))->decltype(std::forward<W&>(a)>std::forward<W&>(b));}}
+auto selected(P a,P b,P out){return std::mismatch(a,b,out,out+1,std::greater<>{});}
+)cpp"},
+      {"source-helper-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U,class A,class B>pair<T*,T*> __mismatch(T*,T*,T*,T*,U&,A&,B&);}}
+auto selected(P a,P b,P out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-helper-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __mismatch<W,less_equal<void>,__identity,__identity>(P,P,P,P,less_equal<void>&,__identity&,__identity&);}}
+auto selected(P a,P b,P out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-identity-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&)const noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-identity-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&t)const noexcept{return t;}}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-identity-record-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-invoke-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A>inline constexpr decltype(std::declval<F>()(std::declval<A>()...)) __invoke(F&&f,A&&...a)noexcept(noexcept(static_cast<F&&>(f)(static_cast<A&&>(a)...)));}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-less-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b)){return a.get()<b.get();}}}
+auto selected(P a,P b,P out){return std::mismatch(a,b,out,out+1,std::less<>{});}
+)cpp"},
+      {"source-loop-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class S,class J,class U,class A,class B>pair<I,J> __mismatch_loop(I,S,J,U&,A&,B&);}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-loop-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __mismatch_loop<P,P,P,less_equal<void>,__identity,__identity>(P,P,P,less_equal<void>&,__identity&,__identity&);}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-minimum-comparator-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <cstddef>
+using W=std::reference_wrapper<int>;using P=W*;using D=std::ptrdiff_t;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-minimum-comparator-specialization-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <cstddef>
+using W=std::reference_wrapper<int>;using P=W*;using D=std::ptrdiff_t;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-minimum-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <cstddef>
+using W=std::reference_wrapper<int>;using P=W*;using D=std::ptrdiff_t;
+namespace std{inline namespace __1{template<class T>inline constexpr const T&min(const T&,const T&);}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-minimum-specialization-declaration", R"cpp(
+#include <__algorithm/min.h>
+#include <cstddef>
+using D=std::ptrdiff_t;
+namespace std{inline namespace __1{template<>constexpr const D&min<D>(const D&,const D&);}}
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P&&move<P&>(P&)noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-not-equal-to-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct not_equal_to;}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::not_equal_to<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,W*out){return std::mismatch(&source(a),&a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,W*out){std::mismatch(&source(a),&a+1,out,out+1,std::less_equal<>{});}int main(){return 0;}
+)cpp"},
+      {"source-pair-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B>struct pair;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class U>pair<I,J> mismatch(I,I,J,J,U);}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> mismatch<P,P,less_equal<void>>(P,P,P,P,less_equal<void>);}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> mismatch<P,P,less_equal<void>>(P a,P,P b,P,less_equal<void>){return {a,b};}}}
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<=(const R&a,const R&b){return a.n<=b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"source-rewrap-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class M>inline constexpr I __rewrap_iter(I,J)noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-unwrap-method-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __unwrap_iter_impl<P,true>::__unwrap(P)noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-unwrap-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class M,__enable_if_t<is_copy_constructible<I>::value,int> N>inline constexpr decltype(M::__unwrap(std::declval<I>())) __unwrap_iter(I)noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-unwrap-record-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,bool B>struct __unwrap_iter_impl;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-unwrap-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __unwrap_iter<P>(P)noexcept;}}
+auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_equal<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
+)cpp"},
+      {"stored-equal-to", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,out+1,op);}
+)cpp"},
+      {"typed-equal-to", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){return std::mismatch(a,b,out,out+1,std::less_equal<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<P,P>(*)(P,P,P,P,std::less_equal<void>);F selected(){using std::mismatch;return &mismatch<P,P,std::less_equal<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,std::reference_wrapper<volatile int>*out){return std::mismatch(a,b,out,out+1,std::less_equal<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-mismatch-four-comparison-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-mismatch-four-comparison-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
