@@ -10724,14 +10724,16 @@ class FunctionLowering {
           EachObject
               ? dyn_cast<ClassTemplateSpecializationDecl>(EachObject->Record)
               : nullptr;
-      const bool TransparentLogicalNot =
-          EachRecord && EachRecord->getName() == "logical_not" &&
+      const bool TransparentWrapperUnary =
+          EachRecord &&
+          (EachRecord->getName() == "logical_not" ||
+           EachRecord->getName() == "negate") &&
           EachRecord->getTemplateArgs().size() == 1 &&
           EachRecord->getTemplateArgs().get(0).getKind() ==
               TemplateArgument::Type &&
           EachRecord->getTemplateArgs().get(0).getAsType()->isVoidType();
       const auto EachWrapper =
-          TransparentLogicalNot
+          TransparentWrapperUnary
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     CurrentRange.second->getPointeeType()->getAsCXXRecordDecl(),
@@ -10741,7 +10743,13 @@ class FunctionLowering {
         discardFunctionalObject(Call->getArg(2));
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
         const auto PointerType = type(CurrentRange.second, L);
-        const auto BooleanType = type(A.Context.BoolTy, L);
+        const bool LogicalNot = EachRecord->getName() == "logical_not";
+        const auto TermQualType =
+            LogicalNot ? A.Context.BoolTy
+                       : *utilityScalarComparisonType(
+                             A.Context, EachWrapper->ReferentType,
+                             EachWrapper->ReferentType, false);
+        const auto TermType = type(TermQualType, L);
         const auto Check = labelName(), Invoke = labelName(), End = labelName();
         jump(Check, L);
         label(Check, L);
@@ -10757,9 +10765,9 @@ class FunctionLowering {
             L);
         Expression Negated{
             {"kind", "unary"},
-            {"type", BooleanType},
-            {"operator", "!"},
-            {"args", json::Array{cast(std::move(Referent), BooleanType, L)}},
+            {"type", TermType},
+            {"operator", LogicalNot ? "!" : "-"},
+            {"args", json::Array{cast(std::move(Referent), TermType, L)}},
             {"loc", A.loc(L)}};
         snapshot(std::move(Negated), L);
         assign(Current,
