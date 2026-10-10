@@ -10717,6 +10717,63 @@ class FunctionLowering {
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
+      const auto EachObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(2)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto *EachRecord =
+          EachObject
+              ? dyn_cast<ClassTemplateSpecializationDecl>(EachObject->Record)
+              : nullptr;
+      const bool TransparentLogicalNot =
+          EachRecord && EachRecord->getName() == "logical_not" &&
+          EachRecord->getTemplateArgs().size() == 1 &&
+          EachRecord->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          EachRecord->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto EachWrapper =
+          TransparentLogicalNot
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    CurrentRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (EachWrapper) {
+        discardFunctionalObject(Call->getArg(2));
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto PointerType = type(CurrentRange.second, L);
+        const auto BooleanType = type(A.Context.BoolTy, L);
+        const auto Check = labelName(), Invoke = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Current, Last, "bool", L), Invoke, End, L);
+        label(Invoke, L);
+        auto Referent = dereference(
+            Expression{
+                {"kind", "member"},
+                {"type", type(EachWrapper->PointerType, L)},
+                {"name", "nct_reference_wrapper_pointer"},
+                {"args", json::Array{dereference(json::Object(Current), L)}},
+                {"loc", A.loc(L)}},
+            L);
+        Expression Negated{
+            {"kind", "unary"},
+            {"type", BooleanType},
+            {"operator", "!"},
+            {"args", json::Array{cast(std::move(Referent), BooleanType, L)}},
+            {"loc", A.loc(L)}};
+        snapshot(std::move(Negated), L);
+        assign(Current,
+               binary("+", Current, quantity(1, DifferenceType, L), PointerType,
+                      L),
+               L);
+        jump(Check, L);
+        label(End, L);
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        assign(json::Object(Place), A.zero(Call->getType(), L), L);
+        return Place;
+      }
+
       auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(CurrentRange.second, L);
