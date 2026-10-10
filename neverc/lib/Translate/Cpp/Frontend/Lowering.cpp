@@ -10418,6 +10418,99 @@ class FunctionLowering {
       auto TrueOutput = std::move(TrueOutputRange.first);
       auto FalseOutputRange = AlgorithmRangeValue(3);
       auto FalseOutput = std::move(FalseOutputRange.first);
+      const auto PartitionObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(4)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto *PartitionRecord =
+          PartitionObject ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                PartitionObject->Record)
+                          : nullptr;
+      const bool TransparentLogicalNot =
+          PartitionRecord && PartitionRecord->getName() == "logical_not" &&
+          PartitionRecord->getTemplateArgs().size() == 1 &&
+          PartitionRecord->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          PartitionRecord->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto PartitionWrapper =
+          TransparentLogicalNot
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    InputRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (PartitionWrapper) {
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto InputType = type(InputRange.second, L);
+        const auto TrueOutputType = type(TrueOutputRange.second, L);
+        const auto FalseOutputType = type(FalseOutputRange.second, L);
+        const auto TrueElementType =
+            type(TrueOutputRange.second->getPointeeType(), L);
+        const auto FalseElementType =
+            type(FalseOutputRange.second->getPointeeType(), L);
+        const auto BooleanType = type(A.Context.BoolTy, L);
+        auto ReadReferent = [&]() {
+          return dereference(
+              Expression{
+                  {"kind", "member"},
+                  {"type", type(PartitionWrapper->PointerType, L)},
+                  {"name", "nct_reference_wrapper_pointer"},
+                  {"args", json::Array{dereference(json::Object(Input), L)}},
+                  {"loc", A.loc(L)}},
+              L);
+        };
+        const auto Check = labelName(), Test = labelName();
+        const auto CopyTrue = labelName(), CopyFalse = labelName();
+        const auto Advance = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+        label(Test, L);
+        Expression Selected{
+            {"kind", "unary"},
+            {"type", BooleanType},
+            {"operator", "!"},
+            {"args", json::Array{cast(ReadReferent(), BooleanType, L)}},
+            {"loc", A.loc(L)}};
+        branch(std::move(Selected), CopyTrue, CopyFalse, L);
+        label(CopyTrue, L);
+        assign(dereference(TrueOutput, L),
+               cast(ReadReferent(), TrueElementType, L), L);
+        assign(TrueOutput,
+               binary("+", TrueOutput, quantity(1, DifferenceType, L),
+                      TrueOutputType, L),
+               L);
+        jump(Advance, L);
+        label(CopyFalse, L);
+        assign(dereference(FalseOutput, L),
+               cast(ReadReferent(), FalseElementType, L), L);
+        assign(FalseOutput,
+               binary("+", FalseOutput, quantity(1, DifferenceType, L),
+                      FalseOutputType, L),
+               L);
+        jump(Advance, L);
+        label(Advance, L);
+        assign(Input,
+               binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+               L);
+        jump(Check, L);
+        label(End, L);
+        auto Pair = approvedUtilityPairRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Pair)
+          reject(L, "algorithm partition_copy",
+                 "The selected std::pair layout is unavailable.");
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "algorithm partition_copy",
+                 "The std::partition_copy destination type differs from its "
+                 "result.");
+        assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 2),
+               TrueOutput, L);
+        assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 3),
+               FalseOutput, L);
+        return Place;
+      }
       auto Predicate = captureUnaryPredicate(Call, Operation, 4);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(InputRange.second, L);
