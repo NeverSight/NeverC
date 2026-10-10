@@ -10022,6 +10022,79 @@ class FunctionLowering {
       auto InputRange = AlgorithmRangeValue(0);
       auto Input = std::move(InputRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
+      const auto RemoveObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(2)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto *RemoveRecord =
+          RemoveObject
+              ? dyn_cast<ClassTemplateSpecializationDecl>(RemoveObject->Record)
+              : nullptr;
+      const bool TransparentLogicalNot =
+          RemoveRecord && RemoveRecord->getName() == "logical_not" &&
+          RemoveRecord->getTemplateArgs().size() == 1 &&
+          RemoveRecord->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          RemoveRecord->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto RemoveWrapper =
+          TransparentLogicalNot
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    InputRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (RemoveWrapper) {
+        discardFunctionalObject(Call->getArg(2));
+        auto Output = snapshot(json::Object(Input), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto PointerType = type(InputRange.second, L);
+        const auto Check = labelName(), Test = labelName();
+        const auto Keep = labelName(), CheckMove = labelName();
+        const auto Move = labelName(), AdvanceOutput = labelName();
+        const auto AdvanceInput = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+        label(Test, L);
+        {
+          const auto BooleanType = type(A.Context.BoolTy, L);
+          auto Referent = dereference(
+              Expression{
+                  {"kind", "member"},
+                  {"type", type(RemoveWrapper->PointerType, L)},
+                  {"name", "nct_reference_wrapper_pointer"},
+                  {"args", json::Array{dereference(json::Object(Input), L)}},
+                  {"loc", A.loc(L)}},
+              L);
+          Expression Selected{
+              {"kind", "unary"},
+              {"type", BooleanType},
+              {"operator", "!"},
+              {"args", json::Array{cast(std::move(Referent), BooleanType, L)}},
+              {"loc", A.loc(L)}};
+          branch(std::move(Selected), AdvanceInput, Keep, L);
+        }
+        label(Keep, L);
+        jump(CheckMove, L);
+        label(CheckMove, L);
+        branch(binary("!=", Input, Output, "bool", L), Move, AdvanceOutput, L);
+        label(Move, L);
+        assign(dereference(Output, L), dereference(Input, L), L);
+        jump(AdvanceOutput, L);
+        label(AdvanceOutput, L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        jump(AdvanceInput, L);
+        label(AdvanceInput, L);
+        assign(
+            Input,
+            binary("+", Input, quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        jump(Check, L);
+        label(End, L);
+        return AlgorithmIteratorResult(std::move(Output), 0);
+      }
       auto Predicate = captureUnaryPredicate(Call, Operation);
       auto Output = snapshot(json::Object(Input), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
