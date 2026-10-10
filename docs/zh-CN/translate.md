@@ -55,6 +55,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 
 
+直接调用 `std::adjacent_find` 并使用透明 `std::not_equal_to<>`, `std::less<>`, `std::greater<>`, `std::less_equal<>`, `std::greater_equal<>`，支持由原始指针界定的 `std::reference_wrapper<T>` 范围，引用类型为 bool、最多 64 位整数、float 或 double；包装器元素和引用对象均可为 const。校验覆盖 SDK 公共函数、move 适配、身份投影、invoke、完整查找循环、所选比较运算、转发和引用转换。比较读取当前引用值，返回首个相邻匹配的位置或尾指针，保留绑定、引用值、空范围、单元素范围、别名、NaN、正负零、参数求值及临时对象清理。存储或返回的输入操作对象、类型化操作、表达式操作、间接或转换调用、改写已使用 SDK 声明，以及 volatile、枚举、long double、扩展整数、嵌套包装器和用户记录引用仍不支持。
+
 直接调用 `std::adjacent_find` 并使用透明 `std::equal_to<>`，支持由原始指针界定的 `std::reference_wrapper<T>` 范围，引用类型为 bool、最多 64 位整数、float 或 double；包装器元素和引用对象均可为 const。校验覆盖 SDK 公共函数、move 适配、身份投影、invoke、完整查找循环、相等运算、转发和引用转换。比较读取当前引用值，返回首个相邻匹配的位置或尾指针，保留绑定、引用值、空范围、单元素范围、别名、NaN、正负零、参数求值及临时对象清理。存储或返回的输入操作对象、类型化操作、表达式操作、间接或转换调用、改写已使用 SDK 声明，以及 volatile、枚举、long double、扩展整数、嵌套包装器和用户记录引用仍不支持。
 
 直接调用 `std::remove_if`，配合直接初始化的透明 `std::logical_not<>`，支持算术引用的可写 `std::reference_wrapper<T>` 原始指针区间。移除引用值转换为假的包装器，按原有顺序压缩保留的绑定，并返回新的结束指针。引用对象的值保持不变，包括常量引用、NaN 和带符号零。验证完整 SDK 移除循环与委托查找循环、准确的隐式平凡包装器移动赋值、移动、谓词、转发和转换，保留空区间、别名、实参求值及临时对象清理。常量包装器元素、volatile 或枚举引用、long double、扩展整数、嵌套包装器及存储或返回的输入操作对象仍不支持。

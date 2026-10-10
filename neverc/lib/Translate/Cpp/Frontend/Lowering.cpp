@@ -6444,17 +6444,31 @@ class FunctionLowering {
                     A.S, A.Sources,
                     Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
               : std::nullopt;
-      const auto *EqualTo = FunctionalObject
-                                ? dyn_cast<ClassTemplateSpecializationDecl>(
-                                      FunctionalObject->Record)
-                                : nullptr;
-      const bool TransparentEqualTo =
-          Wrapper && EqualTo && EqualTo->getName() == "equal_to" &&
-          EqualTo->getTemplateArgs().size() == 1 &&
-          EqualTo->getTemplateArgs().get(0).getKind() ==
+      const auto *ComparisonObject =
+          FunctionalObject ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                 FunctionalObject->Record)
+                           : nullptr;
+      const bool TransparentComparison =
+          Wrapper && ComparisonObject &&
+          (ComparisonObject->getName() == "equal_to" ||
+           ComparisonObject->getName() == "not_equal_to" ||
+           ComparisonObject->getName() == "less" ||
+           ComparisonObject->getName() == "greater" ||
+           ComparisonObject->getName() == "less_equal" ||
+           ComparisonObject->getName() == "greater_equal") &&
+          ComparisonObject->getTemplateArgs().size() == 1 &&
+          ComparisonObject->getTemplateArgs().get(0).getKind() ==
               TemplateArgument::Type &&
-          EqualTo->getTemplateArgs().get(0).getAsType()->isVoidType();
-      if (TransparentEqualTo) {
+          ComparisonObject->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const char *ComparisonOpcode =
+          !TransparentComparison                           ? "=="
+          : ComparisonObject->getName() == "not_equal_to"  ? "!="
+          : ComparisonObject->getName() == "less"          ? "<"
+          : ComparisonObject->getName() == "greater"       ? ">"
+          : ComparisonObject->getName() == "less_equal"    ? "<="
+          : ComparisonObject->getName() == "greater_equal" ? ">="
+                                                           : "==";
+      if (TransparentComparison) {
         discardFunctionalObject(Call->getArg(2));
       } else if (Call->getNumArgs() == 3) {
         const auto Element = FirstRange.second->getPointeeType();
@@ -6481,7 +6495,7 @@ class FunctionLowering {
         return Value;
       };
       const auto SourceComparison =
-          !Predicate && !SourcePredicate && !TransparentEqualTo
+          !Predicate && !SourcePredicate && !TransparentComparison
               ? approvedUtilityTrivialSourceComparison(
                     A.S, A.Sources, FirstRange.second->getPointeeType(),
                     OO_EqualEqual, A.Context)
@@ -6518,7 +6532,7 @@ class FunctionLowering {
                                                 : SourceComparison->Namespace,
                        L)
                  : CompareUtilityValues(
-                       "==", ComparedValue(json::Object(First)),
+                       ComparisonOpcode, ComparedValue(json::Object(First)),
                        Wrapper ? Wrapper->ReferentType
                                : FirstRange.second->getPointeeType(),
                        ComparedValue(json::Object(Current)),

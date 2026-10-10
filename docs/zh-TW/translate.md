@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+直接呼叫 `std::adjacent_find` 並使用透明 `std::not_equal_to<>`, `std::less<>`, `std::greater<>`, `std::less_equal<>`, `std::greater_equal<>`，支援以原始指標界定的 `std::reference_wrapper<T>` 範圍，參照型別為 bool、最多 64 位元整數、float 或 double；包裝器元素和參照物件均可為 const。驗證涵蓋 SDK 公開函式、move 配接、恆等投影、invoke、完整搜尋迴圈、所選比較運算、轉送及參照轉換。比較讀取目前參照值，回傳首個相鄰匹配位置或尾指標，保留繫結、參照值、空範圍、單元素範圍、別名、NaN、正負零、引數求值及暫存物件清理。儲存或回傳的輸入操作物件、具型別或運算式操作、間接或轉型呼叫、改寫已使用 SDK 宣告，以及 volatile、列舉、long double、擴充整數、巢狀包裝器和使用者記錄參照仍不支援。
+
 直接呼叫 `std::adjacent_find` 並使用透明 `std::equal_to<>`，支援以原始指標界定的 `std::reference_wrapper<T>` 範圍，參照型別為 bool、最多 64 位元整數、float 或 double；包裝器元素和參照物件均可為 const。驗證涵蓋 SDK 公開函式、move 配接、恆等投影、invoke、完整搜尋迴圈、相等運算、轉送及參照轉換。比較讀取目前參照值，回傳首個相鄰匹配位置或尾指標，保留繫結、參照值、空範圍、單元素範圍、別名、NaN、正負零、引數求值及暫存物件清理。儲存或回傳的輸入操作物件、具型別或運算式操作、間接或轉型呼叫、改寫已使用 SDK 宣告，以及 volatile、列舉、long double、擴充整數、巢狀包裝器和使用者記錄參照仍不支援。
 
 直接呼叫 `std::remove_if`，搭配直接初始化的透明 `std::logical_not<>`，支援算術引用的可寫 `std::reference_wrapper<T>` 原始指標區間。移除引用值轉換為假的包裝器，依原有順序壓縮保留的綁定，並傳回新的結束指標。引用物件的值保持不變，包括常數引用、NaN 和帶符號零。驗證完整 SDK 移除迴圈與委派查找迴圈、精確的隱式平凡包裝器移動賦值、移動、述詞、轉送和轉換，保留空區間、別名、引數求值及暫存物件清理。常數包裝器元素、volatile 或列舉引用、long double、擴充整數、巢狀包裝器及儲存或傳回的輸入操作物件仍不支援。
