@@ -7321,10 +7321,13 @@ class FunctionLowering {
           SecondRange.second->getPointeeType()->getAsCXXRecordDecl(),
           A.Context);
       const auto FunctionalObject =
-          Call->getNumArgs() == 4
+          Call->getNumArgs() == 4 || Call->getNumArgs() == 5
               ? approvedFunctionalObjectRecord(
                     A.S, A.Sources,
-                    Call->getArg(3)->getType()->getAsCXXRecordDecl(), A.Context)
+                    Call->getArg(Call->getNumArgs() - 1)
+                        ->getType()
+                        ->getAsCXXRecordDecl(),
+                    A.Context)
               : std::nullopt;
       const auto *EqualTo = FunctionalObject
                                 ? dyn_cast<ClassTemplateSpecializationDecl>(
@@ -7350,7 +7353,7 @@ class FunctionLowering {
         SecondLast = std::move(AlgorithmRangeValue(3).first);
       std::optional<Expression> Predicate;
       if (TransparentEqualTo)
-        discardFunctionalObject(Call->getArg(3));
+        discardFunctionalObject(Call->getArg(*PredicateIndex));
       else if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       auto ComparedValue = [&](Expression Pointer, const auto &Wrapper) {
