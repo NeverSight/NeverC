@@ -10105,6 +10105,80 @@ class FunctionLowering {
       auto Last = std::move(AlgorithmRangeValue(1).first);
       auto OutputRange = AlgorithmRangeValue(2);
       auto Output = std::move(OutputRange.first);
+      const auto ReplaceObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(3)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto *ReplaceRecord =
+          ReplaceObject
+              ? dyn_cast<ClassTemplateSpecializationDecl>(ReplaceObject->Record)
+              : nullptr;
+      const bool TransparentLogicalNot =
+          ReplaceRecord && ReplaceRecord->getName() == "logical_not" &&
+          ReplaceRecord->getTemplateArgs().size() == 1 &&
+          ReplaceRecord->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          ReplaceRecord->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const auto ReplaceWrapper =
+          TransparentLogicalNot
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    InputRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      if (ReplaceWrapper) {
+        auto ValueAddress = snapshot(
+            address(lvalue(Call->getArg(4)), Call->getArg(4)->getType(), L), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto InputType = type(InputRange.second, L);
+        const auto OutputType = type(OutputRange.second, L);
+        const auto OutputElementType =
+            type(OutputRange.second->getPointeeType(), L);
+        const auto BooleanType = type(A.Context.BoolTy, L);
+        auto ReadReferent = [&]() {
+          return dereference(
+              Expression{
+                  {"kind", "member"},
+                  {"type", type(ReplaceWrapper->PointerType, L)},
+                  {"name", "nct_reference_wrapper_pointer"},
+                  {"args", json::Array{dereference(json::Object(Input), L)}},
+                  {"loc", A.loc(L)}},
+              L);
+        };
+        const auto Check = labelName(), Test = labelName(),
+                   Replace = labelName();
+        const auto Copy = labelName(), Advance = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+        label(Test, L);
+        Expression Selected{
+            {"kind", "unary"},
+            {"type", BooleanType},
+            {"operator", "!"},
+            {"args", json::Array{cast(ReadReferent(), BooleanType, L)}},
+            {"loc", A.loc(L)}};
+        branch(std::move(Selected), Replace, Copy, L);
+        label(Replace, L);
+        assign(dereference(Output, L),
+               cast(dereference(ValueAddress, L), OutputElementType, L), L);
+        jump(Advance, L);
+        label(Copy, L);
+        assign(dereference(Output, L),
+               cast(ReadReferent(), OutputElementType, L), L);
+        jump(Advance, L);
+        label(Advance, L);
+        assign(Input,
+               binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+               L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+        jump(Check, L);
+        label(End, L);
+        return AlgorithmIteratorResult(std::move(Output), 2);
+      }
+
       auto Predicate = captureUnaryPredicate(Call, Operation, 3);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(4)), Call->getArg(4)->getType(), L), L);
