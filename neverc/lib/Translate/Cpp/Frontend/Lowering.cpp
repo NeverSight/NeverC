@@ -6764,11 +6764,29 @@ class FunctionLowering {
       auto First = std::move(FirstRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
       std::optional<Expression> Predicate;
-      if (Call->getNumArgs() == 3)
-        Predicate = snapshot(expression(Call->getArg(2)), L);
       const auto Wrapper = approvedFunctionalReferenceRecord(
           A.S, A.Sources,
           FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      const auto FunctionalObject =
+          Call->getNumArgs() == 3
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *EqualTo = FunctionalObject
+                                ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      FunctionalObject->Record)
+                                : nullptr;
+      const bool TransparentEqualTo =
+          Wrapper && EqualTo && EqualTo->getName() == "equal_to" &&
+          EqualTo->getTemplateArgs().size() == 1 &&
+          EqualTo->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          EqualTo->getTemplateArgs().get(0).getAsType()->isVoidType();
+      if (TransparentEqualTo)
+        discardFunctionalObject(Call->getArg(2));
+      else if (Call->getNumArgs() == 3)
+        Predicate = snapshot(expression(Call->getArg(2)), L);
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         if (Wrapper)
@@ -6782,10 +6800,11 @@ class FunctionLowering {
         return Value;
       };
       const auto SourceComparison =
-          !Predicate ? approvedUtilityTrivialSourceComparison(
-                           A.S, A.Sources, FirstRange.second->getPointeeType(),
-                           OO_EqualEqual, A.Context)
-                     : std::nullopt;
+          !Predicate && !TransparentEqualTo
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, FirstRange.second->getPointeeType(),
+                    OO_EqualEqual, A.Context)
+              : std::nullopt;
       auto Output = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
