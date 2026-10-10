@@ -1,5 +1,98 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-10
+
+- Cutoff: **2026-10-10 01:10 UTC / 09:10 Asia/Shanghai (UTC+08:00)**.
+- Source branch: `dev`; reviewed incoming revision: [2d04061a](https://github.com/NeverSight/NeverC/commit/2d04061a358237e70d6e86acbc73785f35555840).
+- Incoming window: [76d092f9…2d04061a](https://github.com/NeverSight/NeverC/compare/76d092f99b5f40f22c0b14fe8251c34eda3dcee9...2d04061a358237e70d6e86acbc73785f35555840), **42 commits / 22 paths**. Excluding the October 9 report-only commit and PROGRESS.md: **41 product commits / 21 paths**.
+- Result: **one statically proven COFF linker-index padding bug fixed** in [21fa8714](https://github.com/NeverSight/NeverC/commit/21fa8714fb6ef2ddb422ddbf620eb28dc2de619b). Remote parent, two-file diff, dev ref and both complete file contents were verified. No additional proven translator defect in the bounded scope below.
+- Method: strictly static source, diff, caller/interface, fixture-source and existing-CI reads. **No project execution, build, test, benchmark, repository script, manual CI dispatch/rerun, dependency/security change, issue mutation, merge or deployment.** The new regression source was not executed. Existing automatic CI is separate evidence, not validation performed by this review.
+
+### Repository activity and scope
+
+**9 open issues / 0 open PRs**, unchanged. Open issues are #7–#12 and #16–#18; none has comments, an assignee or a milestone. The complete issues collection has 18 records including PRs; the complete PR collection has 8 historical PRs. Both were exhausted at page 2 with 100 records/page. No new, closed or merged items since the October 9 snapshot. Issue conversation and PR inline-comment collections returned no activity since October 9 01:10 UTC. Latest PR #20 remains merged with zero submitted reviews. There is no open-PR review queue; no owner, deadline or completion percentage is inferred.
+
+Read root AGENTS.md, docs/local-dev.md, CI scheduling guidance and the compiler-development skill/pipeline reference. Ancestor directory inventories found no nested AGENTS on the inspected compiler, test, docs and utility paths; root, .github and docs inventories found no separate CONTRIBUTING guide. Repository execution guidance was read but not exercised under the static-only constraint. Operations used the GitHub connector; no local project checkout was executed.
+
+All 42 incoming commit subjects and all changed-path metadata were enumerated. Product changes cover:
+- `neverc/lib/Translate/Cpp/Frontend/{Frontend.cpp,Lowering.cpp,MathSDK.cpp,IsolateMathCoffSymbols.py,IsolateMathCoffSymbolsTests.py,BundleArchive.cmake,CMakeLists.txt}`
+- `tests/neverc/{TranslateTests.cpp,CppFrontendToolchainTests.py}`
+- `utils/translate-frontends/docs/cpp-core-v2.md`
+- `docs/translate.md` and the 10 translated `docs/{ar,de,es,fr,it,ja,ko,ru,zh-CN,zh-TW}/translate.md` pages.
+
+Incoming author work expands initialized numeric operations, unary/binary wrapper transforms, logical predicates and copy/remove-copy filtering with homogeneous wrapper outputs. Author [07bb5d27](https://github.com/NeverSight/NeverC/commit/07bb5d27dc86164a9c503cac978e940d57469735) replaces objcopy-based math isolation with a direct COFF writer to preserve ordinary/bigobj format; [73ff8721](https://github.com/NeverSight/NeverC/commit/73ff8721f849f8d54efc2a4c80bbcd3f5eb7b41d) aligns its native witness invocation. These descriptions and commit-message validation counts are not independent execution evidence.
+
+### Targeted static coverage
+
+- Read all aggregate Frontend.cpp changes (24 added lines), tracing the new SDK using-declaration allowlist through its pinned-path and redeclaration checks at [lines 14581–14740](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L14581-L14740).
+- Read both latest commits' complete MathSDK.cpp patches for homogeneous wrapper copy_if/remove_copy_if output: 429 and 246 added lines. Traced exact implicit/trivial SDK copy assignment, wrapper identity and qualifiers, complete filter-loop authentication, direct transparent logical_not construction, forwarding/conversion provenance, helper pair projection and returned iterator admission.
+- Read the shared current [filter-copy lowering](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L9905-L10019), its new five-line wrapper-output change, and [range capture/result helpers](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L2485-L2513). The record-output path copies the wrapper binding; scalar output rereads the selected referent. Empty-range guard, input/output advancement, result type and operand snapshots were inspected.
+- Read the complete logical_and/logical_or SDK authentication bodies at [MathSDK.cpp lines 40350–40915](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L40350-L40915) and corresponding [Lowering.cpp lines 11419–11596](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L11419-L11596). The right referent is emitted on the selected control-flow edge; independent Boolean/output conversion and iterator updates were traced. Inspected the logical_and short-circuit fixture source.
+- Read all 904 added lines and the one changed rejection case in the latest TranslateTests.cpp patch. Covered binding identity, aliased/live/const referents, empty input, NaN/signed zero, stable selection, operand effects/cleanup, result use and negative source/lifetime boundaries. Fixture source is not an executed pass.
+- Reviewed all changed math-isolation writer/test, BundleArchive, CMake dependency and CppFrontendToolchainTests hunks, plus relevant HostCoffSymbols and RewriteSetupCoffSymbols parser/index contracts, object-byte invariants and archive-fixture construction. Read caller signatures and the native witness pipeline. Independently cross-checked the padding defect and final minimal patch; no object/header/symbol/auxiliary/index verification was weakened.
+
+**Limits:** this is not a whole-repository audit or an exhaustive review of all 41 product commits. Most of the 11,671 added MathSDK lines, 2,043 added Lowering lines and 35,641 added translator-test lines were not reviewed end-to-end. Earlier numeric expansions, all wrapper compositions, multilingual prose, runtime behavior and native packaging remain incompletely covered. GitHub omitted the aggregate Lowering/MathSDK/TranslateTests patches due to size; bounded commit patches and exact source blobs supported the inspected portions. No new full LLVM/DynCode, runtime/std or unrelated packaging audit was performed.
+
+### Confirmed finding and published fix
+
+**P2: stale in-member COFF linker-index alignment after longer math symbol names.**
+
+- Location: [incoming writer lines 220–243](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/IsolateMathCoffSymbols.py#L220-L243).
+- Trigger: a supported linker index has a trailing in-member NUL and an odd number of indexed math renames. Each rename adds 11 bytes, changing the unpadded name-table parity. The writer retained the old NUL.
+- Static proof: a single 22-byte log10 name becomes 33 bytes. The first index's unpadded payload becomes 42 bytes, but the old NUL makes it 43; the second becomes 48 plus the same invalid extra NUL. [HostCoffSymbols.names](https://github.com/NeverSight/NeverC/blob/2d04061a358237e70d6e86acbc73785f35555840/neverc/lib/Translate/Cpp/Frontend/HostCoffSymbols.py#L135-L139) permits a NUL tail only after an odd position. The output is therefore rejected, isolate removes staging output, and BundleArchive fails. This is distinct from the correctly handled outer archive newline.
+- Fix: [21fa8714](https://github.com/NeverSight/NeverC/commit/21fa8714fb6ef2ddb422ddbf620eb28dc2de619b) computes each new unpadded size first and keeps an existing NUL only if still required. Originally unpadded indices remain unpadded. Object bytes, ordinary/bigobj format, member ordering, representative multiplicity and all existing verification remain unchanged.
+- Regression source: one new method covers first-only, second-only, both and neither index padding. The fixture moves an existing external newline into the declared member as a NUL without changing its footprint or member offsets. Existing before/after parsing, pair verification, source immutability and object-byte assertions are retained.
+- Publication evidence: one atomic commit, **2 files / 34 additions / 3 deletions**, based on the freshly reread 2d04061a head; non-forced expected-head update; exact remote diff and both contents verified. dev was unprotected and the visible repository ruleset disabled at precheck.
+- **Verification limit:** no build or test was run. This is a statically demonstrated defect, **not an attribution of a currently observed CI failure**. The author's broader COFF writer work remains separately credited.
+
+The earlier ff6dc23c function-reference fixes and 849bb7c2 short-string fix remain historical author-completed work, not outstanding patches to retry.
+
+### Existing CI snapshot
+
+Observed **2026-10-10 01:08–01:10 UTC**. The exact incoming source `2d04061a358237e70d6e86acbc73785f35555840` had **11 workflows: 2 success / 8 in progress / 1 queued**, and **22 checks: 7 success / 11 in progress / 4 queued**. Both 100-item collections contained their full reported totals at sampling. There is no open PR head.
+
+| Workflow | Sampled state |
+| --- | --- |
+| [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/38010000679) | success |
+| [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/38010000685) | success |
+| [windows-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38010000721) | in progress |
+| [linux-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38010000736) | in progress |
+| [windows-arm64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/38010000682) | in progress |
+| [windows-x64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/38010000681) | in progress |
+| [windows-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38010000692) | in progress |
+| [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/38010000761) | in progress |
+| [linux-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38010000918) | in progress |
+| [python-plugin-bindings](https://github.com/NeverSight/NeverC/actions/runs/38010000733) | queued |
+| [macos-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38010000723) | in progress |
+
+The exact-source [navigation log](https://github.com/NeverSight/NeverC/actions/runs/38010000685/job/114087556442) independently records **16 layout tests passing; 736 navigable pages / 11 locales / 1,201 resolving reference definitions / 82 unfinished translations**. Docs facts and all three archive-audit jobs succeeded. These narrow checks are not full compiler/platform acceptance.
+
+The current [ARM64 Clang/LTO job](https://github.com/NeverSight/NeverC/actions/runs/38010000682/job/114087621733) passed the real-COFF witness and was building the compiler. [Windows x64](https://github.com/NeverSight/NeverC/actions/runs/38010000692/job/114087612266) was building; packaging had not been reached. No final compiler/platform success or reproduction of the historical header mismatch is asserted.
+
+Yesterday's exact source `76d092f9` is now terminal: **2 successful / 9 cancelled workflows**. The two successes are cpp-frontend-tools and lint-docs; cancelled native workflows supply no final native acceptance. The repository CI policy documents newest-run cancellation, but no unverified cancellation cause is assigned to an individual run.
+
+The newly published fix `21fa8714fb6ef2ddb422ddbf620eb28dc2de619b` automatically acquired **9 workflows (7 pending / 2 queued) and 5 queued checks** at 01:10 UTC. [Fix archive-audit workflow](https://github.com/NeverSight/NeverC/actions/runs/38012079627) and [fix docs workflow](https://github.com/NeverSight/NeverC/actions/runs/38012079706) were queued. No fix check had completed. Additional checks may appear and incoming-source runs may be cancelled as automatic CI advances. Neither these automatic workflows nor report-only checks were dispatched, rerun, modified or disabled by this review.
+
+### Suggested priorities (not delivery commitments)
+
+1. **Obtain exact-fix COFF evidence.** Dependency: existing automatic 21fa8714 workflow results and readable real-archive evidence. Acceptance: the four padding combinations and existing object/index invariants pass on the exact fix, followed by native Windows packaging/witness evidence. A fixture/source proof alone does not certify all SDK archives.
+2. **Finish classifying native compiler/platform results.** Dependency: completed exact-SHA workflows, final test-gate results and failing logs/artifacts where applicable. Acceptance: distinguish successful, failed, cancelled and never-run stages; do not treat a green test-running step as a passed final gate or carry old failures forward to new code.
+3. **Reconcile [#16](https://github.com/NeverSight/NeverC/issues/16) acceptance with the expanded wrapper surface.** Dependency: positive/negative source-boundary fixtures plus exact-revision runtime/installed-package evidence. Acceptance: distinguish implemented, statically reviewed and executed behavior, particularly binding-copy versus referent-write semantics, aliasing and short-circuit reads. No inferred owner, delivery date or percentage.
+
+### Daily log — 2026-10-10
+
+- Kept 9 open issues / 0 open PRs; no new/closed/merged activity or review queue.
+- Enumerated 42 incoming commits / 22 paths; excluded one report-only commit/path from product progress.
+- Completed the bounded wrapper filter/transform and COFF writer/caller static review above.
+- Published minimal linker-index padding fix 21fa8714 and one unexecuted four-case regression source; verified remote parent, diff, contents and branch.
+- Recorded old 76d092f9 terminal cancellations, incoming-source incomplete native CI, and automatically queued/pending fix CI without claiming execution by this review.
+- Preserved all earlier snapshots and contributor text verbatim below. This progress publication changes only PROGRESS.md.
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-09
 
 - Cutoff: **2026-10-09 01:10 UTC / 09:10 Asia/Shanghai (UTC+08:00)**.
@@ -732,6 +825,8 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
 
 </details>
 
