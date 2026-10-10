@@ -10159,12 +10159,18 @@ class FunctionLowering {
             {"loc", A.loc(L)}};
         branch(std::move(Selected), Replace, Copy, L);
         label(Replace, L);
-        assign(dereference(Output, L),
-               cast(dereference(ValueAddress, L), OutputElementType, L), L);
+        if (OutputRange.second->getPointeeType()->isRecordType())
+          assign(dereference(Output, L), dereference(ValueAddress, L), L);
+        else
+          assign(dereference(Output, L),
+                 cast(dereference(ValueAddress, L), OutputElementType, L), L);
         jump(Advance, L);
         label(Copy, L);
-        assign(dereference(Output, L),
-               cast(ReadReferent(), OutputElementType, L), L);
+        if (OutputRange.second->getPointeeType()->isRecordType())
+          assign(dereference(Output, L), dereference(Input, L), L);
+        else
+          assign(dereference(Output, L),
+                 cast(ReadReferent(), OutputElementType, L), L);
         jump(Advance, L);
         label(Advance, L);
         assign(Input,
