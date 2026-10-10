@@ -217,11 +217,16 @@ def write_lossless_archive(source, output, before, mapping):
             stream, before.size, first_tail,
             entries[0].offset + 60 + entries[0].size - first_tail)
         sizes = [entry.size for entry in entries]
-        sizes[0] = 4 + 4 * len(first_pairs) + len(first_padding)
+        sizes[0] = 4 + 4 * len(first_pairs)
         sizes[0] += sum(len(name.encode("utf-8")) + 1 for name, _ in first_pairs)
+        # An existing in-member NUL is alignment, not opaque data. Renames
+        # may make the new name table even, in which case it must disappear.
+        first_padding = first_padding if sizes[0] & 1 else b""
+        sizes[0] += len(first_padding)
         sizes[1] = 8 + 4 * len(before.members) + 2 * len(second_pairs)
         sizes[1] += sum(len(name.encode("utf-8")) + 1 for name, _ in second_pairs)
-        sizes[1] += len(before.second_padding)
+        second_padding = before.second_padding if sizes[1] & 1 else b""
+        sizes[1] += len(second_padding)
         for i, (_, obj) in enumerate(before.members):
             names = {symbol.name for symbol in obj.symbols if symbol.name in mapping}
             sizes[start + i] += sum(len(mapping[name].encode("utf-8")) + 1 for name in names)
@@ -240,7 +245,7 @@ def write_lossless_archive(source, output, before, mapping):
         second += struct.pack("<I", len(second_pairs))
         second += b"".join(struct.pack("<H", i + 1) for _, i in second_pairs)
         second += b"".join(name.encode("utf-8") + b"\0" for name, _ in second_pairs)
-        second += before.second_padding
+        second += second_padding
         with Path(output).open("xb") as target:
             target.write(b"!<arch>\n")
             for i, entry in enumerate(entries):

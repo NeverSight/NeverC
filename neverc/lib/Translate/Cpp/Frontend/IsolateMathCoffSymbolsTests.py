@@ -241,6 +241,32 @@ class LosslessArchiveTests(unittest.TestCase):
             self.assertEqual(left[58:], right[58:])
         self.assert_object_bytes(data, self.payloads(changed)[3][2], before.members[0][1])
 
+    def test_recomputes_linker_padding_after_odd_rename_count(self):
+        old, new = next(iter(math.MATH_RENAMES.items()))
+        data = object_bytes((old,), contents=b"\xc3")
+        original = archive_bytes([("math.obj", data, (old,))])
+        entries = archive_reader._members(io.BytesIO(original), len(original))
+        for first_pad in (False, True):
+            for second_pad in (False, True):
+                with self.subTest(first=first_pad, second=second_pad):
+                    encoded = bytearray(original)
+                    for padded, entry in zip((first_pad, second_pad), entries[:2]):
+                        self.assertEqual(entry.size & 1, 1)
+                        if padded:
+                            # Move the outer newline into the declared member
+                            # as LLVM-style NUL alignment; offsets stay fixed.
+                            encoded[entry.offset + 48:entry.offset + 58] = (
+                                str(entry.size + 1).encode().ljust(10, b" "))
+                            encoded[entry.offset + 60 + entry.size] = 0
+                    before, after, changed = self.rewrite(bytes(encoded))
+                    self.assertEqual(before.second_padding,
+                                     b"\0" if second_pad else b"")
+                    payloads = self.payloads(changed)
+                    self.assertEqual(len(payloads[0][2]), 8 + len(new) + 1)
+                    self.assertEqual(len(payloads[1][2]), 14 + len(new) + 1)
+                    self.assertEqual(after.second_padding, b"")
+                    self.assert_object_bytes(data, payloads[2][2], before.members[0][1])
+
     def test_malformed_and_unknown_templates_fail_before_output(self):
         with tempfile.TemporaryDirectory(prefix="neverc-math-reject-") as directory:
             source, output = Path(directory) / "before.lib", Path(directory) / "after.lib"
