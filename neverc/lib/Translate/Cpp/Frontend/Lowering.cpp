@@ -7137,12 +7137,44 @@ class FunctionLowering {
       auto Last = std::move(LastRange.first);
       auto Choices = std::move(ChoicesRange.first);
       auto ChoicesLast = std::move(ChoicesLastRange.first);
-      std::optional<Expression> Predicate;
-      if (Call->getNumArgs() == 5)
-        Predicate = snapshot(expression(Call->getArg(4)), L);
       const auto Wrapper = approvedFunctionalReferenceRecord(
           A.S, A.Sources,
           FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      const auto FunctionalObject =
+          Call->getNumArgs() == 5
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(4)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *ComparisonObject =
+          FunctionalObject ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                 FunctionalObject->Record)
+                           : nullptr;
+      const bool TransparentComparison =
+          Wrapper && ComparisonObject &&
+          (ComparisonObject->getName() == "equal_to" ||
+           ComparisonObject->getName() == "not_equal_to" ||
+           ComparisonObject->getName() == "less" ||
+           ComparisonObject->getName() == "greater" ||
+           ComparisonObject->getName() == "less_equal" ||
+           ComparisonObject->getName() == "greater_equal") &&
+          ComparisonObject->getTemplateArgs().size() == 1 &&
+          ComparisonObject->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          ComparisonObject->getTemplateArgs().get(0).getAsType()->isVoidType();
+      const char *ComparisonOpcode =
+          !TransparentComparison                           ? "=="
+          : ComparisonObject->getName() == "not_equal_to"  ? "!="
+          : ComparisonObject->getName() == "less"          ? "<"
+          : ComparisonObject->getName() == "greater"       ? ">"
+          : ComparisonObject->getName() == "less_equal"    ? "<="
+          : ComparisonObject->getName() == "greater_equal" ? ">="
+                                                           : "==";
+      std::optional<Expression> Predicate;
+      if (TransparentComparison)
+        discardFunctionalObject(Call->getArg(4));
+      else if (Call->getNumArgs() == 5)
+        Predicate = snapshot(expression(Call->getArg(4)), L);
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         if (Wrapper)
@@ -7178,13 +7210,14 @@ class FunctionLowering {
                                        Call->getArg(4)->getType(),
                                        dereference(json::Object(Current), L),
                                        dereference(json::Object(Choice), L), L)
-             : Wrapper ? CompareUtilityValues(
-                             "==", ComparedValue(json::Object(Current)),
-                             Wrapper->ReferentType,
-                             ComparedValue(json::Object(Choice)),
-                             Wrapper->ReferentType)
-                       : AlgorithmEqual(dereference(Current, L), 0,
-                                        dereference(Choice, L), 2),
+             : Wrapper
+                 ? CompareUtilityValues(ComparisonOpcode,
+                                        ComparedValue(json::Object(Current)),
+                                        Wrapper->ReferentType,
+                                        ComparedValue(json::Object(Choice)),
+                                        Wrapper->ReferentType)
+                 : AlgorithmEqual(dereference(Current, L), 0,
+                                  dereference(Choice, L), 2),
              End, NextChoice, L);
       label(NextChoice, L);
       assign(Choice,
