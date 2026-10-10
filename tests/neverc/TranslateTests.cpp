@@ -273853,3 +273853,861 @@ long double value=7;auto selected(P a,P b,int*out){return std::replace_copy_if(a
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using L=std::logical_not<void>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,L(),value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[0],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&target||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeBool) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-replace-if-logical-not-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;int main(){bool v[]={false,true,false};bool sentinel=9,target=true;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeByte) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-byte.cpp");
+  const auto Output = tmpFile("wrapper-replace-if-logical-not-runtime-byte.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned char>;int main(){unsigned char v[]={0,2,0};unsigned char sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-byte" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;int main(){const int v[]={0,2,0};const int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeConstReplacement) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-const-replacement.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-const-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};const R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-const-replacement" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double v[]={0,2.5,0};double sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-empty.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a,std::logical_not<>{},value);return false||&a[0].get()!=&v[0]||&a[1].get()!=&v[1]||&a[2].get()!=&v[2]||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeFloat) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-float.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<float>;int main(){float v[]={0,2.5,0};float sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;v[1]=0;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&target||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeLongLong) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-long-long.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-long-long.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<long long>;int main(){long long v[]={0,2,0};long long sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-long-long" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeNan) {
+  const auto Source = tmpFile("wrapper-replace-if-logical-not-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-replace-if-logical-not-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double v[]={(0.0 / 0.0),0,-1};double sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&v[0]||&a[1].get()!=&target||&a[2].get()!=&v[2]||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={-1,-2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&v[0]||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-negative-values" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeNoZero) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-no-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-no-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={1,2,3};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&v[0]||&a[1].get()!=&v[1]||&a[2].get()!=&v[2]||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-no-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int calls=0;R*get(R*p){++calls;return p;}int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(get(a),get(a+3),std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel||calls!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-operand-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+struct P{bool operator()(int x)const{return x==0;}};int main(){int a[]={2,0,0},out[]={9,9,9};auto p=std::replace_copy_if(a,a+3,out,P{},out[0]);return p!=out+3||out[0]!=2||out[1]!=2||out[2]!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperReplaceIfLogicalNotRuntimeReplaceIfLogicalNot) {
+  const auto Source = tmpFile(
+      "wrapper-replace-if-logical-not-runtime-replace-if-logical-not.cpp");
+  const auto Output = tmpFile(
+      "wrapper-replace-if-logical-not-runtime-replace-if-logical-not.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-replace-if-logical-not" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int cleanups=0;struct A{R*p;R*get(){return p;}~A(){++cleanups;}};int run(R*a,const R&value){std::replace_if(A{a}.get(),A{a+3}.get(),std::logical_not<>{},value);return 3;}int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;int p=run(a,value);return p!=3||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel||cleanups!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-returned-result" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int v[]={0,2,0,9};std::replace_if(v,v+3,std::logical_not<>{},7);return v[0]!=7||v[1]!=2||v[2]!=7||v[3]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-short.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;int main(){short v[]={0,2,0};short sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double v[]={-0.0,0.0,2.0};double sentinel=9,target=-0.0;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&target||&a[2].get()!=&v[2]||&a[3].get()!=&sentinel||!((1.0 / (a[0].get())) < 0.0)||!((1.0 / (a[1].get())) < 0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+1,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&v[2]||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int cleanups=0;struct A{R*p;R*get(){return p;}~A(){++cleanups;}};int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(A{a}.get(),A{a+3}.get(),std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel||cleanups!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;int main(){unsigned v[]={0,2,0};unsigned sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;std::replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-replace-if-logical-not-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReplaceIfLogicalNotRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-replace-if-logical-not-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-replace-if-logical-not-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using std::replace_if;int main(){int v[]={0,2,0};int sentinel=9,target=7;R a[]={v[0],v[1],v[2],sentinel};R value=target;replace_if(a,a+3,std::logical_not<>{},value);return false||&a[0].get()!=&target||&a[1].get()!=&v[1]||&a[2].get()!=&target||&a[3].get()!=&sentinel;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-replace-if-logical-not-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperReplaceIfLogicalNotRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=void(*)(P,P,std::logical_not<void>,const W&);auto selected(P a,P b,W*out){return static_cast<F>(&std::replace_if<P,std::logical_not<void>,W>)(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"converted-wrapper-replacement", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<const int>;using V=std::reference_wrapper<int>;auto selected(W*a,W*b,const V&value){return std::replace_if(a,b,std::logical_not<>{},value);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"expression-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,W*out){return std::replace_if(a,b,(++effects,std::logical_not<>{}),a[0]);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=void(*)(P,P,std::logical_not<void>,const W&);auto selected(P a,P b,W*out){F f=&std::replace_if<P,std::logical_not<void>,W>;return f(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,std::reference_wrapper<long double>*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator!(const W&a){return !a.get().get();}}}
+auto selected(W*a,W*b,I*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"returned-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<> op(){return std::logical_not<>{};}auto selected(P a,P b,W*out){return std::replace_if(a,b,op(),a[0]);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,W*out){std::replace_if(&source(a),&a+1,std::logical_not<>{},a);}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-logical-negation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator!(const W&a){return !a.get();}}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-logical-not-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a));}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-logical-not-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a)){return !a.get();}}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-logical-not-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-logical-not-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct logical_not<void>;}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,W*out){return std::replace_if(&source(a),&a+1,std::logical_not<>{},a);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,W*out){std::replace_if(&source(a),&a+1,std::logical_not<>{},a);}int main(){return 0;}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class U,class T>void replace_if(I,I,U,const T&);}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void replace_if<P,logical_not<void>,W>(P,P,logical_not<void>,const W&);}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void replace_if<P,logical_not<void>,W>(P a,P,logical_not<void>,const W&){}}}
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};int operator!(const R&a){return !int(a.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,R*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
+)cpp"},
+      {"stored-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_if(a,b,op,a[0]);}
+)cpp"},
+      {"typed-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){return std::replace_if(a,b,std::logical_not<int>{},a[0]);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=void(*)(P,P,std::logical_not<void>,const W&);F selected(){using std::replace_if;return &replace_if<P,std::logical_not<void>,W>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,std::reference_wrapper<volatile int>*out){return std::replace_if(a,b,std::logical_not<>{},a[0]);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-replace-if-logical-not-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-replace-if-logical-not-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
