@@ -7313,19 +7313,6 @@ class FunctionLowering {
       auto First = std::move(FirstRange.first);
       auto Last = std::move(LastRange.first);
       auto Second = std::move(SecondRange.first);
-      std::optional<Expression> SecondLast;
-      std::optional<unsigned> PredicateIndex;
-      if (Call->getNumArgs() == 4 &&
-          Call->getArg(3)->getType()->isFunctionPointerType())
-        PredicateIndex = 3;
-      else if (Call->getNumArgs() == 5)
-        PredicateIndex = 4;
-      if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
-          Call->getNumArgs() == 5)
-        SecondLast = std::move(AlgorithmRangeValue(3).first);
-      std::optional<Expression> Predicate;
-      if (PredicateIndex)
-        Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       const auto FirstWrapper = approvedFunctionalReferenceRecord(
           A.S, A.Sources,
           FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
@@ -7333,6 +7320,39 @@ class FunctionLowering {
           A.S, A.Sources,
           SecondRange.second->getPointeeType()->getAsCXXRecordDecl(),
           A.Context);
+      const auto FunctionalObject =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(3)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *EqualTo = FunctionalObject
+                                ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      FunctionalObject->Record)
+                                : nullptr;
+      const bool TransparentEqualTo =
+          FirstWrapper && SecondWrapper && EqualTo &&
+          EqualTo->getName() == "equal_to" &&
+          EqualTo->getTemplateArgs().size() == 1 &&
+          EqualTo->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          EqualTo->getTemplateArgs().get(0).getAsType()->isVoidType();
+      std::optional<Expression> SecondLast;
+      std::optional<unsigned> PredicateIndex;
+      if (Call->getNumArgs() == 4 &&
+          (TransparentEqualTo ||
+           Call->getArg(3)->getType()->isFunctionPointerType()))
+        PredicateIndex = 3;
+      else if (Call->getNumArgs() == 5)
+        PredicateIndex = 4;
+      if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
+          Call->getNumArgs() == 5)
+        SecondLast = std::move(AlgorithmRangeValue(3).first);
+      std::optional<Expression> Predicate;
+      if (TransparentEqualTo)
+        discardFunctionalObject(Call->getArg(3));
+      else if (PredicateIndex)
+        Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       auto ComparedValue = [&](Expression Pointer, const auto &Wrapper) {
         auto Value = dereference(std::move(Pointer), L);
         if (Wrapper)
@@ -7346,9 +7366,10 @@ class FunctionLowering {
         return Value;
       };
       const auto SourceComparison =
-          !Predicate && A.Context.hasSameUnqualifiedType(
-                            FirstRange.second->getPointeeType(),
-                            SecondRange.second->getPointeeType())
+          !Predicate && !TransparentEqualTo &&
+                  A.Context.hasSameUnqualifiedType(
+                      FirstRange.second->getPointeeType(),
+                      SecondRange.second->getPointeeType())
               ? approvedUtilityTrivialSourceComparison(
                     A.S, A.Sources, FirstRange.second->getPointeeType(),
                     OO_EqualEqual, A.Context)
