@@ -6871,12 +6871,30 @@ class FunctionLowering {
       auto OutputRange = AlgorithmRangeValue(2);
       auto Output = std::move(OutputRange.first);
       std::optional<Expression> Predicate;
-      if (Call->getNumArgs() == 4)
-        Predicate = snapshot(expression(Call->getArg(3)), L);
       const auto Wrapper = approvedFunctionalReferenceRecord(
           A.S, A.Sources,
           CurrentRange.second->getPointeeType()->getAsCXXRecordDecl(),
           A.Context);
+      const auto FunctionalObject =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(3)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      const auto *EqualTo = FunctionalObject
+                                ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      FunctionalObject->Record)
+                                : nullptr;
+      const bool TransparentEqualTo =
+          Wrapper && EqualTo && EqualTo->getName() == "equal_to" &&
+          EqualTo->getTemplateArgs().size() == 1 &&
+          EqualTo->getTemplateArgs().get(0).getKind() ==
+              TemplateArgument::Type &&
+          EqualTo->getTemplateArgs().get(0).getAsType()->isVoidType();
+      if (TransparentEqualTo)
+        discardFunctionalObject(Call->getArg(3));
+      else if (Call->getNumArgs() == 4)
+        Predicate = snapshot(expression(Call->getArg(3)), L);
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         if (Wrapper)
@@ -6890,7 +6908,7 @@ class FunctionLowering {
         return Value;
       };
       const auto SourceComparison =
-          !Predicate
+          !Predicate && !TransparentEqualTo
               ? approvedUtilityTrivialSourceComparison(
                     A.S, A.Sources, CurrentRange.second->getPointeeType(),
                     OO_EqualEqual, A.Context)
