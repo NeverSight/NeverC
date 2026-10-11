@@ -55,6 +55,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::equal_range`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用支持直接初始化的透明 less 或 greater，输入为已验证 SDK 包装类型的原始指针范围。包装对象及引用对象均可带 const；引用对象支持 bool、不超过 64 位的整数、float、double 及对象指针。查询值须使用同一不带限定的包装类型。对于按所选比较器分区的范围，完整认证的 SDK 搜索通过已检查的 pair 返回下界和上界指针。查询 const 引用、可调用和指针复制特征、比较器引用别名、identity 投影、迭代器策略、正数折半、两个比较方向、完整外层循环及借用比较器的下界和上界搜索均需验证。比较读取当前引用值，保留绑定，各实参求值一次，析构保持原语义。存储、返回或带类型的比较器、源码替换、不兼容或 volatile 引用对象仍被拒绝。
+
 `cpp-core-v2`: `std::binary_search`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用支持直接初始化的透明 less 或 greater，输入为已验证 SDK 包装类型的原始指针范围。包装对象及引用对象均可带 const；引用对象支持 bool、不超过 64 位的整数、float、double 及对象指针。查询值须使用同一不带限定的包装类型。对于按所选比较器分区的范围，完整认证的 SDK 搜索返回首个不小于查询值的元素或结束指针。查询 const 引用、可调用特征、identity 投影、迭代器策略的距离计算与前进、invoke 路径、正数折半及完整二分搜索均需验证。比较读取当前引用值，保留绑定，各实参求值一次，析构保持原语义。存储、返回或带类型的比较器、源码替换、不兼容或 volatile 引用对象仍被拒绝。 在认证的 lower_bound 搜索之后，SDK 仅在结果不是结束指针且 const 查询值对该元素的反向比较为假时返回 true。两个比较方向和短路结果均需验证。
 
 `cpp-core-v2`: `std::upper_bound`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用支持直接初始化的透明 less 或 greater，输入为已验证 SDK 包装类型的原始指针范围。包装对象及引用对象均可带 const；引用对象支持 bool、不超过 64 位的整数、float、double 及对象指针。查询值须使用同一不带限定的包装类型。对于按所选比较器分区的范围，完整认证的 SDK 搜索返回首个大于查询值的元素或结束指针。查询 const 引用、可调用特征、identity 投影、迭代器策略的距离计算与前进、invoke 路径、正数折半及完整二分搜索均需验证。比较读取当前引用值，保留绑定，各实参求值一次，析构保持原语义。存储、返回或带类型的比较器、源码替换、不兼容或 volatile 引用对象仍被拒绝。
