@@ -1,5 +1,79 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-11
+
+- Cutoff: **2026-10-11 01:04 UTC / 09:04 Asia/Shanghai (UTC+08:00)**. CI sampled at 01:03 UTC.
+- Source branch: `dev`; reviewed revision: [db9c874f](https://github.com/NeverSight/NeverC/commit/db9c874f94259cdf07c5a47924d21e63b2a80fe4).
+- Incoming window: [2d04061a…db9c874f](https://github.com/NeverSight/NeverC/compare/2d04061a358237e70d6e86acbc73785f35555840...db9c874f94259cdf07c5a47924d21e63b2a80fe4), **38 commits / 19 paths**. This includes yesterday's COFF fix and report. Excluding the report-only commit/path gives 37 code/product commits / 18 paths; excluding both already-reported commits gives **36 new author commits / 16 paths**.
+- Result: **no newly confirmed defect; no source patch today** in the bounded static scope below. Earlier fixes remain historical completed work, not new fixes credited again.
+- Method: source, diffs, caller/interface, fixture-source and existing-CI reads only. **No project execution, builds, tests, benchmarks, repository scripts, CI dispatch/rerun, dependency/security change, issue mutation, merge or deployment.** Author fixture counts and existing CI are not tests performed by this review.
+
+### Repository activity
+
+**9 open issues / 0 open PRs**, unchanged from October 10. The complete all-state issue collection has 18 records including PRs; the PR collection has 8 historical entries. Both were exhausted with an empty second page at 100 records/page. No new, closed or merged item since the October 10 01:10 UTC snapshot. Issue-comment and PR inline-comment collections since that cutoff are empty. Latest PR #20 remains merged and its review collection is empty. There is no open-PR review queue. Open roadmap issues #7–#12 and #16–#18 remain unassigned, without milestones; no owner, completion percentage or date is inferred.
+
+Read root AGENTS.md, docs/local-dev.md, .github/ci-policy.md and the compiler-development skill/pipeline reference. Root, .github and docs inventories found no CONTRIBUTING guide; inspected compiler and test ancestor inventories contain no nested AGENTS. Root instructions request execution for implementation, but this review retains the stricter static-only scope. Large-file line-range reads returned empty content, so immutable blob reads were used instead. No code was executed to obtain coverage.
+
+### Incoming work and targeted static coverage
+
+All 38 incoming commit subjects and all 19 changed-path records were enumerated. New author work expands wrapper replacement/partitioning, unary for_each/for_each_n, compaction, adjacent comparisons, equal/mismatch, search/find_end/search_n and independently const-qualified wrapper inputs. Commit-message validation claims remain author reports.
+
+- **Frontend.cpp:** read the complete aggregate 12-line using-declaration allowlist change and surrounding pinned-header/redeclaration checks at [lines 14581–14750](https://github.com/NeverSight/NeverC/blob/db9c874f94259cdf07c5a47924d21e63b2a80fe4/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L14581-L14750). Each newly admitted name selects its own libc++ header; unchanged origin checks still apply.
+- **MathSDK.cpp:** read complete latest find_first_of and four-iterator mismatch authentication patches (235 and 440 added lines), including public/helper signatures, independent input qualification, exact SDK origin, direct transparent comparator construction, pair field identity, iterator unwrap/rewrap, bounded helper delegation, loop termination and actual predicate operands. Reviewed the shared [transparent-comparison proof](https://github.com/NeverSight/NeverC/blob/db9c874f94259cdf07c5a47924d21e63b2a80fe4/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L51322-L51465), including both operand reference types, forwarding and conversion provenance.
+- **Lowering.cpp:** inspected aggregate additions for wrapper range operations, with full current-function tracing focused on [equal](https://github.com/NeverSight/NeverC/blob/db9c874f94259cdf07c5a47924d21e63b2a80fe4/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L5743-L5904), [find_first_of](https://github.com/NeverSight/NeverC/blob/db9c874f94259cdf07c5a47924d21e63b2a80fe4/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L7160-L7263), and [mismatch](https://github.com/NeverSight/NeverC/blob/db9c874f94259cdf07c5a47924d21e63b2a80fe4/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L7422-L7567). Checked length precheck, either-range end guards, first-match/first-failed-predicate results, correct pointer types, live referent reads and per-argument snapshots/result helpers at lines 2492–2531.
+- **Scalar comparison:** traced the new direct scalar operator path at Lowering.cpp lines 2261–2275 through MathSDK.cpp lines 3107–3205. It retains common-type/integer promotion rules and directly emits floating-point <= and >= instead of negating a lexicographic less-than result. This is incoming author work, not a new fix by this review. Aggregate comparisons retain their existing recursive path.
+- **Fixture sources:** inspected selected latest find_first_of cases covering const first/second inputs, alias identity, live values, empty input/choice ranges, all comparison operators, NaN, signed zero, result use, argument temporary cleanup, plus the source/lifetime rejection table. The old mixed-qualification rejection is narrowed to heterogeneous wrapper referents. These are source assertions, not observed test passes.
+- **Prior fix follow-up:** inspected exact-21fa8714 workflow/job results and the Windows archive-audit log; see the CI distinction below.
+
+**Limits:** this is not an exhaustive review of all 36 author commits or the repository. The incoming MathSDK.cpp delta is 12,972 additions / 52 deletions, Lowering.cpp 787 / 75, and TranslateTests.cpp 35,043 additions. Most SDK recognizers and test additions were not reviewed end-to-end; earlier replacement/partition/unary/search expansions received diff-level rather than complete semantic proof review. Multilingual prose, full LLVM/DynCode/runtime/std behavior, native packaging and runtime semantics are outside today's complete coverage. No unproven behavior was widened or speculative patch committed.
+
+### Findings and uncertainties
+
+No new statically proven bug was established in the reviewed paths. Independent const qualification is intentionally limited to the same unqualified wrapper type; heterogeneous referents remain rejected. Missing execution evidence is a validation limitation, not proof of a defect. Remaining acceptance questions include broad wrapper composition/aliasing coverage and native packaging on exact source revisions.
+
+### Existing CI snapshot
+
+At **01:03 UTC**, exact source `db9c874f94259cdf07c5a47924d21e63b2a80fe4` has **11 workflows: 5 in progress / 6 queued** and **22 checks: 3 successful / 6 in progress / 13 queued**. The full reported totals fit the retrieved 100-entry pages; legacy commit-status contexts are empty. There is no open PR head to sample.
+
+| Workflow | Sampled state |
+| --- | --- |
+| [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/38100037844) | queued |
+| [windows-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38100037778) | queued |
+| [linux-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38100037950) | queued |
+| [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/38100037766) | in progress |
+| [macos-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38100037746) | queued |
+| [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/38100037773) | queued |
+| [windows-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38100037763) | in progress |
+| [python-plugin-bindings](https://github.com/NeverSight/NeverC/actions/runs/38100037753) | queued |
+| [windows-x64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/38100037749) | in progress |
+| [windows-arm64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/38100037806) | in progress |
+| [linux-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/38100037792) | in progress |
+
+The three successful individual checks are Ubuntu archive-audit, official artifact policy and VBS signing bootstrap. A successful setup/policy or individual matrix job is **not** a successful parent workflow or final compiler acceptance.
+
+Yesterday's exact fix [21fa8714](https://github.com/NeverSight/NeverC/commit/21fa8714fb6ef2ddb422ddbf620eb28dc2de619b) now has **1 successful / 8 cancelled workflows**. Importantly, the overall [cpp-frontend-tools workflow](https://github.com/NeverSight/NeverC/actions/runs/38012079627) is cancelled, while its [Windows archive-audit job](https://github.com/NeverSight/NeverC/actions/runs/38012079627/job/114094106020) and [Ubuntu archive-audit job](https://github.com/NeverSight/NeverC/actions/runs/38012079627/job/114094106210) succeeded; macOS was cancelled. The Windows log was read. This is narrower positive automatic-CI evidence, not proof that the four new padding cases were individually executed, and not completed native compiler/package validation. The exact-fix lint-docs workflow succeeded. No cancelled run is called a passed test, and no specific cancellation cause is inferred.
+
+The repository documents newest-run cancellation and Markdown-only platform-build filtering. This report does not change or disable workflows and adds no CI-skip marker. Any automatically created documentation checks are separate from the reviewed source and should be refreshed before use as release evidence.
+
+### Suggested priorities (not delivery commitments)
+
+1. **Close exact-revision native acceptance gaps.** Dependency: completed existing platform workflows and readable final gate/log evidence on a revision containing 21fa8714. Acceptance: distinguish passed, failed, cancelled and never-run compiler/package stages; verify COFF padding coverage explicitly rather than relying on a green aggregate label.
+2. **Reconcile [#16](https://github.com/NeverSight/NeverC/issues/16) with independent-qualification and comparator support.** Dependency: bounded supported-profile documentation and positive/negative fixture evidence. Acceptance: explicitly distinguish implemented, statically inspected and executed cases for same-wrapper const inputs, six predicates, empty/end results, NaN, binding identity and cleanup.
+3. **Review the remaining new recognizers in bounded batches.** Dependency: exact source and selected SDK body/consumer contracts. Acceptance: complete end-to-end review of replacement/partition/unary/search paths and focused fixture mapping before claiming broad coverage; do not infer completion from test-source counts.
+
+### Daily log — 2026-10-11
+
+- Retained 9 open issues / 0 open PRs; no new/closed/merged item or review queue.
+- Enumerated 38 incoming commits / 19 paths; isolated 36 new author commits / 16 paths beyond the previous fix and report.
+- Completed the bounded using-declaration, comparison, find_first_of/mismatch, related lowering and fixture-source review above. No new source/test patch.
+- Distinguished successful Windows/Ubuntu exact-fix archive jobs from the cancelled parent workflow and incomplete native acceptance.
+- Published this English progress snapshot while preserving all prior snapshots and contributor text verbatim below; only PROGRESS.md changes.
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-10
 
 - Cutoff: **2026-10-10 01:10 UTC / 09:10 Asia/Shanghai (UTC+08:00)**.
@@ -825,6 +899,8 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
 
 </details>
 
