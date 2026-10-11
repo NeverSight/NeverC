@@ -6277,10 +6277,26 @@ class FunctionLowering {
       auto Last = std::move(LastRange.first);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      const auto WrapperOperation =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(3)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKForward;
       std::optional<FunctionalOperationInfo> SDKReverse;
-      if (Call->getNumArgs() == 4) {
+      if (Wrapper && WrapperOperation && Call->getNumArgs() == 4 &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        WrapperComparison =
+            WrapperOperation->Record->getName() == "less" ? "<" : ">";
+        discardFunctionalObject(Call->getArg(3));
+      } else if (Call->getNumArgs() == 4) {
         const auto Element = FirstRange.second->getPointeeType();
         const auto Value = Call->getArg(2)->getType();
         if (Upper) {
@@ -6298,13 +6314,6 @@ class FunctionLowering {
         if (!SDKForward && !SDKReverse)
           Comparator = snapshot(expression(Call->getArg(3)), L);
       }
-      const auto Wrapper =
-          Call->getNumArgs() == 3
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
       auto ComparedValue = [&](Expression Value) {
         return dereference(Expression{{"kind", "member"},
                                       {"type", type(Wrapper->PointerType, L)},
@@ -6324,8 +6333,9 @@ class FunctionLowering {
                                      std::move(Left), std::move(Right), L);
         if (Wrapper)
           return CompareUtilityValues(
-              "<", ComparedValue(std::move(Left)), Wrapper->ReferentType,
-              ComparedValue(std::move(Right)), Wrapper->ReferentType);
+              WrapperComparison, ComparedValue(std::move(Left)),
+              Wrapper->ReferentType, ComparedValue(std::move(Right)),
+              Wrapper->ReferentType);
         return AlgorithmRangeValueLess(
             std::move(Left),
             Reversed ? Call->getArg(2)->getType()

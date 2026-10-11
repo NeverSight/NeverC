@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::lower_bound`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫支援直接初始化的透明 less 或 greater，輸入為已驗證 SDK 包裝型別的原始指標範圍。包裝物件及參照物件均可帶 const；參照物件支援 bool、不超過 64 位元的整數、float、double 及物件指標。查詢值須使用同一不帶限定的包裝型別。對於依所選比較器分區的範圍，完整認證的 SDK 搜尋傳回首個不小於查詢值的元素或結束指標。查詢 const 參照、可呼叫特徵、identity 投影、迭代器策略的距離計算與前進、invoke 路徑、正數折半及完整二分搜尋皆須驗證。比較讀取目前參照值，保留綁定，各引數求值一次，解構保持原語意。儲存、傳回或帶型別的比較器、原始碼替換、不相容或 volatile 參照物件仍被拒絕。
+
 `cpp-core-v2`: `std::minmax_element`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫支援直接初始化的透明 less 或 greater，輸入為已驗證 SDK 包裝型別的原始指標範圍。包裝物件及參照物件均可帶 const；參照物件支援 bool、不超過 64 位元的整數、float、double 及物件指標。完整認證的 SDK 成對掃描依所選比較器傳回首個最小元素及末個最大元素；空範圍傳回兩個結束指標。可呼叫特徵、前向迭代器特徵、identity 投影、帶兩個參照欄位的私有比較適配器、invoke 路徑及 pair 建構皆須驗證。比較讀取目前參照值，保留綁定，各引數求值一次，解構保持原語意。儲存、傳回或帶型別的比較器、原始碼替換、不相容或 volatile 參照物件仍被拒絕。
 
 `cpp-core-v2`: `std::set_intersection`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫支援直接初始化的透明 less 或 greater，兩個原始指標輸入範圍及可修改輸出須使用同一已驗證 SDK 包裝型別。輸入 const 限定可不同；參照物件支援 bool、不超過 64 位元的整數、float、double 及物件指標，也可帶 const。對於按比較器排序的輸入，完整認證的 SDK 掃描按兩個方向比較目前參照值，依序複製匹配元素的第一輸入綁定。輸出重複數量為兩個輸入數量的最小值。前向迭代器類別分派、兩側的單側搜尋和二分搜尋、identity 投影、相等時輸出的輔助函式及迭代器策略皆須驗證。參照物件保持不變。比較器參照轉送、私有三欄位結果、移動建構及輸出投影皆須驗證。各引數求值一次，解構保持原語意。儲存、傳回或帶型別的比較器、原始碼替換、const 輸出及不相容參照物件仍被拒絕。
