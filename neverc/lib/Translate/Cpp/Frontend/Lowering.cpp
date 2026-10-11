@@ -6167,10 +6167,27 @@ class FunctionLowering {
       auto LastRange = AlgorithmRangeValue(1);
       auto Candidate = std::move(FirstRange.first);
       auto Last = std::move(LastRange.first);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
-      if (Call->getNumArgs() == 3) {
+      const auto WrapperOperation =
+          Call->getNumArgs() == 3
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      if (Wrapper && WrapperOperation &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        const auto *Object = Call->getArg(2)->getType()->getAsCXXRecordDecl();
+        WrapperComparison =
+            Object && Object->getName() == "greater" ? ">" : "<";
+        discardFunctionalObject(Call->getArg(2));
+      } else if (Call->getNumArgs() == 3) {
         const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator) {
@@ -6190,9 +6207,6 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
-      const auto Wrapper = approvedFunctionalReferenceRecord(
-          A.S, A.Sources,
-          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
       auto ComparedValue = [&](Expression Value) {
         return dereference(Expression{{"kind", "member"},
                                       {"type", type(Wrapper->PointerType, L)},
@@ -6214,8 +6228,9 @@ class FunctionLowering {
                                      std::move(Left), std::move(Right), L);
         if (Wrapper)
           return CompareUtilityValues(
-              "<", ComparedValue(std::move(Left)), Wrapper->ReferentType,
-              ComparedValue(std::move(Right)), Wrapper->ReferentType);
+              WrapperComparison, ComparedValue(std::move(Left)),
+              Wrapper->ReferentType, ComparedValue(std::move(Right)),
+              Wrapper->ReferentType);
         return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);
       };
       auto Current = snapshot(json::Object(Candidate), L);
