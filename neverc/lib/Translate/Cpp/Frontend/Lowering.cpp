@@ -10740,7 +10740,42 @@ class FunctionLowering {
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
-      auto Predicate = captureUnaryPredicate(Call, Operation);
+      const auto LogicalNotObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(2)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto LogicalNotWrapper =
+          LogicalNotObject &&
+                  LogicalNotObject->Record->getName() == "logical_not"
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    CurrentRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      std::optional<CapturedAlgorithmPredicate> Predicate;
+      if (LogicalNotWrapper)
+        discardFunctionalObject(Call->getArg(2));
+      else
+        Predicate = captureUnaryPredicate(Call, Operation);
+      auto SelectedPredicate = [&]() {
+        if (!LogicalNotWrapper)
+          return emitUnaryPredicate(*Predicate,
+                                    dereference(json::Object(Current), L), L);
+        auto Referent = dereference(
+            Expression{
+                {"kind", "member"},
+                {"type", type(LogicalNotWrapper->PointerType, L)},
+                {"name", "nct_reference_wrapper_pointer"},
+                {"args", json::Array{dereference(json::Object(Current), L)}},
+                {"loc", A.loc(L)}},
+            L);
+        return Expression{
+            {"kind", "unary"},
+            {"type", "bool"},
+            {"operator", "!"},
+            {"args", json::Array{cast(std::move(Referent), "bool", L)}},
+            {"loc", A.loc(L)}};
+      };
+
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(CurrentRange.second, L);
       auto Result = temporary("bool", L);
@@ -10755,9 +10790,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), LeadingTest, End, L);
       label(LeadingTest, L);
       {
-        auto Selected = emitUnaryPredicate(
-            Predicate,
-            dereference(json::Object(Current), L), L);
+        auto Selected = SelectedPredicate();
         branch(std::move(Selected), LeadingAdvance, BeginTail, L);
       }
       label(LeadingAdvance, L);
@@ -10776,9 +10809,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), TailTest, End, L);
       label(TailTest, L);
       {
-        auto Selected = emitUnaryPredicate(
-            Predicate,
-            dereference(json::Object(Current), L), L);
+        auto Selected = SelectedPredicate();
         branch(std::move(Selected), False, TailAdvance, L);
       }
       label(TailAdvance, L);
