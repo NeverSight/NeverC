@@ -8114,10 +8114,27 @@ class FunctionLowering {
       auto Second = std::move(SecondRange.first);
       auto SecondLast = std::move(SecondLastRange.first);
       auto Output = std::move(OutputRange.first);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
           SDKComparators;
-      if (Call->getNumArgs() == 6) {
+      const auto WrapperOperation =
+          Call->getNumArgs() == 6
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(5)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      if (Wrapper && WrapperOperation &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        const auto *Object = Call->getArg(5)->getType()->getAsCXXRecordDecl();
+        WrapperComparison =
+            Object && Object->getName() == "greater" ? ">" : "<";
+        discardFunctionalObject(Call->getArg(5));
+      } else if (Call->getNumArgs() == 6) {
         const auto LeftElement = FirstRange.second->getPointeeType();
         const auto RightElement = SecondRange.second->getPointeeType();
         SDKComparators =
@@ -8125,14 +8142,6 @@ class FunctionLowering {
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(5)), L);
       }
-      const auto Wrapper =
-          (Merge || Union || Difference || Symmetric || Intersection) &&
-                  Call->getNumArgs() == 5
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
       const auto SourceElement = FirstRange.second->getPointeeType();
       const bool RecordElement = SourceElement->isRecordType();
       const auto SourceComparison =
@@ -8175,7 +8184,8 @@ class FunctionLowering {
                                      std::move(Left), std::move(Right), L);
         if (Wrapper)
           return CompareUtilityValues(
-              "<", dereference(ReferenceMember(std::move(Left), *Wrapper), L),
+              WrapperComparison,
+              dereference(ReferenceMember(std::move(Left), *Wrapper), L),
               Wrapper->ReferentType,
               dereference(ReferenceMember(std::move(Right), *Wrapper), L),
               Wrapper->ReferentType);
@@ -8218,9 +8228,16 @@ class FunctionLowering {
       branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst,
              SecondDone, L);
       label(CompareFirst, L);
-      branch(Less(dereference(json::Object(First), L),
-                  dereference(json::Object(Second), L), false),
-             FirstLess, CompareSecond, L);
+      if (Merge && Wrapper && WrapperOperation &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater"))
+        branch(Less(dereference(json::Object(Second), L),
+                    dereference(json::Object(First), L), true),
+               SecondLess, FirstLess, L);
+      else
+        branch(Less(dereference(json::Object(First), L),
+                    dereference(json::Object(Second), L), false),
+               FirstLess, CompareSecond, L);
       label(CompareSecond, L);
       branch(Less(dereference(json::Object(Second), L),
                   dereference(json::Object(First), L), true),

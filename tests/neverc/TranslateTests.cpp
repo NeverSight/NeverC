@@ -311668,3 +311668,922 @@ using F=bool(*)(P,P,P,P);F selected(){using std::includes;return &includes<P,P>;
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+template<class T>using Alias=std::reference_wrapper<T>;using R=Alias<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};return std::merge(a,a+1,b,b+1,o,std::less<>{})!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x,x},b[]={y},o[]={z,z,z};auto r=std::merge(a,a+2,b,b+1,o,std::less<>{});return r!=o+3||&o[0].get()!=&x||&o[1].get()!=&x||&o[2].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeBool) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,y=true,z=false;R a[]={x},b[]={y},o[]={z,z};auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeBothEmpty) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-both-empty.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-both-empty.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::merge(a,a,a,a,o,std::less<>{});return r!=o||&o[0].get()!=&y||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-both-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;const R a[]={x};R b[]={y};R o[]={z,z};auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<double>;
+int main(){double x=-1.5,y=2.5,z=9.5;R a[]={x},b[]={y},o[]={z,z};auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9.5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeEmptyFirst) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-empty-first.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-empty-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::merge(a,a,a,a+1,o,std::less<>{});return r!=o+1||&o[0].get()!=&x||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-empty-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeEmptySecond) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-empty-second.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-empty-second.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::merge(a,a+1,a,a,o,std::less<>{});return r!=o+1||&o[0].get()!=&x||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-empty-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeFloat) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-float.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const float>;int main(){const float x=1.0f,y=2.0f,z=9.0f;R a[]={x},o[]={z,z};const R b[]={y};auto p=std::merge(a,a+1,b,b+1,o,std::less<>{});return p!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeGreater) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-greater.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-greater.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[]={4,2,3,1,9};R a[]={v[0],v[1]},b[]={v[2],v[3]},o[]={v[4],v[4],v[4],v[4]};auto p=std::merge(a,a+2,b,b+2,o,std::greater<>{});return p!=o+4||&o[0].get()!=&v[0]||&o[1].get()!=&v[2]||&o[2].get()!=&v[1]||&o[3].get()!=&v[3]||v[4]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-greater" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};x=3;auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&y||&o[1].get()!=&x||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeMergeComparison) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-merge-comparison.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-merge-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,3,2,4,9};R a[]={v[0],v[1]},b[]={v[2],v[3]},o[]={v[4],v[4],v[4],v[4]};auto r=std::merge(a,a+2,b,b+2,o,std::less<>{});return r!=o+4||&o[0].get()!=&v[0]||&o[1].get()!=&v[2]||&o[2].get()!=&v[1]||&o[3].get()!=&v[3]||v[4]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-merge-comparison" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeNan) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=(0.0/0.0),y=1.0,z=9.0;const R a[]={x};R b[]={y},o[]={z,z};auto p=std::merge(a,a+1,b,b+1,o,std::less<>{});return p!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9.0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeOneElement) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-one-element.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto p=std::merge(a,a+1,b,b+1,o,std::less<>{});return p!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int calls=0,dtors=0;struct Access{R*p;R*get(){++calls;return p;}~Access(){++dtors;}};int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::merge(Access{a}.get(),Access{a+1}.get(),Access{b}.get(),Access{b+1}.get(),Access{o}.get(),std::less<>{});return r!=o+2||calls!=5||dtors!=5||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int calls=0;int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};R*arg(R*p){++calls;return p;}int main(){auto r=std::merge(arg(a),arg(a+1),arg(b),arg(b+1),arg(o),std::less<>{});return r!=o+2||calls!=5||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-partial-range.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={9,1,3,9,8,2,4,8,7};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5],v[6],v[7]},o[]={v[8],v[8],v[8],v[8],v[8],v[8]};auto r=std::merge(a+1,a+3,b+1,b+3,o+1,std::less<>{});return r!=o+5||&o[0].get()!=&v[8]||&o[1].get()!=&v[1]||&o[2].get()!=&v[5]||&o[3].get()!=&v[2]||&o[4].get()!=&v[6]||&o[5].get()!=&v[8]||v[8]!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimePointer) {
+  const auto Source = tmpFile("wrapper-merge-comparison-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-merge-comparison-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*>;int main(){int storage[3]={};int*p=storage,*q=storage+1,*r=storage+2;R a[]={p},b[]={q},o[]={r,r};auto end=std::merge(a,a+1,b,b+1,o,std::less<>{});return end!=o+2||&o[0].get()!=&p||&o[1].get()!=&q||r!=storage+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct V{int n;};bool operator<(const V&a,const V&b){return a.n<b.n;}int main(){V a[]={{1},{3}},b[]={{2},{4}},o[4]={};auto r=std::merge(a,a+2,b,b+2,o);return r!=o+4||o[0].n!=1||o[1].n!=2||o[2].n!=3||o[3].n!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});(r-1)->get()=7;return r!=o+2||y!=7||x!=1||z!=9||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={1,3},b[]={2,4},o[4]={};auto r=std::merge(a,a+2,b,b+2,o);return r!=o+4||o[0]!=1||o[1]!=2||o[2]!=3||o[3]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=-0.0,y=0.0,z=9.0;R a[]={x},b[]={y},o[]={z,z};auto p=std::merge(a,a+1,b,b+1,o,std::less<>{});return p!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||!((1.0/o[0].get())<0.0)||((1.0/o[1].get())<0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeStableTies) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-stable-ties.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-stable-ties.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=1,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-merge-comparison-runtime-stable-ties" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMergeComparisonRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-merge-comparison-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-merge-comparison-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};using std::merge;auto r=merge(a,a+1,b,b+1,o,std::less<>{});return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-merge-comparison-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMergeComparisonRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);auto selected(P a,P b){return static_cast<F>(&std::merge<P,P,P>)(a,b,a,b,a);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"expression-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::merge(a,b,a,b,b,(0,std::less<>{}));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);auto selected(P a,P b){F f=&std::merge<P,P,P>;return f(a,b,a,b,a);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"returned-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<> predicate(){return{};}auto selected(P a,P b){return std::merge(a,b,a,b,b,predicate());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class O>O copy(I,I,O);}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P copy<P,P>(P,P,P);}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P copy<P,P>(P,P,P){return nullptr;}}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::merge(&source(a),&a+1,&b,&b+1,&a,std::less<>{});}
+)cpp"},
+      {"source-forward-wrapper-mixed-qualification", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>constexpr const W&forward<const W&>(const W&t)noexcept{return t;}}}
+auto selected(P a,P b,W*other){return std::merge(a,b,other,other+1,other,std::less<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::less<>{});}
+)cpp"},
+      {"source-greater-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>std::forward<W&>(b)))->decltype(std::forward<W&>(a)>std::forward<W&>(b)){return a.get()>b.get();}}}
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::greater<>{});}
+)cpp"},
+      {"source-less-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b));}}
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::less<>{});}
+)cpp"},
+      {"source-less-operation-mixed-qualification", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,const W&>(W&a,const W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<const W&>(b)))->decltype(std::forward<W&>(a)<std::forward<const W&>(b)){return a.get()<b.get();}}}
+auto selected(P a,P b,W*other){return std::merge(a,b,other,other+1,other,std::less<>{});}
+)cpp"},
+      {"source-less-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b)){return a.get()<b.get();}}}
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::less<>{});}
+)cpp"},
+      {"source-less-primary", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct less;}}
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::less<>{});}
+)cpp"},
+      {"source-less-record", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct less<void>;}}
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::less<>{});}
+)cpp"},
+      {"source-merge-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C,class I,class J,class O>O __merge(I,I,J,J,O,C);}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-merge-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __merge<less<void>&,P,P,P>(P,P,P,P,P,less<void>&);}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-merge-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __merge<less<void>&,P,P,P>(P,P,P,P,P,less<void>&){return nullptr;}}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-merge-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O,class C>O merge(I,I,J,J,O,C);}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-merge-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P merge<P,P,P,less<void>>(P,P,P,P,P,less<void>);}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-merge-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P merge<P,P,P,less<void>>(P,P,P,P,P,less<void>){return nullptr;}}}
+auto selected(P a,P b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::merge(&source(a),&a+1,&b,&b+1,&a,std::less<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::merge(&source(a),&a+1,&b,&b+1,&a,std::less<>{});}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::merge(a,a+1,b,b+1,a,std::less<>{});}
+)cpp"},
+      {"stored-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::less<> p;return std::merge(a,b,a,b,b,p);}
+)cpp"},
+      {"typed-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::merge(a,b,a,b,b,std::less<W>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);F selected(){using std::merge;return &merge<P,P,P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-merge-comparison-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-merge-comparison-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
