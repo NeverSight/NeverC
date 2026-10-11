@@ -8393,10 +8393,26 @@ class FunctionLowering {
           snapshot(bind(Call->getArg(1),
                         Call->getDirectCallee()->getParamDecl(1)->getType()),
                    L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto WrapperOperation =
+          Call->getNumArgs() == 3
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
-      if (Call->getNumArgs() == 3) {
+      if (Wrapper && WrapperOperation && Call->getNumArgs() == 3 &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        WrapperComparison =
+            WrapperOperation->Record->getName() == "less" ? "<" : ">";
+        discardFunctionalObject(Call->getArg(2));
+      } else if (Call->getNumArgs() == 3) {
         SDKComparator = approvedDirectAlgorithmComparator(
             A.S, A.Sources, Call, A.Context);
         if (SDKComparator)
@@ -8407,12 +8423,6 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
-      const auto Wrapper =
-          Call->getNumArgs() == 2
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
-              : std::nullopt;
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         return dereference(Expression{{"kind", "member"},
@@ -8450,7 +8460,7 @@ class FunctionLowering {
                                : dereference(json::Object(RightAddress), L),
                        L)
              : Wrapper ? CompareUtilityValues(
-                             "<",
+                             WrapperComparison,
                              ComparedValue(json::Object(Minimum ? RightAddress
                                                                 : LeftAddress)),
                              Wrapper->ReferentType,

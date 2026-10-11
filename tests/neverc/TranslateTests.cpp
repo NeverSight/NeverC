@@ -324428,3 +324428,857 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-min-value-comparison-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-min-value-comparison-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using A=R;int main(){int x=3,y=2;A a=x,b=y;const A&r=std::min(a,b,std::less<>{});return &r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2;R a=x,b=x;const R&r=std::min(a,b,std::less<>{});return &r!=&a||&r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeBool) {
+  const auto Source = tmpFile("wrapper-min-value-comparison-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-min-value-comparison-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){bool x=true,y=false;using W=std::reference_wrapper<bool>;W a=x,b=y;const W&r=std::min(a,b,std::less<>{});return &r!=&b||r.get();}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeConstFirst) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-const-first.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-const-first.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=2;const R a=x;R b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-const-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMinValueComparisonRuntimeConstInputConstReferents) {
+  const auto Source = tmpFile(
+      "wrapper-min-value-comparison-runtime-const-input-const-referents.cpp");
+  const auto Output = tmpFile(
+      "wrapper-min-value-comparison-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){const int x=3,y=2;using C=std::reference_wrapper<const int>;const C a=x,b=y;const C&r=std::min(a,b,std::less<>{});return &r!=&b||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-const-input-const-referents" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=2;const R a=x,b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&b||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){const int x=3,y=2;using C=std::reference_wrapper<const int>;C a=x,b=y;const C&r=std::min(a,b,std::less<>{});return &r!=&b||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeConstSecond) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-const-second.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-const-second.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a=x;const R b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-const-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-min-value-comparison-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){double x=3.5,y=2.5;using W=std::reference_wrapper<double>;W a=x,b=y;const W&r=std::min(a,b,std::less<>{});return &r!=&b||r.get()!=2.5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeFloat) {
+  const auto Source = tmpFile("wrapper-min-value-comparison-runtime-float.cpp");
+  const auto Output = tmpFile("wrapper-min-value-comparison-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const float>;int main(){const float x=3.5f,y=2.5f;const R a=x,b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&b||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeGreater) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-greater.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-greater.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2;R a=x,b=y;const R&r=std::min(a,b,std::greater<>{});return &r!=&b||&r.get()!=&y||x!=1||y!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-greater" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a=x,b=y;x=4;y=3;const R&r=std::min(a,b,std::less<>{});return &r!=&b||r.get()!=3||&a.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMinValueComparisonRuntimeMinValueComparison) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-min-value-comparison.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-min-value-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a=x,b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&a||r.get()!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-min-value-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeNan) {
+  const auto Source = tmpFile("wrapper-min-value-comparison-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-min-value-comparison-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){double x=0.0/0.0,y=2.0;using W=std::reference_wrapper<double>;W a=x,b=y;const W&r=std::min(a,b,std::less<>{});return &r!=&a||r.get()==r.get();}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R&get(){return *p;}~A(){++n;}};
+int main(){int x=3,y=2;R a=x,b=y;const R&r=std::min(A{&a}.get(),A{&b}.get(),std::less<>{});return n!=2||&r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=2,n=0;R a=x,b=y;const R&r=std::min((++n,a),(++n,b),std::less<>{});return n!=2||&r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeOriginalBinding) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-original-binding.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-original-binding.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=2;R a=x,b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&b||&a.get()!=&x||&b.get()!=&y||x!=3||y!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-original-binding" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct W{int n;};bool operator<(const W&a,const W&b){return a.n<b.n;}int main(){W a{3},b{2};const W&r=std::min(a,b);return &r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+const R&choose(const R&a,const R&b){return std::min(a,b,std::less<>{});}int main(){int x=3,y=2;R a=x,b=y;const R&r=choose(a,b);return &r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeSameObject) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-same-object.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-same-object.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2;R a=x;const R&r=std::min(a,a,std::less<>{});return &r!=&a||&r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-same-object" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int x=3,y=2;const int&r=std::min(x,y);return &r!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){double x=-0.0,y=0.0;using W=std::reference_wrapper<double>;W a=x,b=y;const W&r=std::min(a,b,std::less<>{});return &r!=&a||!(1.0/r.get()<0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeStoredAddress) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-stored-address.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-stored-address.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=2;R a=x,b=y;const R*p=&std::min(a,b,std::less<>{});return p!=&b||&p->get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-value-comparison-runtime-stored-address" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeTie) {
+  const auto Source = tmpFile("wrapper-min-value-comparison-runtime-tie.cpp");
+  const auto Output = tmpFile("wrapper-min-value-comparison-runtime-tie.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,y=2;R a=x,b=y;const R&r=std::min(a,b,std::less<>{});return &r!=&a||&r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-tie" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinValueComparisonRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-min-value-comparison-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-value-comparison-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=2;R a=x,b=y;using std::min;const R&r=min(a,b,std::less<>{});return &r!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-value-comparison-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperMinValueComparisonRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+using F=const W&(*)(const W&,const W&);
+const W&selected(const W&a,const W&b){return static_cast<F>(&std::min<W>)(a,b);}
+)cpp"},
+      {"custom-predicate", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+struct B{bool operator()(const W&a,const W&b)const{return a.get()<b.get();}};
+const W&selected(const W&a,const W&b){return std::min(a,b,B{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+enum E{A,B};using W=std::reference_wrapper<E>;
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"expression-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::min(*a,*b,(0,std::less<>{}));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+using F=const W&(*)(const W&,const W&);
+const W&selected(const W&a,const W&b){F f=&std::min<W>;return f(a,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using W=std::reference_wrapper<R>;namespace std{inline namespace __1{inline bool operator<(const R&a,const R&b){return a.get()<b.get();}}}
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"returned-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<> predicate(){return{};}auto selected(P a,P b){return std::min(*a,*b,predicate());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <algorithm>
+#include <functional>
+template<int N>using A=std::reference_wrapper<int>;using W=A<sizeof(long double)>;
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+const W&source(const W&w)noexcept(sizeof(long double)>0){return w;}
+const W&selected(const W&a,const W&b){return std::min(source(a),b,std::less<>{});}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr const W&forward<const W&>(const W&w)noexcept{return w;}}}
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr const W&forward<const W&>(const W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::min(*a,*b,std::less<>{});}
+)cpp"},
+      {"source-greater-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<const W&,const W&>(const W&a,const W&b)const noexcept(noexcept(std::forward<const W&>(a)>std::forward<const W&>(b)))->decltype(std::forward<const W&>(a)>std::forward<const W&>(b)){return a.get()>b.get();}}}
+auto selected(P a,P b){return std::min(*a,*b,std::greater<>{});}
+)cpp"},
+      {"source-less-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<const W&,const W&>(const W&a,const W&b)const noexcept(noexcept(std::forward<const W&>(a)<std::forward<const W&>(b)))->decltype(std::forward<const W&>(a)<std::forward<const W&>(b));}}
+auto selected(P a,P b){return std::min(*a,*b,std::less<>{});}
+)cpp"},
+      {"source-less-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<const W&,const W&>(const W&a,const W&b)const noexcept(noexcept(std::forward<const W&>(a)<std::forward<const W&>(b)))->decltype(std::forward<const W&>(a)<std::forward<const W&>(b)){return a.get()<b.get();}}}
+auto selected(P a,P b){return std::min(*a,*b,std::less<>{});}
+)cpp"},
+      {"source-less-primary", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct less;}}
+auto selected(P a,P b){return std::min(*a,*b,std::less<>{});}
+)cpp"},
+      {"source-less-record", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct less<void>;}}
+auto selected(P a,P b){return std::min(*a,*b,std::less<>{});}
+)cpp"},
+      {"source-min-value-delegate-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T,class B>constexpr const T&min(const T&,const T&,B);}}
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-min-value-delegate-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr const W&min<W,less<void>>(const W&a,const W&,less<void>);}}
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-min-value-delegate-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr const W&min<W,less<void>>(const W&a,const W&,less<void>){return a;}}}
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+const W&source(const W&w){long double unsupported=1;return w;}
+const W&selected(const W&a,const W&b){return std::min(source(a),b,std::less<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+const W&source(const W&w,int n=sizeof(long double)){return w;}
+const W&selected(const W&a,const W&b){return std::min(source(a),b,std::less<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-record-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{int n;operator int()const;};bool operator<(const R&a,const R&b){return int(a)<int(b);}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{int n;operator int()const{return n;}};bool operator<(const R&a,const R&b){return int(a)<int(b);}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+const W&selected(const W&a,const W&b){return std::min(a,b,std::less<>{});}
+)cpp"},
+      {"stored-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::less<> p;return std::min(*a,*b,p);}
+)cpp"},
+      {"typed-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::min(*a,*b,std::less<W>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+using F=const W&(*)(const W&,const W&);
+F selected(){using std::min;return &min<W>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-min-value-comparison-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-min-value-comparison-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

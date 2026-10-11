@@ -55,6 +55,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::min`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用并直接初始化透明 less 或 greater，支持两个相同类型的已检查包装器，包括 const 包装器和引用。完整认证的 SDK 条件表达式比较第二个引用与第一个引用，返回所选原包装器的 const 引用；相等时选择第一个参数。保留实时绑定、实参求值、引用身份、结果使用及清理，并检查比较器、转发和包装器转换。仍拒绝存储、返回或带类型的比较器、volatile 或不兼容引用及源代码替换。
+
 `cpp-core-v2`: `std::partition_point`, `std::reference_wrapper<T>`, `std::logical_not<>`. 直接调用并直接初始化透明谓词，支持已检查的算术包装器指针范围，包括 const 包装器和引用。范围须按零值引用在非零值之前分区；返回首个非零位置或结束指针。须认证完整 SDK 二分搜索、距离、正数折半、前进、逻辑取反、转发、引用转换及返回指针。保留实时绑定、实参求值、结果使用及清理；仍拒绝存储、返回或带类型的谓词、volatile 引用及源代码替换。
 
 直接调用 `std::is_partitioned` 并直接初始化透明 `std::logical_not<>`，检查有限 `std::reference_wrapper<T>` 指针范围内的所有零值算术引用是否位于非零值之前。空输入、全零及全非零范围返回 true；非零尾段中出现零值立即返回 false。须认证 SDK 入口、完整前缀和尾段扫描、范围结束检查、两次扫描间的递增、布尔返回、逻辑取反、转发及引用转换。保留实时绑定、const 包装器和引用、实参求值、结果使用及清理。存储、返回或带类型的操作对象、volatile 引用和源代码替换仍被拒绝。 用户源码中的 `using std::is_partitioned;` 声明可导入固定 SDK 的重载集；每次调用仍须通过相同的源码与操作检查。
