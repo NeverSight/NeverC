@@ -11131,7 +11131,42 @@ class FunctionLowering {
       auto FirstRange = AlgorithmRangeValue(0);
       auto First = std::move(FirstRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
-      auto Predicate = captureUnaryPredicate(Call, Operation);
+      const auto LogicalNotObject = approvedFunctionalObjectRecord(
+          A.S, A.Sources, Call->getArg(2)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto LogicalNotWrapper =
+          LogicalNotObject &&
+                  LogicalNotObject->Record->getName() == "logical_not"
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      std::optional<CapturedAlgorithmPredicate> Predicate;
+      if (LogicalNotWrapper)
+        discardFunctionalObject(Call->getArg(2));
+      else
+        Predicate = captureUnaryPredicate(Call, Operation);
+      auto SelectedPredicate = [&](Expression Current) {
+        if (!LogicalNotWrapper)
+          return emitUnaryPredicate(*Predicate,
+                                    dereference(json::Object(Current), L), L);
+        auto Referent = dereference(
+            Expression{
+                {"kind", "member"},
+                {"type", type(LogicalNotWrapper->PointerType, L)},
+                {"name", "nct_reference_wrapper_pointer"},
+                {"args", json::Array{dereference(json::Object(Current), L)}},
+                {"loc", A.loc(L)}},
+            L);
+        return Expression{
+            {"kind", "unary"},
+            {"type", "bool"},
+            {"operator", "!"},
+            {"args", json::Array{cast(std::move(Referent), "bool", L)}},
+            {"loc", A.loc(L)}};
+      };
+
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(FirstRange.second, L);
       auto Length = temporary(DifferenceType, L);
@@ -11152,8 +11187,7 @@ class FunctionLowering {
              L);
       assign(Middle, binary("+", First, Half, PointerType, L), L);
       {
-        auto Selected = emitUnaryPredicate(
-            Predicate, dereference(json::Object(Middle), L), L);
+        auto Selected = SelectedPredicate(json::Object(Middle));
         branch(std::move(Selected), Advance, Narrow, L);
       }
       label(Advance, L);
