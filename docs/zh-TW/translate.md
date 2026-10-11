@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::max`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫並直接初始化透明 less 或 greater，支援兩個相同型別的已檢查包裝器，包括 const 包裝器和參照。完整認證的 SDK 條件運算式比較第一個參照與第二個參照，傳回所選原包裝器的 const 參照；相等時選擇第一個引數。保留即時繫結、引數求值、參照身分、結果使用及清理，並檢查比較器、轉送和包裝器轉換。仍拒絕儲存、傳回或帶型別的比較器、volatile 或不相容參照及原始碼替換。
+
 `cpp-core-v2`: `std::min`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫並直接初始化透明 less 或 greater，支援兩個相同型別的已檢查包裝器，包括 const 包裝器和參照。完整認證的 SDK 條件運算式比較第二個參照與第一個參照，傳回所選原包裝器的 const 參照；相等時選擇第一個引數。保留即時繫結、引數求值、參照身分、結果使用及清理，並檢查比較器、轉送和包裝器轉換。仍拒絕儲存、傳回或帶型別的比較器、volatile 或不相容參照及原始碼替換。
 
 `cpp-core-v2`: `std::partition_point`, `std::reference_wrapper<T>`, `std::logical_not<>`. 直接呼叫並直接初始化透明述詞，支援已檢查的算術包裝器指標範圍，包括 const 包裝器和參照。範圍須依零值參照在非零值之前分區；傳回首個非零位置或結束指標。須認證完整 SDK 二分搜尋、距離、正數折半、前進、邏輯反向、轉送、參照轉換及傳回指標。保留即時繫結、引數求值、結果使用及清理；仍拒絕儲存、傳回或帶型別的述詞、volatile 參照及原始碼替換。
