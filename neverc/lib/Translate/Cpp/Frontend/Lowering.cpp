@@ -8228,20 +8228,27 @@ class FunctionLowering {
       branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst,
              SecondDone, L);
       label(CompareFirst, L);
-      if (Merge && Wrapper && WrapperOperation &&
+      if ((Merge || Union) && Wrapper && WrapperOperation &&
           (WrapperOperation->Record->getName() == "less" ||
            WrapperOperation->Record->getName() == "greater"))
         branch(Less(dereference(json::Object(Second), L),
                     dereference(json::Object(First), L), true),
-               SecondLess, FirstLess, L);
+               SecondLess, Merge ? FirstLess : CompareSecond, L);
       else
         branch(Less(dereference(json::Object(First), L),
                     dereference(json::Object(Second), L), false),
                FirstLess, CompareSecond, L);
       label(CompareSecond, L);
-      branch(Less(dereference(json::Object(Second), L),
-                  dereference(json::Object(First), L), true),
-             SecondLess, Equal, L);
+      if (Union && Wrapper && WrapperOperation &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater"))
+        branch(Less(dereference(json::Object(First), L),
+                    dereference(json::Object(Second), L), false),
+               FirstLess, Equal, L);
+      else
+        branch(Less(dereference(json::Object(Second), L),
+                    dereference(json::Object(First), L), true),
+               SecondLess, Equal, L);
       label(FirstLess, L);
       Emit(First, FirstType, Merge || Union || Difference || Symmetric);
       jump(CheckFirst, L);
