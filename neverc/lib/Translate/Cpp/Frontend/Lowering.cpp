@@ -8000,10 +8000,27 @@ class FunctionLowering {
       auto Last = std::move(LastRange.first);
       auto Second = std::move(SecondRange.first);
       auto SecondLast = std::move(SecondLastRange.first);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
           SDKComparators;
-      if (Call->getNumArgs() == 5) {
+      const auto WrapperOperation =
+          Call->getNumArgs() == 5
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(4)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      if (Wrapper && WrapperOperation &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        const auto *Object = Call->getArg(4)->getType()->getAsCXXRecordDecl();
+        WrapperComparison =
+            Object && Object->getName() == "greater" ? ">" : "<";
+        discardFunctionalObject(Call->getArg(4));
+      } else if (Call->getNumArgs() == 5) {
         const auto LeftElement = FirstRange.second->getPointeeType();
         const auto RightElement = SecondRange.second->getPointeeType();
         SDKComparators =
@@ -8011,13 +8028,6 @@ class FunctionLowering {
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(4)), L);
       }
-      const auto Wrapper =
-          Call->getNumArgs() == 4
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
       auto Less = [&](Expression Left, unsigned LeftIndex, Expression Right,
                       unsigned RightIndex, bool Reversed) {
         if (SDKComparators)
@@ -8030,7 +8040,8 @@ class FunctionLowering {
                                      std::move(Left), std::move(Right), L);
         if (Wrapper)
           return CompareUtilityValues(
-              "<", dereference(ReferenceMember(std::move(Left), *Wrapper), L),
+              WrapperComparison,
+              dereference(ReferenceMember(std::move(Left), *Wrapper), L),
               Wrapper->ReferentType,
               dereference(ReferenceMember(std::move(Right), *Wrapper), L),
               Wrapper->ReferentType);
