@@ -8494,10 +8494,26 @@ class FunctionLowering {
           snapshot(bind(Call->getArg(2),
                         Call->getDirectCallee()->getParamDecl(2)->getType()),
                    L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto WrapperOperation =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(3)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
-      if (Call->getNumArgs() == 4) {
+      if (Wrapper && WrapperOperation && Call->getNumArgs() == 4 &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        WrapperComparison =
+            WrapperOperation->Record->getName() == "less" ? "<" : ">";
+        discardFunctionalObject(Call->getArg(3));
+      } else if (Call->getNumArgs() == 4) {
         SDKComparator = approvedDirectAlgorithmComparator(
             A.S, A.Sources, Call, A.Context);
         if (SDKComparator)
@@ -8508,12 +8524,6 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(3)), L);
         }
       }
-      const auto Wrapper =
-          Call->getNumArgs() == 3
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
-              : std::nullopt;
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         return dereference(Expression{{"kind", "member"},
@@ -8541,37 +8551,40 @@ class FunctionLowering {
                                     Call->getArg(3)->getType(),
                                     dereference(json::Object(ValueAddress), L),
                                     dereference(json::Object(LowAddress), L), L)
-          : Wrapper ? CompareUtilityValues(
-                          "<", ComparedValue(json::Object(ValueAddress)),
-                          Wrapper->ReferentType,
-                          ComparedValue(json::Object(LowAddress)),
-                          Wrapper->ReferentType)
-                    : AlgorithmReferenceLess(json::Object(ValueAddress),
-                                             json::Object(LowAddress)),
+          : Wrapper
+              ? CompareUtilityValues(WrapperComparison,
+                                     ComparedValue(json::Object(ValueAddress)),
+                                     Wrapper->ReferentType,
+                                     ComparedValue(json::Object(LowAddress)),
+                                     Wrapper->ReferentType)
+              : AlgorithmReferenceLess(json::Object(ValueAddress),
+                                       json::Object(LowAddress)),
           SelectLow, CheckHigh, L);
       label(CheckHigh, L);
-      branch(SDKComparator ? functionalOperationValues(
-                                 L, dereference(json::Object(HighAddress), L),
-                                 dereference(json::Object(ValueAddress), L),
-                                 *SDKComparator)
-             : SourceComparator
-                 ? emitBinaryCallable(
-                       *SourceComparator,
-                       dereference(json::Object(HighAddress), L),
-                       dereference(json::Object(ValueAddress), L), L)
-             : Comparator
-                 ? emitBinaryPredicate(
-                       json::Object(*Comparator), Call->getArg(3)->getType(),
-                       dereference(json::Object(HighAddress), L),
-                       dereference(json::Object(ValueAddress), L), L)
-             : Wrapper ? CompareUtilityValues(
-                             "<", ComparedValue(json::Object(HighAddress)),
-                             Wrapper->ReferentType,
-                             ComparedValue(json::Object(ValueAddress)),
-                             Wrapper->ReferentType)
-                       : AlgorithmReferenceLess(json::Object(HighAddress),
-                                                json::Object(ValueAddress)),
-             SelectHigh, SelectValue, L);
+      branch(
+          SDKComparator
+              ? functionalOperationValues(
+                    L, dereference(json::Object(HighAddress), L),
+                    dereference(json::Object(ValueAddress), L), *SDKComparator)
+          : SourceComparator
+              ? emitBinaryCallable(*SourceComparator,
+                                   dereference(json::Object(HighAddress), L),
+                                   dereference(json::Object(ValueAddress), L),
+                                   L)
+          : Comparator
+              ? emitBinaryPredicate(
+                    json::Object(*Comparator), Call->getArg(3)->getType(),
+                    dereference(json::Object(HighAddress), L),
+                    dereference(json::Object(ValueAddress), L), L)
+          : Wrapper
+              ? CompareUtilityValues(WrapperComparison,
+                                     ComparedValue(json::Object(HighAddress)),
+                                     Wrapper->ReferentType,
+                                     ComparedValue(json::Object(ValueAddress)),
+                                     Wrapper->ReferentType)
+              : AlgorithmReferenceLess(json::Object(HighAddress),
+                                       json::Object(ValueAddress)),
+          SelectHigh, SelectValue, L);
       label(SelectValue, L);
       assign(Result, ValueAddress, L);
       jump(End, L);
