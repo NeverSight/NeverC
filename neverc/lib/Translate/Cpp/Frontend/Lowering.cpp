@@ -8603,10 +8603,26 @@ class FunctionLowering {
           bind(Call->getArg(0), Function->getParamDecl(0)->getType()), L);
       auto RightAddress = snapshot(
           bind(Call->getArg(1), Function->getParamDecl(1)->getType()), L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto WrapperOperation =
+          Call->getNumArgs() == 3
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
-      if (Call->getNumArgs() == 3) {
+      if (Wrapper && WrapperOperation && Call->getNumArgs() == 3 &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
+        WrapperComparison =
+            WrapperOperation->Record->getName() == "less" ? "<" : ">";
+        discardFunctionalObject(Call->getArg(2));
+      } else if (Call->getNumArgs() == 3) {
         SDKComparator = approvedDirectAlgorithmComparator(
             A.S, A.Sources, Call, A.Context);
         if (SDKComparator)
@@ -8617,12 +8633,6 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
-      const auto Wrapper =
-          Call->getNumArgs() == 2
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
-              : std::nullopt;
       auto ComparedValue = [&](Expression Pointer) {
         auto Value = dereference(std::move(Pointer), L);
         return dereference(Expression{{"kind", "member"},
@@ -8658,13 +8668,14 @@ class FunctionLowering {
                     json::Object(*Comparator), Call->getArg(2)->getType(),
                     dereference(json::Object(RightAddress), L),
                     dereference(json::Object(LeftAddress), L), L)
-          : Wrapper ? CompareUtilityValues(
-                          "<", ComparedValue(json::Object(RightAddress)),
-                          Wrapper->ReferentType,
-                          ComparedValue(json::Object(LeftAddress)),
-                          Wrapper->ReferentType)
-                    : AlgorithmReferenceLess(json::Object(RightAddress),
-                                             json::Object(LeftAddress)),
+          : Wrapper
+              ? CompareUtilityValues(WrapperComparison,
+                                     ComparedValue(json::Object(RightAddress)),
+                                     Wrapper->ReferentType,
+                                     ComparedValue(json::Object(LeftAddress)),
+                                     Wrapper->ReferentType)
+              : AlgorithmReferenceLess(json::Object(RightAddress),
+                                       json::Object(LeftAddress)),
           Reverse, Forward, L);
       label(Forward, L);
       assign(fieldStorage(json::Object(Place), Pair->First, L), LeftAddress, L);

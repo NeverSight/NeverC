@@ -55,6 +55,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::minmax`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用并直接初始化透明 less 或 greater，支持两个相同类型的已检查包装器，包括 const 包装器和引用。完整认证的 SDK 条件表达式比较第二个引用与第一个引用，并构造由原包装器 const 引用组成的已检查 pair；相等时保留第一和第二个参数的顺序。保留实时绑定、实参求值、引用身份、结果使用及清理，并检查比较器、转发和包装器转换。仍拒绝存储、返回或带类型的比较器、volatile 或不兼容引用及源代码替换。
+
 `cpp-core-v2`: `std::clamp`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用并直接初始化透明 less 或 greater，支持三个相同类型的已检查包装器，包括 const 包装器和引用；上下界须按比较器排序。完整认证 SDK 断言及嵌套条件表达式，先比较值与下界，再比较上界与值，返回所选原包装器的 const 引用；边界相等时选择值。保留实时绑定、实参求值、引用身份、结果使用及清理，并检查比较器、转发和包装器转换。仍拒绝存储、返回或带类型的比较器、volatile 或不兼容引用及源代码替换。
 
 `cpp-core-v2`: `std::max`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用并直接初始化透明 less 或 greater，支持两个相同类型的已检查包装器，包括 const 包装器和引用。完整认证的 SDK 条件表达式比较第一个引用与第二个引用，返回所选原包装器的 const 引用；相等时选择第一个参数。保留实时绑定、实参求值、引用身份、结果使用及清理，并检查比较器、转发和包装器转换。仍拒绝存储、返回或带类型的比较器、volatile 或不兼容引用及源代码替换。
