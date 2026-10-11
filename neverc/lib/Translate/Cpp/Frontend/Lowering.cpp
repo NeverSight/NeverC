@@ -8662,11 +8662,32 @@ class FunctionLowering {
         Last = std::move(LastRange.first);
         RangePointer = FirstRange.second;
       }
+      const auto Wrapper =
+          (ListResult ? Call->getNumArgs() == 1 : true)
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    RangePointer->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::optional<FunctionalReferenceRecord>();
+      const auto WrapperOperation =
+          !ListResult && Call->getNumArgs() == 3
+              ? approvedFunctionalObjectRecord(
+                    A.S, A.Sources,
+                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
       if (ListResult && Call->getNumArgs() == 2) {
         Comparator = snapshot(expression(Call->getArg(1)), L);
+      } else if (!ListResult && Wrapper && WrapperOperation &&
+                 Call->getNumArgs() == 3 &&
+                 (WrapperOperation->Record->getName() == "less" ||
+                  WrapperOperation->Record->getName() == "greater")) {
+        WrapperComparison =
+            WrapperOperation->Record->getName() == "less" ? "<" : ">";
+        discardFunctionalObject(Call->getArg(2));
       } else if (!ListResult && Call->getNumArgs() == 3) {
         const auto Element = RangePointer->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
@@ -8683,13 +8704,6 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
-      const auto Wrapper =
-          (ListResult ? Call->getNumArgs() == 1 : Call->getNumArgs() == 2)
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    RangePointer->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::optional<FunctionalReferenceRecord>();
       auto ComparedValue = [&](Expression Value) {
         return dereference(Expression{{"kind", "member"},
                                       {"type", type(Wrapper->PointerType, L)},
@@ -8712,8 +8726,9 @@ class FunctionLowering {
               std::move(Right), L);
         if (Wrapper)
           return CompareUtilityValues(
-              "<", ComparedValue(std::move(Left)), Wrapper->ReferentType,
-              ComparedValue(std::move(Right)), Wrapper->ReferentType);
+              WrapperComparison, ComparedValue(std::move(Left)),
+              Wrapper->ReferentType, ComparedValue(std::move(Right)),
+              Wrapper->ReferentType);
         if (ListResult)
           return binary("<", std::move(Left), std::move(Right), "bool", L);
         return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);

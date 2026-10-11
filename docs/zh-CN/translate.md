@@ -55,6 +55,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::minmax_element`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用支持直接初始化的透明 less 或 greater，输入为已验证 SDK 包装类型的原始指针范围。包装对象及引用对象均可带 const；引用对象支持 bool、不超过 64 位的整数、float、double 及对象指针。完整认证的 SDK 成对扫描按所选比较器返回首个最小元素及末个最大元素；空范围返回两个结束指针。可调用特征、前向迭代器特征、identity 投影、带两个引用字段的私有比较适配器、invoke 路径及 pair 构造均需验证。比较读取当前引用值，保留绑定，各实参求值一次，析构保持原语义。存储、返回或带类型的比较器、源码替换、不兼容或 volatile 引用对象仍被拒绝。
+
 `cpp-core-v2`: `std::set_intersection`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用支持直接初始化的透明 less 或 greater，两个原始指针输入范围及可修改输出必须使用同一已验证 SDK 包装类型。输入 const 限定可不同；引用对象支持 bool、不超过 64 位的整数、float、double 及对象指针，也可带 const。对于按比较器排序的输入，完整认证的 SDK 扫描按两个方向比较当前引用值，按顺序复制匹配元素的第一输入绑定。输出重复数量为两个输入数量的最小值。前向迭代器类别分派、两侧的单侧搜索和二分搜索、identity 投影、相等时输出的辅助函数及迭代器策略均需验证。引用对象保持不变。比较器引用转发、私有三字段结果、移动构造及输出投影均需验证。各实参求值一次，析构保持原语义。存储、返回或带类型的比较器、源码替换、const 输出及不兼容引用对象仍被拒绝。
 
 `cpp-core-v2`: `std::set_symmetric_difference`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接调用支持直接初始化的透明 less 或 greater，两个原始指针输入范围及可修改输出必须使用同一已验证 SDK 包装类型。输入 const 限定可不同；引用对象支持 bool、不超过 64 位的整数、float、double 及对象指针，也可带 const。对于按比较器排序的输入，完整认证的 SDK 扫描按两个方向比较当前引用值，消耗匹配元素，并按顺序复制未匹配绑定及两侧剩余区间。输出重复数量为两个输入数量之差的绝对值。引用对象保持不变。比较器引用转发、私有三字段结果、移动构造及输出投影均需验证。各实参求值一次，析构保持原语义。存储、返回或带类型的比较器、源码替换、const 输出及不兼容引用对象仍被拒绝。
