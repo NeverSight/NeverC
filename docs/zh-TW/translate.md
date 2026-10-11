@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::binary_search`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫支援直接初始化的透明 less 或 greater，輸入為已驗證 SDK 包裝型別的原始指標範圍。包裝物件及參照物件均可帶 const；參照物件支援 bool、不超過 64 位元的整數、float、double 及物件指標。查詢值須使用同一不帶限定的包裝型別。對於依所選比較器分區的範圍，完整認證的 SDK 搜尋傳回首個不小於查詢值的元素或結束指標。查詢 const 參照、可呼叫特徵、identity 投影、迭代器策略的距離計算與前進、invoke 路徑、正數折半及完整二分搜尋皆須驗證。比較讀取目前參照值，保留綁定，各引數求值一次，解構保持原語意。儲存、傳回或帶型別的比較器、原始碼替換、不相容或 volatile 參照物件仍被拒絕。 在認證的 lower_bound 搜尋之後，SDK 僅在結果不是結束指標且 const 查詢值對該元素的反向比較為假時傳回 true。兩個比較方向和短路結果皆須驗證。
+
 `cpp-core-v2`: `std::upper_bound`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫支援直接初始化的透明 less 或 greater，輸入為已驗證 SDK 包裝型別的原始指標範圍。包裝物件及參照物件均可帶 const；參照物件支援 bool、不超過 64 位元的整數、float、double 及物件指標。查詢值須使用同一不帶限定的包裝型別。對於依所選比較器分區的範圍，完整認證的 SDK 搜尋傳回首個大於查詢值的元素或結束指標。查詢 const 參照、可呼叫特徵、identity 投影、迭代器策略的距離計算與前進、invoke 路徑、正數折半及完整二分搜尋皆須驗證。比較讀取目前參照值，保留綁定，各引數求值一次，解構保持原語意。儲存、傳回或帶型別的比較器、原始碼替換、不相容或 volatile 參照物件仍被拒絕。
 
 `cpp-core-v2`: `std::lower_bound`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫支援直接初始化的透明 less 或 greater，輸入為已驗證 SDK 包裝型別的原始指標範圍。包裝物件及參照物件均可帶 const；參照物件支援 bool、不超過 64 位元的整數、float、double 及物件指標。查詢值須使用同一不帶限定的包裝型別。對於依所選比較器分區的範圍，完整認證的 SDK 搜尋傳回首個不小於查詢值的元素或結束指標。查詢 const 參照、可呼叫特徵、identity 投影、迭代器策略的距離計算與前進、invoke 路徑、正數折半及完整二分搜尋皆須驗證。比較讀取目前參照值，保留綁定，各引數求值一次，解構保持原語意。儲存、傳回或帶型別的比較器、原始碼替換、不相容或 volatile 參照物件仍被拒絕。
