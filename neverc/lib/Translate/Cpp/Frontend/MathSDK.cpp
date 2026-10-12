@@ -36591,7 +36591,12 @@ static bool utilityWrapperTransformReduceUnary(
         return false;
     return true;
   };
-  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+  auto ReductionOpcodeFor =
+      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
+    if (Name == "logical_and")
+      return BO_LAnd;
+    if (Name == "logical_or")
+      return BO_LOr;
     return utilityWrapperNumericOpcode(Name);
   };
   auto UnaryOpcode =
@@ -36637,7 +36642,7 @@ static bool utilityWrapperTransformReduceUnary(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        (I == 3 ? !ArithmeticOpcode(Record->getName())
+        (I == 3 ? !ReductionOpcodeFor(Record->getName())
                 : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
@@ -36664,7 +36669,7 @@ static bool utilityWrapperTransformReduceUnary(
                             : ReferentType;
   const auto Common =
       utilityScalarComparisonType(Context, Accumulator, *TermType, false);
-  const auto ReductionOpcode = ArithmeticOpcode(Reduction->getName());
+  const auto ReductionOpcode = ReductionOpcodeFor(Reduction->getName());
   if (!Common || !ReductionOpcode ||
       (*TransformOpcode == UO_Not && !(*ReferentType)->isIntegerType()) ||
       ((*ReductionOpcode == BO_Rem || *ReductionOpcode == BO_And ||
@@ -36675,7 +36680,10 @@ static bool utilityWrapperTransformReduceUnary(
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
       *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
       *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ReductionOpcode == BO_LAnd || *ReductionOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -36749,8 +36757,8 @@ static bool utilityWrapperTransformReduceUnary(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), *Common) &&
-                   Same(Value->getRHS()->getType(), *Common)
+                   Same(Value->getLHS()->getType(), OperandType) &&
+                   Same(Value->getRHS()->getType(), OperandType)
                ? Value
                : nullptr;
   };
@@ -36934,7 +36942,12 @@ static bool utilityWrapperTransformExclusiveScan(
         return false;
     return true;
   };
-  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+  auto ReductionOpcodeFor =
+      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
+    if (Name == "logical_and")
+      return BO_LAnd;
+    if (Name == "logical_or")
+      return BO_LOr;
     return utilityWrapperNumericOpcode(Name);
   };
   auto UnaryOpcode =
@@ -36980,7 +36993,7 @@ static bool utilityWrapperTransformExclusiveScan(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        (I == 4 ? !ArithmeticOpcode(Record->getName())
+        (I == 4 ? !ReductionOpcodeFor(Record->getName())
                 : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
@@ -37007,7 +37020,7 @@ static bool utilityWrapperTransformExclusiveScan(
                             : ReferentType;
   const auto Common =
       utilityScalarComparisonType(Context, Accumulator, *TermType, false);
-  const auto ReductionOpcode = ArithmeticOpcode(Reduction->getName());
+  const auto ReductionOpcode = ReductionOpcodeFor(Reduction->getName());
   if (!Common || !ReductionOpcode ||
       (*TransformOpcode == UO_Not && !(*ReferentType)->isIntegerType()) ||
       ((*ReductionOpcode == BO_Rem || *ReductionOpcode == BO_And ||
@@ -37018,7 +37031,10 @@ static bool utilityWrapperTransformExclusiveScan(
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
       *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
       *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ReductionOpcode == BO_LAnd || *ReductionOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -37092,8 +37108,8 @@ static bool utilityWrapperTransformExclusiveScan(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), *Common) &&
-                   Same(Value->getRHS()->getType(), *Common)
+                   Same(Value->getLHS()->getType(), OperandType) &&
+                   Same(Value->getRHS()->getType(), OperandType)
                ? Value
                : nullptr;
   };
@@ -37326,7 +37342,12 @@ static bool utilityWrapperTransformInclusiveScan(
         return false;
     return true;
   };
-  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+  auto ReductionOpcodeFor =
+      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
+    if (Name == "logical_and")
+      return BO_LAnd;
+    if (Name == "logical_or")
+      return BO_LOr;
     return utilityWrapperNumericOpcode(Name);
   };
   auto UnaryOpcode =
@@ -37372,7 +37393,7 @@ static bool utilityWrapperTransformInclusiveScan(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        (I == 3 ? !ArithmeticOpcode(Record->getName())
+        (I == 3 ? !ReductionOpcodeFor(Record->getName())
                 : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
@@ -37399,7 +37420,7 @@ static bool utilityWrapperTransformInclusiveScan(
                             : ReferentType;
   const auto Common =
       utilityScalarComparisonType(Context, Accumulator, *TermType, false);
-  const auto ReductionOpcode = ArithmeticOpcode(Reduction->getName());
+  const auto ReductionOpcode = ReductionOpcodeFor(Reduction->getName());
   if (!Common || !ReductionOpcode ||
       (*TransformOpcode == UO_Not && !(*ReferentType)->isIntegerType()) ||
       ((*ReductionOpcode == BO_Rem || *ReductionOpcode == BO_And ||
@@ -37410,7 +37431,10 @@ static bool utilityWrapperTransformInclusiveScan(
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
       *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
       *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ReductionOpcode == BO_LAnd || *ReductionOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -37484,8 +37508,8 @@ static bool utilityWrapperTransformInclusiveScan(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), *Common) &&
-                   Same(Value->getRHS()->getType(), *Common)
+                   Same(Value->getLHS()->getType(), OperandType) &&
+                   Same(Value->getRHS()->getType(), OperandType)
                ? Value
                : nullptr;
   };

@@ -4894,7 +4894,24 @@ class FunctionLowering {
         else if (!TypedTransformType.isNull() && !ComparisonBinaryTransform)
           Term = cast(std::move(Term), DefaultTermType, L);
       }
-      if (ReductionObject) {
+      if (Wrapper && DefaultUnaryFunctionalPair && LogicalReduction) {
+        // The unary call is a function argument and must run before either
+        // logical branch. Only the scalar term's bool conversion
+        // short-circuits.
+        auto Transformed = snapshot(std::move(Term), L);
+        const bool And = ReductionName == "logical_and";
+        const auto Right = labelName(), Short = labelName(), Done = labelName();
+        branch(cast(json::Object(Result), "bool", L), And ? Right : Short,
+               And ? Short : Right, L);
+        label(Short, L);
+        assign(Result, cast(boolean(!And, L), ResultType, L), L);
+        jump(Done, L);
+        label(Right, L);
+        assign(Result,
+               cast(cast(std::move(Transformed), "bool", L), ResultType, L), L);
+        jump(Done, L);
+        label(Done, L);
+      } else if (ReductionObject) {
         assign(Result,
                cast(emitBinaryCallable(*ReductionObject, json::Object(Result),
                                        std::move(Term), L),
@@ -5380,6 +5397,8 @@ class FunctionLowering {
             ReductionName == "equal_to" || ReductionName == "not_equal_to" ||
             ReductionName == "less" || ReductionName == "less_equal" ||
             ReductionName == "greater" || ReductionName == "greater_equal";
+        const bool Logical =
+            ReductionName == "logical_and" || ReductionName == "logical_or";
         const auto ReductionOperator =
             ReductionName == "equal_to"        ? llvm::StringRef("==")
             : ReductionName == "not_equal_to"  ? llvm::StringRef("!=")
@@ -5425,13 +5444,31 @@ class FunctionLowering {
                            json::Array{cast(std::move(Referent), TermType, L)}},
                           {"loc", A.loc(L)}},
                L);
-        assign(Next,
-               cast(binary(ReductionOperator,
-                           cast(json::Object(Value), SumType, L),
-                           cast(json::Object(Term), SumType, L),
-                           Comparison ? "bool" : SumType, L),
-                    ValueType, L),
-               L);
+        if (Logical) {
+          // The transform above is evaluated even when the reduction skips
+          // converting its already computed right argument to bool.
+          const bool And = ReductionName == "logical_and";
+          const auto Right = labelName(), Short = labelName(),
+                     Done = labelName();
+          branch(cast(json::Object(Value), "bool", L), And ? Right : Short,
+                 And ? Short : Right, L);
+          label(Short, L);
+          assign(Next, cast(boolean(!And, L), ValueType, L), L);
+          jump(Done, L);
+          label(Right, L);
+          assign(Next, cast(cast(json::Object(Term), "bool", L), ValueType, L),
+                 L);
+          jump(Done, L);
+          label(Done, L);
+        } else {
+          assign(Next,
+                 cast(binary(ReductionOperator,
+                             cast(json::Object(Value), SumType, L),
+                             cast(json::Object(Term), SumType, L),
+                             Comparison ? "bool" : SumType, L),
+                      ValueType, L),
+                 L);
+        }
         if (Inclusive)
           assign(Value, Next, L);
         assign(dereference(Output, L),
