@@ -263,9 +263,7 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 直接一元 `std::transform` 现在接受受支持算术引用类型的 `std::reference_wrapper<T>` 原始指针区间、可写标量输出区间，以及直接初始化的透明 `std::negate<>`。有限路径验证 SDK 入口、negate、转发、引用转换和完整循环。每轮读取引用的当前值，执行一元提升与取负，再转换为输出元素类型并推进；输出重叠时保留这一顺序。空区间返回原输出指针，实参副作用和清理保持完整。存储、返回、逗号表达式及有类型的运算对象、间接调用和源代码替换仍不属于此路径。
 
-`std::transform_inclusive_scan` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 为受支持的内置标量，输入和 referent 均可为 const。六参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`；独立的累加器与输出类型可为不超过 64 位的受支持非布尔整数、float 或 double。经校验的 C++17 SDK 循环按通常一元提升规则对当前 referent 取负，与左值累加器相加，将每步的和转换回累加器类型，再写出更新后的累加值。先读取和更新再输出，以保留别名语义；空区间不写输出并返回原输出指针。保留绑定、referent、操作数单次求值和清理，校验两个初始化、转发、转换及完整 SDK 循环。仍拒绝源码替换及自定义、带类型、已保存或动态生成的运算对象。
-
-`std::transform_exclusive_scan` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 为受支持的内置标量，输入和 referent 均可为 const。六参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`；独立的累加器与输出类型可为不超过 64 位的受支持非布尔整数、float 或 double。经校验的 C++17 SDK 循环按通常一元提升规则对当前 referent 取负，与左值累加器相加，将每步的和转换回累加器类型，再写出已保存的上一轮值。先读取和更新再输出，以保留别名语义；空区间不写输出并返回原输出指针。保留绑定、referent、操作数单次求值和清理，校验两个初始化、转发、转换及完整的保存值 SDK 循环。仍拒绝源码替换及自定义、带类型、已保存或动态生成的运算对象。
+直接调用六参数 `std::transform_exclusive_scan` 和 `std::transform_inclusive_scan` 支持已验证的引用包装器指针输入范围、可写的标量指针输出及显式累加器。直接初始化的透明 `std::negate<>`、`std::bit_not<>` 或 `std::logical_not<>` 可搭配归约运算 `std::plus<>`, `std::minus<>`, `std::multiplies<>`, `std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>`, `std::bit_xor<>`。支持 const 输入及被引用对象；值可为 bool、最多 64 位整数、float 或 double，按位取反仅接受整数。取负和按位取反保留整数提升；逻辑非返回 bool，正负零均为 true，NaN 为 false。累加器与输出可独立使用支持的非 bool 整数、float 或 double。归约以左值累加器为左操作数，每步转回累加器类型；取余和按位运算要求整数公共类型。先完成转换和归约再写入输出：排他扫描写入保存的前值，包含扫描写入更新后的值，后续读取可观察到别名输出的写入。空输入返回原输出指针。验证 SDK 来源、精确运算码、forward、转换、完整循环、参数求值和清理。仍拒绝有类型、已存储或由函数返回的运算对象、不支持的引用或输出类型及源代码替换。
 
 一元 `std::transform_reduce` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 可为受支持的内置标量，输入和 referent 均可为 const。五参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`，累加器可为不超过 64 位的受支持非布尔整数、float 或 double。经校验的 C++17 SDK 循环按通常的一元提升规则对当前 referent 取负，与移动后的累加器相加，并在每一步将和转换回累加器类型；空区间返回初值。保留绑定、referent、操作数单次求值和清理语义，并校验两个运算对象的初始化、转发、转换及完整 SDK 循环。仍拒绝自定义、带类型、已保存或动态生成的运算对象及源码替换。
 

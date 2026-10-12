@@ -5286,28 +5286,55 @@ class FunctionLowering {
       auto Last = std::move(AlgorithmRangeValue(1).first);
       auto OutputRange = AlgorithmRangeValue(2);
       auto Output = std::move(OutputRange.first);
+      const unsigned ReductionIndex = Inclusive ? 3 : 4;
+      const unsigned TransformIndex = Inclusive ? 4 : 5;
       const auto Wrapper =
-          !Inclusive && Call->getNumArgs() == 6 &&
-                  Call->getArg(4)->getType()->isRecordType() &&
-                  Call->getArg(5)->getType()->isRecordType()
+          Call->getNumArgs() == 6 &&
+                  Call->getArg(ReductionIndex)->getType()->isRecordType() &&
+                  Call->getArg(TransformIndex)->getType()->isRecordType()
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
                     A.Context)
               : std::nullopt;
       if (Wrapper) {
-        auto Value = snapshot(expression(Call->getArg(3)), L);
-        const auto AccumulatorQualType = Call->getArg(3)->getType();
-        const auto TermQualType = utilityScalarComparisonType(
+        const unsigned InitialIndex = Inclusive ? 5 : 3;
+        auto Value = snapshot(expression(Call->getArg(InitialIndex)), L);
+        const auto AccumulatorQualType = Call->getArg(InitialIndex)->getType();
+        const auto TransformName = Call->getArg(TransformIndex)
+                                       ->getType()
+                                       ->getAsCXXRecordDecl()
+                                       ->getName();
+        const auto ReductionName = Call->getArg(ReductionIndex)
+                                       ->getType()
+                                       ->getAsCXXRecordDecl()
+                                       ->getName();
+        const auto ReferentQualType = utilityScalarComparisonType(
             A.Context, Wrapper->ReferentType, Wrapper->ReferentType, false);
+        const auto TermQualType =
+            TransformName == "logical_not"
+                ? std::optional<QualType>{A.Context.BoolTy}
+                : ReferentQualType;
         const auto Common =
             TermQualType
                 ? utilityScalarComparisonType(A.Context, AccumulatorQualType,
                                               *TermQualType, false)
                 : std::nullopt;
-        if (!TermQualType || !Common)
-          reject(L, "transform exclusive scan",
+        if (!ReferentQualType || !TermQualType || !Common)
+          reject(L, "transform scan",
                  "The referent and accumulator have no arithmetic type.");
+        const auto UnaryOperator = TransformName == "logical_not" ? "!"
+                                   : TransformName == "bit_not"   ? "~"
+                                                                  : "-";
+        const auto ReductionOperator =
+            ReductionName == "minus"        ? llvm::StringRef("-")
+            : ReductionName == "multiplies" ? llvm::StringRef("*")
+            : ReductionName == "divides"    ? llvm::StringRef("/")
+            : ReductionName == "modulus"    ? llvm::StringRef("%")
+            : ReductionName == "bit_and"    ? llvm::StringRef("&")
+            : ReductionName == "bit_or"     ? llvm::StringRef("|")
+            : ReductionName == "bit_xor"    ? llvm::StringRef("^")
+                                            : llvm::StringRef("+");
         const auto TermType = type(*TermQualType, L);
         const auto SumType = type(*Common, L);
         const auto ValueType = type(AccumulatorQualType, L);
@@ -5333,91 +5360,23 @@ class FunctionLowering {
         assign(Term,
                Expression{{"kind", "unary"},
                           {"type", TermType},
-                          {"operator", "-"},
+                          {"operator", UnaryOperator},
                           {"args",
                            json::Array{cast(std::move(Referent), TermType, L)}},
                           {"loc", A.loc(L)}},
                L);
         assign(Next,
-               cast(binary("+", cast(json::Object(Value), SumType, L),
+               cast(binary(ReductionOperator,
+                           cast(json::Object(Value), SumType, L),
                            cast(json::Object(Term), SumType, L), SumType, L),
                     ValueType, L),
                L);
+        if (Inclusive)
+          assign(Value, Next, L);
         assign(dereference(Output, L),
                cast(json::Object(Value), OutputElementType, L), L);
-        assign(Value, Next, L);
-        assign(First,
-               binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
-               L);
-        assign(
-            Output,
-            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
-            L);
-        jump(Check, L);
-        label(End, L);
-        return AlgorithmIteratorResult(std::move(Output), 2);
-      }
-      const auto InclusiveWrapper =
-          Inclusive && Call->getNumArgs() == 6 &&
-                  Call->getArg(3)->getType()->isRecordType() &&
-                  Call->getArg(4)->getType()->isRecordType()
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::nullopt;
-      if (InclusiveWrapper) {
-        auto Value = snapshot(expression(Call->getArg(5)), L);
-        const auto AccumulatorQualType = Call->getArg(5)->getType();
-        const auto TermQualType = utilityScalarComparisonType(
-            A.Context, InclusiveWrapper->ReferentType,
-            InclusiveWrapper->ReferentType, false);
-        const auto Common =
-            TermQualType
-                ? utilityScalarComparisonType(A.Context, AccumulatorQualType,
-                                              *TermQualType, false)
-                : std::nullopt;
-        if (!TermQualType || !Common)
-          reject(L, "transform inclusive scan",
-                 "The referent and accumulator have no arithmetic type.");
-        const auto TermType = type(*TermQualType, L);
-        const auto SumType = type(*Common, L);
-        const auto ValueType = type(AccumulatorQualType, L);
-        const auto FirstType = type(FirstRange.second, L);
-        const auto OutputType = type(OutputRange.second, L);
-        const auto OutputElementType =
-            type(OutputRange.second->getPointeeType(), L);
-        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-        auto Term = temporary(TermType, L);
-        auto Next = temporary(ValueType, L);
-        const auto Check = labelName(), Store = labelName(), End = labelName();
-        jump(Check, L);
-        label(Check, L);
-        branch(binary("!=", First, Last, "bool", L), Store, End, L);
-        label(Store, L);
-        auto Referent = dereference(
-            Expression{{"kind", "member"},
-                       {"type", type(InclusiveWrapper->PointerType, L)},
-                       {"name", "nct_reference_wrapper_pointer"},
-                       {"args", json::Array{dereference(First, L)}},
-                       {"loc", A.loc(L)}},
-            L);
-        assign(Term,
-               Expression{{"kind", "unary"},
-                          {"type", TermType},
-                          {"operator", "-"},
-                          {"args",
-                           json::Array{cast(std::move(Referent), TermType, L)}},
-                          {"loc", A.loc(L)}},
-               L);
-        assign(Next,
-               cast(binary("+", cast(json::Object(Value), SumType, L),
-                           cast(json::Object(Term), SumType, L), SumType, L),
-                    ValueType, L),
-               L);
-        assign(Value, Next, L);
-        assign(dereference(Output, L),
-               cast(json::Object(Value), OutputElementType, L), L);
+        if (!Inclusive)
+          assign(Value, Next, L);
         assign(First,
                binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
                L);

@@ -242631,6 +242631,386 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformScanOperationsAliasReadBeforeStore) {
+  const auto Source =
+      tmpFile("wrapper-transform-scan-operations-alias-read-before-store.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-scan-operations-alias-read-before-store.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ int ex[]={2,0,0};std::reference_wrapper<int> a[]={ex[0],ex[0],ex[0]};
+ int in[]={2,0,0};std::reference_wrapper<int> b[]={in[0],in[0],in[0]};
+ if(std::transform_exclusive_scan(a,a+3,ex,10,std::multiplies<>{},std::bit_not<>{})!=ex+3)return 1;
+ if(std::transform_inclusive_scan(b,b+3,in,std::multiplies<>{},std::bit_not<>{},10)!=in+3)return 2;
+ double lex[]={0,0,0};std::reference_wrapper<double> c[]={lex[0],lex[0],lex[0]};
+ double lin[]={0,0,0};std::reference_wrapper<double> d[]={lin[0],lin[0],lin[0]};
+ if(std::transform_exclusive_scan(c,c+3,lex,8,std::bit_xor<>{},std::logical_not<>{})!=lex+3)return 3;
+ if(std::transform_inclusive_scan(d,d+3,lin,std::bit_xor<>{},std::logical_not<>{},8)!=lin+3)return 4;
+ return ex[0]!=10||ex[1]!=-30||ex[2]!=330||in[0]!=-30||in[1]!=-870||in[2]!=-25230||lex[0]!=8||lex[1]!=9||lex[2]!=9||lin[0]!=9||lin[1]!=9||lin[2]!=9||&a[2].get()!=&ex[0];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-scan-operations-alias-read-before-store" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformScanOperationsBoolConstWide) {
+  const auto Source =
+      tmpFile("wrapper-transform-scan-operations-bool-const-wide.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-scan-operations-bool-const-wide.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ const bool t=true,f=false;const std::reference_wrapper<const bool> flags[]={t,f,t};int ex[3],in[3];
+ std::transform_exclusive_scan(flags,flags+3,ex,10,std::plus<>{},std::bit_not<>{});
+ std::transform_inclusive_scan(flags,flags+3,in,std::plus<>{},std::bit_not<>{},10);
+ if(ex[0]!=10||ex[1]!=8||ex[2]!=7||in[0]!=8||in[1]!=7||in[2]!=5)return 1;
+ const unsigned long long x=0x8000000000000001ULL,y=0x8000000000000002ULL;
+ const std::reference_wrapper<const unsigned long long> wide[]={x,y};unsigned long long wex[2],win[2];
+ std::transform_exclusive_scan(wide,wide+2,wex,~0ULL,std::bit_and<>{},std::bit_not<>{});
+ std::transform_inclusive_scan(wide,wide+2,win,std::bit_and<>{},std::bit_not<>{},~0ULL);
+ return wex[0]!=~0ULL||wex[1]!=0x7ffffffffffffffeULL||win[0]!=0x7ffffffffffffffeULL||win[1]!=0x7ffffffffffffffcULL||&wide[1].get()!=&y;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-scan-operations-bool-const-wide" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformScanOperationsEmptyLiveEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-transform-scan-operations-empty-live-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-transform-scan-operations-empty-live-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+struct Initial{int n;~Initial(){++cleaned;}int get(){++reads;return n;}};
+int set(int&n){n=0;return 10;}
+int main(){int n=7;W input[]={n,n};int output[]={998,998};
+ if(std::transform_exclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),Initial{17}.get(),std::plus<>{},std::negate<>{})!=output)return 1;
+ if(std::transform_inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::plus<>{},std::negate<>{},Initial{17}.get())!=output)return 1;
+ if(std::transform_exclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),Initial{17}.get(),std::modulus<>{},std::negate<>{})!=output)return 1;
+ if(std::transform_inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::modulus<>{},std::negate<>{},Initial{17}.get())!=output)return 1;
+ if(std::transform_exclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),Initial{17}.get(),std::plus<>{},std::bit_not<>{})!=output)return 1;
+ if(std::transform_inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::plus<>{},std::bit_not<>{},Initial{17}.get())!=output)return 1;
+ if(std::transform_exclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),Initial{17}.get(),std::modulus<>{},std::bit_not<>{})!=output)return 1;
+ if(std::transform_inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::modulus<>{},std::bit_not<>{},Initial{17}.get())!=output)return 1;
+ if(std::transform_exclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),Initial{17}.get(),std::plus<>{},std::logical_not<>{})!=output)return 1;
+ if(std::transform_inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::plus<>{},std::logical_not<>{},Initial{17}.get())!=output)return 1;
+ if(std::transform_exclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),Initial{17}.get(),std::modulus<>{},std::logical_not<>{})!=output)return 1;
+ if(std::transform_inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::modulus<>{},std::logical_not<>{},Initial{17}.get())!=output)return 1;
+ if(output[0]!=998||output[1]!=998||reads!=48||cleaned!=48)return 2;
+ std::transform_exclusive_scan(input,input+2,output,set(n),std::minus<>{},std::logical_not<>{});
+ return output[0]!=10||output[1]!=9||n!=0||&input[1].get()!=&n;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-scan-operations-empty-live-effects-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformScanOperationsMixedFloatingLogical) {
+  const auto Source =
+      tmpFile("wrapper-transform-scan-operations-mixed-floating-logical.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-scan-operations-mixed-floating-logical.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ const double x=3.8;const std::reference_wrapper<const double> input[]={x,x,x};int ex[3],in[3];
+ std::transform_exclusive_scan(input,input+3,ex,10,std::minus<>{},std::negate<>{});
+ std::transform_inclusive_scan(input,input+3,in,std::minus<>{},std::negate<>{},10);
+ if(ex[0]!=10||ex[1]!=13||ex[2]!=16||in[0]!=13||in[1]!=16||in[2]!=19)return 1;
+ const unsigned short n=2;const std::reference_wrapper<const unsigned short> narrow[]={n,n,n};
+ std::transform_exclusive_scan(narrow,narrow+3,ex,(unsigned char)20,std::multiplies<>{},std::bit_not<>{});
+ std::transform_inclusive_scan(narrow,narrow+3,in,std::multiplies<>{},std::bit_not<>{},(unsigned char)20);
+ if(ex[0]!=20||ex[1]!=196||ex[2]!=180||in[0]!=196||in[1]!=180||in[2]!=228)return 2;
+ const double nan=0.0/0.0,z=0.0,nz=-0.0,one=1;const std::reference_wrapper<const double> truth[]={nan,z,nz,one};long long a[4],b[4];
+ std::transform_exclusive_scan(truth,truth+4,a,8,std::bit_or<>{},std::logical_not<>{});
+ std::transform_inclusive_scan(truth,truth+4,b,std::bit_or<>{},std::logical_not<>{},8);
+ return a[0]!=8||a[1]!=8||a[2]!=9||a[3]!=9||b[0]!=8||b[1]!=9||b[2]!=9||b[3]!=9||nan==nan;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-transform-scan-operations-mixed-floating-logical" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformScanOperationsOperationMatrix) {
+  const auto Source =
+      tmpFile("wrapper-transform-scan-operations-operation-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-transform-scan-operations-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){int n=-7,b=-8,z=0;std::reference_wrapper<int> neg[]={n,n},bits[]={b,b},zeros[]={z,z};int output[2];
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::plus<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=91)return 1;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::plus<>{},std::negate<>{},84)!=output+2||output[0]!=91||output[1]!=98)return 2;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::minus<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=77)return 3;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::minus<>{},std::negate<>{},84)!=output+2||output[0]!=77||output[1]!=70)return 4;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::multiplies<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=588)return 5;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::multiplies<>{},std::negate<>{},84)!=output+2||output[0]!=588||output[1]!=4116)return 6;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::divides<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=12)return 7;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::divides<>{},std::negate<>{},84)!=output+2||output[0]!=12||output[1]!=1)return 8;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::modulus<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=0)return 9;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::modulus<>{},std::negate<>{},84)!=output+2||output[0]!=0||output[1]!=0)return 10;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::bit_and<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=4)return 11;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::bit_and<>{},std::negate<>{},84)!=output+2||output[0]!=4||output[1]!=4)return 12;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::bit_or<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=87)return 13;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::bit_or<>{},std::negate<>{},84)!=output+2||output[0]!=87||output[1]!=87)return 14;
+ if(std::transform_exclusive_scan(neg,neg+2,output,84,std::bit_xor<>{},std::negate<>{})!=output+2||output[0]!=84||output[1]!=83)return 15;
+ if(std::transform_inclusive_scan(neg,neg+2,output,std::bit_xor<>{},std::negate<>{},84)!=output+2||output[0]!=83||output[1]!=84)return 16;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::plus<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=91)return 17;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::plus<>{},std::bit_not<>{},84)!=output+2||output[0]!=91||output[1]!=98)return 18;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::minus<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=77)return 19;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::minus<>{},std::bit_not<>{},84)!=output+2||output[0]!=77||output[1]!=70)return 20;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::multiplies<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=588)return 21;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::multiplies<>{},std::bit_not<>{},84)!=output+2||output[0]!=588||output[1]!=4116)return 22;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::divides<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=12)return 23;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::divides<>{},std::bit_not<>{},84)!=output+2||output[0]!=12||output[1]!=1)return 24;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::modulus<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=0)return 25;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::modulus<>{},std::bit_not<>{},84)!=output+2||output[0]!=0||output[1]!=0)return 26;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::bit_and<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=4)return 27;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::bit_and<>{},std::bit_not<>{},84)!=output+2||output[0]!=4||output[1]!=4)return 28;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::bit_or<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=87)return 29;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::bit_or<>{},std::bit_not<>{},84)!=output+2||output[0]!=87||output[1]!=87)return 30;
+ if(std::transform_exclusive_scan(bits,bits+2,output,84,std::bit_xor<>{},std::bit_not<>{})!=output+2||output[0]!=84||output[1]!=83)return 31;
+ if(std::transform_inclusive_scan(bits,bits+2,output,std::bit_xor<>{},std::bit_not<>{},84)!=output+2||output[0]!=83||output[1]!=84)return 32;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::plus<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=85)return 33;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::plus<>{},std::logical_not<>{},84)!=output+2||output[0]!=85||output[1]!=86)return 34;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::minus<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=83)return 35;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::minus<>{},std::logical_not<>{},84)!=output+2||output[0]!=83||output[1]!=82)return 36;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::multiplies<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=84)return 37;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::multiplies<>{},std::logical_not<>{},84)!=output+2||output[0]!=84||output[1]!=84)return 38;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::divides<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=84)return 39;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::divides<>{},std::logical_not<>{},84)!=output+2||output[0]!=84||output[1]!=84)return 40;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::modulus<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=0)return 41;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::modulus<>{},std::logical_not<>{},84)!=output+2||output[0]!=0||output[1]!=0)return 42;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::bit_and<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=0)return 43;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::bit_and<>{},std::logical_not<>{},84)!=output+2||output[0]!=0||output[1]!=0)return 44;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::bit_or<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=85)return 45;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::bit_or<>{},std::logical_not<>{},84)!=output+2||output[0]!=85||output[1]!=85)return 46;
+ if(std::transform_exclusive_scan(zeros,zeros+2,output,84,std::bit_xor<>{},std::logical_not<>{})!=output+2||output[0]!=84||output[1]!=85)return 47;
+ if(std::transform_inclusive_scan(zeros,zeros+2,output,std::bit_xor<>{},std::logical_not<>{},84)!=output+2||output[0]!=85||output[1]!=84)return 48;
+ return n!=-7||b!=-8||z!=0;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-transform-scan-operations-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTransformScanOperationsRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"exclusive-enum-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+enum E{Zero};using W=std::reference_wrapper<E>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::plus<>{},std::negate<>{});}
+)cpp"},
+      {"exclusive-long-double-logical-not", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::plus<>{},std::logical_not<>{});}
+)cpp"},
+      {"exclusive-source-bit-not", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>constexpr auto bit_not<void>::operator()<W&>(W&a)const noexcept(noexcept(~std::forward<W&>(a)))->decltype(~std::forward<W&>(a)){return ~a.get();}}}
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::plus<>{},std::bit_not<>{});}
+)cpp"},
+      {"exclusive-source-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::plus<>{},std::bit_not<>{});}
+)cpp"},
+      {"exclusive-source-minus", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)-std::forward<int>(b)))->decltype(std::forward<int&>(a)-std::forward<int>(b)){return a-b;}}}
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::minus<>{},std::bit_not<>{});}
+)cpp"},
+      {"exclusive-source-public", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>O transform_exclusive_scan<P,O,int,plus<void>,bit_not<void>>(P,P,O o,int,plus<void>,bit_not<void>){return o;}}}
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::plus<>{},std::bit_not<>{});}
+)cpp"},
+      {"exclusive-stored-reduction", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){std::bit_xor<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::bit_not<>{});}
+)cpp"},
+      {"exclusive-typed-reduction", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::multiplies<int>{},std::bit_not<>{});}
+)cpp"},
+      {"inclusive-bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=bool*;
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},std::logical_not<>{},0);}
+)cpp"},
+      {"inclusive-pointer-logical-not", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},std::logical_not<>{},0);}
+)cpp"},
+      {"inclusive-returned-transform", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+std::logical_not<> op(){return {};}
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},op(),0);}
+)cpp"},
+      {"inclusive-source-bool-divides", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<int&,bool>(int&a,bool&&b)const noexcept(noexcept(std::forward<int&>(a)/std::forward<bool>(b)))->decltype(std::forward<int&>(a)/std::forward<bool>(b)){return a/b;}}}
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::divides<>{},std::logical_not<>{},0);}
+)cpp"},
+      {"inclusive-source-bool-forward", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>constexpr bool&&forward<bool>(bool&t)noexcept{return static_cast<bool&&>(t);}}}
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},std::logical_not<>{},0);}
+)cpp"},
+      {"inclusive-source-logical-not", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a)){return !a.get();}}}
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},std::logical_not<>{},0);}
+)cpp"},
+      {"inclusive-source-public", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+namespace std{inline namespace __1{template<>O transform_inclusive_scan<P,O,int,plus<void>,logical_not<void>>(P,P,O o,plus<void>,logical_not<void>,int){return o;}}}
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},std::logical_not<>{},0);}
+)cpp"},
+      {"inclusive-typed-transform", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){return std::transform_inclusive_scan(a,b,o,std::plus<>{},std::bit_not<int>{},0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-transform-scan-operations-reject-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-transform-scan-operations-reject-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperTransformExclusiveScanRuntimeAlias) {
   const auto Source =
       tmpFile("wrapper-transform-exclusive-scan-runtime-alias.cpp");

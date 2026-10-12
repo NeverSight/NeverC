@@ -666,41 +666,15 @@ Direct unary `std::transform` with transparent `std::bit_not<>` admits a finite 
 
 Direct unary `std::transform` with transparent `std::negate<>` admits a finite `std::reference_wrapper<T>` raw-pointer input range (mutable or const wrapper elements) and a writable, unqualified, non-boolean scalar raw-pointer output range. Referents may be supported arithmetic types, including bool and const referents; enums, volatile referents, long double, extended integers, nested wrappers and source record layouts remain outside this path. Output elements are supported integers up to 64 bits, float or double. The operation must be a directly initialized SDK `negate<void>` object; both empty aggregate initialization and the authenticated default constructor are accepted. The proof authenticates the SDK public entry and redeclarations, transparent negate specialization and complete method body, wrapper forwarding and conversion, output conversions and the complete four-argument SDK loop. Lowering reads each live referent, performs unary promotion and negation, converts once to the output element type, then advances both pointers; output aliasing therefore observes the original SDK read-before-write order. Empty input returns the original output pointer and does not touch referents or output. Argument evaluation, result use and temporary cleanup are preserved. Stored or returned operations, comma expressions, typed negate, independent function addresses and indirect or casted calls remain rejected by this finite path. Source public-entry, operation, forwarding and reference-conversion replacements remain rejected; unused unrelated SDK declarations are not a blacklist. Twenty-five runtime fixtures, thirty-five native-valid rejection boundaries and ten regressions cover these guarantees.
 
-Direct `std::transform_inclusive_scan` with transparent `std::plus<>` and `std::negate<>` admits
-a raw-pointer input range of checked SDK `std::reference_wrapper<T>` with
-supported built-in scalar referents, including const inputs and referents,
-and independent supported non-boolean integer (up to 64 bits), float or double
-accumulator and output types. Its six-argument form requires both operations
-to be directly initialized transparent SDK objects. The checked C++17 loop
-negates the current referent using the usual unary promotions, adds it to the
-lvalue accumulator using the usual arithmetic conversions, converts each sum
-back to the accumulator type and writes the updated accumulator converted
-to the output type. Reading and updating before output preserves aliasing.
-Empty input returns the original output pointer without writes. Bindings and
-referents, single operand evaluation and cleanup are preserved. Both
-initializations and operations, scalar and wrapper forwarding, conversions
-and the complete SDK loop are verified. Source replacements,
-custom, typed, stored or dynamically produced operations, enum or nested-wrapper
-referents, unsupported accumulator or output types and indirect or casted
-callees remain rejected.
+### Reference-wrapper transform scans with arithmetic reductions
 
-Direct `std::transform_exclusive_scan` with transparent `std::plus<>` and `std::negate<>` admits
-a raw-pointer input range of checked SDK `std::reference_wrapper<T>` with
-supported built-in scalar referents, including const inputs and referents,
-and independent supported non-boolean integer (up to 64 bits), float or double
-accumulator and output types. Its six-argument form requires both operations
-to be directly initialized transparent SDK objects. The checked C++17 loop
-negates the current referent using the usual unary promotions, adds it to the
-lvalue accumulator using the usual arithmetic conversions, converts each sum
-back to the accumulator type and writes the saved previous value converted
-to the output type. Reading and updating before output preserves aliasing.
-Empty input returns the original output pointer without writes. Bindings and
-referents, single operand evaluation and cleanup are preserved. Both
-initializations and operations, scalar and wrapper forwarding, conversions
-and the complete saved-value SDK loop are verified. Source replacements,
-custom, typed, stored or dynamically produced operations, enum or nested-wrapper
-referents, unsupported accumulator or output types and indirect or casted
-callees remain rejected.
+The direct six-argument `std::transform_exclusive_scan` and `std::transform_inclusive_scan` paths accept authenticated raw-pointer input ranges of `std::reference_wrapper<T>`, including const wrapper elements and const referents, a writable unqualified scalar output pointer and an explicit accumulator. Directly initialized transparent SDK `std::negate<>`, `std::bit_not<>` and `std::logical_not<>` combine with `std::plus<>`, `std::minus<>`, `std::multiplies<>`, `std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>` and `std::bit_xor<>` reductions. Explicit `<void>`, empty aggregate initialization and the authenticated default constructor retain their semantics. Referents are bool, supported integers through 64 bits, float or double; complement requires integer referents. Accumulator and output types are independently supported non-bool integers through 64 bits, float or double.
+
+Negation and complement use the usual promoted referent type. Logical negation converts the live referent to bool and returns bool: either signed zero produces true, while NaN and nonzero values produce false. Reduction takes the lvalue accumulator on the left and the transformed scalar term on the right, computes their usual arithmetic common type and converts back to the accumulator at each step. Remainder and bitwise reductions require an integer common type. An integer accumulator with a logical-not bool term may therefore use these reductions even when the original referent is floating point. Existing arithmetic domains, including signed overflow and valid division/remainder operands, remain required.
+
+The entire transform and reduction, including the accumulator conversion, finishes before an output store. Exclusive scan writes the saved previous accumulator; inclusive scan writes the updated accumulator. Each store converts independently to the output type. Later reads observe any aliased output stores to live referents. Wrapper bindings remain unchanged. Empty ranges return the original output pointer without reads or writes, preserving operand evaluation and temporary cleanup. The two wrapper cases share emission while retaining their different store order; scalar and record callback emission remains unchanged.
+
+The proof matches exact SDK unary and binary opcodes, term/common types, selected signatures, transparent constructions, declaration origins, scalar and wrapper forwarding, reference conversions and the complete SDK loop. Exclusive scan additionally authenticates the saved variable and every saved-value assignment. Custom, typed, stored or returned operations, source replacements, pointer/enum/volatile/extended/nested or unsupported referents, bool or unsupported accumulator/output types and indirect or casted callees remain rejected. Five runtime fixtures cover all 48 transform/reduction/algorithm combinations, live output aliases, const and bool promotion, narrow and 64-bit values, floating truth conversion, per-step mixed accumulator conversion, endpoints, empty input, operand effects and cleanup. Sixteen new native-valid rejection cases and ninety-eight existing selected boundary cases cover source and lifetime checks.
 
 Direct unary `std::transform_reduce` with transparent `std::plus<>` and `std::negate<>` admits
 a raw-pointer range of checked SDK `std::reference_wrapper<T>` with supported

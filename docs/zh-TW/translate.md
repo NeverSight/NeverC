@@ -263,9 +263,7 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 直接一元 `std::transform` 現在接受受支援算術引用型別的 `std::reference_wrapper<T>` 原始指標區間、可寫純量輸出區間，以及直接初始化的透明 `std::negate<>`。有限路徑驗證 SDK 入口、negate、轉送、引用轉換與完整迴圈。每輪讀取引用的目前值，執行一元提升與取負，再轉換為輸出元素型別並推進；輸出重疊時保留此順序。空區間傳回原輸出指標，實參副作用與清理保持完整。儲存、傳回、逗號運算式及有型別的運算物件、間接呼叫和原始碼替換仍不屬於此路徑。
 
-`std::transform_inclusive_scan` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 為受支援的內建純量，輸入與 referent 均可為 const。六參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`；獨立的累加器與輸出型別可為不超過 64 位元的受支援非布林整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常一元提升規則對目前 referent 取負，與左值累加器相加，將每步的和轉換回累加器型別，再寫出更新後的累加值。先讀取與更新再輸出，以保留別名語義；空區間不寫輸出並傳回原輸出指標。保留繫結、referent、運算元單次求值與清理，驗證兩個初始化、轉送、轉換及完整 SDK 迴圈。仍拒絕原始碼替換及自訂、帶型別、已儲存或動態產生的運算物件。
-
-`std::transform_exclusive_scan` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 為受支援的內建純量，輸入與 referent 均可為 const。六參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`；獨立的累加器與輸出型別可為不超過 64 位元的受支援非布林整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常一元提升規則對目前 referent 取負，與左值累加器相加，將每步的和轉換回累加器型別，再寫出已保存的上一輪值。先讀取與更新再輸出，以保留別名語義；空區間不寫輸出並傳回原輸出指標。保留繫結、referent、運算元單次求值與清理，驗證兩個初始化、轉送、轉換及完整的保存值 SDK 迴圈。仍拒絕原始碼替換及自訂、帶型別、已儲存或動態產生的運算物件。
+直接呼叫六參數 `std::transform_exclusive_scan` 與 `std::transform_inclusive_scan` 支援已驗證的參考包裝器指標輸入範圍、可寫的純量指標輸出與明確累加器。直接初始化的透明 `std::negate<>`、`std::bit_not<>` 或 `std::logical_not<>` 可搭配歸約運算 `std::plus<>`, `std::minus<>`, `std::multiplies<>`, `std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>`, `std::bit_xor<>`。支援 const 輸入及被參考物件；值可為 bool、最多 64 位元整數、float 或 double，位元反相僅接受整數。取負與反相保留整數提升；邏輯非回傳 bool，正負零皆為 true，NaN 為 false。累加器與輸出可獨立使用支援的非 bool 整數、float 或 double。歸約將左值累加器放在左側，每步轉回其型別；餘數與位元運算要求整數共同型別。先完成轉換與歸約再寫入：排他掃描寫入保存的前值，包含掃描寫入更新值，後續讀取可觀察到別名輸出的寫入。空輸入回傳原輸出指標。驗證 SDK 來源、精確運算碼、forward、轉換、完整迴圈、引數求值與清理。仍拒絕具型別、已儲存或由函式回傳的運算物件、不支援的參考或輸出型別與原始碼替換。
 
 一元 `std::transform_reduce` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 可為受支援的內建純量，輸入與 referent 均可為 const。五參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`，累加器可為不超過 64 位元的受支援非布林整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常的一元提升規則對目前 referent 取負，與移動後的累加器相加，並在每一步將和轉換回累加器型別；空區間傳回初值。保留繫結、referent、運算元單次求值與清理語義，並驗證兩個運算物件的初始化、轉送、轉換及完整 SDK 迴圈。仍拒絕自訂、帶型別、已儲存或動態產生的運算物件及原始碼替換。
 
