@@ -63,6 +63,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 經驗證的 `std::reference_wrapper<T>` 指標範圍也支援直接呼叫 `std::accumulate`，並直接初始化透明的 `std::minus<>`、`std::divides<>`、`std::modulus<>`、`std::bit_and<>`、`std::bit_or<>` 或 `std::bit_xor<>`。支援的純量套用通常算術轉換，每一步結果都先轉回非 bool 累加器，再處理下一個元素。取餘數和位元運算要求共同運算型別為整數；減法和除法也允許 float、double。保留累加器作為左運算元、目前參照值、繫結、空範圍結果、運算元單次求值與清理。仍拒絕列舉、volatile、巢狀包裝器與不支援位寬的運算元，以及帶型別、已儲存、動態產生或原始碼替換的運算物件與其他運算名稱。
 
+直接呼叫 `std::adjacent_difference(first, last, output, operation)` 時，已驗證的 `std::reference_wrapper<T>` 原始指標範圍也支援直接初始化的透明算術物件：`std::plus<>`, `std::minus<>`, `std::multiplies<>`, `std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>`, `std::bit_xor<>`。參照目標可為 const，型別限 bool、不超過 64 位元的整數、float 或 double；餘數及位元運算要求整數提升後的共同運算型別為整數。輸出必須是可寫入的非 bool 整數（不超過 64 位元）、float 或 double。首項輸出轉換首個參照目標的目前值；後續輸出依 `operation(目前參照目標, 前一參照目標)` 計算，逐項轉換成輸出型別。儲存的 wrapper 保留繫結，因此輸出與參照目標重疊時，寫入會影響後續讀取。空範圍傳回原輸出指標，單元素範圍不執行二元運算；引數求值和暫存物件清理保持一致。精確 SDK 運算、轉送、wrapper 複製、轉換、移動及完整迴圈均須通過驗證。具型別、已儲存或傳回的操作物件、邏輯或比較操作及原始碼替換仍不支援。
+
 `cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. 直接呼叫支援已檢查包裝器的可變原始指標區間，參照可為受支援的算術值或物件指標，也可為 const。SDK 證明認證迭代器類別分派、平凡移動特徵、左右移位、前向及最大公因數循環、等長區間交換、傳回指標與所選移動適配器。旋轉重排包裝器繫結，保留參照物件值，並傳回原首元素的新位置；空區間或任一半區間為空時保留標準端點語義。引數只求值一次，保留結果使用及暫存物件清理。仍拒絕 volatile 或不支援的參照、原始碼替換及間接或強制轉型的呼叫入口。
 
 `cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. 直接呼叫並直接初始化透明 logical_not，支援已檢查包裝器的可變原始指標區間，參照可為 bool、最多 64 位元整數、float 或 double，也可為 const。完整認證 SDK 的迭代器類別、借用述詞、兩層委託、端點選擇、雙向掃描、指標 pair 及迭代器交換。轉換讀取即時參照值，選擇轉換為 false 的值，按 SDK 順序交換包裝器繫結並傳回原區間的分界指標；原物件值不變，空區間不讀取或交換元素。保留引數求值、結果使用及清理。仍拒絕帶型別、儲存或傳回的操作、volatile 或不支援的參照及原始碼替換。

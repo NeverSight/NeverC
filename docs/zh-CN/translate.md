@@ -63,6 +63,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 经校验的 `std::reference_wrapper<T>` 指针范围还支持直接调用 `std::accumulate`，并直接初始化透明的 `std::minus<>`、`std::divides<>`、`std::modulus<>`、`std::bit_and<>`、`std::bit_or<>` 或 `std::bit_xor<>`。支持的标量执行通常算术转换，每一步结果都先转换回非 bool 累加器，再处理下一个元素。取模和位运算要求公共运算类型为整数；减法和除法也允许 float、double。保留累加器作为左操作数、实时引用值、绑定、空范围结果、操作数一次求值及清理。仍拒绝枚举、volatile、嵌套包装器和不支持位宽的操作数，以及带类型、已保存、动态产生或源码替换的运算对象和其他运算名称。
 
+直接调用 `std::adjacent_difference(first, last, output, operation)` 时，已认证的 `std::reference_wrapper<T>` 原始指针范围还支持直接初始化的透明算术对象：`std::plus<>`, `std::minus<>`, `std::multiplies<>`, `std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>`, `std::bit_xor<>`。引用目标可以为 const，类型限 bool、不超过 64 位的整数、float 或 double；取模和位运算要求整型提升后的公共运算类型为整数。输出必须是可写的非 bool 整数（不超过 64 位）、float 或 double。首个输出转换首个引用目标的当前值；后续输出按 `operation(当前引用目标, 前一引用目标)` 计算并逐项转换为输出类型。保存的 wrapper 保留绑定，因此输出与引用目标重叠时，写入会影响后续读取。空范围返回原输出指针，单元素范围不执行二元运算；参数求值和临时对象清理保持一致。精确 SDK 运算、转发、wrapper 复制、转换、移动和完整循环均须通过认证。带类型、已存储或返回的操作对象、逻辑或比较操作及源码替换仍不支持。
+
 `cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. 直接调用支持已检查包装器的可变原始指针区间，引用可为受支持的算术值或对象指针，也可为 const。SDK 证明认证迭代器类别分派、平凡移动特征、左右移位、前向和最大公约数循环、等长区间交换、返回指针及所选移动适配器。旋转重排包装器绑定，保留引用对象值，并返回原首元素的新位置；空区间或任一半区间为空时保持标准端点语义。实参仅求值一次，保留结果使用和临时对象清理。仍拒绝 volatile 或不支持的引用、源代码替换及间接或强制转换的调用入口。
 
 `cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. 直接调用并直接初始化透明 logical_not，支持已检查包装器的可变原始指针区间，引用可为 bool、最多 64 位整数、float 或 double，也可为 const。完整认证 SDK 的迭代器类别、借用谓词、两层委托、端点选择、双向扫描、指针 pair 及迭代器交换。转换读取实时引用值，选择转换为 false 的值，按 SDK 顺序交换包装器绑定并返回原区间的分界指针；原对象值不变，空区间不读取或交换元素。保留实参求值、结果使用及清理。仍拒绝带类型、存储或返回的操作、volatile 或不支持的引用及源代码替换。

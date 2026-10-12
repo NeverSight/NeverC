@@ -236295,6 +236295,401 @@ int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent
 }
 
 TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyBitwisePromotions) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-bitwise-promotions.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-bitwise-promotions.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const short x = 0x103, y = 0xf3, z = 0x80;
+  const std::reference_wrapper<const short> input[] = {x, y, z};
+  unsigned char both[3], either[3], different[3];
+  std::adjacent_difference(input, input + 3, both, std::bit_and<>{});
+  std::adjacent_difference(input, input + 3, either, std::bit_or<>{});
+  std::adjacent_difference(input, input + 3, different, std::bit_xor<>{});
+  bool t = true, f = false;
+  std::reference_wrapper<bool> flags[] = {t, f, t}; int promoted[3];
+  std::adjacent_difference(flags, flags + 3, promoted, std::bit_xor<>{});
+  return both[0] != 3 || both[1] != 3 || both[2] != 0x80 ||
+         either[0] != 3 || either[1] != 0xf3 || either[2] != 0xf3 ||
+         different[0] != 3 || different[1] != 0xf0 || different[2] != 0x73 ||
+         promoted[0] != 1 || promoted[1] != 1 || promoted[2] != 1 || &input[0].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-arithmetic-family-bitwise-promotions" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyBitwiseWideAlias) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-bitwise-wide-alias.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-bitwise-wide-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  unsigned long long x = 0x8000000000000003ULL, y = 0x8000000000000005ULL;
+  std::reference_wrapper<unsigned long long> input[] = {x, y};
+  unsigned long long both[2], either[2], different[2];
+  std::adjacent_difference(input, input + 2, both, std::bit_and<>{});
+  std::adjacent_difference(input, input + 2, either, std::bit_or<>{});
+  std::adjacent_difference(input, input + 2, different, std::bit_xor<>{});
+  unsigned char values[] = {0x33, 0xf0, 0x0f};
+  std::reference_wrapper<unsigned char> aliases[] = {values[0], values[1], values[2]};
+  std::adjacent_difference(aliases, aliases + 3, values, std::bit_xor<>{});
+  return both[0] != x || both[1] != 0x8000000000000001ULL || either[0] != x ||
+         either[1] != 0x8000000000000007ULL || different[0] != x || different[1] != 6 ||
+         values[0] != 0x33 || values[1] != 0xc3 || values[2] != 0xcc || &aliases[1].get() != &values[1];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-arithmetic-family-bitwise-wide-alias" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyDividesFloatingOutput) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-arithmetic-family-"
+                              "divides-floating-output.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-difference-arithmetic-family-"
+                              "divides-floating-output.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const double x = 2.0, y = 9.0, z = 4.5;
+  const std::reference_wrapper<const double> input[] = {x, y, z};
+  double exact[3]; int narrow[3];
+  double* a = std::adjacent_difference(input, input + 3, exact, std::divides<>{});
+  int* b = std::adjacent_difference(input, input + 3, narrow, std::divides<>{});
+  double two = 2.0, zero = -0.0;
+  std::reference_wrapper<double> zeros[] = {two, zero}; double signs[2];
+  std::adjacent_difference(zeros, zeros + 2, signs, std::divides<>{});
+  return a != exact + 3 || exact[0] != 2.0 || exact[1] != 4.5 || exact[2] != 0.5 ||
+         b != narrow + 3 || narrow[0] != 2 || narrow[1] != 4 || narrow[2] != 0 ||
+         !(1.0 / signs[1] < 0.0) || x != 2.0 || y != 9.0 || z != 4.5;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-difference-arithmetic-"
+                                    "family-divides-floating-output" +
+                                    Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyDividesOrderAlias) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-divides-order-alias.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-divides-order-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int values[] = {2, 9, 5, -11};
+  std::reference_wrapper<int> input[] = {values[0], values[1], values[2], values[3]};
+  int output[4];
+  int* first = std::adjacent_difference(input, input + 4, output, std::divides<>{});
+  int* second = std::adjacent_difference(input, input + 4, values, std::divides<>{});
+  return first != output + 4 || output[0] != 2 || output[1] != 4 || output[2] != 0 || output[3] != -2 ||
+         second != values + 4 || values[0] != 2 || values[1] != 4 || values[2] != 1 || values[3] != -11 ||
+         &input[2].get() != &values[2];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-arithmetic-family-divides-order-alias" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyEmptyEffectsCleanup) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-arithmetic-family-"
+                              "empty-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R = std::reference_wrapper<int>;
+int reads = 0, cleaned = 0;
+struct Range { R* p; R* get() { ++reads; return p; } ~Range() { ++cleaned; } };
+struct Output { int* p; int* get() { ++reads; return p; } ~Output() { ++cleaned; } };
+int main() {
+  R* p = nullptr; int* q = nullptr;
+  int* a = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::plus<>{});
+  int* b = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::multiplies<>{});
+  int* c = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::divides<>{});
+  int* d = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::modulus<>{});
+  int* e = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::bit_and<>{});
+  int* f = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::bit_or<>{});
+  int* g = std::adjacent_difference(Range{p}.get(), Range{p}.get(), Output{q}.get(), std::bit_xor<>{});
+  int zero = 0; R one[] = {zero}; int divide = 8, remainder = 9;
+  int* x = std::adjacent_difference(one, one + 1, &divide, std::divides<>{});
+  int* y = std::adjacent_difference(one, one + 1, &remainder, std::modulus<>{});
+  return a != q || b != q || c != q || d != q || e != q || f != q || g != q ||
+         reads != 21 || cleaned != 21 || divide != 0 || remainder != 0 ||
+         x != &divide + 1 || y != &remainder + 1;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-arithmetic-family-empty-effects-cleanup" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyModulusSignAlias) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-modulus-sign-alias.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-modulus-sign-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int values[] = {-10, 29, -17, 7};
+  std::reference_wrapper<int> input[] = {values[0], values[1], values[2], values[3]};
+  int output[4];
+  std::adjacent_difference(input, input + 4, output, std::modulus<>{});
+  std::adjacent_difference(input, input + 4, values, std::modulus<>{});
+  unsigned a = 10, b = 29, c = 17;
+  std::reference_wrapper<unsigned> positive[] = {a, b, c}; unsigned result[3];
+  std::adjacent_difference(positive, positive + 3, result, std::modulus<>{});
+  return output[0] != -10 || output[1] != 9 || output[2] != -17 || output[3] != 7 ||
+         values[0] != -10 || values[1] != 9 || values[2] != -8 || values[3] != 7 ||
+         result[0] != 10 || result[1] != 9 || result[2] != 17 || &input[1].get() != &values[1];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-arithmetic-family-modulus-sign-alias" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyMultipliesNarrowAlias) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-arithmetic-family-"
+                              "multiplies-narrow-alias.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-difference-arithmetic-family-"
+                              "multiplies-narrow-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  unsigned char values[] = {20, 20, 20};
+  std::reference_wrapper<unsigned char> input[] = {values[0], values[1], values[2]};
+  unsigned char* end = std::adjacent_difference(input, input + 3, values, std::multiplies<>{});
+  const unsigned short x = 20, y = 20, z = 20;
+  const std::reference_wrapper<const unsigned short> stable[] = {x, y, z};
+  unsigned char output[3];
+  unsigned char* second = std::adjacent_difference(stable, stable + 3, output, std::multiplies<>{});
+  return end != values + 3 || values[0] != 20 || values[1] != 144 || values[2] != 64 ||
+         second != output + 3 || output[0] != 20 || output[1] != 144 || output[2] != 144 ||
+         &input[1].get() != &values[1] || x != 20 || y != 20 || z != 20;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-difference-arithmetic-"
+                                    "family-multiplies-narrow-alias" +
+                                    Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyPlusLiveAlias) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-plus-live-alias.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-arithmetic-family-plus-live-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int values[] = {2, 3, 5};
+  std::reference_wrapper<int> input[] = {values[0], values[1], values[2]};
+  int* end = std::adjacent_difference(input, input + 3, values, std::plus<>{});
+  int duplicates[] = {3, 7, 11};
+  std::reference_wrapper<int> repeated[] = {duplicates[0], duplicates[0], duplicates[1]};
+  using std::adjacent_difference;
+  int* second = adjacent_difference(repeated, repeated + 3, duplicates, std::plus<void>{});
+  return end != values + 3 || values[0] != 2 || values[1] != 5 || values[2] != 10 ||
+         second != duplicates + 3 || duplicates[0] != 3 || duplicates[1] != 6 || duplicates[2] != 9 ||
+         &input[1].get() != &values[1] || &repeated[1].get() != &duplicates[0];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-arithmetic-family-plus-live-alias" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceArithmeticFamilyRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"family-bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+auto selected(P a,P b,bool*c){return std::adjacent_difference(a,b,c,std::bit_and<>{});}
+)cpp"},
+      {"family-returned-bit-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+std::bit_or<> op(){return std::bit_or<>{};}auto selected(P a,P b){return std::adjacent_difference(a,b,out,op());}
+)cpp"},
+      {"family-source-divides-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)/std::forward<W&>(b)))->decltype(std::forward<W&>(a)/std::forward<W&>(b)){return a.get()+b.get();}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::divides<>{});}
+)cpp"},
+      {"family-source-plus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)+std::forward<W&>(b)))->decltype(std::forward<W&>(a)+std::forward<W&>(b)){return a.get()-b.get();}}}
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::plus<>{});}
+)cpp"},
+      {"family-source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::bit_xor<>{});}
+)cpp"},
+      {"family-stored-multiplies", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){std::multiplies<> op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"family-typed-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::modulus<int>{});}
+)cpp"},
+      {"family-unknown-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::logical_or<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-adjacent-difference-arithmetic-family-guard-") +
+        Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-adjacent-difference-arithmetic-family-guard-") +
+        Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2WrapperAdjacentDifferenceMinusRuntimeAliasedOutput) {
   const auto Source =
       tmpFile("wrapper-adjacent-difference-minus-runtime-aliased-output.cpp");

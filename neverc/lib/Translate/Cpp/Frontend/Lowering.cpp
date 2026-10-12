@@ -5094,8 +5094,39 @@ class FunctionLowering {
                     Adjacent ? OutputElementType : ElementType, L);
       };
       if (Adjacent) {
+        const auto ArithmeticOperator =
+            [&]() -> std::optional<llvm::StringRef> {
+          if (!Wrapper || Call->getNumArgs() != 4)
+            return "-";
+          const auto *Record = Call->getArg(3)->getType()->getAsCXXRecordDecl();
+          if (!Record || !Record->getIdentifier())
+            return std::nullopt;
+          const auto Name = Record->getName();
+          if (Name == "plus")
+            return "+";
+          if (Name == "minus")
+            return "-";
+          if (Name == "multiplies")
+            return "*";
+          if (Name == "divides")
+            return "/";
+          if (Name == "modulus")
+            return "%";
+          if (Name == "bit_and")
+            return "&";
+          if (Name == "bit_or")
+            return "|";
+          if (Name == "bit_xor")
+            return "^";
+          return std::nullopt;
+        }();
+        if (!ArithmeticOperator)
+          reject(L, "adjacent difference",
+                 "The wrapper operation has no authenticated arithmetic "
+                 "operator.");
         assign(dereference(Output, L),
-               cast(Combine(CurrentValue, Previous, "-"), OutputElementType, L),
+               cast(Combine(CurrentValue, Previous, *ArithmeticOperator),
+                    OutputElementType, L),
                L);
         assign(Previous, CurrentValue, L);
       } else {

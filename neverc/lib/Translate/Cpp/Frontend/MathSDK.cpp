@@ -35488,7 +35488,7 @@ static bool utilityWrapperAccumulateArithmetic(
 // Saved wrapper values retain their bindings, including when scalar output
 // overlaps a referent. Authenticate the complete C++17 SDK loop before using
 // it.
-static bool utilityWrapperAdjacentDifferenceMinus(
+static bool utilityWrapperAdjacentDifferenceArithmetic(
     const State &S, const SourceManager &SM, const FunctionDecl *Function,
     QualType Input, QualType Output, const ASTContext &Context,
     const CallExpr *Selected) {
@@ -35556,7 +35556,7 @@ static bool utilityWrapperAdjacentDifferenceMinus(
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
   if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() || Record->getName() != "minus" ||
+      !Record || !Record->getIdentifier() ||
       Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
@@ -35564,6 +35564,31 @@ static bool utilityWrapperAdjacentDifferenceMinus(
                               "__numeric/adjacent_difference.h") ||
       Function->getNumParams() != 4 ||
       !Same(Function->getReturnType(), Output) || !Args || Args->size() != 3)
+    return false;
+  const auto ArithmeticOpcode = [&]() -> std::optional<BinaryOperatorKind> {
+    const auto Name = Record->getName();
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  }();
+  if (!ArithmeticOpcode ||
+      ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
+        *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
+       !(*Common)->isIntegerType()))
     return false;
   const QualType Params[] = {Input, Input, Output, ObjectType};
   const QualType Types[] = {Input, Output, ObjectType};
@@ -35602,8 +35627,8 @@ static bool utilityWrapperAdjacentDifferenceMinus(
            functionalInvokeParameterReference(Cast->getSubExpr(),
                                               Pattern->getParamDecl(0));
   };
-  auto SubtractCall = [&](const Expr *E, const VarDecl *Current,
-                          const VarDecl *Previous) {
+  auto ArithmeticCall = [&](const Expr *E, const VarDecl *Current,
+                            const VarDecl *Previous) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
     const auto *Method =
@@ -35649,7 +35674,7 @@ static bool utilityWrapperAdjacentDifferenceMinus(
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Difference =
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
-    if (!Difference || Difference->getOpcode() != BO_Sub ||
+    if (!Difference || Difference->getOpcode() != *ArithmeticOpcode ||
         !Same(Difference->getType(), *Common) ||
         !Same(Difference->getLHS()->getType(), *Common) ||
         !Same(Difference->getRHS()->getType(), *Common))
@@ -35790,7 +35815,7 @@ static bool utilityWrapperAdjacentDifferenceMinus(
   const auto *Prototype =
       Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
   if (!Current || !CopyInput(Current) || !Store ||
-      !SubtractCall(Store->getRHS(), Current, Previous) || !Assign ||
+      !ArithmeticCall(Store->getRHS(), Current, Previous) || !Assign ||
       Assign->getOperator() != OO_Equal || Assign->getNumArgs() != 2 ||
       !Assign->isLValue() || !Same(Assign->getType(), Element) ||
       !Reference(Assign->getArg(0), Previous) || !Method ||
@@ -78213,8 +78238,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Input) &&
         Same(Call->getArg(2)->getType(), Output) &&
         Same(Call->getArg(3)->getType(), Object) &&
-        utilityWrapperAdjacentDifferenceMinus(S, SM, Function, Input, Output,
-                                              Context, Call))
+        utilityWrapperAdjacentDifferenceArithmetic(S, SM, Function, Input,
+                                                   Output, Context, Call))
       return UtilityOperation::NumericAdjacentDifference;
   }
   if (Origin->Path == "__numeric/adjacent_difference.h" &&
