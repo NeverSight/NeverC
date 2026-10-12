@@ -8309,12 +8309,16 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmMax: {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMin;
       if (auto List = InitializerListFor(Call->getArg(0)->getType())) {
-        const auto Wrapper =
-            Call->getNumArgs() == 1
-                ? approvedFunctionalReferenceRecord(
-                      A.S, A.Sources, List->ElementType->getAsCXXRecordDecl(),
+        const auto Wrapper = approvedFunctionalReferenceRecord(
+            A.S, A.Sources, List->ElementType->getAsCXXRecordDecl(), A.Context);
+        const auto WrapperOperation =
+            Call->getNumArgs() == 2
+                ? approvedFunctionalObjectRecord(
+                      A.S, A.Sources,
+                      Call->getArg(1)->getType()->getAsCXXRecordDecl(),
                       A.Context)
                 : std::nullopt;
+        llvm::StringRef WrapperComparison = "<";
         auto ComparedValue = [&](Expression Value) {
           return dereference(
               Expression{{"kind", "member"},
@@ -8326,7 +8330,13 @@ class FunctionLowering {
         };
         auto Value = snapshot(expression(Call->getArg(0)), L);
         std::optional<Expression> Comparator;
-        if (Call->getNumArgs() == 2)
+        if (Wrapper && WrapperOperation && Call->getNumArgs() == 2 &&
+            (WrapperOperation->Record->getName() == "less" ||
+             WrapperOperation->Record->getName() == "greater")) {
+          WrapperComparison =
+              WrapperOperation->Record->getName() == "less" ? "<" : ">";
+          discardFunctionalObject(Call->getArg(1));
+        } else if (Call->getNumArgs() == 2)
           Comparator = snapshot(expression(Call->getArg(1)), L);
         auto Candidate =
             snapshot(fieldStorage(json::Object(Value), List->Begin, L), L);
@@ -8358,10 +8368,10 @@ class FunctionLowering {
                                          Call->getArg(1)->getType(),
                                          std::move(Left), std::move(Right), L)
                : Wrapper
-                   ? CompareUtilityValues("<", ComparedValue(std::move(Left)),
-                                          Wrapper->ReferentType,
-                                          ComparedValue(std::move(Right)),
-                                          Wrapper->ReferentType)
+                   ? CompareUtilityValues(
+                         WrapperComparison, ComparedValue(std::move(Left)),
+                         Wrapper->ReferentType, ComparedValue(std::move(Right)),
+                         Wrapper->ReferentType)
                    : binary("<", std::move(Left), std::move(Right), "bool", L),
                Select, Next, L);
         label(Select, L);

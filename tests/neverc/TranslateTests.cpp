@@ -327918,3 +327918,1029 @@ F selected(){using std::minmax;return &minmax<W>;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,z=2;R a=x,b=x,c=z;R r=std::min({a,b,c},std::less<>{});r.get()=7;return &r.get()!=&x||x!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeBool) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<bool>;int main(){bool x=true,y=false,z=true;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMinListComparisonRuntimeConstInputConstReferents) {
+  const auto Source = tmpFile(
+      "wrapper-min-list-comparison-runtime-const-input-const-referents.cpp");
+  const auto Output = tmpFile(
+      "wrapper-min-list-comparison-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<const int>;int main(){const int x=3,y=1,z=2;const R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-const-input-const-referents" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;const R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeConstList) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-const-list.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-const-list.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;const std::initializer_list<R> l={a,b,c};R r=std::min(l,std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-const-list" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<const int>;int main(){const int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeCopies) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-copies.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-copies.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});R copy=r;copy.get()=8;return &copy.get()!=&y||y!=8;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-copies" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<double>;int main(){double x=3.5,y=-1.5,z=2.5;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeFloat) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-float.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const float>;int main(){const float x=3.5f,y=1.5f,z=2.5f;const R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeGreater) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-greater.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-greater.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::greater<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-greater" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;std::initializer_list<R> l={a,b,c};x=4;y=0;R r=std::min(l,std::less<>{});y=9;return &r.get()!=&y||r.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeMinListComparison) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-min-list-comparison.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-min-list-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-min-list-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeNan) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<double>;int main(){double x=0.0/0.0,y=-1,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int n=0;struct A{R*p;R&get(){return *p;}~A(){++n;}};int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::min({A{&a}.get(),A{&b}.get(),A{&c}.get()},std::less<>{});return n!=3||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int n=0;R& read(R& r){++n;return r;}int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::min({read(a),read(b),read(c)},std::less<>{});return n!=3||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeOriginalBinding) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-original-binding.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-original-binding.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2,t=0;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});b=R(t);y=7;return &r.get()!=&y||r.get()!=7||&b.get()!=&t;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-original-binding" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}int main(){R a{1},b{2};return &std::max(a,b)!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;R select(R a,R b,R c){return std::min({a,b,c},std::less<>{});}int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=select(a,b,c);return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a=1,b=2;return &std::max(a,b)!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<double>;int main(){double x=-0.0,y=0.0,z=1.0;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&x||!(1.0/r.get()<0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=4;R a=x;R r=std::min({a},std::less<>{});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeStoredReferent) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-stored-referent.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-stored-referent.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;int*p=&std::min({a,b,c},std::less<>{}).get();*p=8;return p!=&y||y!=8;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-stored-referent" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeTie) {
+  const auto Source = tmpFile("wrapper-min-list-comparison-runtime-tie.cpp");
+  const auto Output = tmpFile("wrapper-min-list-comparison-runtime-tie.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=1,z=2;R a=x,b=y,c=z;R r=std::min({a,b,c},std::less<>{});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-min-list-comparison-runtime-tie" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMinListComparisonRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-min-list-comparison-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-min-list-comparison-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using std::min;using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=min({a,b,c},std::less<>{});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-min-list-comparison-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperMinListComparisonRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+using F=W(*)(std::initializer_list<W>);auto selected(const W&a,const W&b){return static_cast<F>(&std::min<W>)({a,b});}
+)cpp"},
+      {"custom-predicate", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+bool less(const W&a,const W&b){return a.get()<b.get();}auto selected(const W&a,const W&b){return std::min({a,b},less);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"expression-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::min({*a,*b},(0,std::less<>{}));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+using F=W(*)(std::initializer_list<W>);F f=&std::min<W>;auto selected(const W&a,const W&b){return f({a,b});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"returned-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<> predicate(){return{};}auto selected(P a,P b){return std::min({*a,*b},predicate());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::min({source(a),b},std::less<>{});}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>constexpr const W&forward<const W&>(const W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr const W&forward<const W&>(const W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-greater-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<const W&,const W&>(const W&a,const W&b)const noexcept(noexcept(std::forward<const W&>(a)>std::forward<const W&>(b)))->decltype(std::forward<const W&>(a)>std::forward<const W&>(b)){return a.get()>b.get();}}}
+auto selected(P a,P b){return std::min({*a,*b},std::greater<>{});}
+)cpp"},
+      {"source-identity-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-identity-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>constexpr const W&__identity::operator()<const W&>(const W&)const noexcept;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-identity-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>constexpr const W&__identity::operator()<const W&>(const W&w)const noexcept{return w;}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-invoke-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>constexpr const W&__invoke<__identity&,const W&>(__identity&,const W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-less-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<const W&,const W&>(const W&a,const W&b)const noexcept(noexcept(std::forward<const W&>(a)<std::forward<const W&>(b)))->decltype(std::forward<const W&>(a)<std::forward<const W&>(b));}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-less-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<const W&,const W&>(const W&a,const W&b)const noexcept(noexcept(std::forward<const W&>(a)<std::forward<const W&>(b)))->decltype(std::forward<const W&>(a)<std::forward<const W&>(b)){return a.get()<b.get();}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-less-primary", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct less;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-less-record", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct less<void>;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-list-begin-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::begin()const noexcept;}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-list-begin-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::begin()const noexcept{return nullptr;}}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-list-end-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::end()const noexcept;}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-list-end-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::end()const noexcept{return nullptr;}}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-list-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<class T>class initializer_list;}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-min-element-delegate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class C,class I,class S>constexpr I __min_element(I,S,C);}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-min-element-delegate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P __min_element<less<void>&,P,P>(P,P,less<void>&);}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-min-element-delegate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P __min_element<less<void>&,P,P>(P a,P,less<void>&){return a;}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-min-element-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class C,class I,class S,class J>constexpr I __min_element(I,S,C,J&);}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-min-element-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P __min_element<less<void>&,P,P,__identity>(P,P,less<void>&,__identity&);}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-min-element-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P __min_element<less<void>&,P,P,__identity>(P a,P,less<void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-min-list-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class T,class B>constexpr T min(initializer_list<T>,B);}}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-min-list-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>W min<W,less<void>>(initializer_list<W>,less<void>);}}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-min-list-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>W min<W,less<void>>(initializer_list<W> l,less<void>){return *l.begin();}}}
+auto selected(const W&a,const W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-move-pointer-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P&&move<P&>(P&p)noexcept;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-move-pointer-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P&&move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::min({source(a),b},std::less<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::min({source(a),b},std::less<>{});}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-record-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+struct T{int n;};bool operator<(const T&a,const T&b){return a.n<b.n;}using W=std::reference_wrapper<T>;auto selected(W&a,W&b){return std::min({a,b},std::less<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::min({*a,*b},std::less<>{});}
+)cpp"},
+      {"stored-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::less<> p;return std::min({*a,*b},p);}
+)cpp"},
+      {"typed-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::min({*a,*b},std::less<W>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+using std::min;using F=W(*)(std::initializer_list<W>);F f=&min<W>;auto selected(const W&a,const W&b){return f({a,b});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-min-list-comparison-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-min-list-comparison-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
