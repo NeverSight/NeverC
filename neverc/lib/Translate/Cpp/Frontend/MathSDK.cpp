@@ -35316,7 +35316,6 @@ static bool utilityWrapperAccumulateArithmetic(
        !Record->getNumBases());
   if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
       !Record || !Record->getIdentifier() ||
-      (Record->getName() != "plus" && Record->getName() != "multiplies") ||
       Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
@@ -35326,8 +35325,32 @@ static bool utilityWrapperAccumulateArithmetic(
       !Same(Function->getReturnType(), Accumulator) || !Args ||
       Args->size() != 3)
     return false;
-  // The names above are closed: each admits only its own built-in operation.
-  const auto ArithmeticOpcode = Record->getName() == "plus" ? BO_Add : BO_Mul;
+  // Closed dispatch: every admitted name proves its own built-in operation.
+  const auto ArithmeticOpcode = [&]() -> std::optional<BinaryOperatorKind> {
+    const auto Name = Record->getName();
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  }();
+  if (!ArithmeticOpcode ||
+      ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
+        *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
+       !(*Common)->isIntegerType()))
+    return false;
   const QualType Params[] = {Input, Input, Accumulator, ObjectType};
   const QualType Types[] = {Input, Accumulator, ObjectType};
   for (unsigned I = 0; I != 4; ++I)
@@ -35412,7 +35435,7 @@ static bool utilityWrapperAccumulateArithmetic(
     const auto *R =
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
-    if (!Sum || Sum->getOpcode() != ArithmeticOpcode ||
+    if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
         !Same(Sum->getType(), *Common) ||
         !Same(Sum->getLHS()->getType(), *Common) ||
         !Same(Sum->getRHS()->getType(), *Common) ||

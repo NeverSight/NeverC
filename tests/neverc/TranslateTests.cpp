@@ -331803,6 +331803,420 @@ int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::mult
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyBitwisePromotions) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-arithmetic-family-bitwise-promotions.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-arithmetic-family-bitwise-promotions.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const short x = 0x103, y = 0x0f3;
+  std::reference_wrapper<const short> masks[] = {x, y};
+  unsigned char initial_and = 0xff, initial_or = 0, initial_xor = 0x80;
+  unsigned char a = std::accumulate(masks, masks + 2, initial_and, std::bit_and<>{});
+  unsigned char o = std::accumulate(masks, masks + 2, initial_or, std::bit_or<>{});
+  unsigned char z = std::accumulate(masks, masks + 2, initial_xor, std::bit_xor<>{});
+  bool t = true, f = false;
+  std::reference_wrapper<bool> flags[] = {t, f, t};
+  unsigned short initial = 2;
+  unsigned short b = std::accumulate(flags, flags + 3, initial, std::bit_xor<>{});
+  return a != 3 || o != 0xf3 || z != 0x70 || b != 2 || &masks[0].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-arithmetic-family-bitwise-promotions" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateArithmeticFamilyBitwiseWideAlias) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-arithmetic-family-bitwise-wide-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-arithmetic-family-bitwise-wide-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  unsigned long long x = 0x8000000000000003ULL, y = 0x8000000000000005ULL;
+  std::reference_wrapper<unsigned long long> masks[] = {x, y};
+  unsigned long long a = std::accumulate(masks, masks + 2, ~0ULL, std::bit_and<>{});
+  unsigned long long o = std::accumulate(masks, masks + 2, 0ULL, std::bit_or<>{});
+  std::reference_wrapper<unsigned long long> aliases[] = {x, x, y};
+  unsigned long long z = std::accumulate(aliases, aliases + 3, 0ULL, std::bit_xor<>{});
+  return a != 0x8000000000000001ULL || o != 0x8000000000000007ULL || z != y ||
+         &aliases[0].get() != &x || &aliases[1].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-arithmetic-family-bitwise-wide-alias" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyDividesFloatingBoundaries) {
+  const auto Source = tmpFile(
+      "wrapper-accumulate-arithmetic-family-divides-floating-boundaries.cpp");
+  const auto Output = tmpFile(
+      "wrapper-accumulate-arithmetic-family-divides-floating-boundaries.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  double two = 2.0, infinity = 1.0 / 0.0, nan = 0.0 / 0.0;
+  std::reference_wrapper<double> finite[] = {two};
+  std::reference_wrapper<double> inf[] = {infinity};
+  std::reference_wrapper<double> invalid[] = {nan};
+  double zero = std::accumulate(finite, finite + 1, -0.0, std::divides<>{});
+  double limit = std::accumulate(inf, inf + 1, 8.0, std::divides<>{});
+  double unknown = std::accumulate(invalid, invalid + 1, 8.0, std::divides<>{});
+  return !(1.0 / zero < 0.0) || limit != 0.0 || unknown == unknown;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-arithmetic-family-divides-floating-boundaries" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyDividesSignedTruncation) {
+  const auto Source = tmpFile(
+      "wrapper-accumulate-arithmetic-family-divides-signed-truncation.cpp");
+  const auto Output = tmpFile(
+      "wrapper-accumulate-arithmetic-family-divides-signed-truncation.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int x = -2, y = 2;
+  std::reference_wrapper<int> values[] = {x, y};
+  int result = std::accumulate(values, values + 2, 7, std::divides<>{});
+  return result != -1 || x != -2 || y != 2;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-arithmetic-family-divides-signed-truncation" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyDividesStepConversion) {
+  const auto Source = tmpFile(
+      "wrapper-accumulate-arithmetic-family-divides-step-conversion.cpp");
+  const auto Output = tmpFile(
+      "wrapper-accumulate-arithmetic-family-divides-step-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  double x = 2.0, y = 0.5;
+  std::reference_wrapper<double> values[] = {x, y};
+  int result = std::accumulate(values, values + 2, 3, std::divides<>{});
+  int two = 2;
+  std::reference_wrapper<int> halves[] = {two, two};
+  double precise = std::accumulate(halves, halves + 2, 9.0, std::divides<>{});
+  float precise_float = std::accumulate(halves, halves + 2, 9.0f, std::divides<>{});
+  return result != 2 || precise != 2.25 || precise_float != 2.25f;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-arithmetic-family-divides-step-conversion" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyEmptyEffectsCleanup) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-arithmetic-family-empty-effects-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-arithmetic-family-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R = std::reference_wrapper<int>;
+int reads = 0, cleaned = 0;
+struct Range { R* p; R* get() { ++reads; return p; } ~Range() { ++cleaned; } };
+struct Initial { int get() { ++reads; return 100; } ~Initial() { ++cleaned; } };
+int main() {
+  R* p = nullptr;
+  int a = std::accumulate(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::minus<>{});
+  int b = std::accumulate(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::divides<>{});
+  int c = std::accumulate(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::modulus<>{});
+  int d = std::accumulate(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::bit_and<>{});
+  int e = std::accumulate(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::bit_or<>{});
+  int f = std::accumulate(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::bit_xor<>{});
+  return a != 100 || b != 100 || c != 100 || d != 100 || e != 100 || f != 100 ||
+         reads != 18 || cleaned != 18;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-arithmetic-family-empty-effects-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateArithmeticFamilyMinusOrderLive) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-arithmetic-family-minus-order-live.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-arithmetic-family-minus-order-live.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R = std::reference_wrapper<int>;
+using std::accumulate;
+int main() {
+  int x = 3, y = 7;
+  const R values[] = {x, y};
+  int first = accumulate(values, values + 2, 20, std::minus<>{});
+  y = 5;
+  int second = accumulate(values, values + 2, 20, std::minus<void>());
+  return first != 10 || second != 12 || &values[0].get() != &x ||
+         &values[1].get() != &y || x != 3 || y != 5;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-arithmetic-family-minus-order-live" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyMinusStepConversion) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-arithmetic-family-minus-step-conversion.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-arithmetic-family-minus-step-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  double x = 3.5, y = 3.5;
+  std::reference_wrapper<double> values[] = {x, y};
+  int result = std::accumulate(values, values + 2, 10, std::minus<>{});
+  unsigned int one = 1;
+  std::reference_wrapper<unsigned int> wrap[] = {one};
+  unsigned int wrapped = std::accumulate(wrap, wrap + 1, 0u, std::minus<>{});
+  return result != 2 || wrapped != ~0u || &values[0].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-arithmetic-family-minus-step-conversion" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyModulusSignCommon) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-arithmetic-family-modulus-sign-common.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-arithmetic-family-modulus-sign-common.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int ten = 10, four = 4;
+  std::reference_wrapper<int> signed_values[] = {ten, four};
+  int signed_result = std::accumulate(signed_values, signed_values + 2, -29, std::modulus<>{});
+  unsigned int five = 5, two = 2;
+  std::reference_wrapper<unsigned int> mixed_values[] = {five, two};
+  int mixed_result = std::accumulate(mixed_values, mixed_values + 2, -13, std::modulus<>{});
+  int thirty = 30, seven = 7;
+  std::reference_wrapper<int> ordered[] = {thirty, seven};
+  int ordered_result = std::accumulate(ordered, ordered + 2, 100, std::modulus<>{});
+  return signed_result != -1 || mixed_result != 1 || ordered_result != 3;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-arithmetic-family-modulus-sign-common" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateArithmeticFamilyRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"family-bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,false,std::bit_or<>{});}
+)cpp"},
+      {"family-enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::modulus<>{});}
+)cpp"},
+      {"family-returned-bit-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_or<> op(){return std::bit_or<>{};}auto selected(P a,P b){return std::accumulate(a,b,0,op());}
+)cpp"},
+      {"family-source-divides-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)/std::forward<W&>(b)))->decltype(std::forward<int&>(a)/std::forward<W&>(b)){return a-b.get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::divides<>{});}
+)cpp"},
+      {"family-source-minus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)-std::forward<W&>(b)))->decltype(std::forward<int&>(a)-std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::minus<>{});}
+)cpp"},
+      {"family-source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::minus<>{});}
+)cpp"},
+      {"family-stored-bit-and", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::bit_and<> op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"family-typed-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,0,std::modulus<int>{});}
+)cpp"},
+      {"family-unknown-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,0,std::logical_or<>{});}
+)cpp"},
+      {"family-wide-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,__int128(0),std::bit_xor<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-accumulate-arithmetic-family-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-accumulate-arithmetic-family-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeAlias) {
   const auto Source =
       tmpFile("wrapper-accumulate-multiplies-runtime-alias.cpp");

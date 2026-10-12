@@ -407,6 +407,29 @@ verified against the selected C++17 implementation. Source replacements, custom,
 operations, enum or nested-wrapper referents, unsupported accumulator types
 and indirect or casted callees remain rejected.
 
+Direct four-argument `std::accumulate` on checked SDK reference-wrapper pointer
+ranges also admits directly initialized transparent `std::minus<>`,
+`std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>` and
+`std::bit_xor<>`. The shared proof has a closed name-to-opcode mapping, retaining
+`std::plus<>` and `std::multiplies<>`; unknown names fail admission. The existing
+supported scalar restrictions remain: the accumulator is a non-bool integer of
+at most 64 bits, float or double; referents are supported non-enum scalar values
+with existing const access. Modulus and bitwise operations additionally require
+an integer common operation type. Bool referents may undergo integer promotion;
+bool accumulators remain outside this surface.
+
+The selected C++17 SDK loop supplies the accumulator as the left lvalue argument
+and the current referent as the right operand. Each operation uses the usual
+arithmetic conversions and converts its result back to the accumulator before
+the next element. Empty ranges return the initial value without arithmetic.
+Bindings, referents, one-time operand evaluation and cleanup are preserved.
+The SDK function, transparent object, selected operation, exact opcode, both
+forwarding paths and wrapper conversion retain the shared source proof.
+Source replacements, custom, typed, stored or dynamically produced operations,
+unsupported types and indirect or casted callees remain rejected. Integer
+zero division and unrepresentable signed division/remainder retain the source
+language's undefined domain; this feature introduces no checked-arithmetic mode.
+
 `cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. Direct calls accept mutable raw-pointer ranges of checked wrappers with supported arithmetic or object-pointer referents, including const referents. The SDK proof authenticates category dispatch, trivial-move traits, left and right shifts, forward and greatest-common-divisor cycles, equal-length exchanges, pointer results and selected move adapters. Rotation permutes wrapper bindings, preserves referent values and returns the new position of the original first element. Empty ranges and either empty half retain their standard endpoints. Arguments are evaluated once and result use and temporary cleanup are preserved. Volatile or unsupported referents, source replacements and indirect or casted callees remain rejected. Twenty-five runtime fixtures, sixty-nine native-valid rejection boundaries and ten regressions verify this finite path. NeverC’s main source frontend remains C23.
 
 `cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. Direct calls with directly initialized transparent logical_not accept mutable raw-pointer ranges of checked wrappers with bool, integers up to 64 bits, float or double referents, optionally const. The complete authenticated SDK path checks iterator category, borrowed predicate, both delegates, endpoint selection, bidirectional scan, pointer pair and iterator swap. Lowering reads live referents, selects values that convert to false, swaps wrapper bindings in SDK order and returns the original partition boundary. Referents retain their values; empty ranges perform no reads or swaps. Argument evaluation, result use and cleanup are preserved. Typed, stored or returned operations, volatile or unsupported referents and source replacements remain rejected. Twenty-five runtime fixtures, fifty-four native-valid rejection boundaries and ten regressions verify this finite path. NeverC’s main source frontend remains C23.
