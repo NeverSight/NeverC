@@ -35906,16 +35906,15 @@ static bool utilityWrapperInnerProductOperations(
       S, SM, Element->getAsCXXRecordDecl(), Context);
   const auto Wrapper2 = approvedFunctionalReferenceRecord(
       S, SM, Element2->getAsCXXRecordDecl(), Context);
-  const auto ProductType =
+  const auto InputCommon =
       Wrapper && Wrapper2
           ? utilityScalarComparisonType(Context, Wrapper->ReferentType,
                                         Wrapper2->ReferentType, false)
           : std::nullopt;
-  const auto Common = ProductType
-                          ? utilityScalarComparisonType(Context, Accumulator,
-                                                        *ProductType, false)
-                          : std::nullopt;
-  if (!Wrapper || !Wrapper2 || !ProductType || !Common ||
+  if (!Wrapper || !Wrapper2 || !InputCommon ||
+      !((*InputCommon)->isIntegerType() ||
+        (*InputCommon)->isSpecificBuiltinType(BuiltinType::Float) ||
+        (*InputCommon)->isSpecificBuiltinType(BuiltinType::Double)) ||
       Element.isVolatileQualified() || Element.isRestrictQualified() ||
       Element.getAddressSpace() != LangAS::Default ||
       Element2.isVolatileQualified() || Element2.isRestrictQualified() ||
@@ -35949,25 +35948,8 @@ static bool utilityWrapperInnerProductOperations(
         return false;
     return true;
   };
-  auto ArithmeticOpcode =
-      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
-    if (Name == "plus")
-      return BO_Add;
-    if (Name == "minus")
-      return BO_Sub;
-    if (Name == "multiplies")
-      return BO_Mul;
-    if (Name == "divides")
-      return BO_Div;
-    if (Name == "modulus")
-      return BO_Rem;
-    if (Name == "bit_and")
-      return BO_And;
-    if (Name == "bit_or")
-      return BO_Or;
-    if (Name == "bit_xor")
-      return BO_Xor;
-    return std::nullopt;
+  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+    return utilityWrapperNumericOpcode(Name);
   };
   auto Construct = [&](unsigned I) -> const CXXRecordDecl * {
     const auto *Argument =
@@ -36002,8 +35984,7 @@ static bool utilityWrapperInnerProductOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        (I == 4 ? !utilityWrapperNumericOpcode(Record->getName())
-                : !ArithmeticOpcode(Record->getName())) ||
+        !ArithmeticOpcode(Record->getName()) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36023,13 +36004,22 @@ static bool utilityWrapperInnerProductOperations(
     return false;
   const auto ReductionOpcode = utilityWrapperNumericOpcode(Plus->getName());
   const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
+  if (!ReductionOpcode || !TermOpcode)
+    return false;
+  const bool ComparisonTerm = *TermOpcode == BO_EQ || *TermOpcode == BO_NE ||
+                              *TermOpcode == BO_LT || *TermOpcode == BO_LE ||
+                              *TermOpcode == BO_GT || *TermOpcode == BO_GE;
+  const auto ProductType =
+      ComparisonTerm ? std::optional<QualType>{Context.BoolTy} : InputCommon;
+  const auto Common =
+      utilityScalarComparisonType(Context, Accumulator, *ProductType, false);
   auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
     return Opcode == BO_Rem || Opcode == BO_And || Opcode == BO_Or ||
            Opcode == BO_Xor;
   };
-  if (!ReductionOpcode || !TermOpcode ||
+  if (!Common ||
       (RequiresInteger(*ReductionOpcode) && !(*Common)->isIntegerType()) ||
-      (RequiresInteger(*TermOpcode) && !(*ProductType)->isIntegerType()))
+      (RequiresInteger(*TermOpcode) && !(*InputCommon)->isIntegerType()))
     return false;
   const bool Comparison =
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
@@ -36110,9 +36100,9 @@ static bool utilityWrapperInnerProductOperations(
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
                    Same(Value->getLHS()->getType(),
-                        Index == 5 ? *ProductType : *Common) &&
+                        Index == 5 ? *InputCommon : *Common) &&
                    Same(Value->getRHS()->getType(),
-                        Index == 5 ? *ProductType : *Common)
+                        Index == 5 ? *InputCommon : *Common)
                ? Value
                : nullptr;
   };
@@ -36241,16 +36231,15 @@ static bool utilityWrapperTransformReduceOperations(
       S, SM, Element->getAsCXXRecordDecl(), Context);
   const auto Wrapper2 = approvedFunctionalReferenceRecord(
       S, SM, Element2->getAsCXXRecordDecl(), Context);
-  const auto ProductType =
+  const auto InputCommon =
       Wrapper && Wrapper2
           ? utilityScalarComparisonType(Context, Wrapper->ReferentType,
                                         Wrapper2->ReferentType, false)
           : std::nullopt;
-  const auto Common = ProductType
-                          ? utilityScalarComparisonType(Context, Accumulator,
-                                                        *ProductType, false)
-                          : std::nullopt;
-  if (!Wrapper || !Wrapper2 || !ProductType || !Common ||
+  if (!Wrapper || !Wrapper2 || !InputCommon ||
+      !((*InputCommon)->isIntegerType() ||
+        (*InputCommon)->isSpecificBuiltinType(BuiltinType::Float) ||
+        (*InputCommon)->isSpecificBuiltinType(BuiltinType::Double)) ||
       Element.isVolatileQualified() || Element.isRestrictQualified() ||
       Element.getAddressSpace() != LangAS::Default ||
       Element2.isVolatileQualified() || Element2.isRestrictQualified() ||
@@ -36284,25 +36273,8 @@ static bool utilityWrapperTransformReduceOperations(
         return false;
     return true;
   };
-  auto ArithmeticOpcode =
-      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
-    if (Name == "plus")
-      return BO_Add;
-    if (Name == "minus")
-      return BO_Sub;
-    if (Name == "multiplies")
-      return BO_Mul;
-    if (Name == "divides")
-      return BO_Div;
-    if (Name == "modulus")
-      return BO_Rem;
-    if (Name == "bit_and")
-      return BO_And;
-    if (Name == "bit_or")
-      return BO_Or;
-    if (Name == "bit_xor")
-      return BO_Xor;
-    return std::nullopt;
+  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+    return utilityWrapperNumericOpcode(Name);
   };
   auto Construct = [&](unsigned I) -> const CXXRecordDecl * {
     const auto *Argument =
@@ -36337,8 +36309,7 @@ static bool utilityWrapperTransformReduceOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        (I == 4 ? !utilityWrapperNumericOpcode(Record->getName())
-                : !ArithmeticOpcode(Record->getName())) ||
+        !ArithmeticOpcode(Record->getName()) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36358,13 +36329,22 @@ static bool utilityWrapperTransformReduceOperations(
     return false;
   const auto ReductionOpcode = utilityWrapperNumericOpcode(Plus->getName());
   const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
+  if (!ReductionOpcode || !TermOpcode)
+    return false;
+  const bool ComparisonTerm = *TermOpcode == BO_EQ || *TermOpcode == BO_NE ||
+                              *TermOpcode == BO_LT || *TermOpcode == BO_LE ||
+                              *TermOpcode == BO_GT || *TermOpcode == BO_GE;
+  const auto ProductType =
+      ComparisonTerm ? std::optional<QualType>{Context.BoolTy} : InputCommon;
+  const auto Common =
+      utilityScalarComparisonType(Context, Accumulator, *ProductType, false);
   auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
     return Opcode == BO_Rem || Opcode == BO_And || Opcode == BO_Or ||
            Opcode == BO_Xor;
   };
-  if (!ReductionOpcode || !TermOpcode ||
+  if (!Common ||
       (RequiresInteger(*ReductionOpcode) && !(*Common)->isIntegerType()) ||
-      (RequiresInteger(*TermOpcode) && !(*ProductType)->isIntegerType()))
+      (RequiresInteger(*TermOpcode) && !(*InputCommon)->isIntegerType()))
     return false;
   const bool Comparison =
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
@@ -36445,9 +36425,9 @@ static bool utilityWrapperTransformReduceOperations(
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
                    Same(Value->getLHS()->getType(),
-                        Index == 5 ? *ProductType : *Common) &&
+                        Index == 5 ? *InputCommon : *Common) &&
                    Same(Value->getRHS()->getType(),
-                        Index == 5 ? *ProductType : *Common)
+                        Index == 5 ? *InputCommon : *Common)
                ? Value
                : nullptr;
   };
