@@ -238312,6 +238312,327 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductArithmeticFamilyBitwisePromotionsWide) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-arithmetic-family-bitwise-promotions-wide.cpp");
+  const auto Output = tmpFile(
+      "wrapper-inner-product-arithmetic-family-bitwise-promotions-wide.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ const short x=0x103,y=0xf00; const unsigned char a=0xf3,b=0x80;
+ const std::reference_wrapper<const short> left[]={x,y};
+ const std::reference_wrapper<const unsigned char> right[]={a,b};
+ int first=std::inner_product(left,left+2,right,0,std::bit_xor<>{},std::bit_and<>{});
+ bool t=true,f=false; std::reference_wrapper<bool> flags[]={t,f,t},other[]={t,t,f};
+ int second=std::inner_product(flags,flags+3,other,7,std::multiplies<>{},std::bit_or<>{});
+ int third=std::inner_product(flags,flags+3,other,7,std::plus<>{},std::bit_xor<>{});
+ unsigned long long p=0x8000000000000003ULL,q=0x8000000000000005ULL;
+ unsigned long long s=0x8000000000000004ULL,v=0x8000000000000002ULL;
+ std::reference_wrapper<unsigned long long> wl[]={p,q},wr[]={s,v};
+ unsigned long long wide=std::inner_product(wl,wl+2,wr,~0ULL,std::bit_and<>{},std::bit_or<>{});
+ return first!=3 || second!=7 || third!=9 || wide!=0x8000000000000007ULL;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-arithmetic-family-bitwise-promotions-wide" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductArithmeticFamilyEmptyEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-arithmetic-family-empty-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-inner-product-arithmetic-family-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int reads=0,cleaned=0;
+struct Range{R*p;R*get(){++reads;return p;}~Range(){++cleaned;}};
+struct Initial{int v;int get(){++reads;return v;}~Initial(){++cleaned;}};
+int main(){R*p=nullptr;
+  int v0=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::plus<>{},std::divides<>{});
+  int v1=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::minus<>{},std::modulus<>{});
+  int v2=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::multiplies<>{},std::bit_and<>{});
+  int v3=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::divides<>{},std::bit_or<>{});
+  int v4=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::modulus<>{},std::bit_xor<>{});
+  int v5=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::bit_and<>{},std::plus<>{});
+  int v6=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::bit_or<>{},std::minus<>{});
+  int v7=std::inner_product(Range{p}.get(),Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::bit_xor<>{},std::multiplies<>{});
+  return v0!=17||v1!=17||v2!=17||v3!=17||v4!=17||v5!=17||v6!=17||v7!=17||reads!=32||cleaned!=32;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-arithmetic-family-empty-effects-cleanup" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductArithmeticFamilyIntegerPairMatrix) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-arithmetic-family-integer-pair-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-inner-product-arithmetic-family-integer-pair-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int x=13,y=6; std::reference_wrapper<int> left[]={x},right[]={y};
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::plus<>{})!=103) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::minus<>{})!=91) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::multiplies<>{})!=162) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::divides<>{})!=86) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::modulus<>{})!=85) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::bit_and<>{})!=88) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::bit_or<>{})!=99) return 1;
+  if (std::inner_product(left,left+1,right,84,std::plus<>{},std::bit_xor<>{})!=95) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::plus<>{})!=65) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::minus<>{})!=77) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::multiplies<>{})!=6) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::divides<>{})!=82) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::modulus<>{})!=83) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::bit_and<>{})!=80) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::bit_or<>{})!=69) return 1;
+  if (std::inner_product(left,left+1,right,84,std::minus<>{},std::bit_xor<>{})!=73) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::plus<>{})!=1596) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::minus<>{})!=588) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::multiplies<>{})!=6552) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::divides<>{})!=168) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::modulus<>{})!=84) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::bit_and<>{})!=336) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::bit_or<>{})!=1260) return 1;
+  if (std::inner_product(left,left+1,right,84,std::multiplies<>{},std::bit_xor<>{})!=924) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::plus<>{})!=4) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::minus<>{})!=12) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::multiplies<>{})!=1) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::divides<>{})!=42) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::modulus<>{})!=84) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::bit_and<>{})!=21) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::bit_or<>{})!=5) return 1;
+  if (std::inner_product(left,left+1,right,84,std::divides<>{},std::bit_xor<>{})!=7) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::plus<>{})!=8) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::minus<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::multiplies<>{})!=6) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::divides<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::modulus<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::bit_and<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::bit_or<>{})!=9) return 1;
+  if (std::inner_product(left,left+1,right,84,std::modulus<>{},std::bit_xor<>{})!=7) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::plus<>{})!=16) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::minus<>{})!=4) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::multiplies<>{})!=68) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::divides<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::modulus<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::bit_and<>{})!=4) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::bit_or<>{})!=4) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_and<>{},std::bit_xor<>{})!=0) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::plus<>{})!=87) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::minus<>{})!=87) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::multiplies<>{})!=94) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::divides<>{})!=86) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::modulus<>{})!=85) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::bit_and<>{})!=84) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::bit_or<>{})!=95) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_or<>{},std::bit_xor<>{})!=95) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::plus<>{})!=71) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::minus<>{})!=83) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::multiplies<>{})!=26) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::divides<>{})!=86) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::modulus<>{})!=85) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::bit_and<>{})!=80) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::bit_or<>{})!=91) return 1;
+  if (std::inner_product(left,left+1,right,84,std::bit_xor<>{},std::bit_xor<>{})!=95) return 1;
+  return x!=13 || y!=6 || &left[0].get()!=&x || &right[0].get()!=&y;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-arithmetic-family-integer-pair-matrix" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductArithmeticFamilyMixedStepConversion) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-arithmetic-family-mixed-step-conversion.cpp");
+  const auto Output = tmpFile(
+      "wrapper-inner-product-arithmetic-family-mixed-step-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ const double x=1.5,y=1.5,z=1.5,a=2.0,b=2.0,c=2.0;
+ const std::reference_wrapper<const double> left[]={x,y,z},right[]={a,b,c};
+ int first=std::inner_product(left,left+3,right,1,std::multiplies<>{},std::plus<>{});
+ double second=std::inner_product(left,left+3,right,8.0,std::divides<>{},std::minus<>{});
+ return first!=35 || second!=-64.0 || x!=1.5 || a!=2.0;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inner-product-arithmetic-family-mixed-step-conversion" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductArithmeticFamilySignedOperandOrder) {
+  const auto Source = tmpFile(
+      "wrapper-inner-product-arithmetic-family-signed-operand-order.cpp");
+  const auto Output = tmpFile(
+      "wrapper-inner-product-arithmetic-family-signed-operand-order.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ int x=-13,y=29,z=-17,a=6,b=10,c=7;
+ std::reference_wrapper<int> left[]={x,y,z},right[]={a,b,c};
+ int first=std::inner_product(left,left+3,right,20,std::minus<>{},std::divides<>{});
+ int second=std::inner_product(left,left+3,right,5,std::plus<>{},std::modulus<>{});
+ int third=std::inner_product(left,left+3,right,1440,std::divides<>{},std::minus<>{});
+ return first!=22 || second!=10 || third!=0 || x!=-13 || a!=6;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inner-product-arithmetic-family-signed-operand-order" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInnerProductArithmeticFamilyRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"family-bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,false,std::bit_xor<>{},std::multiplies<>{});}
+)cpp"},
+      {"family-returned-reduction-bit-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_or<> op(){return std::bit_or<>{};}auto selected(P a,P b){return std::inner_product(a,b,a,0,op(),std::multiplies<>{});}
+)cpp"},
+      {"family-source-reduction-minus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)-std::forward<int>(b)))->decltype(std::forward<int&>(a)-std::forward<int>(b)){return a+b;}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::minus<>{},std::multiplies<>{});}
+)cpp"},
+      {"family-source-second-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<short>::operator short&()const noexcept{return get();}}}auto selected(P a,P b,std::reference_wrapper<short>*c){return std::inner_product(a,b,c,0,std::plus<>{},std::minus<>{});}
+)cpp"},
+      {"family-source-term-divides", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)/std::forward<W&>(b)))->decltype(std::forward<W&>(a)/std::forward<W&>(b)){return a.get()*b.get();}}}
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::divides<>{});}
+)cpp"},
+      {"family-stored-term-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::modulus<> op;return std::inner_product(a,b,a,0,std::plus<>{},op);}
+)cpp"},
+      {"family-typed-reduction-bit-and", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::bit_and<int>{},std::multiplies<>{});}
+)cpp"},
+      {"family-typed-term-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::modulus<int>{});}
+)cpp"},
+      {"family-unknown-reduction-less", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::less<>{},std::multiplies<>{});}
+)cpp"},
+      {"family-unknown-term-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::logical_or<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-inner-product-family-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-inner-product-family-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInnerProductOperationsRuntimeAlias) {
   const auto Source =
       tmpFile("wrapper-inner-product-operations-runtime-alias.cpp");

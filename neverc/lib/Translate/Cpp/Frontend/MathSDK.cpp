@@ -35960,8 +35960,27 @@ static bool utilityWrapperInnerProductOperations(
         return false;
     return true;
   };
-  auto Construct = [&](unsigned I,
-                       llvm::StringRef Name) -> const CXXRecordDecl * {
+  auto ArithmeticOpcode =
+      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  };
+  auto Construct = [&](unsigned I) -> const CXXRecordDecl * {
     const auto *Argument =
         Selected && Selected->getNumArgs() == 6
             ? functionalInvokeStrippedExpression(Selected->getArg(I))
@@ -35994,7 +36013,8 @@ static bool utilityWrapperInnerProductOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
+        !ArithmeticOpcode(Record->getName()) ||
+        Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
       return nullptr;
@@ -36007,9 +36027,19 @@ static bool utilityWrapperInnerProductOperations(
           return nullptr;
     return Record;
   };
-  const auto *Plus = Construct(4, "plus");
-  const auto *Multiply = Construct(5, "multiplies");
+  const auto *Plus = Construct(4);
+  const auto *Multiply = Construct(5);
   if (!Plus || !Multiply || !Signature(Function, Plus, Multiply))
+    return false;
+  const auto ReductionOpcode = ArithmeticOpcode(Plus->getName());
+  const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
+  auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
+    return Opcode == BO_Rem || Opcode == BO_And || Opcode == BO_Or ||
+           Opcode == BO_Xor;
+  };
+  if (!ReductionOpcode || !TermOpcode ||
+      (RequiresInteger(*ReductionOpcode) && !(*Common)->isIntegerType()) ||
+      (RequiresInteger(*TermOpcode) && !(*ProductType)->isIntegerType()))
     return false;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
@@ -36095,7 +36125,7 @@ static bool utilityWrapperInnerProductOperations(
     const auto LeftRef = Context.getLValueReferenceType(Element);
     const auto RightRef = Context.getLValueReferenceType(Element2);
     const auto *Value = Operation(C, Multiply, 5, LeftRef, RightRef, LeftRef,
-                                  RightRef, *ProductType, BO_Mul);
+                                  RightRef, *ProductType, *TermOpcode);
     if (!Value ||
         !functionalInvokeParameterReference(C->getArg(1),
                                             Function->getParamDecl(0), true) ||
@@ -36125,10 +36155,11 @@ static bool utilityWrapperInnerProductOperations(
   auto Add = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
-    const auto *Value = Operation(
-        C, Plus, 4, Context.getLValueReferenceType(Accumulator), *ProductType,
-        Context.getLValueReferenceType(Accumulator),
-        Context.getRValueReferenceType(*ProductType), *Common, BO_Add);
+    const auto *Value =
+        Operation(C, Plus, 4, Context.getLValueReferenceType(Accumulator),
+                  *ProductType, Context.getLValueReferenceType(Accumulator),
+                  Context.getRValueReferenceType(*ProductType), *Common,
+                  *ReductionOpcode);
     if (!Value ||
         !functionalInvokeParameterReference(C->getArg(1),
                                             Function->getParamDecl(3)) ||
