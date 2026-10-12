@@ -237390,6 +237390,484 @@ auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::plus<>{},st
   }
 }
 
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperAdjacentDifferenceComparisonLogicalBoolConstWideOutputConversion) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-comparison-logical-"
+                              "bool-const-wide-output-conversion.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-difference-comparison-logical-"
+                              "bool-const-wide-output-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const bool f=false,t=true;const std::reference_wrapper<const bool>b[]={t,f,t};const unsigned long long w=0xffffffffffffffffULL,z=0,q=3;const std::reference_wrapper<const unsigned long long>a[]={w,z,q};double out[4]={99,99,99,99};
+ if(std::adjacent_difference(a,a+3,out,std::equal_to<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=0||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::equal_to<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=0||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::not_equal_to<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=1||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::not_equal_to<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=1||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::less<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=1||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::less<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=1||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::less_equal<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=1||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::less_equal<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=1||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::greater<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=0||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::greater<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=0||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::greater_equal<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=0||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::greater_equal<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=0||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::logical_and<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=0||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::logical_and<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=0||out[2]!=0||out[3]!=99)return 2;
+ if(std::adjacent_difference(a,a+3,out,std::logical_or<>{})!=out+3)return 1;
+ if(out[0]!=18446744073709551616.0||out[1]!=1||out[2]!=1||out[3]!=99)return 2;
+ if(std::adjacent_difference(b,b+3,out,std::logical_or<>{})!=out+3)return 1;
+ if(out[0]!=1.0||out[1]!=1||out[2]!=1||out[3]!=99)return 2;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-difference-comparison-logical-bool-const-"
+                "wide-output-conversion" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceComparisonLogicalEmptyEffectsCleanup) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-comparison-logical-"
+                              "empty-effects-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-difference-comparison-logical-"
+                              "empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+int set(int&n){n=0;return 1;}
+int main(){int n=7;W input[]={n,n};int out[]={998,998};
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::equal_to<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::not_equal_to<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::less<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::less_equal<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::greater<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::greater_equal<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::logical_and<>{})!=out)return 1;
+ if(std::adjacent_difference(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::logical_or<>{})!=out)return 1;
+ if(reads!=24||cleaned!=24||out[0]!=998||out[1]!=998)return 2;
+ n=0;int*end=std::adjacent_difference(input,input+2,out,std::logical_and<>{});return end!=out+2||out[0]!=0||out[1]!=0||n!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-comparison-logical-empty-effects-cleanup" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceComparisonLogicalFloatingNanZero) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-comparison-logical-floating-nan-zero.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-comparison-logical-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const double n=0.0/0.0,z=0.0,m=-0.0,t=0x1p-100;const std::reference_wrapper<const double>a[]={n,z,m,t};double out[5]={99,99,99,99,99};
+ if(std::adjacent_difference(a,a+4,out,std::equal_to<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=0||out[2]!=1||out[3]!=0||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::not_equal_to<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=1||out[2]!=0||out[3]!=1||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::less<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::less_equal<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=0||out[2]!=1||out[3]!=0||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::greater<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=0||out[2]!=0||out[3]!=1||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::greater_equal<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=0||out[2]!=1||out[3]!=1||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::logical_and<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 2;
+ if(std::adjacent_difference(a,a+4,out,std::logical_or<>{})!=out+4)return 1;
+ if(out[0]==out[0]||out[1]!=1||out[2]!=0||out[3]!=1||out[4]!=99)return 2;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-comparison-logical-floating-nan-zero" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceComparisonLogicalLiveWrapperCopyAliases) {
+  const auto Source = tmpFile("wrapper-adjacent-difference-comparison-logical-"
+                              "live-wrapper-copy-aliases.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-difference-comparison-logical-"
+                              "live-wrapper-copy-aliases.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::equal_to<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=0||v[2]!=0||v[3]!=0||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::equal_to<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=1||v[3]!=0||v[4]!=0||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::not_equal_to<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=1||v[2]!=1||v[3]!=1||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::not_equal_to<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=0||v[3]!=1||v[4]!=1||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::less<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=1||v[2]!=1||v[3]!=0||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::less<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=0||v[3]!=1||v[4]!=0||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::less_equal<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=1||v[2]!=1||v[3]!=0||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::less_equal<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=1||v[3]!=1||v[4]!=1||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::greater<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=0||v[2]!=0||v[3]!=1||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::greater<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=0||v[3]!=0||v[4]!=0||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::greater_equal<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=0||v[2]!=0||v[3]!=1||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::greater_equal<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=1||v[3]!=0||v[4]!=0||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::logical_and<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=0||v[2]!=0||v[3]!=0||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::logical_and<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=1||v[3]!=1||v[4]!=1||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+0,std::logical_or<>{})!=v+4)return 1;
+ if(v[0]!=3||v[1]!=1||v[2]!=1||v[3]!=1||v[4]!=88||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+ {int v[]={3,0,-2,3,88,89};const std::reference_wrapper<int>a[]={v[0],v[1],v[2],v[3]};
+ if(std::adjacent_difference(a,a+4,v+1,std::logical_or<>{})!=v+5)return 1;
+ if(v[0]!=3||v[1]!=3||v[2]!=1||v[3]!=1||v[4]!=1||v[5]!=89)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2||&a[3].get()!=v+3)return 3;}
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-difference-comparison-"
+                                    "logical-live-wrapper-copy-aliases" +
+                                    Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceComparisonLogicalOperationMatrix) {
+  const auto Source = tmpFile(
+      "wrapper-adjacent-difference-comparison-logical-operation-matrix.cpp");
+  const auto Output = tmpFile(
+      "wrapper-adjacent-difference-comparison-logical-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const int p=3,z=0,m=-2;const std::reference_wrapper<const int>a[]={p,z,m,p,p};int out[6];
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::equal_to<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::equal_to<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::equal_to<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::not_equal_to<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::not_equal_to<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::not_equal_to<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::less<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::less<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::less<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=1||out[2]!=1||out[3]!=0||out[4]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::less_equal<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::less_equal<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::less_equal<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=1||out[2]!=1||out[3]!=0||out[4]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::greater<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::greater<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::greater<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=0||out[2]!=0||out[3]!=1||out[4]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::greater_equal<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::greater_equal<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::greater_equal<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=0||out[2]!=0||out[3]!=1||out[4]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::logical_and<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::logical_and<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=0||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::logical_and<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=0||out[2]!=0||out[3]!=1||out[4]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+1,out,std::logical_or<>{})!=out+1)return 1;
+ if(out[0]!=3||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+2,out,std::logical_or<>{})!=out+2)return 1;
+ if(out[0]!=3||out[1]!=1||out[5]!=991)return 2;
+ out[5]=991;
+ if(std::adjacent_difference(a,a+5,out,std::logical_or<>{})!=out+5)return 1;
+ if(out[0]!=3||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=1||out[5]!=991)return 2;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-difference-comparison-logical-operation-matrix" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentDifferenceComparisonLogicalRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"less-bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*o){return std::adjacent_difference(a,b,o,std::less<>{});}
+)cpp"},
+      {"less-pointer-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,bool*o){return std::adjacent_difference(a,b,o,std::equal_to<>{});}
+)cpp"},
+      {"less-returned", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<> op(){return {};}
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,op());}
+)cpp"},
+      {"less-source-operation", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b)){return a>b;}}}
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::less<>{});}
+)cpp"},
+      {"less-source-wrapper-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::less<>{});}
+)cpp"},
+      {"less-stored", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::less<> op;return std::adjacent_difference(a,b,o,op);}
+)cpp"},
+      {"less-typed", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::less<int>{});}
+)cpp"},
+      {"less-volatile-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::less<>{});}
+)cpp"},
+      {"logical_and-bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*o){return std::adjacent_difference(a,b,o,std::logical_and<>{});}
+)cpp"},
+      {"logical_and-pointer-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,bool*o){return std::adjacent_difference(a,b,o,std::logical_and<>{});}
+)cpp"},
+      {"logical_and-returned", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_and<> op(){return {};}
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,op());}
+)cpp"},
+      {"logical_and-source-operation", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)&&std::forward<W&>(b)))->decltype(std::forward<W&>(a)&&std::forward<W&>(b)){return a||b;}}}
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::logical_and<>{});}
+)cpp"},
+      {"logical_and-source-wrapper-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::logical_and<>{});}
+)cpp"},
+      {"logical_and-stored", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::adjacent_difference(a,b,o,op);}
+)cpp"},
+      {"logical_and-typed", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::logical_and<int>{});}
+)cpp"},
+      {"logical_and-volatile-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::logical_and<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-adjacent-difference-comparison-logical-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-adjacent-difference-comparison-logical-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(std::filesystem::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInclusiveScanRuntimeAlias) {
   const auto Source = tmpFile("wrapper-inclusive-scan-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-inclusive-scan-runtime-alias.nc");
@@ -242181,11 +242659,12 @@ auto selected(P a,P b){std::multiplies<> op;return std::adjacent_difference(a,b,
 using W=std::reference_wrapper<int>;using P=W*;int out[3];
 auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::modulus<int>{});}
 )cpp"},
-      {"family-unknown-logical-or", R"cpp(
+      {"family-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::logical_or<>{});}
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::adjacent_difference(a,b,o,op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {

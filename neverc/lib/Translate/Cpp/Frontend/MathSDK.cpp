@@ -35633,31 +35633,22 @@ static bool utilityWrapperAdjacentDifferenceArithmetic(
       Function->getNumParams() != 4 ||
       !Same(Function->getReturnType(), Output) || !Args || Args->size() != 3)
     return false;
-  const auto ArithmeticOpcode = [&]() -> std::optional<BinaryOperatorKind> {
-    const auto Name = Record->getName();
-    if (Name == "plus")
-      return BO_Add;
-    if (Name == "minus")
-      return BO_Sub;
-    if (Name == "multiplies")
-      return BO_Mul;
-    if (Name == "divides")
-      return BO_Div;
-    if (Name == "modulus")
-      return BO_Rem;
-    if (Name == "bit_and")
-      return BO_And;
-    if (Name == "bit_or")
-      return BO_Or;
-    if (Name == "bit_xor")
-      return BO_Xor;
-    return std::nullopt;
-  }();
+  const auto ArithmeticOpcode =
+      utilityWrapperScalarReductionOpcode(Record->getName());
   if (!ArithmeticOpcode ||
       ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
         *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
        !(*Common)->isIntegerType()))
     return false;
+  const bool ComparisonOperation =
+      *ArithmeticOpcode == BO_EQ || *ArithmeticOpcode == BO_NE ||
+      *ArithmeticOpcode == BO_LT || *ArithmeticOpcode == BO_LE ||
+      *ArithmeticOpcode == BO_GT || *ArithmeticOpcode == BO_GE;
+  const bool Logical =
+      *ArithmeticOpcode == BO_LAnd || *ArithmeticOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult =
+      ComparisonOperation || Logical ? Context.BoolTy : *Common;
   const QualType Params[] = {Input, Input, Output, ObjectType};
   const QualType Types[] = {Input, Output, ObjectType};
   for (unsigned I = 0; I != 4; ++I)
@@ -35709,17 +35700,17 @@ static bool utilityWrapperAdjacentDifferenceArithmetic(
     const auto LeftRef = Context.getLValueReferenceType(Element);
     const auto RightRef = Context.getLValueReferenceType(Element);
     if (!C || C->getOperator() != OO_Call || C->getNumArgs() != 3 ||
-        !C->isPRValue() || !Same(C->getType(), *Common) || !Method || !D ||
-        !Primary || !Pattern || !Method->isConst() || !Method->isConstexpr() ||
-        Method->isStatic() || Method->isVariadic() ||
+        !C->isPRValue() || !Same(C->getType(), OperationResult) || !Method ||
+        !D || !Primary || !Pattern || !Method->isConst() ||
+        !Method->isConstexpr() || Method->isStatic() || Method->isVariadic() ||
         Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         Method->getParent()->getCanonicalDecl() !=
             Object->Record->getCanonicalDecl() ||
         Method->getNumParams() != 2 ||
         !Same(Method->getParamDecl(0)->getType(), LeftRef) ||
         !Same(Method->getParamDecl(1)->getType(), RightRef) ||
-        !Same(Method->getReturnType(), *Common) || !Args || Args->size() != 2 ||
-        Args->get(0).getKind() != TemplateArgument::Type ||
+        !Same(Method->getReturnType(), OperationResult) || !Args ||
+        Args->size() != 2 || Args->get(0).getKind() != TemplateArgument::Type ||
         Args->get(1).getKind() != TemplateArgument::Type ||
         !Same(Args->get(0).getAsType(), LeftRef) ||
         !Same(Args->get(1).getAsType(), RightRef) ||
@@ -35743,9 +35734,9 @@ static bool utilityWrapperAdjacentDifferenceArithmetic(
     const auto *Difference =
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     if (!Difference || Difference->getOpcode() != *ArithmeticOpcode ||
-        !Same(Difference->getType(), *Common) ||
-        !Same(Difference->getLHS()->getType(), *Common) ||
-        !Same(Difference->getRHS()->getType(), *Common))
+        !Same(Difference->getType(), OperationResult) ||
+        !Same(Difference->getLHS()->getType(), OperandType) ||
+        !Same(Difference->getRHS()->getType(), OperandType))
       return false;
     auto Operand = [&](const Expr *E, unsigned Index) {
       const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(

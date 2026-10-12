@@ -5188,11 +5188,32 @@ class FunctionLowering {
           if (!Common)
             reject(L, "numeric prefix",
                    "The input elements have no arithmetic common type.");
+          if (Adjacent && Wrapper &&
+              (DefaultOperator == "&&" || DefaultOperator == "||")) {
+            auto Result = temporary("bool", L);
+            const bool And = DefaultOperator == "&&";
+            const auto RHS = labelName(), Short = labelName(),
+                       Done = labelName();
+            branch(cast(ReferentValue(std::move(Left)), "bool", L),
+                   And ? RHS : Short, And ? Short : RHS, L);
+            label(Short, L);
+            assign(Result, boolean(!And, L), L);
+            jump(Done, L);
+            label(RHS, L);
+            assign(Result, cast(ReferentValue(std::move(Right)), "bool", L), L);
+            jump(Done, L);
+            label(Done, L);
+            return Result;
+          }
+          const bool Comparison =
+              DefaultOperator == "==" || DefaultOperator == "!=" ||
+              DefaultOperator == "<" || DefaultOperator == "<=" ||
+              DefaultOperator == ">" || DefaultOperator == ">=";
           const auto ResultType = type(*Common, L);
           return binary(DefaultOperator,
                         cast(ReferentValue(std::move(Left)), ResultType, L),
                         cast(ReferentValue(std::move(Right)), ResultType, L),
-                        ResultType, L);
+                        Comparison ? "bool" : ResultType, L);
         }
         json::Array Arguments;
         Arguments.push_back(std::move(Left));
@@ -5227,6 +5248,22 @@ class FunctionLowering {
             return "|";
           if (Name == "bit_xor")
             return "^";
+          if (Name == "equal_to")
+            return "==";
+          if (Name == "not_equal_to")
+            return "!=";
+          if (Name == "less")
+            return "<";
+          if (Name == "less_equal")
+            return "<=";
+          if (Name == "greater")
+            return ">";
+          if (Name == "greater_equal")
+            return ">=";
+          if (Name == "logical_and")
+            return "&&";
+          if (Name == "logical_or")
+            return "||";
           return std::nullopt;
         }();
         if (!ArithmeticOperator)
