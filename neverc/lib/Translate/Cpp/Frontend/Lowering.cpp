@@ -4894,11 +4894,14 @@ class FunctionLowering {
         else if (!TypedTransformType.isNull() && !ComparisonBinaryTransform)
           Term = cast(std::move(Term), DefaultTermType, L);
       }
-      if (Wrapper && DefaultUnaryFunctionalPair && LogicalReduction) {
-        // The unary call is a function argument and must run before either
-        // logical branch. Only the scalar term's bool conversion
-        // short-circuits.
-        auto Transformed = snapshot(std::move(Term), L);
+      if (Wrapper && LogicalReduction &&
+          (DefaultUnaryFunctionalPair || WrapperFunctionalReduction)) {
+        // A unary transform is computed before calling the reduction. A plain
+        // wrapper argument only binds a reference; its referent load belongs
+        // inside the logical right branch.
+        auto RightOperand = DefaultUnaryFunctionalPair
+                                ? snapshot(std::move(Term), L)
+                                : std::move(Term);
         const bool And = ReductionName == "logical_and";
         const auto Right = labelName(), Short = labelName(), Done = labelName();
         branch(cast(json::Object(Result), "bool", L), And ? Right : Short,
@@ -4908,7 +4911,8 @@ class FunctionLowering {
         jump(Done, L);
         label(Right, L);
         assign(Result,
-               cast(cast(std::move(Transformed), "bool", L), ResultType, L), L);
+               cast(cast(std::move(RightOperand), "bool", L), ResultType, L),
+               L);
         jump(Done, L);
         label(Done, L);
       } else if (ReductionObject) {
@@ -5038,9 +5042,31 @@ class FunctionLowering {
         label(Check, L);
         branch(binary("!=", First, Last, "bool", L), Store, End, L);
         label(Store, L);
-        assign(CurrentValue, ReferentValue(dereference(First, L)), L);
+        const auto ReductionName =
+            Wrapper
+                ? Call->getArg(3)->getType()->getAsCXXRecordDecl()->getName()
+                : llvm::StringRef();
+        const bool Logical =
+            ReductionName == "logical_and" || ReductionName == "logical_or";
+        if (!Logical)
+          assign(CurrentValue, ReferentValue(dereference(First, L)), L);
         Expression Next;
-        if (Wrapper) {
+        if (Logical) {
+          Next = temporary("bool", L);
+          const bool And = ReductionName == "logical_and";
+          const auto Right = labelName(), Short = labelName(),
+                     Done = labelName();
+          branch(cast(json::Object(Value), "bool", L), And ? Right : Short,
+                 And ? Short : Right, L);
+          label(Short, L);
+          assign(Next, boolean(!And, L), L);
+          jump(Done, L);
+          label(Right, L);
+          assign(Next, cast(ReferentValue(dereference(First, L)), "bool", L),
+                 L);
+          jump(Done, L);
+          label(Done, L);
+        } else if (Wrapper) {
           const auto Common =
               utilityScalarComparisonType(A.Context, Call->getArg(4)->getType(),
                                           Wrapper->ReferentType, false);
@@ -5259,8 +5285,28 @@ class FunctionLowering {
                        {"args", json::Array{std::move(InputElement)}},
                        {"loc", A.loc(L)}},
             L);
-      assign(InputValue, std::move(InputElement), L);
-      if (OperationObject) {
+      const auto ReductionName =
+          Wrapper && Call->getNumArgs() == 5
+              ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
+              : llvm::StringRef();
+      const bool Logical =
+          ReductionName == "logical_and" || ReductionName == "logical_or";
+      if (!Logical)
+        assign(InputValue, json::Object(InputElement), L);
+      if (Logical) {
+        const bool And = ReductionName == "logical_and";
+        const auto Right = labelName(), Short = labelName(), Done = labelName();
+        branch(cast(json::Object(Value), "bool", L), And ? Right : Short,
+               And ? Short : Right, L);
+        label(Short, L);
+        assign(Next, cast(boolean(!And, L), ValueType, L), L);
+        jump(Done, L);
+        label(Right, L);
+        assign(Next,
+               cast(cast(std::move(InputElement), "bool", L), ValueType, L), L);
+        jump(Done, L);
+        label(Done, L);
+      } else if (OperationObject) {
         assign(Next,
                cast(emitBinaryCallable(*OperationObject, json::Object(Value),
                                        json::Object(InputValue), L),

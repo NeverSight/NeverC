@@ -232763,12 +232763,12 @@ auto selected(P a,P b,int*o){std::divides<> op;return std::inclusive_scan(a,b,o,
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::minus<int>{},0);}
 )cpp"},
-      {"unknown-logical-or", R"cpp(
+      {"stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::logical_or<>{},0);}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,0);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -233057,12 +233057,12 @@ auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::accumulate(a,b,0
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::less<int>{});}
 )cpp"},
-      {"accumulate-unknown-logical-or", R"cpp(
+      {"accumulate-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::logical_or<>{});}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::accumulate(a,b,0,op);}
 )cpp"},
       {"exclusive_scan-source-equality", R"cpp(
 #include <numeric>
@@ -233086,12 +233086,12 @@ auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::exclusive_scan(a
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::less<int>{});}
 )cpp"},
-      {"exclusive_scan-unknown-logical-or", R"cpp(
+      {"exclusive_scan-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::logical_or<>{});}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::exclusive_scan(a,b,o,0,op);}
 )cpp"},
       {"inclusive_scan-source-equality", R"cpp(
 #include <numeric>
@@ -233115,12 +233115,12 @@ auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::inclusive_scan(a
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::less<int>{},0);}
 )cpp"},
-      {"inclusive_scan-unknown-logical-or", R"cpp(
+      {"inclusive_scan-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::logical_or<>{},0);}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,0);}
 )cpp"},
       {"reduce-source-equality", R"cpp(
 #include <numeric>
@@ -233144,12 +233144,12 @@ auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::reduce(a,b,0,op)
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::less<int>{});}
 )cpp"},
-      {"reduce-unknown-logical-or", R"cpp(
+      {"reduce-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::logical_or<>{});}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::reduce(a,b,0,op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -235651,6 +235651,508 @@ auto selected(P a,P b,int*o){return std::transform_reduce(a,b,0,std::logical_and
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperLogicalReductionsAliasShortCircuitStore) {
+  const auto Source = tmpFile(
+      "wrapper-wrapper-logical-reductions-alias-short-circuit-store.cpp");
+  const auto Output = tmpFile(
+      "wrapper-wrapper-logical-reductions-alias-short-circuit-store.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::inclusive_scan(a,a+3,v+1,std::logical_and<>{},0)!=v+4)return 1;
+ if(v[0]!=0||v[1]!=0||v[2]!=0||v[3]!=0)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::inclusive_scan(a,a+3,v+1,std::logical_and<>{},5)!=v+4)return 1;
+ if(v[0]!=0||v[1]!=0||v[2]!=0||v[3]!=0)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::inclusive_scan(a,a+3,v+1,std::logical_or<>{},0)!=v+4)return 1;
+ if(v[0]!=0||v[1]!=0||v[2]!=0||v[3]!=0)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::inclusive_scan(a,a+3,v+1,std::logical_or<>{},5)!=v+4)return 1;
+ if(v[0]!=0||v[1]!=1||v[2]!=1||v[3]!=1)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::exclusive_scan(a,a+3,v+1,0,std::logical_and<>{})!=v+4)return 1;
+ if(v[0]!=0||v[1]!=0||v[2]!=0||v[3]!=0)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::exclusive_scan(a,a+3,v+1,5,std::logical_and<>{})!=v+4)return 1;
+ if(v[0]!=0||v[1]!=5||v[2]!=0||v[3]!=0)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::exclusive_scan(a,a+3,v+1,0,std::logical_or<>{})!=v+4)return 1;
+ if(v[0]!=0||v[1]!=0||v[2]!=0||v[3]!=0)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {int v[]={0,-1,3,88};const std::reference_wrapper<int>a[]={v[0],v[1],v[2]};
+ if(std::exclusive_scan(a,a+3,v+1,5,std::logical_or<>{})!=v+4)return 1;
+ if(v[0]!=0||v[1]!=5||v[2]!=1||v[3]!=1)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-wrapper-logical-reductions-alias-short-circuit-store" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLogicalReductionsEmptyLiveEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-wrapper-logical-reductions-empty-live-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-wrapper-logical-reductions-empty-live-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+struct Initial{int n;~Initial(){++cleaned;}int get(){++reads;return n;}};
+int set(int&n){n=0;return 1;}
+int main(){int n=7;W input[]={n,n};int out[]={998,998};
+ if(std::accumulate(Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{})!=17)return 1;
+ if(std::reduce(Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{})!=17)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::logical_and<>{},Initial{17}.get())!=out)return 1;
+ if(std::exclusive_scan(Input{input}.get(),Input{input}.get(),Output{out}.get(),Initial{17}.get(),std::logical_and<>{})!=out)return 1;
+ if(std::accumulate(Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{})!=17)return 1;
+ if(std::reduce(Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{})!=17)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{out}.get(),std::logical_or<>{},Initial{17}.get())!=out)return 1;
+ if(std::exclusive_scan(Input{input}.get(),Input{input}.get(),Output{out}.get(),Initial{17}.get(),std::logical_or<>{})!=out)return 1;
+ if(reads!=28||cleaned!=28||out[0]!=998||out[1]!=998)return 2;
+ int r=std::accumulate(input,input+2,set(n),std::logical_and<>{});return r!=0||n!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-wrapper-logical-reductions-empty-live-effects-cleanup" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLogicalReductionsFloatingNanZero) {
+  const auto Source =
+      tmpFile("wrapper-wrapper-logical-reductions-floating-nan-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-wrapper-logical-reductions-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const double n=0.0/0.0,p=0.0,m=-0.0,t=0x1p-100;const std::reference_wrapper<const double>a[]={n,p,m,t};double out[5]={99,99,99,99,99};
+ if(std::accumulate(a,a+4,0.0,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+4,0.0,std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_and<>{},0.0)!=out+4)return 2;
+ if(out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,0.0,std::logical_and<>{})!=out+4)return 2;
+ if(out[0]!=0.0||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,-0.0,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+4,-0.0,std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_and<>{},-0.0)!=out+4)return 2;
+ if(out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,-0.0,std::logical_and<>{})!=out+4)return 2;
+ if(out[0]!=-0.0||out[1]!=0||out[2]!=0||out[3]!=0||1.0/out[0]>0.0||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,0x1p-100,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+4,0x1p-100,std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_and<>{},0x1p-100)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,0x1p-100,std::logical_and<>{})!=out+4)return 2;
+ if(out[0]!=0x1p-100||out[1]!=1||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,n,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+4,n,std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_and<>{},n)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,n,std::logical_and<>{})!=out+4)return 2;
+ if(out[0]==out[0]||out[1]!=1||out[2]!=0||out[3]!=0||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,0.0,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+4,0.0,std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_or<>{},0.0)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,0.0,std::logical_or<>{})!=out+4)return 2;
+ if(out[0]!=0.0||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,-0.0,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+4,-0.0,std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_or<>{},-0.0)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,-0.0,std::logical_or<>{})!=out+4)return 2;
+ if(out[0]!=-0.0||out[1]!=1||out[2]!=1||out[3]!=1||1.0/out[0]>0.0||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,0x1p-100,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+4,0x1p-100,std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_or<>{},0x1p-100)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,0x1p-100,std::logical_or<>{})!=out+4)return 2;
+ if(out[0]!=0x1p-100||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+ if(std::accumulate(a,a+4,n,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+4,n,std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(a,a+4,out,std::logical_or<>{},n)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+ if(std::exclusive_scan(a,a+4,out,n,std::logical_or<>{})!=out+4)return 2;
+ if(out[0]==out[0]||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=99)return 3;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-wrapper-logical-reductions-floating-nan-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLogicalReductionsMixedTruthConversion) {
+  const auto Source =
+      tmpFile("wrapper-wrapper-logical-reductions-mixed-truth-conversion.cpp");
+  const auto Output =
+      tmpFile("wrapper-wrapper-logical-reductions-mixed-truth-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ const double tinyx=0x1p-100,tinyy=0.0,tinyz=-0x1p-100;const std::reference_wrapper<const double>tiny[]={tinyx,tinyy,tinyz};float tinyout[4]={99,99,99,99};
+ if(std::accumulate(tiny,tiny+3,5,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(tiny,tiny+3,5,std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(tiny,tiny+3,tinyout,std::logical_and<>{},5)!=tinyout+3)return 2;
+ if(tinyout[0]!=1||tinyout[1]!=0||tinyout[2]!=0||tinyout[3]!=99)return 3;
+ if(std::exclusive_scan(tiny,tiny+3,tinyout,5,std::logical_and<>{})!=tinyout+3)return 2;
+ if(tinyout[0]!=5||tinyout[1]!=1||tinyout[2]!=0||tinyout[3]!=99)return 3;
+ if(std::accumulate(tiny,tiny+3,5,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(tiny,tiny+3,5,std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(tiny,tiny+3,tinyout,std::logical_or<>{},5)!=tinyout+3)return 2;
+ if(tinyout[0]!=1||tinyout[1]!=1||tinyout[2]!=1||tinyout[3]!=99)return 3;
+ if(std::exclusive_scan(tiny,tiny+3,tinyout,5,std::logical_or<>{})!=tinyout+3)return 2;
+ if(tinyout[0]!=5||tinyout[1]!=1||tinyout[2]!=1||tinyout[3]!=99)return 3;
+ const unsigned long long widex=0xffffffffffffffffULL,widey=0ULL,widez=3ULL;const std::reference_wrapper<const unsigned long long>wide[]={widex,widey,widez};float wideout[4]={99,99,99,99};
+ if(std::accumulate(wide,wide+3,0ULL,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(wide,wide+3,0ULL,std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(wide,wide+3,wideout,std::logical_and<>{},0ULL)!=wideout+3)return 2;
+ if(wideout[0]!=0||wideout[1]!=0||wideout[2]!=0||wideout[3]!=99)return 3;
+ if(std::exclusive_scan(wide,wide+3,wideout,0ULL,std::logical_and<>{})!=wideout+3)return 2;
+ if(wideout[0]!=0||wideout[1]!=0||wideout[2]!=0||wideout[3]!=99)return 3;
+ if(std::accumulate(wide,wide+3,0ULL,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(wide,wide+3,0ULL,std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(wide,wide+3,wideout,std::logical_or<>{},0ULL)!=wideout+3)return 2;
+ if(wideout[0]!=1||wideout[1]!=1||wideout[2]!=1||wideout[3]!=99)return 3;
+ if(std::exclusive_scan(wide,wide+3,wideout,0ULL,std::logical_or<>{})!=wideout+3)return 2;
+ if(wideout[0]!=0||wideout[1]!=1||wideout[2]!=1||wideout[3]!=99)return 3;
+ const bool booleanx=false,booleany=true,booleanz=false;const std::reference_wrapper<const bool>boolean[]={booleanx,booleany,booleanz};float booleanout[4]={99,99,99,99};
+ if(std::accumulate(boolean,boolean+3,static_cast<signed char>(-3),std::logical_and<>{})!=0)return 1;
+ if(std::reduce(boolean,boolean+3,static_cast<signed char>(-3),std::logical_and<>{})!=0)return 1;
+ if(std::inclusive_scan(boolean,boolean+3,booleanout,std::logical_and<>{},static_cast<signed char>(-3))!=booleanout+3)return 2;
+ if(booleanout[0]!=0||booleanout[1]!=0||booleanout[2]!=0||booleanout[3]!=99)return 3;
+ if(std::exclusive_scan(boolean,boolean+3,booleanout,static_cast<signed char>(-3),std::logical_and<>{})!=booleanout+3)return 2;
+ if(booleanout[0]!=-3||booleanout[1]!=0||booleanout[2]!=0||booleanout[3]!=99)return 3;
+ if(std::accumulate(boolean,boolean+3,static_cast<signed char>(-3),std::logical_or<>{})!=1)return 1;
+ if(std::reduce(boolean,boolean+3,static_cast<signed char>(-3),std::logical_or<>{})!=1)return 1;
+ if(std::inclusive_scan(boolean,boolean+3,booleanout,std::logical_or<>{},static_cast<signed char>(-3))!=booleanout+3)return 2;
+ if(booleanout[0]!=1||booleanout[1]!=1||booleanout[2]!=1||booleanout[3]!=99)return 3;
+ if(std::exclusive_scan(boolean,boolean+3,booleanout,static_cast<signed char>(-3),std::logical_or<>{})!=booleanout+3)return 2;
+ if(booleanout[0]!=-3||booleanout[1]!=1||booleanout[2]!=1||booleanout[3]!=99)return 3;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-wrapper-logical-reductions-mixed-truth-conversion" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLogicalReductionsOperationMatrix) {
+  const auto Source =
+      tmpFile("wrapper-wrapper-logical-reductions-operation-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-wrapper-logical-reductions-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const int z=0,m=-1,p=3;const std::reference_wrapper<const int>a[]={z,m,p,z};int out[5];
+ if(std::accumulate(a,a+1,0,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+1,0,std::logical_and<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+1,out,std::logical_and<>{},0)!=out+1)return 2;
+ if(out[0]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+1,out,0,std::logical_and<>{})!=out+1)return 2;
+ if(out[0]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+2,0,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+2,0,std::logical_and<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+2,out,std::logical_and<>{},0)!=out+2)return 2;
+ if(out[0]!=0||out[1]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+2,out,0,std::logical_and<>{})!=out+2)return 2;
+ if(out[0]!=0||out[1]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+4,0,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+4,0,std::logical_and<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+4,out,std::logical_and<>{},0)!=out+4)return 2;
+ if(out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+4,out,0,std::logical_and<>{})!=out+4)return 2;
+ if(out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+1,5,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+1,5,std::logical_and<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+1,out,std::logical_and<>{},5)!=out+1)return 2;
+ if(out[0]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+1,out,5,std::logical_and<>{})!=out+1)return 2;
+ if(out[0]!=5||out[4]!=991)return 3;
+ if(std::accumulate(a,a+2,5,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+2,5,std::logical_and<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+2,out,std::logical_and<>{},5)!=out+2)return 2;
+ if(out[0]!=0||out[1]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+2,out,5,std::logical_and<>{})!=out+2)return 2;
+ if(out[0]!=5||out[1]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+4,5,std::logical_and<>{})!=0)return 1;
+ if(std::reduce(a,a+4,5,std::logical_and<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+4,out,std::logical_and<>{},5)!=out+4)return 2;
+ if(out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+4,out,5,std::logical_and<>{})!=out+4)return 2;
+ if(out[0]!=5||out[1]!=0||out[2]!=0||out[3]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+1,0,std::logical_or<>{})!=0)return 1;
+ if(std::reduce(a,a+1,0,std::logical_or<>{})!=0)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+1,out,std::logical_or<>{},0)!=out+1)return 2;
+ if(out[0]!=0||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+1,out,0,std::logical_or<>{})!=out+1)return 2;
+ if(out[0]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+2,0,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+2,0,std::logical_or<>{})!=1)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+2,out,std::logical_or<>{},0)!=out+2)return 2;
+ if(out[0]!=0||out[1]!=1||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+2,out,0,std::logical_or<>{})!=out+2)return 2;
+ if(out[0]!=0||out[1]!=0||out[4]!=991)return 3;
+ if(std::accumulate(a,a+4,0,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+4,0,std::logical_or<>{})!=1)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+4,out,std::logical_or<>{},0)!=out+4)return 2;
+ if(out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+4,out,0,std::logical_or<>{})!=out+4)return 2;
+ if(out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=1||out[4]!=991)return 3;
+ if(std::accumulate(a,a+1,5,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+1,5,std::logical_or<>{})!=1)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+1,out,std::logical_or<>{},5)!=out+1)return 2;
+ if(out[0]!=1||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+1,out,5,std::logical_or<>{})!=out+1)return 2;
+ if(out[0]!=5||out[4]!=991)return 3;
+ if(std::accumulate(a,a+2,5,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+2,5,std::logical_or<>{})!=1)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+2,out,std::logical_or<>{},5)!=out+2)return 2;
+ if(out[0]!=1||out[1]!=1||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+2,out,5,std::logical_or<>{})!=out+2)return 2;
+ if(out[0]!=5||out[1]!=1||out[4]!=991)return 3;
+ if(std::accumulate(a,a+4,5,std::logical_or<>{})!=1)return 1;
+ if(std::reduce(a,a+4,5,std::logical_or<>{})!=1)return 1;
+ out[4]=991;
+ if(std::inclusive_scan(a,a+4,out,std::logical_or<>{},5)!=out+4)return 2;
+ if(out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=991)return 3;
+ out[4]=991;
+ if(std::exclusive_scan(a,a+4,out,5,std::logical_or<>{})!=out+4)return 2;
+ if(out[0]!=5||out[1]!=1||out[2]!=1||out[3]!=1||out[4]!=991)return 3;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-wrapper-logical-reductions-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLogicalReductionsRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"accumulate-returned-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> op(){return {};}
+auto selected(P a,P b,int*o){return std::accumulate(a,b,0,op());}
+)cpp"},
+      {"accumulate-source-operation-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<W&>(b)))->decltype(std::forward<int&>(a)&&std::forward<W&>(b)){return a||b;}}}
+auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::logical_and<>{});}
+)cpp"},
+      {"accumulate-stored-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"accumulate-typed-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::logical_and<int>{});}
+)cpp"},
+      {"exclusive_scan-returned-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> op(){return {};}
+auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,op());}
+)cpp"},
+      {"exclusive_scan-source-operation-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<W&>(b)))->decltype(std::forward<int&>(a)&&std::forward<W&>(b)){return a||b;}}}
+auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::logical_and<>{});}
+)cpp"},
+      {"exclusive_scan-stored-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::exclusive_scan(a,b,o,0,op);}
+)cpp"},
+      {"exclusive_scan-typed-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::logical_and<int>{});}
+)cpp"},
+      {"inclusive_scan-returned-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> op(){return {};}
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,op(),0);}
+)cpp"},
+      {"inclusive_scan-source-operation-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<W&>(b)))->decltype(std::forward<int&>(a)&&std::forward<W&>(b)){return a||b;}}}
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::logical_and<>{},0);}
+)cpp"},
+      {"inclusive_scan-stored-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,0);}
+)cpp"},
+      {"inclusive_scan-typed-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::logical_and<int>{},0);}
+)cpp"},
+      {"reduce-returned-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> op(){return {};}
+auto selected(P a,P b,int*o){return std::reduce(a,b,0,op());}
+)cpp"},
+      {"reduce-source-operation-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)&&std::forward<W&>(b)))->decltype(std::forward<int>(a)&&std::forward<W&>(b)){return a||b;}}}
+auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::logical_and<>{});}
+)cpp"},
+      {"reduce-stored-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::reduce(a,b,0,op);}
+)cpp"},
+      {"reduce-typed-logical", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::logical_and<int>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-wrapper-logical-reductions-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-wrapper-logical-reductions-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(std::filesystem::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInclusiveScanRuntimeAlias) {
   const auto Source = tmpFile("wrapper-inclusive-scan-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-inclusive-scan-runtime-alias.nc");
@@ -236896,11 +237398,12 @@ auto selected(P a,P b){std::multiplies<> op;return std::exclusive_scan(a,b,out,0
 using W=std::reference_wrapper<int>;using P=W*;int out[3];
 auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::modulus<int>{});}
 )cpp"},
-      {"family-unknown-logical-or", R"cpp(
+      {"family-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::logical_or<>{});}
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::exclusive_scan(a,b,o,0,op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -237216,11 +237719,12 @@ auto selected(P a,P b){std::multiplies<> op;return std::reduce(a,b,0,op);}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::reduce(a,b,0,std::modulus<int>{});}
 )cpp"},
-      {"family-unknown-logical-or", R"cpp(
+      {"family-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){return std::reduce(a,b,0,std::logical_or<>{});}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::reduce(a,b,0,op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -337969,11 +338473,12 @@ auto selected(P a,P b){std::bit_and<> op;return std::accumulate(a,b,0,op);}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::accumulate(a,b,0,std::modulus<int>{});}
 )cpp"},
-      {"family-unknown-logical-or", R"cpp(
+      {"family-stored-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){return std::accumulate(a,b,0,std::logical_or<>{});}
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::accumulate(a,b,0,op);}
 )cpp"},
       {"family-wide-accumulator", R"cpp(
 #include <numeric>

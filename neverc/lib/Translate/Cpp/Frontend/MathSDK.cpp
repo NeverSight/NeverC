@@ -34557,6 +34557,15 @@ utilityWrapperNumericOpcode(llvm::StringRef Name) {
   return std::nullopt;
 }
 
+static std::optional<BinaryOperatorKind>
+utilityWrapperScalarReductionOpcode(llvm::StringRef Name) {
+  if (Name == "logical_and")
+    return BO_LAnd;
+  if (Name == "logical_or")
+    return BO_LOr;
+  return utilityWrapperNumericOpcode(Name);
+}
+
 static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
                                         const FunctionDecl *Function,
                                         QualType Input, QualType Output,
@@ -34636,7 +34645,8 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
       Function->getNumParams() != 5 ||
       !Same(Function->getReturnType(), Output) || !Args || Args->size() != 4)
     return false;
-  const auto ArithmeticOpcode = utilityWrapperNumericOpcode(Record->getName());
+  const auto ArithmeticOpcode =
+      utilityWrapperScalarReductionOpcode(Record->getName());
   if (!ArithmeticOpcode ||
       ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
         *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
@@ -34646,7 +34656,10 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
       *ArithmeticOpcode == BO_EQ || *ArithmeticOpcode == BO_NE ||
       *ArithmeticOpcode == BO_LT || *ArithmeticOpcode == BO_LE ||
       *ArithmeticOpcode == BO_GT || *ArithmeticOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ArithmeticOpcode == BO_LAnd || *ArithmeticOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   const QualType Params[] = {Input, Input, Output, ObjectType, Accumulator};
   const QualType Types[] = {Input, Output, Accumulator, ObjectType};
   for (unsigned I = 0; I != 5; ++I)
@@ -34733,8 +34746,8 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
         !Same(Sum->getType(), OperationResult) ||
-        !Same(Sum->getLHS()->getType(), *Common) ||
-        !Same(Sum->getRHS()->getType(), *Common) ||
+        !Same(Sum->getLHS()->getType(), OperandType) ||
+        !Same(Sum->getRHS()->getType(), OperandType) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
       return false;
     const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
@@ -34887,7 +34900,8 @@ static bool utilityWrapperExclusiveScanArithmetic(
       Function->getNumParams() != 5 ||
       !Same(Function->getReturnType(), Output) || !Args || Args->size() != 4)
     return false;
-  const auto ArithmeticOpcode = utilityWrapperNumericOpcode(Record->getName());
+  const auto ArithmeticOpcode =
+      utilityWrapperScalarReductionOpcode(Record->getName());
   if (!ArithmeticOpcode ||
       ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
         *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
@@ -34897,7 +34911,10 @@ static bool utilityWrapperExclusiveScanArithmetic(
       *ArithmeticOpcode == BO_EQ || *ArithmeticOpcode == BO_NE ||
       *ArithmeticOpcode == BO_LT || *ArithmeticOpcode == BO_LE ||
       *ArithmeticOpcode == BO_GT || *ArithmeticOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ArithmeticOpcode == BO_LAnd || *ArithmeticOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   const QualType Params[] = {Input, Input, Output, Accumulator, ObjectType};
   const QualType Types[] = {Input, Output, Accumulator, ObjectType};
   for (unsigned I = 0; I != 5; ++I)
@@ -34984,8 +35001,8 @@ static bool utilityWrapperExclusiveScanArithmetic(
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
         !Same(Sum->getType(), OperationResult) ||
-        !Same(Sum->getLHS()->getType(), *Common) ||
-        !Same(Sum->getRHS()->getType(), *Common) ||
+        !Same(Sum->getLHS()->getType(), OperandType) ||
+        !Same(Sum->getRHS()->getType(), OperandType) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
       return false;
     const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
@@ -35158,7 +35175,8 @@ static bool utilityWrapperReduceArithmetic(const State &S,
       !Same(Function->getReturnType(), Accumulator) || !Args ||
       Args->size() != 3)
     return false;
-  const auto ArithmeticOpcode = utilityWrapperNumericOpcode(Record->getName());
+  const auto ArithmeticOpcode =
+      utilityWrapperScalarReductionOpcode(Record->getName());
   if (!ArithmeticOpcode ||
       ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
         *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
@@ -35168,7 +35186,10 @@ static bool utilityWrapperReduceArithmetic(const State &S,
       *ArithmeticOpcode == BO_EQ || *ArithmeticOpcode == BO_NE ||
       *ArithmeticOpcode == BO_LT || *ArithmeticOpcode == BO_LE ||
       *ArithmeticOpcode == BO_GT || *ArithmeticOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ArithmeticOpcode == BO_LAnd || *ArithmeticOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   const QualType Params[] = {Input, Input, Accumulator, ObjectType};
   const QualType Types[] = {Input, Accumulator, ObjectType};
   for (unsigned I = 0; I != 4; ++I)
@@ -35262,8 +35283,8 @@ static bool utilityWrapperReduceArithmetic(const State &S,
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
         !Same(Sum->getType(), OperationResult) ||
-        !Same(Sum->getLHS()->getType(), *Common) ||
-        !Same(Sum->getRHS()->getType(), *Common) ||
+        !Same(Sum->getLHS()->getType(), OperandType) ||
+        !Same(Sum->getRHS()->getType(), OperandType) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
       return false;
     const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
@@ -35383,7 +35404,8 @@ static bool utilityWrapperAccumulateArithmetic(
       Args->size() != 3)
     return false;
   // Closed dispatch: every admitted name proves its own built-in operation.
-  const auto ArithmeticOpcode = utilityWrapperNumericOpcode(Record->getName());
+  const auto ArithmeticOpcode =
+      utilityWrapperScalarReductionOpcode(Record->getName());
   if (!ArithmeticOpcode ||
       ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
         *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
@@ -35393,7 +35415,10 @@ static bool utilityWrapperAccumulateArithmetic(
       *ArithmeticOpcode == BO_EQ || *ArithmeticOpcode == BO_NE ||
       *ArithmeticOpcode == BO_LT || *ArithmeticOpcode == BO_LE ||
       *ArithmeticOpcode == BO_GT || *ArithmeticOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ArithmeticOpcode == BO_LAnd || *ArithmeticOpcode == BO_LOr;
+  const auto OperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   const QualType Params[] = {Input, Input, Accumulator, ObjectType};
   const QualType Types[] = {Input, Accumulator, ObjectType};
   for (unsigned I = 0; I != 4; ++I)
@@ -35480,8 +35505,8 @@ static bool utilityWrapperAccumulateArithmetic(
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
         !Same(Sum->getType(), OperationResult) ||
-        !Same(Sum->getLHS()->getType(), *Common) ||
-        !Same(Sum->getRHS()->getType(), *Common) ||
+        !Same(Sum->getLHS()->getType(), OperandType) ||
+        !Same(Sum->getRHS()->getType(), OperandType) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
       return false;
     const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
