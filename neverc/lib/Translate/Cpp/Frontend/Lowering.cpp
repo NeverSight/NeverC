@@ -8726,32 +8726,32 @@ class FunctionLowering {
         Last = std::move(LastRange.first);
         RangePointer = FirstRange.second;
       }
-      const auto Wrapper =
-          (ListResult ? Call->getNumArgs() == 1 : true)
-              ? approvedFunctionalReferenceRecord(
-                    A.S, A.Sources,
-                    RangePointer->getPointeeType()->getAsCXXRecordDecl(),
-                    A.Context)
-              : std::optional<FunctionalReferenceRecord>();
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources, RangePointer->getPointeeType()->getAsCXXRecordDecl(),
+          A.Context);
+      const unsigned WrapperComparisonIndex = ListResult ? 1 : 2;
       const auto WrapperOperation =
-          !ListResult && Call->getNumArgs() == 3
+          Call->getNumArgs() == WrapperComparisonIndex + 1
               ? approvedFunctionalObjectRecord(
                     A.S, A.Sources,
-                    Call->getArg(2)->getType()->getAsCXXRecordDecl(), A.Context)
+                    Call->getArg(WrapperComparisonIndex)
+                        ->getType()
+                        ->getAsCXXRecordDecl(),
+                    A.Context)
               : std::nullopt;
       llvm::StringRef WrapperComparison = "<";
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
-      if (ListResult && Call->getNumArgs() == 2) {
-        Comparator = snapshot(expression(Call->getArg(1)), L);
-      } else if (!ListResult && Wrapper && WrapperOperation &&
-                 Call->getNumArgs() == 3 &&
-                 (WrapperOperation->Record->getName() == "less" ||
-                  WrapperOperation->Record->getName() == "greater")) {
+      if (Wrapper && WrapperOperation &&
+          Call->getNumArgs() == WrapperComparisonIndex + 1 &&
+          (WrapperOperation->Record->getName() == "less" ||
+           WrapperOperation->Record->getName() == "greater")) {
         WrapperComparison =
             WrapperOperation->Record->getName() == "less" ? "<" : ">";
-        discardFunctionalObject(Call->getArg(2));
+        discardFunctionalObject(Call->getArg(WrapperComparisonIndex));
+      } else if (ListResult && Call->getNumArgs() == 2) {
+        Comparator = snapshot(expression(Call->getArg(1)), L);
       } else if (!ListResult && Call->getNumArgs() == 3) {
         const auto Element = RangePointer->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);

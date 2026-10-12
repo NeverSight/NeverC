@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::minmax`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫並直接初始化透明 less 或 greater，支援非空、同型別已檢查包裝器的初始化列表，包括 const 包裝器和參照。完整認證 SDK 路徑，檢查列表端點、借用比較器、可呼叫斷言、identity/invoke、比較配接器及成對掃描，再將兩個所選包裝器的繫結複製到值 pair；相等時選擇首個最小值和最後一個最大值。保留即時繫結、引數求值、參照身分、結果使用及清理。仍拒絕儲存、傳回或帶型別的比較器、volatile 或不相容參照及原始碼替換。
+
 `cpp-core-v2`: `std::max`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫並直接初始化透明 less 或 greater，支援非空、同型別已檢查包裝器的初始化列表，包括 const 包裝器和參照。完整認證 SDK 路徑，檢查列表端點、比較器借用、私有 __max_element、已檢查的前向迭代器斷言 及完整掃描，再將所選包裝器繫結複製至結果值；相等時選擇首個列表元素。保留即時繫結、引數求值、參照身分、結果使用及清理，並檢查比較器、轉送和包裝器轉換。仍拒絕儲存、傳回或帶型別的比較器、volatile 或不相容參照及原始碼替換。
 
 `cpp-core-v2`: `std::min`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫並直接初始化透明 less 或 greater，支援非空、同型別已檢查包裝器的初始化列表，包括 const 包裝器和參照。完整認證 SDK 路徑，檢查列表端點、比較器借用、私有 __min_element、identity/invoke 及完整掃描，再將所選包裝器繫結複製至結果值；相等時選擇首個列表元素。保留即時繫結、引數求值、參照身分、結果使用及清理，並檢查比較器、轉送和包裝器轉換。仍拒絕儲存、傳回或帶型別的比較器、volatile 或不相容參照及原始碼替換。
