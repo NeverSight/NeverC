@@ -234111,12 +234111,12 @@ auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::less<int>{},st
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::equal_to<>{},std::plus<int>{});}
 )cpp"},
-      {"inner_product-unknown-logical", R"cpp(
+      {"inner_product-stored-logical-reduction", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_or<>{},std::plus<>{});}
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
 )cpp"},
       {"transform_reduce-stored-comparison-term", R"cpp(
 #include <numeric>
@@ -234170,12 +234170,12 @@ auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::less<int>{}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::equal_to<>{},std::plus<int>{});}
 )cpp"},
-      {"transform_reduce-unknown-logical", R"cpp(
+      {"transform_reduce-stored-logical-reduction", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_or<>{},std::plus<>{});}
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -236145,6 +236145,791 @@ auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::logical_and<int>{});}
     const auto Output =
         tmpFile(std::string("wrapper-wrapper-logical-reductions-") +
                 Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(std::filesystem::exists(Output));
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperBinaryLogicalReductionsBoolPromotedComparisonTerms) {
+  const auto Source = tmpFile(
+      "wrapper-binary-logical-reductions-bool-promoted-comparison-terms.cpp");
+  const auto Output = tmpFile(
+      "wrapper-binary-logical-reductions-bool-promoted-comparison-terms.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const bool f=false,t=true;const std::reference_wrapper<const bool>a[]={f,t,t},b[]={t,f,t};
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,static_cast<unsigned char>(5),std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-binary-logical-reductions-bool-promoted-comparison-terms" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperBinaryLogicalReductionsEmptyLiveEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-binary-logical-reductions-empty-live-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-binary-logical-reductions-empty-live-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Initial{int n;~Initial(){++cleaned;}int get(){++reads;return n;}};
+int set(int&n){n=0;return 1;}
+int main(){int n=7;W input[]={n,n};
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::plus<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::minus<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::multiplies<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::divides<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::modulus<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::bit_and<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::bit_or<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::bit_xor<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::equal_to<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::not_equal_to<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::less<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::less_equal<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::greater<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::greater_equal<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::plus<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::minus<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::multiplies<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::divides<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::modulus<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::bit_and<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::bit_or<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::bit_xor<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::equal_to<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::not_equal_to<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::less<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::less_equal<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::greater<>{})!=17)return 1;
+ if(std::inner_product(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::greater_equal<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::plus<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::minus<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::multiplies<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::divides<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::modulus<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::bit_and<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::bit_or<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::bit_xor<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::equal_to<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::not_equal_to<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::less<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::less_equal<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::greater<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_and<>{},std::greater_equal<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::plus<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::minus<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::multiplies<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::divides<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::modulus<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::bit_and<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::bit_or<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::bit_xor<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::equal_to<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::not_equal_to<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::less<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::less_equal<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::greater<>{})!=17)return 1;
+ if(std::transform_reduce(Input{input}.get(),Input{input}.get(),Input{input}.get(),Initial{17}.get(),std::logical_or<>{},std::greater_equal<>{})!=17)return 1;
+ if(reads!=224||cleaned!=224)return 2;
+ int r=std::inner_product(input,input+2,input,set(n),std::logical_and<>{},std::plus<>{});return r!=0||n!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-logical-reductions-empty-live-effects-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryLogicalReductionsFloatingNanZero) {
+  const auto Source =
+      tmpFile("wrapper-binary-logical-reductions-floating-nan-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-logical-reductions-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const double n=0.0/0.0,z=0.0,m=-0.0,t=0x1p-100;const std::reference_wrapper<const double>a[]={n,z,m,t},b[]={z,z,z,z};
+ if(std::inner_product(a,a+4,b,0.0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,-0.0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,0x1p-100,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,n,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,0.0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,-0.0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,0x1p-100,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,n,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,0.0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,-0.0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,0x1p-100,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,n,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+4,b,0.0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,-0.0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,0x1p-100,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,n,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,0.0,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,-0.0,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,0x1p-100,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,n,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,0.0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,-0.0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,0x1p-100,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+4,b,n,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,0.0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,-0.0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,0x1p-100,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,n,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,0.0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,-0.0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,0x1p-100,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,n,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,0.0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,-0.0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,0x1p-100,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,n,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+4,b,0.0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,-0.0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,0x1p-100,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,n,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,0.0,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,-0.0,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,0x1p-100,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,n,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,0.0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,-0.0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,0x1p-100,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+4,b,n,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-binary-logical-reductions-floating-nan-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperBinaryLogicalReductionsMixedTermTruthPrecision) {
+  const auto Source = tmpFile(
+      "wrapper-binary-logical-reductions-mixed-term-truth-precision.cpp");
+  const auto Output = tmpFile(
+      "wrapper-binary-logical-reductions-mixed-term-truth-precision.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const double t=0x1p-100,z=0.0;const std::reference_wrapper<const double>a[]={t,z},b[]={z,t};const unsigned long long w=0xffffffffffffffffULL,q=3;const std::reference_wrapper<const unsigned long long>u[]={w,q},v[]={q,w};
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,static_cast<signed char>(-3),std::logical_and<>{},std::minus<>{})!=1)return 2;
+ if(std::inner_product(u,u+2,v,5,std::logical_and<>{},std::bit_and<>{})!=1)return 3;
+ if(std::inner_product(u,u+2,v,5,std::logical_and<>{},std::greater<>{})!=0)return 4;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,static_cast<signed char>(-3),std::logical_or<>{},std::minus<>{})!=1)return 2;
+ if(std::inner_product(u,u+2,v,5,std::logical_or<>{},std::bit_and<>{})!=1)return 3;
+ if(std::inner_product(u,u+2,v,5,std::logical_or<>{},std::greater<>{})!=1)return 4;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<void>(),std::plus<void>())!=1)return 5;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,static_cast<signed char>(-3),std::logical_and<>{},std::minus<>{})!=1)return 2;
+ if(std::transform_reduce(u,u+2,v,5,std::logical_and<>{},std::bit_and<>{})!=1)return 3;
+ if(std::transform_reduce(u,u+2,v,5,std::logical_and<>{},std::greater<>{})!=0)return 4;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,static_cast<signed char>(-3),std::logical_or<>{},std::minus<>{})!=1)return 2;
+ if(std::transform_reduce(u,u+2,v,5,std::logical_or<>{},std::bit_and<>{})!=1)return 3;
+ if(std::transform_reduce(u,u+2,v,5,std::logical_or<>{},std::greater<>{})!=1)return 4;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<void>(),std::plus<void>())!=1)return 5;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-logical-reductions-mixed-term-truth-precision" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryLogicalReductionsOperationMatrix) {
+  const auto Source =
+      tmpFile("wrapper-binary-logical-reductions-operation-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-logical-reductions-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const int x=2,y=3;const std::reference_wrapper<const int>a[]={x,y,x},b[]={y,x,x};
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::plus<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::plus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::minus<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::minus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::multiplies<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::multiplies<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::divides<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::divides<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::divides<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::modulus<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::modulus<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::bit_and<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::bit_and<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::bit_or<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::bit_or<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::bit_or<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::bit_or<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::bit_or<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::bit_or<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::bit_or<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::bit_xor<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::bit_xor<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::not_equal_to<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::not_equal_to<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::less<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::less<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::less_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::less_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::greater<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::greater<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::greater<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_and<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+1,b,0,std::logical_or<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::transform_reduce(a,a+1,b,0,std::logical_or<>{},std::greater_equal<>{})!=0)return 1;
+ if(std::inner_product(a,a+2,b,0,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,0,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,0,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,0,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+1,b,5,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+1,b,5,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+2,b,5,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+2,b,5,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::inner_product(a,a+3,b,5,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+ if(std::transform_reduce(a,a+3,b,5,std::logical_or<>{},std::greater_equal<>{})!=1)return 1;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-binary-logical-reductions-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperBinaryLogicalReductionsRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"inner_product-bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,false,std::logical_and<>{},std::plus<>{});}
+)cpp"},
+      {"inner_product-pointer-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<>{},std::equal_to<>{});}
+)cpp"},
+      {"inner_product-returned", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> op(){return {};}
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,op(),std::plus<>{});}
+)cpp"},
+      {"inner_product-source-bool-forward", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool&&forward<bool>(bool&t)noexcept{return static_cast<bool&&>(t);}}}
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<>{},std::less<>{});}
+)cpp"},
+      {"inner_product-source-operation", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<int>(b)))->decltype(std::forward<int&>(a)&&std::forward<int>(b)){return a||b;}}}
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<>{},std::plus<>{});}
+)cpp"},
+      {"inner_product-stored", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+)cpp"},
+      {"inner_product-typed", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<int>{},std::plus<>{});}
+)cpp"},
+      {"inner_product-unknown-logical-term", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<>{},std::logical_or<>{});}
+)cpp"},
+      {"transform_reduce-bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,false,std::logical_and<>{},std::plus<>{});}
+)cpp"},
+      {"transform_reduce-pointer-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<>{},std::equal_to<>{});}
+)cpp"},
+      {"transform_reduce-returned", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> op(){return {};}
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,op(),std::plus<>{});}
+)cpp"},
+      {"transform_reduce-source-bool-forward", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool&&forward<bool>(bool&t)noexcept{return static_cast<bool&&>(t);}}}
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<>{},std::less<>{});}
+)cpp"},
+      {"transform_reduce-source-operation", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)&&std::forward<int>(b)))->decltype(std::forward<int>(a)&&std::forward<int>(b)){return a||b;}}}
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<>{},std::plus<>{});}
+)cpp"},
+      {"transform_reduce-stored", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+)cpp"},
+      {"transform_reduce-typed", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<int>{},std::plus<>{});}
+)cpp"},
+      {"transform_reduce-unknown-logical-term", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<>{},std::logical_or<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-binary-logical-reductions-") + Case.first +
+                ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-binary-logical-reductions-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});

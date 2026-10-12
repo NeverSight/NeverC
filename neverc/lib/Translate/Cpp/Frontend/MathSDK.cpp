@@ -36009,7 +36009,8 @@ static bool utilityWrapperInnerProductOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        !ArithmeticOpcode(Record->getName()) ||
+        (I == 4 ? !utilityWrapperScalarReductionOpcode(Record->getName())
+                : !ArithmeticOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36027,7 +36028,8 @@ static bool utilityWrapperInnerProductOperations(
   const auto *Multiply = Construct(5);
   if (!Plus || !Multiply || !Signature(Function, Plus, Multiply))
     return false;
-  const auto ReductionOpcode = utilityWrapperNumericOpcode(Plus->getName());
+  const auto ReductionOpcode =
+      utilityWrapperScalarReductionOpcode(Plus->getName());
   const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
   if (!ReductionOpcode || !TermOpcode)
     return false;
@@ -36050,7 +36052,10 @@ static bool utilityWrapperInnerProductOperations(
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
       *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
       *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ReductionOpcode == BO_LAnd || *ReductionOpcode == BO_LOr;
+  const auto ReductionOperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -36125,9 +36130,9 @@ static bool utilityWrapperInnerProductOperations(
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
                    Same(Value->getLHS()->getType(),
-                        Index == 5 ? *InputCommon : *Common) &&
+                        Index == 5 ? *InputCommon : ReductionOperandType) &&
                    Same(Value->getRHS()->getType(),
-                        Index == 5 ? *InputCommon : *Common)
+                        Index == 5 ? *InputCommon : ReductionOperandType)
                ? Value
                : nullptr;
   };
@@ -36334,7 +36339,8 @@ static bool utilityWrapperTransformReduceOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        !ArithmeticOpcode(Record->getName()) ||
+        (I == 4 ? !utilityWrapperScalarReductionOpcode(Record->getName())
+                : !ArithmeticOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36352,7 +36358,8 @@ static bool utilityWrapperTransformReduceOperations(
   const auto *Multiply = Construct(5);
   if (!Plus || !Multiply || !Signature(Function, Plus, Multiply))
     return false;
-  const auto ReductionOpcode = utilityWrapperNumericOpcode(Plus->getName());
+  const auto ReductionOpcode =
+      utilityWrapperScalarReductionOpcode(Plus->getName());
   const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
   if (!ReductionOpcode || !TermOpcode)
     return false;
@@ -36375,7 +36382,10 @@ static bool utilityWrapperTransformReduceOperations(
       *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
       *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
       *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
-  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
+  const bool Logical =
+      *ReductionOpcode == BO_LAnd || *ReductionOpcode == BO_LOr;
+  const auto ReductionOperandType = Logical ? Context.BoolTy : *Common;
+  const auto OperationResult = Comparison || Logical ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -36450,9 +36460,9 @@ static bool utilityWrapperTransformReduceOperations(
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
                    Same(Value->getLHS()->getType(),
-                        Index == 5 ? *InputCommon : *Common) &&
+                        Index == 5 ? *InputCommon : ReductionOperandType) &&
                    Same(Value->getRHS()->getType(),
-                        Index == 5 ? *InputCommon : *Common)
+                        Index == 5 ? *InputCommon : ReductionOperandType)
                ? Value
                : nullptr;
   };

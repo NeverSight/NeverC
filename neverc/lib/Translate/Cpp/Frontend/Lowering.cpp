@@ -4895,11 +4895,12 @@ class FunctionLowering {
           Term = cast(std::move(Term), DefaultTermType, L);
       }
       if (Wrapper && LogicalReduction &&
-          (DefaultUnaryFunctionalPair || WrapperFunctionalReduction)) {
-        // A unary transform is computed before calling the reduction. A plain
-        // wrapper argument only binds a reference; its referent load belongs
-        // inside the logical right branch.
-        auto RightOperand = DefaultUnaryFunctionalPair
+          (DefaultUnaryFunctionalPair || DefaultFunctionalPair ||
+           WrapperFunctionalReduction)) {
+        // Each transformed term is computed before calling the reduction. A
+        // plain wrapper argument only binds a reference; its referent load
+        // belongs inside the logical right branch.
+        auto RightOperand = !WrapperFunctionalReduction
                                 ? snapshot(std::move(Term), L)
                                 : std::move(Term);
         const bool And = ReductionName == "logical_and";
