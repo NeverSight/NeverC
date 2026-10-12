@@ -5018,7 +5018,17 @@ class FunctionLowering {
             reject(L, "inclusive scan",
                    "The accumulator and input have no arithmetic common type.");
           const auto CommonType = type(*Common, L);
-          Next = binary("+", cast(json::Object(Value), CommonType, L),
+          const auto Name =
+              Call->getArg(3)->getType()->getAsCXXRecordDecl()->getName();
+          const auto Operator = Name == "minus"        ? llvm::StringRef("-")
+                                : Name == "multiplies" ? llvm::StringRef("*")
+                                : Name == "divides"    ? llvm::StringRef("/")
+                                : Name == "modulus"    ? llvm::StringRef("%")
+                                : Name == "bit_and"    ? llvm::StringRef("&")
+                                : Name == "bit_or"     ? llvm::StringRef("|")
+                                : Name == "bit_xor"    ? llvm::StringRef("^")
+                                                       : llvm::StringRef("+");
+          Next = binary(Operator, cast(json::Object(Value), CommonType, L),
                         cast(json::Object(CurrentValue), CommonType, L),
                         CommonType, L);
         } else if (OperationObject) {

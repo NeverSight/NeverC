@@ -784,21 +784,11 @@ Source replacements, custom, typed, stored or dynamically produced operations,
 enum or nested-wrapper referents, unsupported scalar types and indirect or
 casted callees remain rejected.
 
-Direct initialized `std::inclusive_scan` admits a raw-pointer input range of
-checked SDK `std::reference_wrapper<T>` with built-in scalar referents, including
-const inputs and referents, and a writable raw-pointer scalar output range.
-Its five-argument form requires a directly initialized transparent
-`std::plus<>` and supported non-boolean integer (up to 64 bits), float or double
-accumulator and output types. It reads current referents before each output
-write, applies the usual arithmetic conversions, converts every sum back to
-the accumulator type and converts each output separately. Empty input writes
-nothing and returns the original output pointer; otherwise it returns the
-output end. Outputs may alias referents. Wrapper bindings, single operand
-evaluation and cleanup are preserved. The selected SDK loop, plus construction
-and operation, forwarding and wrapper conversion are verified. Source
-replacements, custom, typed, stored or dynamically produced operations, enum
-or nested-wrapper referents, unsupported scalar types and indirect or casted
-callees remain rejected.
+Initialized five-argument `std::inclusive_scan(first, last, output, operation, initial)` admits authenticated raw-pointer input ranges of `std::reference_wrapper<T>`, including const wrapper elements and const arithmetic referents, a writable unqualified scalar output pointer and an explicit accumulator. The operation is directly initialized transparent SDK `std::plus<>`, `std::minus<>`, `std::multiplies<>`, `std::divides<>`, `std::modulus<>`, `std::bit_and<>`, `std::bit_or<>` or `std::bit_xor<>`, including explicit `<void>`, empty aggregate initialization and authenticated default construction. Accumulator and output independently use supported non-bool integers through 64 bits, float or double. Bool referents retain integer promotion.
+
+Each loop step reads the current referent, uses the lvalue accumulator on the left and the forwarded wrapper on the right, computes the usual arithmetic common type, converts the result to the accumulator, then separately converts and stores the updated output. Remainder and bitwise operations require an integer common type. Existing signed-overflow, division and remainder domains remain. Aliased output stores affect subsequent reads; wrapper bindings remain unchanged. Empty input returns the original output pointer without stores; otherwise the updated end is returned. Argument evaluation, result use and temporary cleanup are preserved.
+
+The complete selected SDK loop, exact operation opcode, transparent construction, declaration origins, accumulator and wrapper forwarding and reference conversion remain authenticated. Source replacements, custom, typed, stored or returned operations, logical/comparison reductions, enum/volatile/extended/nested or unsupported referents, bool or unsupported accumulator/output types and indirect or casted callees remain rejected. The seven additional arithmetic names reuse the existing scan emission with an exact operator selector; scalar and record callback paths retain their behavior. Five runtime fixtures check all eight reductions, const/bool promotion, live output aliases, mixed and narrow per-step conversion, 64-bit values, signed division/remainder, empty/live ranges, effects and cleanup. Eight new native-valid rejection cases and the thirty-nine existing selected boundaries cover source and lifetime checks.
 
 Direct default `std::transform_reduce` admits two raw-pointer ranges of checked
 SDK `std::reference_wrapper<T>` with built-in scalar referents, including const

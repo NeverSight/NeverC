@@ -232535,6 +232535,261 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperInclusiveScanArithmeticAliasStepOrder) {
+  const auto Source =
+      tmpFile("wrapper-inclusive-scan-arithmetic-alias-step-order.cpp");
+  const auto Output =
+      tmpFile("wrapper-inclusive-scan-arithmetic-alias-step-order.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){int minus[]={2,0,0},divides[]={2,0,0};std::reference_wrapper<int>a[]={minus[0],minus[0],minus[0]},b[]={divides[0],divides[0],divides[0]};
+ if(std::inclusive_scan(a,a+3,minus,std::minus<>{},10)!=minus+3)return 1;
+ if(std::inclusive_scan(b,b+3,divides,std::divides<>{},20)!=divides+3)return 2;
+ return minus[0]!=8||minus[1]!=0||minus[2]!=-8||divides[0]!=10||divides[1]!=1||divides[2]!=0||&a[2].get()!=&minus[0];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inclusive-scan-arithmetic-alias-step-order" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInclusiveScanArithmeticBoolSignedDivision) {
+  const auto Source =
+      tmpFile("wrapper-inclusive-scan-arithmetic-bool-signed-division.cpp");
+  const auto Output =
+      tmpFile("wrapper-inclusive-scan-arithmetic-bool-signed-division.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const bool t=true,f=false;const std::reference_wrapper<const bool> flags[]={t,f,t};int o[3];
+ std::inclusive_scan(flags,flags+3,o,std::bit_xor<>{},8);if(o[0]!=9||o[1]!=9||o[2]!=8)return 1;
+ int a=2,b=-3,c=2;std::reference_wrapper<int>div[]={a,b,c};
+ std::inclusive_scan(div,div+3,o,std::divides<>{},20);if(o[0]!=10||o[1]!=-3||o[2]!=-1)return 2;
+ int d=10,e=4,g=3;std::reference_wrapper<int>mod[]={d,e,g};
+ std::inclusive_scan(mod,mod+3,o,std::modulus<>{},-29);return o[0]!=-9||o[1]!=-1||o[2]!=-1||d!=10;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inclusive-scan-arithmetic-bool-signed-division" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInclusiveScanArithmeticEmptyLiveEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-inclusive-scan-arithmetic-empty-live-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-inclusive-scan-arithmetic-empty-live-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+struct Initial{int n;~Initial(){++cleaned;}int get(){++reads;return n;}};
+int set(int&n){n=2;return 10;}
+int main(){int n=7;W input[]={n,n};int output[]={998,998};
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::plus<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::minus<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::multiplies<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::divides<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::modulus<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::bit_and<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::bit_or<>{},Initial{17}.get())!=output)return 1;
+ if(std::inclusive_scan(Input{input}.get(),Input{input}.get(),Output{output}.get(),std::bit_xor<>{},Initial{17}.get())!=output)return 1;
+ if(output[0]!=998||output[1]!=998||reads!=32||cleaned!=32)return 2;
+ std::inclusive_scan(input,input+2,output,std::minus<>{},set(n));return output[0]!=8||output[1]!=6||n!=2;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-inclusive-scan-arithmetic-empty-live-effects-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInclusiveScanArithmeticMixedNarrowWide) {
+  const auto Source =
+      tmpFile("wrapper-inclusive-scan-arithmetic-mixed-narrow-wide.cpp");
+  const auto Output =
+      tmpFile("wrapper-inclusive-scan-arithmetic-mixed-narrow-wide.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const double x=3.8,y=1.5;const std::reference_wrapper<const double>a[]={x,x,x},b[]={y,y,y};int o[3];
+ std::inclusive_scan(a,a+3,o,std::minus<>{},20);if(o[0]!=16||o[1]!=12||o[2]!=8)return 1;
+ std::inclusive_scan(b,b+3,o,std::multiplies<>{},3);if(o[0]!=4||o[1]!=6||o[2]!=9)return 2;
+ const unsigned short n=3;const std::reference_wrapper<const unsigned short>narrow[]={n,n,n};
+ std::inclusive_scan(narrow,narrow+3,o,std::multiplies<>{},(unsigned char)100);if(o[0]!=44||o[1]!=132||o[2]!=140)return 3;
+ const unsigned long long p=0x8000000000000001ULL,q=0x8000000000000002ULL;const std::reference_wrapper<const unsigned long long>wide[]={p,q};unsigned long long w[2];
+ std::inclusive_scan(wide,wide+2,w,std::bit_xor<>{},0ULL);return w[0]!=p||w[1]!=3||&wide[1].get()!=&q;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inclusive-scan-arithmetic-mixed-narrow-wide" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperInclusiveScanArithmeticOperationMatrix) {
+  const auto Source =
+      tmpFile("wrapper-inclusive-scan-arithmetic-operation-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-inclusive-scan-arithmetic-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const int x=7;const std::reference_wrapper<const int> a[]={x,x};int o[2];
+ if(std::inclusive_scan(a,a+2,o,std::plus<>{},84)!=o+2||o[0]!=91||o[1]!=98)return 1;
+ if(std::inclusive_scan(a,a+2,o,std::minus<void>{},84)!=o+2||o[0]!=77||o[1]!=70)return 2;
+ if(std::inclusive_scan(a,a+2,o,std::multiplies<>(),84)!=o+2||o[0]!=588||o[1]!=4116)return 3;
+ if(std::inclusive_scan(a,a+2,o,std::divides<>{},84)!=o+2||o[0]!=12||o[1]!=1)return 4;
+ if(std::inclusive_scan(a,a+2,o,std::modulus<>{},84)!=o+2||o[0]!=0||o[1]!=0)return 5;
+ if(std::inclusive_scan(a,a+2,o,std::bit_and<>{},84)!=o+2||o[0]!=4||o[1]!=4)return 6;
+ if(std::inclusive_scan(a,a+2,o,std::bit_or<>{},84)!=o+2||o[0]!=87||o[1]!=87)return 7;
+ if(std::inclusive_scan(a,a+2,o,std::bit_xor<>{},84)!=o+2||o[0]!=83||o[1]!=84)return 8;
+ return x!=7||&a[1].get()!=&x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-inclusive-scan-arithmetic-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperInclusiveScanArithmeticRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::bit_or<>{},false);}
+)cpp"},
+      {"returned-bit-xor", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_xor<> op(){return {};}
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,op(),0);}
+)cpp"},
+      {"source-minus-body", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)-std::forward<W&>(b)))->decltype(std::forward<int&>(a)-std::forward<W&>(b)){return a-b.get();}}}
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::minus<>{},0);}
+)cpp"},
+      {"source-modulus-body", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto modulus<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)%std::forward<W&>(b)))->decltype(std::forward<int&>(a)%std::forward<W&>(b)){return a%b.get();}}}
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::modulus<>{},0);}
+)cpp"},
+      {"source-reference-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::bit_and<>{},0);}
+)cpp"},
+      {"stored-divides", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::divides<> op;return std::inclusive_scan(a,b,o,op,0);}
+)cpp"},
+      {"typed-minus", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::minus<int>{},0);}
+)cpp"},
+      {"unknown-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::logical_or<>{},0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-inclusive-scan-arithmetic-reject-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-inclusive-scan-arithmetic-reject-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInclusiveScanRuntimeAlias) {
   const auto Source = tmpFile("wrapper-inclusive-scan-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-inclusive-scan-runtime-alias.nc");

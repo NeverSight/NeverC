@@ -34608,7 +34608,7 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
   if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() || Record->getName() != "plus" ||
+      !Record || !Record->getIdentifier() ||
       Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
@@ -34616,6 +34616,31 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
                               "__numeric/inclusive_scan.h") ||
       Function->getNumParams() != 5 ||
       !Same(Function->getReturnType(), Output) || !Args || Args->size() != 4)
+    return false;
+  const auto ArithmeticOpcode = [&]() -> std::optional<BinaryOperatorKind> {
+    const auto Name = Record->getName();
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  }();
+  if (!ArithmeticOpcode ||
+      ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
+        *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
+       !(*Common)->isIntegerType()))
     return false;
   const QualType Params[] = {Input, Input, Output, ObjectType, Accumulator};
   const QualType Types[] = {Input, Output, Accumulator, ObjectType};
@@ -34654,7 +34679,7 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
            functionalInvokeParameterReference(Cast->getSubExpr(),
                                               Pattern->getParamDecl(0));
   };
-  auto Add = [&](const Expr *E) {
+  auto Combine = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
     const auto *Method =
@@ -34701,7 +34726,8 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
     const auto *R =
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
-    if (!Sum || Sum->getOpcode() != BO_Add || !Same(Sum->getType(), *Common) ||
+    if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
+        !Same(Sum->getType(), *Common) ||
         !Same(Sum->getLHS()->getType(), *Common) ||
         !Same(Sum->getRHS()->getType(), *Common) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
@@ -34767,8 +34793,8 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
          Same(Assign->getType(), Accumulator) &&
          functionalInvokeParameterReference(Assign->getLHS(),
                                             Function->getParamDecl(4)) &&
-         Add(Assign->getRHS()) && Write && Write->getOpcode() == BO_Assign &&
-         Write->isLValue() &&
+         Combine(Assign->getRHS()) && Write &&
+         Write->getOpcode() == BO_Assign && Write->isLValue() &&
          Same(Write->getType(), Output->getPointeeType()) &&
          functionalInvokeParameterReference(Write->getLHS(),
                                             Function->getParamDecl(2), true) &&
