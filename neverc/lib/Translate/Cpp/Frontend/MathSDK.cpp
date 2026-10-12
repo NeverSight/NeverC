@@ -36569,27 +36569,28 @@ static bool utilityWrapperTransformReduceUnary(
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
       S, SM, Element->getAsCXXRecordDecl(), Context);
-  const auto TermType =
+  const auto ReferentType =
       Wrapper ? utilityScalarComparisonType(Context, Wrapper->ReferentType,
                                             Wrapper->ReferentType, false)
               : std::nullopt;
-  const auto Common =
-      TermType
-          ? utilityScalarComparisonType(Context, Accumulator, *TermType, false)
-          : std::nullopt;
-  if (!Wrapper || !TermType || !Common || Element.isVolatileQualified() ||
-      Element.isRestrictQualified() ||
+  if (!Wrapper || !ReferentType ||
+      !((*ReferentType)->isIntegerType() ||
+        (*ReferentType)->isSpecificBuiltinType(BuiltinType::Float) ||
+        (*ReferentType)->isSpecificBuiltinType(BuiltinType::Double)) ||
+      Element.isVolatileQualified() || Element.isRestrictQualified() ||
       Element.getAddressSpace() != LangAS::Default ||
       Wrapper->ReferentType->isEnumeralType())
     return false;
-  auto Signature = [&](const FunctionDecl *F, const CXXRecordDecl *Plus,
-                       const CXXRecordDecl *Negate) {
-    if ((Plus == nullptr) != (Negate == nullptr))
+  auto Signature = [&](const FunctionDecl *F, const CXXRecordDecl *Reduction,
+                       const CXXRecordDecl *Unary) {
+    if ((Reduction == nullptr) != (Unary == nullptr))
       return false;
-    const auto PlusType = Plus ? Context.getRecordType(Plus) : QualType();
-    const auto NegateType = Negate ? Context.getRecordType(Negate) : QualType();
-    const QualType Params[] = {Input, Input, Accumulator, PlusType, NegateType};
-    const QualType Types[] = {Input, Accumulator, PlusType, NegateType};
+    const auto ReductionType =
+        Reduction ? Context.getRecordType(Reduction) : QualType();
+    const auto UnaryType = Unary ? Context.getRecordType(Unary) : QualType();
+    const QualType Params[] = {Input, Input, Accumulator, ReductionType,
+                               UnaryType};
+    const QualType Types[] = {Input, Accumulator, ReductionType, UnaryType};
     const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
     if (!utilitySwapSDKFunction(S, SM, F, "transform_reduce",
                                 "__numeric/transform_reduce.h") ||
@@ -36625,8 +36626,17 @@ static bool utilityWrapperTransformReduceUnary(
       return BO_Xor;
     return std::nullopt;
   };
-  auto Construct = [&](unsigned I,
-                       llvm::StringRef Name) -> const CXXRecordDecl * {
+  auto UnaryOpcode =
+      [&](llvm::StringRef Name) -> std::optional<UnaryOperatorKind> {
+    if (Name == "negate")
+      return UO_Minus;
+    if (Name == "bit_not")
+      return UO_Not;
+    if (Name == "logical_not")
+      return UO_LNot;
+    return std::nullopt;
+  };
+  auto Construct = [&](unsigned I) -> const CXXRecordDecl * {
     const auto *Argument =
         Selected && Selected->getNumArgs() == 5
             ? functionalInvokeStrippedExpression(Selected->getArg(I))
@@ -36660,7 +36670,7 @@ static bool utilityWrapperTransformReduceUnary(
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
         (I == 3 ? !ArithmeticOpcode(Record->getName())
-                : Record->getName() != Name) ||
+                : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36674,12 +36684,21 @@ static bool utilityWrapperTransformReduceUnary(
           return nullptr;
     return Record;
   };
-  const auto *Plus = Construct(3, "plus");
-  const auto *Negate = Construct(4, "negate");
-  if (!Plus || !Negate || !Signature(Function, Plus, Negate))
+  const auto *Reduction = Construct(3);
+  const auto *Unary = Construct(4);
+  if (!Reduction || !Unary || !Signature(Function, Reduction, Unary))
     return false;
-  const auto ReductionOpcode = ArithmeticOpcode(Plus->getName());
-  if (!ReductionOpcode ||
+  const auto TransformOpcode = UnaryOpcode(Unary->getName());
+  if (!TransformOpcode)
+    return false;
+  const auto TermType = *TransformOpcode == UO_LNot
+                            ? std::optional<QualType>{Context.BoolTy}
+                            : ReferentType;
+  const auto Common =
+      utilityScalarComparisonType(Context, Accumulator, *TermType, false);
+  const auto ReductionOpcode = ArithmeticOpcode(Reduction->getName());
+  if (!Common || !ReductionOpcode ||
+      (*TransformOpcode == UO_Not && !(*ReferentType)->isIntegerType()) ||
       ((*ReductionOpcode == BO_Rem || *ReductionOpcode == BO_And ||
         *ReductionOpcode == BO_Or || *ReductionOpcode == BO_Xor) &&
        !(*Common)->isIntegerType()))
@@ -36778,7 +36797,7 @@ static bool utilityWrapperTransformReduceUnary(
         !Primary || !Pattern || !Method->isConst() || !Method->isConstexpr() ||
         Method->isStatic() || Method->isVariadic() ||
         Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-        Method->getParent()->getCanonicalDecl() != Negate->getCanonicalDecl() ||
+        Method->getParent()->getCanonicalDecl() != Unary->getCanonicalDecl() ||
         Method->getNumParams() != 1 ||
         !Same(Method->getParamDecl(0)->getType(), Ref) ||
         !Same(Method->getReturnType(), *TermType) || !Args ||
@@ -36803,8 +36822,8 @@ static bool utilityWrapperTransformReduceUnary(
     const auto *R =
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Value = R ? dyn_cast<UnaryOperator>(R->getRetValue()) : nullptr;
-    if (!Value || Value->getOpcode() != UO_Minus || !Value->isPRValue() ||
-        !Same(Value->getType(), *TermType) ||
+    if (!Value || Value->getOpcode() != *TransformOpcode ||
+        !Value->isPRValue() || !Same(Value->getType(), *TermType) ||
         !Same(Value->getSubExpr()->getType(), *TermType))
       return false;
     const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
@@ -36823,7 +36842,7 @@ static bool utilityWrapperTransformReduceUnary(
   auto Add = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
-    const auto *Value = Operation(C, Plus, 3, Accumulator, *TermType,
+    const auto *Value = Operation(C, Reduction, 3, Accumulator, *TermType,
                                   Context.getRValueReferenceType(Accumulator),
                                   Context.getRValueReferenceType(*TermType),
                                   *Common, *ReductionOpcode);
