@@ -4620,10 +4620,23 @@ class FunctionLowering {
           DefaultFunctionalPair        ? FunctionalValueTypeAt(4)
           : DefaultUnaryFunctionalPair ? FunctionalValueTypeAt(3)
                                        : QualType{};
+      const bool WrapperFunctionalReduction =
+          (Operation == UtilityOperation::NumericAccumulate ||
+           Operation == UtilityOperation::NumericReduce) &&
+          Call->getNumArgs() == 4 &&
+          Call->getArg(3)->getType()->isRecordType() &&
+          Call->getArg(0)->getType()->isPointerType() &&
+          approvedFunctionalReferenceRecord(A.S, A.Sources,
+                                            Call->getArg(0)
+                                                ->getType()
+                                                ->getPointeeType()
+                                                ->getAsCXXRecordDecl(),
+                                            A.Context)
+              .has_value();
       const auto ReductionName =
           DefaultFunctionalPair
               ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
-          : DefaultUnaryFunctionalPair
+          : DefaultUnaryFunctionalPair || WrapperFunctionalReduction
               ? Call->getArg(3)->getType()->getAsCXXRecordDecl()->getName()
               : llvm::StringRef();
       const bool LogicalReduction =
@@ -5020,7 +5033,18 @@ class FunctionLowering {
           const auto CommonType = type(*Common, L);
           const auto Name =
               Call->getArg(3)->getType()->getAsCXXRecordDecl()->getName();
-          const auto Operator = Name == "minus"        ? llvm::StringRef("-")
+          const bool Comparison = Name == "equal_to" ||
+                                  Name == "not_equal_to" || Name == "less" ||
+                                  Name == "less_equal" || Name == "greater" ||
+                                  Name == "greater_equal";
+          const auto Operator = Name == "equal_to"       ? llvm::StringRef("==")
+                                : Name == "not_equal_to" ? llvm::StringRef("!=")
+                                : Name == "less"         ? llvm::StringRef("<")
+                                : Name == "less_equal"   ? llvm::StringRef("<=")
+                                : Name == "greater"      ? llvm::StringRef(">")
+                                : Name == "greater_equal"
+                                    ? llvm::StringRef(">=")
+                                : Name == "minus"      ? llvm::StringRef("-")
                                 : Name == "multiplies" ? llvm::StringRef("*")
                                 : Name == "divides"    ? llvm::StringRef("/")
                                 : Name == "modulus"    ? llvm::StringRef("%")
@@ -5030,7 +5054,7 @@ class FunctionLowering {
                                                        : llvm::StringRef("+");
           Next = binary(Operator, cast(json::Object(Value), CommonType, L),
                         cast(json::Object(CurrentValue), CommonType, L),
-                        CommonType, L);
+                        Comparison ? "bool" : CommonType, L);
         } else if (OperationObject) {
           Next = emitBinaryCallable(*OperationObject, json::Object(Value),
                                     json::Object(CurrentValue), L);
@@ -5260,17 +5284,33 @@ class FunctionLowering {
             return "|";
           if (Name == "bit_xor")
             return "^";
+          if (Name == "equal_to")
+            return "==";
+          if (Name == "not_equal_to")
+            return "!=";
+          if (Name == "less")
+            return "<";
+          if (Name == "less_equal")
+            return "<=";
+          if (Name == "greater")
+            return ">";
+          if (Name == "greater_equal")
+            return ">=";
           return std::nullopt;
         }();
         if (!ArithmeticOperator)
           reject(L, "exclusive scan",
                  "The wrapper operation has no authenticated arithmetic "
                  "operator.");
+        const bool Comparison =
+            *ArithmeticOperator == "==" || *ArithmeticOperator == "!=" ||
+            *ArithmeticOperator == "<" || *ArithmeticOperator == "<=" ||
+            *ArithmeticOperator == ">" || *ArithmeticOperator == ">=";
         assign(Next,
                cast(binary(*ArithmeticOperator,
                            cast(json::Object(Value), DefaultSumType, L),
                            cast(json::Object(InputValue), DefaultSumType, L),
-                           DefaultSumType, L),
+                           Comparison ? "bool" : DefaultSumType, L),
                     ValueType, L),
                L);
       }
