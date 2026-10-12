@@ -55,6 +55,8 @@ Core v2 は固定版 `<utility>` もサポートします。スカラーの `mov
 
 
 
+`cpp-core-v2`: `std::max`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接初期化した透過 less または greater は、const を含む同じ型の検証済みラッパーの空でない初期化リストを受け入れます。SDK 経路全体の端点、比較器の借用、私有 __max_element、検証済み前進イテレーターのアサート、走査を検証し、選んだラッパーの束縛を結果値にコピーします。同値では最初の要素を選びます。実際の束縛、引数評価、参照同一性、結果利用、破棄を保持し、比較器、転送、変換を検証します。保存・返却・型付き比較器、volatile、不適合参照、ソース置換は拒否します。
+
 `cpp-core-v2`: `std::min`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接初期化した透過 less または greater は、const を含む同じ型の検証済みラッパーの空でない初期化リストを受け入れます。SDK 経路全体の端点、比較器の借用、私有 __min_element、identity/invoke、走査を検証し、選んだラッパーの束縛を結果値にコピーします。同値では最初の要素を選びます。実際の束縛、引数評価、参照同一性、結果利用、破棄を保持し、比較器、転送、変換を検証します。保存・返却・型付き比較器、volatile、不適合参照、ソース置換は拒否します。
 
 `cpp-core-v2`: `std::minmax`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接初期化した透過 less または greater による直接呼び出しは、const を含む同じ型の二つの検証済みラッパーを受け入れます。SDK 条件式全体は二番目の参照値を一番目と比較し、元のラッパーへの const 参照からなる検証済み pair を構築します。同値では最初と二番目の引数順序を保持します。実際の束縛、引数評価、参照同一性、結果利用、破棄を保持し、比較器、転送、変換を検証します。保存・返却・型付き比較器、volatile、不適合参照、ソース置換は拒否します。
