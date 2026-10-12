@@ -36002,7 +36002,8 @@ static bool utilityWrapperInnerProductOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        !ArithmeticOpcode(Record->getName()) ||
+        (I == 4 ? !utilityWrapperNumericOpcode(Record->getName())
+                : !ArithmeticOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36020,7 +36021,7 @@ static bool utilityWrapperInnerProductOperations(
   const auto *Multiply = Construct(5);
   if (!Plus || !Multiply || !Signature(Function, Plus, Multiply))
     return false;
-  const auto ReductionOpcode = ArithmeticOpcode(Plus->getName());
+  const auto ReductionOpcode = utilityWrapperNumericOpcode(Plus->getName());
   const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
   auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
     return Opcode == BO_Rem || Opcode == BO_And || Opcode == BO_Or ||
@@ -36030,6 +36031,11 @@ static bool utilityWrapperInnerProductOperations(
       (RequiresInteger(*ReductionOpcode) && !(*Common)->isIntegerType()) ||
       (RequiresInteger(*TermOpcode) && !(*ProductType)->isIntegerType()))
     return false;
+  const bool Comparison =
+      *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
+      *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
+      *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
+  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -36103,8 +36109,10 @@ static bool utilityWrapperInnerProductOperations(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), Result) &&
-                   Same(Value->getRHS()->getType(), Result)
+                   Same(Value->getLHS()->getType(),
+                        Index == 5 ? *ProductType : *Common) &&
+                   Same(Value->getRHS()->getType(),
+                        Index == 5 ? *ProductType : *Common)
                ? Value
                : nullptr;
   };
@@ -36147,7 +36155,7 @@ static bool utilityWrapperInnerProductOperations(
     const auto *Value =
         Operation(C, Plus, 4, Context.getLValueReferenceType(Accumulator),
                   *ProductType, Context.getLValueReferenceType(Accumulator),
-                  Context.getRValueReferenceType(*ProductType), *Common,
+                  Context.getRValueReferenceType(*ProductType), OperationResult,
                   *ReductionOpcode);
     if (!Value ||
         !functionalInvokeParameterReference(C->getArg(1),
@@ -36329,7 +36337,8 @@ static bool utilityWrapperTransformReduceOperations(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        !ArithmeticOpcode(Record->getName()) ||
+        (I == 4 ? !utilityWrapperNumericOpcode(Record->getName())
+                : !ArithmeticOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -36347,7 +36356,7 @@ static bool utilityWrapperTransformReduceOperations(
   const auto *Multiply = Construct(5);
   if (!Plus || !Multiply || !Signature(Function, Plus, Multiply))
     return false;
-  const auto ReductionOpcode = ArithmeticOpcode(Plus->getName());
+  const auto ReductionOpcode = utilityWrapperNumericOpcode(Plus->getName());
   const auto TermOpcode = ArithmeticOpcode(Multiply->getName());
   auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
     return Opcode == BO_Rem || Opcode == BO_And || Opcode == BO_Or ||
@@ -36357,6 +36366,11 @@ static bool utilityWrapperTransformReduceOperations(
       (RequiresInteger(*ReductionOpcode) && !(*Common)->isIntegerType()) ||
       (RequiresInteger(*TermOpcode) && !(*ProductType)->isIntegerType()))
     return false;
+  const bool Comparison =
+      *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
+      *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
+      *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
+  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -36430,8 +36444,10 @@ static bool utilityWrapperTransformReduceOperations(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), Result) &&
-                   Same(Value->getRHS()->getType(), Result)
+                   Same(Value->getLHS()->getType(),
+                        Index == 5 ? *ProductType : *Common) &&
+                   Same(Value->getRHS()->getType(),
+                        Index == 5 ? *ProductType : *Common)
                ? Value
                : nullptr;
   };
@@ -36474,7 +36490,7 @@ static bool utilityWrapperTransformReduceOperations(
     const auto *Value = Operation(C, Plus, 4, Accumulator, *ProductType,
                                   Context.getRValueReferenceType(Accumulator),
                                   Context.getRValueReferenceType(*ProductType),
-                                  *Common, *ReductionOpcode);
+                                  OperationResult, *ReductionOpcode);
     if (!Value ||
         !utilityAlgorithmScalarForward(
             S, SM,
