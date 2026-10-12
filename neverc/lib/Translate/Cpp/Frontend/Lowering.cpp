@@ -10872,6 +10872,66 @@ class FunctionLowering {
       auto BoundaryRange = AlgorithmRangeValue(0);
       auto Boundary = std::move(BoundaryRange.first);
       auto Last = std::move(AlgorithmRangeValue(1).first);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          BoundaryRange.second->getPointeeType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (Wrapper) {
+        discardFunctionalObject(Call->getArg(2));
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto PointerType = type(BoundaryRange.second, L);
+        const auto Head = labelName(), TestFirst = labelName();
+        const auto AdvanceFirst = labelName(), RetreatLast = labelName();
+        const auto TestLast = labelName(), Exchange = labelName(),
+                   End = labelName();
+        auto Selected = [&](Expression Pointer) {
+          auto Value = dereference(std::move(Pointer), L);
+          auto Referent =
+              dereference(Expression{{"kind", "member"},
+                                     {"type", type(Wrapper->PointerType, L)},
+                                     {"name", "nct_reference_wrapper_pointer"},
+                                     {"args", json::Array{std::move(Value)}},
+                                     {"loc", A.loc(L)}},
+                          L);
+          return Expression{
+              {"kind", "unary"},
+              {"type", "bool"},
+              {"operator", "!"},
+              {"args", json::Array{cast(std::move(Referent), "bool", L)}},
+              {"loc", A.loc(L)}};
+        };
+        jump(Head, L);
+        label(Head, L);
+        branch(binary("!=", Boundary, Last, "bool", L), TestFirst, End, L);
+        label(TestFirst, L);
+        branch(Selected(json::Object(Boundary)), AdvanceFirst, RetreatLast, L);
+        label(AdvanceFirst, L);
+        assign(Boundary,
+               binary("+", Boundary, quantity(1, DifferenceType, L),
+                      PointerType, L),
+               L);
+        jump(Head, L);
+        label(RetreatLast, L);
+        assign(
+            Last,
+            binary("-", Last, quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        branch(binary("!=", Boundary, Last, "bool", L), TestLast, End, L);
+        label(TestLast, L);
+        branch(Selected(json::Object(Last)), Exchange, RetreatLast, L);
+        label(Exchange, L);
+        auto FirstBinding = snapshot(dereference(json::Object(Boundary), L), L);
+        auto LastBinding = snapshot(dereference(json::Object(Last), L), L);
+        assign(dereference(Boundary, L), std::move(LastBinding), L);
+        assign(dereference(Last, L), std::move(FirstBinding), L);
+        assign(Boundary,
+               binary("+", Boundary, quantity(1, DifferenceType, L),
+                      PointerType, L),
+               L);
+        jump(Head, L);
+        label(End, L);
+        return AlgorithmIteratorResult(std::move(Boundary), 0);
+      }
       auto Predicate = snapshot(expression(Call->getArg(2)), L);
       auto Scan = snapshot(json::Object(Boundary), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);

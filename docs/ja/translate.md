@@ -55,6 +55,8 @@ Core v2 は固定版 `<utility>` もサポートします。スカラーの `mov
 
 
 
+`cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. 直接初期化した透過 logical_not は、bool、64 ビットまでの整数、float、double（const を含む）を参照する検証済みラッパーの変更可能な生ポインター範囲を受け入れます。SDK 全体のイテレーター種別、述語の借用、二つの委譲、端点選択、双方向走査、ポインター pair、交換を検証します。現在値が false に変換される要素を選び、SDK 順に束縛を交換して元の範囲の境界を返します。参照先の値は保持し、空範囲では読み取りや交換を行いません。引数評価、結果利用、破棄を保持します。型付き・保存・返却された演算、volatile、不対応参照、ソース置換は拒否します。
+
 `cpp-core-v2`: `std::minmax`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接初期化した透過 less または greater は、const を含む同じ型の検証済みラッパーの空でない初期化リストを受け入れます。SDK 経路全体の端点、比較器の借用、呼出可能性アサート、identity/invoke、比較アダプター、ペア走査を検証し、選択した二つの束縛を値 pair にコピーします。同値では最初の最小値と最後の最大値を選びます。実際の束縛、引数評価、参照同一性、結果利用、破棄を保持します。保存・返却・型付き比較器、volatile、不適合参照、ソース置換は拒否します。
 
 `cpp-core-v2`: `std::max`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接初期化した透過 less または greater は、const を含む同じ型の検証済みラッパーの空でない初期化リストを受け入れます。SDK 経路全体の端点、比較器の借用、私有 __max_element、検証済み前進イテレーターのアサート、走査を検証し、選んだラッパーの束縛を結果値にコピーします。同値では最初の要素を選びます。実際の束縛、引数評価、参照同一性、結果利用、破棄を保持し、比較器、転送、変換を検証します。保存・返却・型付き比較器、volatile、不適合参照、ソース置換は拒否します。

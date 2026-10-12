@@ -329972,6 +329972,1064 @@ using std::max;using F=W(*)(std::initializer_list<W>);F f=&max<W>;auto selected(
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using V=std::reference_wrapper<int>;using R=V;int main(){int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=0,y=1;R a[4]={x,y,x,y};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&y||&a[3].get()!=&y||x!=0||y!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeBool) {
+  const auto Source = tmpFile("wrapper-partition-logical-not-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;int main(){bool x=true,y=false,z=true,t=false;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||!x||y||!z||t;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const float>;int main(){const float x=0.0f,y=-1.0f,z=-0.0f,t=2.0f;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&x||&a[1].get()!=&z||&a[2].get()!=&y||&a[3].get()!=&t;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x;R a[1]={x};R*r=std::partition(a,a,std::logical_not<>{});return r!=a||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeEven) {
+  const auto Source = tmpFile("wrapper-partition-logical-not-runtime-even.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-even.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=0,z=2,t=0,u=3,v=0;R a[6]={x,y,z,t,u,v};R*r=std::partition(a,a+6,std::logical_not<>{});return r!=a+3||&a[0].get()!=&v||&a[1].get()!=&y||&a[2].get()!=&t||&a[3].get()!=&z||&a[4].get()!=&u||&a[5].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-even" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};x=0;y=3;R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&x||&a[1].get()!=&t||&a[2].get()!=&z||&a[3].get()!=&y||x!=0||y!=3||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeLongLong) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-long-long.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-long-long.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<long long>;int main(){long long x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-long-long" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeNan) {
+  const auto Source = tmpFile("wrapper-partition-logical-not-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=0.0/0.0,y=1.0,z=-2.0;R a[3]={x,y,z};R*r=std::partition(a,a+3,std::logical_not<>{});R*e=std::partition(a,a,std::logical_not<>{});return r!=a||e!=a||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeNoneSelected) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-none-selected.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-none-selected.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=3;R a[3]={x,y,z};R*r=std::partition(a,a+3,std::logical_not<>{});x=0;y=0;z=0;R*s=std::partition(a,a+3,std::logical_not<>{});return r!=a||s!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-none-selected" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeOdd) {
+  const auto Source = tmpFile("wrapper-partition-logical-not-runtime-odd.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-odd.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=0,z=2,t=0,u=0;R a[5]={x,y,z,t,u};R*r=std::partition(a,a+5,std::logical_not<>{});return r!=a+3||&a[0].get()!=&u||&a[1].get()!=&y||&a[2].get()!=&t||&a[3].get()!=&z||&a[4].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-odd" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;struct Holder{int*n;R*p;R*get(){return p;}~Holder(){++*n;}};int main(){int n=0;int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(Holder{&n,a}.get(),Holder{&n,a+4}.get(),std::logical_not<>{});return n!=2||r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int n=0;R*read(R*p){++n;return p;}int main(){int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(read(a),read(a+4),std::logical_not<>{});return n!=2||r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeOriginalBinding) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-original-binding.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-original-binding.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=0,z=2,t=0;int extra=7;R p=x,q=y;R a[4]={p,q,z,t};p=extra;q=extra;R*r=std::partition(a,a+4,std::logical_not<>{});return &p.get()!=&extra||&q.get()!=&extra||r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-original-binding" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-partial-range.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=0,t=3,u=0;R a[5]={x,y,z,t,u};R*r=std::partition(a+1,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&x||&a[1].get()!=&z||&a[2].get()!=&y||&a[3].get()!=&t||&a[4].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperPartitionLogicalNotRuntimePartitionLogicalNot) {
+  const auto Source = tmpFile(
+      "wrapper-partition-logical-not-runtime-partition-logical-not.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-partition-logical-not.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-partition-logical-not" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+struct P{bool operator()(int x)const{return x==0;}};int main(){int a[]={0,2,0};return std::is_partitioned(a,a+3,P{})!=false;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;R*selected(R*a,R*b){return std::partition(a,b,std::logical_not<>{});}int main(){int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=selected(a,a+4);return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int a[]={0,2,0};return std::is_partitioned(a,a+3,std::logical_not<>{})!=false;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-partition-logical-not-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;int main(){short x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=-0.0,y=1.0,z=0.0,t=2.0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&x||&a[1].get()!=&z||&a[2].get()!=&y||&a[3].get()!=&t||!(1.0/a[0].get()<0.0)||(1.0/a[1].get()<0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1;R a[1]={x};R*r=std::partition(a,a+1,std::logical_not<>{});x=0;R*s=std::partition(a,a+1,std::logical_not<>{});return r!=a||s!=a+1||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;int main(){unsigned x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=std::partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-partition-logical-not-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-partition-logical-not-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-partition-logical-not-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using std::partition;int main(){int x=1,y=0,z=2,t=0;R a[4]={x,y,z,t};R*r=partition(a,a+4,std::logical_not<>{});return r!=a+2||&a[0].get()!=&t||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&x||x!=1||y!=0||z!=2||t!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-partition-logical-not-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperPartitionLogicalNotRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,std::logical_not<void>);auto selected(P a,P b,int*out){return static_cast<F>(&std::partition<P,std::logical_not<void>>)(a,b,std::logical_not<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"expression-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b,int*out){return std::partition(a,b,(++effects,std::logical_not<>{}));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,std::logical_not<void>);auto selected(P a,P b,int*out){F f=&std::partition<P,std::logical_not<void>>;return f(a,b,std::logical_not<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator!(const W&a){return !a.get().get();}}}
+auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"returned-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<> op(){return std::logical_not<>{};}auto selected(P a,P b,int*out){return std::partition(a,b,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"source-bidirectional-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct bidirectional_iterator_tag;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-classic-policy-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct _ClassicAlgPolicy;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b,int*out){std::partition(&source(a),&a+1,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct forward_iterator_tag;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-input-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct input_iterator_tag;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-iter-swap-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J>void iter_swap(I,J)noexcept(noexcept(swap(*std::declval<I>(),*std::declval<J>())));}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-iter-swap-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void iter_swap<P,P>(P,P)noexcept;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-iter-swap-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void iter_swap<P,P>(P a,P b)noexcept{swap(*a,*b);}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-iterator-operations-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A>struct _IterOps;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-negation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator!(const W&a){return !a.get();}}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a));}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a)){return !a.get();}}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-logical-not-void-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct logical_not<void>;}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-make-pair-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr pair<P,P> make_pair<P,P>(P&&,P&&);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-make-pair-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr pair<P,P> make_pair<P,P>(P&&a,P&&b){return {a,b};}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P&&move<P&>(P&)noexcept;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P&&move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b,int*out){return std::partition(&source(a),&a+1,std::logical_not<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b,int*out){std::partition(&source(a),&a+1,std::logical_not<>{});}int main(){return 0;}
+)cpp"},
+      {"source-partition-delegate-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S,class B,class C>inline pair<I,I> __partition(I,S,B&&,C);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-partition-delegate-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __partition<_ClassicAlgPolicy,P,P,logical_not<void>&,random_access_iterator_tag>(P a,P b,logical_not<void>&,random_access_iterator_tag);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-partition-delegate-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __partition<_ClassicAlgPolicy,P,P,logical_not<void>&,random_access_iterator_tag>(P a,P b,logical_not<void>&,random_access_iterator_tag){return {a,b};}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-partition-loop-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class B,class A,class I,class S>pair<I,I> __partition_impl(I,S,B,bidirectional_iterator_tag);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-partition-loop-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __partition_impl<logical_not<void>&,_ClassicAlgPolicy,P,P>(P a,P b,logical_not<void>&,bidirectional_iterator_tag);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-partition-loop-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __partition_impl<logical_not<void>&,_ClassicAlgPolicy,P,P>(P a,P b,logical_not<void>&,bidirectional_iterator_tag){return {a,b};}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-policy-next-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P,P);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-policy-next-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P,P b){return b;}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class U>I partition(I,I,U);}}
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P partition<P,logical_not<void>>(P,P,logical_not<void>);}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P partition<P,logical_not<void>>(P a,P,logical_not<void>){return a;}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-random-access-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct random_access_iterator_tag;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};int operator!(const R&a){return !int(a.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"source-swap-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept;}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-swap-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void swap<W>(W&a,W&b)noexcept{W t=a;a=b;b=t;}}}
+auto selected(P a,P b){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b,int*out){return std::partition(a,a+1,std::logical_not<>{});}
+)cpp"},
+      {"stored-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::partition(a,b,op);}
+)cpp"},
+      {"typed-logical-not", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){return std::partition(a,b,std::logical_not<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,std::logical_not<void>);F selected(){using std::partition;return &partition<P,std::logical_not<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b,int*out){return std::partition(a,b,std::logical_not<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-partition-logical-not-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-partition-logical-not-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperMinmaxListComparisonRuntimeAlias) {
   const auto Source =
       tmpFile("wrapper-minmax-list-comparison-runtime-alias.cpp");

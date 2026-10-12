@@ -55,6 +55,8 @@ Core v2는 고정 버전 `<utility>`도 지원합니다. 스칼라 `move`, `forw
 
 
 
+`cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. 직접 초기화한 투명 logical_not은 bool, 64비트 이하 정수, float, double과 const 참조를 가진 검증된 래퍼의 변경 가능한 원시 포인터 범위를 지원합니다. SDK 전체의 반복자 범주, 차용한 술어, 두 위임, 끝점 선택, 양방향 스캔, 포인터 pair와 반복자 교환을 검증합니다. 현재 참조 값이 false로 변환되는 요소를 선택하고 SDK 순서대로 바인딩을 교환한 뒤 원래 범위의 분할 경계를 반환합니다. 참조 대상 값은 유지하며 빈 범위는 읽거나 교환하지 않습니다. 인수 평가, 결과 사용과 정리를 보존합니다. 타입 지정·저장·반환 연산, volatile 또는 미지원 참조와 소스 대체는 거부합니다.
+
 `cpp-core-v2`: `std::minmax`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 직접 초기화한 투명 less 또는 greater는 const를 포함한 같은 형식의 검증된 래퍼로 구성된 비어 있지 않은 초기화 목록을 지원합니다. SDK 경로 전체의 목록 끝점, 비교기 차용, 호출 가능성 단언, identity/invoke, 비교 어댑터와 쌍별 스캔을 검증하고 선택한 두 바인딩을 값 pair로 복사합니다. 동률이면 첫 최솟값과 마지막 최댓값을 선택합니다. 실제 바인딩, 인수 평가, 참조 동일성, 결과 사용과 정리를 보존합니다. 저장·반환·타입 지정 비교기, volatile 또는 비호환 참조와 소스 대체는 거부합니다.
 
 `cpp-core-v2`: `std::max`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 직접 초기화한 투명 less 또는 greater는 const를 포함한 같은 형식의 검증된 래퍼로 구성된 비어 있지 않은 초기화 목록을 지원합니다. SDK 경로 전체의 목록 끝점, 비교기 차용, 내부 __max_element, 검증된 전방 반복자 단언와 스캔을 검증하고 선택한 래퍼 바인딩을 결과 값으로 복사합니다. 동률이면 첫 요소를 선택합니다. 실제 바인딩, 인수 평가, 참조 동일성, 결과 사용과 정리를 보존하고 비교기, 전달 및 변환을 검증합니다. 저장·반환·타입 지정 비교기, volatile 또는 비호환 참조와 소스 대체는 거부합니다.
