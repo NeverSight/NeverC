@@ -66832,6 +66832,149 @@ static bool utilityWrapperHeapUntilComparison(
                                           *Wrapper, Context);
 }
 
+static bool utilityWrapperHeapComparison(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    QualType Pointer, const ASTContext &Context, const CallExpr *Selected) {
+  if (!Pointer->isPointerType())
+    return false;
+  const auto InputElement = Pointer->getPointeeType();
+  const auto Element = InputElement.getUnqualifiedType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || InputElement.isVolatileQualified() ||
+      InputElement.isRestrictQualified() || InputElement.hasAddressSpace() ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true))
+    return false;
+  constexpr llvm::StringLiteral Path = "__algorithm/is_heap.h";
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef P) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", P);
+  };
+  auto Signature = [&](const FunctionDecl *F, llvm::StringRef Name,
+                       llvm::ArrayRef<QualType> Parameters,
+                       llvm::ArrayRef<QualType> Arguments) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(
+            S, SM, F, Name,
+            Name == "__is_heap_until" ? "__algorithm/is_heap_until.h" : Path) ||
+        (Name == "__is_heap_until" ? !Same(F->getReturnType(), Pointer)
+                                   : !F->getReturnType()->isBooleanType()) ||
+        F->getNumParams() != Parameters.size() || !A ||
+        A->size() != Arguments.size())
+      return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    return true;
+  };
+  auto Construct = [&](unsigned I,
+                       llvm::StringRef Name) -> const CXXRecordDecl * {
+    const auto *Argument =
+        Selected && Selected->getNumArgs() == 3
+            ? functionalInvokeStrippedExpression(Selected->getArg(I))
+            : nullptr;
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Argument);
+    const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Argument);
+    const auto *List =
+        Cast ? dyn_cast<InitListExpr>(Cast->getSubExpr()) : nullptr;
+    const auto Object =
+        Argument
+            ? approvedFunctionalObjectRecord(
+                  S, SM, Argument->getType()->getAsCXXRecordDecl(), Context)
+            : std::nullopt;
+    const auto *Record =
+        Object ? dyn_cast<ClassTemplateSpecializationDecl>(Object->Record)
+               : nullptr;
+    const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+    const auto ObjectType =
+        Object ? Context.getRecordType(Object->Record) : QualType();
+    const bool DirectInitialization =
+        (Construction && !Construction->getNumArgs() &&
+         approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+             FunctionalObjectConstruction::Default) ||
+        (Cast && Cast->getCastKind() == CK_NoOp && Cast->isPRValue() &&
+         Same(Cast->getTypeAsWritten(), ObjectType) && List &&
+         List->isPRValue() && List->isSemanticForm() && !List->getNumInits() &&
+         !List->hasArrayFiller() && !List->hasDesignatedInit() &&
+         !List->getInitializedFieldInUnion() &&
+         Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
+         !Record->getNumBases());
+    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
+        !Object || !Record || !Record->getIdentifier() ||
+        Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
+        Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
+      return nullptr;
+    for (const auto *D : Record->redecls())
+      if (!Origin(D, "__functional/operations.h"))
+        return nullptr;
+    if (Ctor)
+      for (const auto *D : Ctor->redecls())
+        if (!Origin(D, "__functional/operations.h"))
+          return nullptr;
+    return Record;
+  };
+  const auto *Argument =
+      Selected && Selected->getNumArgs() == 3
+          ? functionalInvokeStrippedExpression(Selected->getArg(2))
+          : nullptr;
+  const auto *Object =
+      Argument ? Argument->getType()->getAsCXXRecordDecl() : nullptr;
+  const llvm::StringRef Name =
+      Object && Object->getIdentifier() ? Object->getName() : llvm::StringRef();
+  if (Name != "less" && Name != "greater")
+    return false;
+  const auto *Record = Construct(2, Name);
+  const auto Predicate = Record ? Context.getRecordType(Record) : QualType();
+  if (!Record || !Selected || Selected->getDirectCallee() != Function ||
+      !Signature(Function, "is_heap", {Pointer, Pointer, Predicate},
+                 {Pointer, Predicate}))
+    return false;
+  const auto *D = Function->getDefinition();
+  const auto *DB = D ? dyn_cast<CompoundStmt>(D->getBody()) : nullptr;
+  const auto *R =
+      DB && DB->size() == 1 ? dyn_cast<ReturnStmt>(*DB->body_begin()) : nullptr;
+  const auto *Equality =
+      R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
+  const auto *Inner =
+      Equality ? dyn_cast<CallExpr>(Equality->getLHS()) : nullptr;
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  const auto *PredicateCast =
+      Inner && Inner->getNumArgs() == 3
+          ? dyn_cast<CXXStaticCastExpr>(Inner->getArg(2))
+          : nullptr;
+  const auto PredicateRef = Context.getLValueReferenceType(Predicate);
+  if (!Equality || Equality->getOpcode() != BO_EQ ||
+      !Equality->getType()->isBooleanType() ||
+      !utilityAlgorithmReference(Equality->getRHS(), D->getParamDecl(1),
+                                 Context) ||
+      !Inner || Inner->getNumArgs() != 3 || !Inner->isPRValue() ||
+      !Same(Inner->getType(), Pointer) ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) || !PredicateCast ||
+      !utilityWrapperComparatorReferenceType(
+          S, SM, PredicateCast->getTypeAsWritten(), Predicate, Context) ||
+      !Signature(Helper, "__is_heap_until", {Pointer, Pointer, PredicateRef},
+                 {PredicateRef, Pointer}) ||
+      !utilityAlgorithmReference(Inner->getArg(2), D->getParamDecl(2), Context,
+                                 true))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilityAlgorithmReference(Inner->getArg(I), D->getParamDecl(I),
+                                   Context))
+      return false;
+  return utilityWrapperHeapComparisonScan(S, SM, Helper, Pointer, Record,
+                                          *Wrapper, Context);
+}
+
 // The public wrapper projects the output pointer from the exact helper pair.
 // Its predicate/projection remain references to the wrapper's own objects.
 static const CXXOperatorCallExpr *
@@ -81083,6 +81226,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityWrapperHeapUntilComparison(S, SM, Function, Pointer, Context,
                                           Call))
       return UtilityOperation::AlgorithmIsHeapUntil;
+  }
+
+  if (Origin->Path == "__algorithm/is_heap.h" && Name == "is_heap" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue()) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    if (Pointer->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Function->getReturnType()->isBooleanType() &&
+        Call->getType()->isBooleanType() &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        utilityWrapperHeapComparison(S, SM, Function, Pointer, Context, Call))
+      return UtilityOperation::AlgorithmIsHeap;
   }
 
   const bool HeapQueryAlgorithm =

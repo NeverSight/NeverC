@@ -330883,6 +330883,898 @@ using F=P(*)(P,P);F selected(){using std::is_heap_until;return &is_heap_until<P>
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,x,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeBool) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeConstFloat) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-const-float.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-const-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const float>;int main(){const float x=4.f,y=4.f,z=3.f;const R a[]={x,y,z};return !std::is_heap(a,a+3,std::less<>{})||x!=4.f||y!=4.f||z!=3.f;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-const-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;const R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<double>;
+int main(){double x=4.5,y=3.5,z=2.5;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeGreater) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-greater.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-greater.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=3;R a[]={x,y,z};bool p=std::is_heap(a,a+3,std::greater<>{});y=0;bool q=std::is_heap(a,a+3,std::greater<>{});return !p||q||x!=1||y!=0||z!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-greater" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeHeapComparison) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-heap-comparison.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-heap-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-heap-comparison" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};y=8;auto p=std::is_heap(a,a+3,std::less<>{});return p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeNan) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(A{a}.get(),A{a+3}.get(),std::less<>{});return n!=2||!p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(read(a),read(a+3),std::less<>{});return n!=2||!p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimePointer) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int*>;int main(){int v[5]={};int*x=v+4,*y=v+2,*z=v;R a[]={x,y,z};bool p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||x!=v+4||y!=v+2||z!=v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct T{int n;};bool operator<(const T&a,const T&b){return a.n<b.n;}int main(){T a[]={{4},{3},{2}};return !std::is_heap(a,a+3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+bool select(R*a,R*b){return std::is_heap(a,b,std::less<>{});}int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=select(a,a+3);return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={4,3,2};return !std::is_heap(a,a+3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeShort) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<short>;
+int main(){short x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-signed-zero.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0,y=0.0,z=-0.0;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-heap-comparison-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-heap-comparison-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+1,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-comparison-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+using std::is_heap;int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=is_heap(a,a+3,std::less<>{});return !p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeViolationFirst) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-violation-first.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-violation-first.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=5,z=2;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-violation-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeViolationLate) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-violation-late.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-violation-late.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=9,y=8,z=7,u=6,v=5,t=10,s=3;R a[]={x,y,z,u,v,t,s};return std::is_heap(a,a+7,std::less<>{});}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-violation-late" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapComparisonRuntimeViolationRight) {
+  const auto Source =
+      tmpFile("wrapper-heap-comparison-runtime-violation-right.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-comparison-runtime-violation-right.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=5;R a[]={x,y,z};auto p=std::is_heap(a,a+3,std::less<>{});return p||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-heap-comparison-runtime-violation-right" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperHeapComparisonRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P);auto selected(P a,P b){return static_cast<F>(&std::is_heap<P>)(a,b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"expression-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::is_heap(a,b,(0,std::less<>{}));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P);auto selected(P a,P b){F f=&std::is_heap<P>;return f(a,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"returned-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<> predicate(){return{};}auto selected(P a,P b){return std::is_heap(a,b,predicate());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::is_heap(&source(a),&a+1,std::less<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-greater-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>std::forward<W&>(b)))->decltype(std::forward<W&>(a)>std::forward<W&>(b)){return a.get()>b.get();}}}
+auto selected(P a,P b){return std::is_heap(a,b,std::greater<>{});}
+)cpp"},
+      {"source-heap-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class C>bool is_heap(I,I,C);}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-heap-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool is_heap<P,less<void>>(P,P,less<void>);}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-heap-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool is_heap<P,less<void>>(P a,P,less<void>){return false;}}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-heap-until-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C,class I>I __is_heap_until(I,I,C&&);}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-heap-until-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __is_heap_until<less<void>&,P>(P,P,less<void>&);}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-heap-until-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __is_heap_until<less<void>&,P>(P a,P,less<void>&){return a;}}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-less-operation-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b));}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-less-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b)){return a.get()<b.get();}}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-less-primary", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct less;}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-less-record", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct less<void>;}}
+auto selected(P a,P b){return std::is_heap(a,b,std::less<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::is_heap(&source(a),&a+1,std::less<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::is_heap(&source(a),&a+1,std::less<>{});}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::is_heap(a,a+1,std::less<>{});}
+)cpp"},
+      {"stored-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::less<> p;return std::is_heap(a,b,p);}
+)cpp"},
+      {"typed-comparison", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::is_heap(a,b,std::less<W>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P);F selected(){using std::is_heap;return &is_heap<P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-heap-comparison-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-heap-comparison-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeAlias) {
   const auto Source = tmpFile("wrapper-rotate-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-rotate-runtime-alias.nc");
