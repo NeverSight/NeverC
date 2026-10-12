@@ -5376,15 +5376,25 @@ class FunctionLowering {
         const auto UnaryOperator = TransformName == "logical_not" ? "!"
                                    : TransformName == "bit_not"   ? "~"
                                                                   : "-";
+        const bool Comparison =
+            ReductionName == "equal_to" || ReductionName == "not_equal_to" ||
+            ReductionName == "less" || ReductionName == "less_equal" ||
+            ReductionName == "greater" || ReductionName == "greater_equal";
         const auto ReductionOperator =
-            ReductionName == "minus"        ? llvm::StringRef("-")
-            : ReductionName == "multiplies" ? llvm::StringRef("*")
-            : ReductionName == "divides"    ? llvm::StringRef("/")
-            : ReductionName == "modulus"    ? llvm::StringRef("%")
-            : ReductionName == "bit_and"    ? llvm::StringRef("&")
-            : ReductionName == "bit_or"     ? llvm::StringRef("|")
-            : ReductionName == "bit_xor"    ? llvm::StringRef("^")
-                                            : llvm::StringRef("+");
+            ReductionName == "equal_to"        ? llvm::StringRef("==")
+            : ReductionName == "not_equal_to"  ? llvm::StringRef("!=")
+            : ReductionName == "less"          ? llvm::StringRef("<")
+            : ReductionName == "less_equal"    ? llvm::StringRef("<=")
+            : ReductionName == "greater"       ? llvm::StringRef(">")
+            : ReductionName == "greater_equal" ? llvm::StringRef(">=")
+            : ReductionName == "minus"         ? llvm::StringRef("-")
+            : ReductionName == "multiplies"    ? llvm::StringRef("*")
+            : ReductionName == "divides"       ? llvm::StringRef("/")
+            : ReductionName == "modulus"       ? llvm::StringRef("%")
+            : ReductionName == "bit_and"       ? llvm::StringRef("&")
+            : ReductionName == "bit_or"        ? llvm::StringRef("|")
+            : ReductionName == "bit_xor"       ? llvm::StringRef("^")
+                                               : llvm::StringRef("+");
         const auto TermType = type(*TermQualType, L);
         const auto SumType = type(*Common, L);
         const auto ValueType = type(AccumulatorQualType, L);
@@ -5418,7 +5428,8 @@ class FunctionLowering {
         assign(Next,
                cast(binary(ReductionOperator,
                            cast(json::Object(Value), SumType, L),
-                           cast(json::Object(Term), SumType, L), SumType, L),
+                           cast(json::Object(Term), SumType, L),
+                           Comparison ? "bool" : SumType, L),
                     ValueType, L),
                L);
         if (Inclusive)

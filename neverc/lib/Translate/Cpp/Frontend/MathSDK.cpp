@@ -36595,25 +36595,8 @@ static bool utilityWrapperTransformReduceUnary(
         return false;
     return true;
   };
-  auto ArithmeticOpcode =
-      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
-    if (Name == "plus")
-      return BO_Add;
-    if (Name == "minus")
-      return BO_Sub;
-    if (Name == "multiplies")
-      return BO_Mul;
-    if (Name == "divides")
-      return BO_Div;
-    if (Name == "modulus")
-      return BO_Rem;
-    if (Name == "bit_and")
-      return BO_And;
-    if (Name == "bit_or")
-      return BO_Or;
-    if (Name == "bit_xor")
-      return BO_Xor;
-    return std::nullopt;
+  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+    return utilityWrapperNumericOpcode(Name);
   };
   auto UnaryOpcode =
       [&](llvm::StringRef Name) -> std::optional<UnaryOperatorKind> {
@@ -36692,6 +36675,11 @@ static bool utilityWrapperTransformReduceUnary(
         *ReductionOpcode == BO_Or || *ReductionOpcode == BO_Xor) &&
        !(*Common)->isIntegerType()))
     return false;
+  const bool Comparison =
+      *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
+      *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
+      *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
+  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -36765,8 +36753,8 @@ static bool utilityWrapperTransformReduceUnary(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), Result) &&
-                   Same(Value->getRHS()->getType(), Result)
+                   Same(Value->getLHS()->getType(), *Common) &&
+                   Same(Value->getRHS()->getType(), *Common)
                ? Value
                : nullptr;
   };
@@ -36834,7 +36822,7 @@ static bool utilityWrapperTransformReduceUnary(
     const auto *Value = Operation(C, Reduction, 3, Accumulator, *TermType,
                                   Context.getRValueReferenceType(Accumulator),
                                   Context.getRValueReferenceType(*TermType),
-                                  *Common, *ReductionOpcode);
+                                  OperationResult, *ReductionOpcode);
     if (!Value ||
         !utilityAlgorithmScalarForward(
             S, SM,
@@ -36950,25 +36938,8 @@ static bool utilityWrapperTransformExclusiveScan(
         return false;
     return true;
   };
-  auto ArithmeticOpcode =
-      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
-    if (Name == "plus")
-      return BO_Add;
-    if (Name == "minus")
-      return BO_Sub;
-    if (Name == "multiplies")
-      return BO_Mul;
-    if (Name == "divides")
-      return BO_Div;
-    if (Name == "modulus")
-      return BO_Rem;
-    if (Name == "bit_and")
-      return BO_And;
-    if (Name == "bit_or")
-      return BO_Or;
-    if (Name == "bit_xor")
-      return BO_Xor;
-    return std::nullopt;
+  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+    return utilityWrapperNumericOpcode(Name);
   };
   auto UnaryOpcode =
       [&](llvm::StringRef Name) -> std::optional<UnaryOperatorKind> {
@@ -37047,6 +37018,11 @@ static bool utilityWrapperTransformExclusiveScan(
         *ReductionOpcode == BO_Or || *ReductionOpcode == BO_Xor) &&
        !(*Common)->isIntegerType()))
     return false;
+  const bool Comparison =
+      *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
+      *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
+      *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
+  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -37120,8 +37096,8 @@ static bool utilityWrapperTransformExclusiveScan(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), Result) &&
-                   Same(Value->getRHS()->getType(), Result)
+                   Same(Value->getLHS()->getType(), *Common) &&
+                   Same(Value->getRHS()->getType(), *Common)
                ? Value
                : nullptr;
   };
@@ -37186,10 +37162,11 @@ static bool utilityWrapperTransformExclusiveScan(
   auto Combine = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
-    const auto *Value = Operation(
-        C, Reduction, 4, Context.getLValueReferenceType(Accumulator), *TermType,
-        Context.getLValueReferenceType(Accumulator),
-        Context.getRValueReferenceType(*TermType), *Common, *ReductionOpcode);
+    const auto *Value =
+        Operation(C, Reduction, 4, Context.getLValueReferenceType(Accumulator),
+                  *TermType, Context.getLValueReferenceType(Accumulator),
+                  Context.getRValueReferenceType(*TermType), OperationResult,
+                  *ReductionOpcode);
     if (!Value ||
         !functionalInvokeParameterReference(C->getArg(1),
                                             Function->getParamDecl(3)) ||
@@ -37353,25 +37330,8 @@ static bool utilityWrapperTransformInclusiveScan(
         return false;
     return true;
   };
-  auto ArithmeticOpcode =
-      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
-    if (Name == "plus")
-      return BO_Add;
-    if (Name == "minus")
-      return BO_Sub;
-    if (Name == "multiplies")
-      return BO_Mul;
-    if (Name == "divides")
-      return BO_Div;
-    if (Name == "modulus")
-      return BO_Rem;
-    if (Name == "bit_and")
-      return BO_And;
-    if (Name == "bit_or")
-      return BO_Or;
-    if (Name == "bit_xor")
-      return BO_Xor;
-    return std::nullopt;
+  auto ArithmeticOpcode = [&](llvm::StringRef Name) {
+    return utilityWrapperNumericOpcode(Name);
   };
   auto UnaryOpcode =
       [&](llvm::StringRef Name) -> std::optional<UnaryOperatorKind> {
@@ -37450,6 +37410,11 @@ static bool utilityWrapperTransformInclusiveScan(
         *ReductionOpcode == BO_Or || *ReductionOpcode == BO_Xor) &&
        !(*Common)->isIntegerType()))
     return false;
+  const bool Comparison =
+      *ReductionOpcode == BO_EQ || *ReductionOpcode == BO_NE ||
+      *ReductionOpcode == BO_LT || *ReductionOpcode == BO_LE ||
+      *ReductionOpcode == BO_GT || *ReductionOpcode == BO_GE;
+  const auto OperationResult = Comparison ? Context.BoolTy : *Common;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
         dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
@@ -37523,8 +37488,8 @@ static bool utilityWrapperTransformInclusiveScan(
         R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
-                   Same(Value->getLHS()->getType(), Result) &&
-                   Same(Value->getRHS()->getType(), Result)
+                   Same(Value->getLHS()->getType(), *Common) &&
+                   Same(Value->getRHS()->getType(), *Common)
                ? Value
                : nullptr;
   };
@@ -37589,10 +37554,11 @@ static bool utilityWrapperTransformInclusiveScan(
   auto Combine = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
-    const auto *Value = Operation(
-        C, Reduction, 3, Context.getLValueReferenceType(Accumulator), *TermType,
-        Context.getLValueReferenceType(Accumulator),
-        Context.getRValueReferenceType(*TermType), *Common, *ReductionOpcode);
+    const auto *Value =
+        Operation(C, Reduction, 3, Context.getLValueReferenceType(Accumulator),
+                  *TermType, Context.getLValueReferenceType(Accumulator),
+                  Context.getRValueReferenceType(*TermType), OperationResult,
+                  *ReductionOpcode);
     if (!Value ||
         !functionalInvokeParameterReference(C->getArg(1),
                                             Function->getParamDecl(5)) ||
