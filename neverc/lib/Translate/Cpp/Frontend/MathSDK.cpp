@@ -35974,7 +35974,7 @@ static bool utilityWrapperInnerProductOperations(
     return true;
   };
   auto ArithmeticOpcode = [&](llvm::StringRef Name) {
-    return utilityWrapperNumericOpcode(Name);
+    return utilityWrapperScalarReductionOpcode(Name);
   };
   auto Construct = [&](unsigned I) -> const CXXRecordDecl * {
     const auto *Argument =
@@ -36036,8 +36036,11 @@ static bool utilityWrapperInnerProductOperations(
   const bool ComparisonTerm = *TermOpcode == BO_EQ || *TermOpcode == BO_NE ||
                               *TermOpcode == BO_LT || *TermOpcode == BO_LE ||
                               *TermOpcode == BO_GT || *TermOpcode == BO_GE;
-  const auto ProductType =
-      ComparisonTerm ? std::optional<QualType>{Context.BoolTy} : InputCommon;
+  const bool LogicalTerm = *TermOpcode == BO_LAnd || *TermOpcode == BO_LOr;
+  const auto TermOperandType = LogicalTerm ? Context.BoolTy : *InputCommon;
+  const auto ProductType = ComparisonTerm || LogicalTerm
+                               ? std::optional<QualType>{Context.BoolTy}
+                               : InputCommon;
   const auto Common =
       utilityScalarComparisonType(Context, Accumulator, *ProductType, false);
   auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
@@ -36130,9 +36133,9 @@ static bool utilityWrapperInnerProductOperations(
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
                    Same(Value->getLHS()->getType(),
-                        Index == 5 ? *InputCommon : ReductionOperandType) &&
+                        Index == 5 ? TermOperandType : ReductionOperandType) &&
                    Same(Value->getRHS()->getType(),
-                        Index == 5 ? *InputCommon : ReductionOperandType)
+                        Index == 5 ? TermOperandType : ReductionOperandType)
                ? Value
                : nullptr;
   };
@@ -36304,7 +36307,7 @@ static bool utilityWrapperTransformReduceOperations(
     return true;
   };
   auto ArithmeticOpcode = [&](llvm::StringRef Name) {
-    return utilityWrapperNumericOpcode(Name);
+    return utilityWrapperScalarReductionOpcode(Name);
   };
   auto Construct = [&](unsigned I) -> const CXXRecordDecl * {
     const auto *Argument =
@@ -36366,8 +36369,11 @@ static bool utilityWrapperTransformReduceOperations(
   const bool ComparisonTerm = *TermOpcode == BO_EQ || *TermOpcode == BO_NE ||
                               *TermOpcode == BO_LT || *TermOpcode == BO_LE ||
                               *TermOpcode == BO_GT || *TermOpcode == BO_GE;
-  const auto ProductType =
-      ComparisonTerm ? std::optional<QualType>{Context.BoolTy} : InputCommon;
+  const bool LogicalTerm = *TermOpcode == BO_LAnd || *TermOpcode == BO_LOr;
+  const auto TermOperandType = LogicalTerm ? Context.BoolTy : *InputCommon;
+  const auto ProductType = ComparisonTerm || LogicalTerm
+                               ? std::optional<QualType>{Context.BoolTy}
+                               : InputCommon;
   const auto Common =
       utilityScalarComparisonType(Context, Accumulator, *ProductType, false);
   auto RequiresInteger = [&](BinaryOperatorKind Opcode) {
@@ -36460,9 +36466,9 @@ static bool utilityWrapperTransformReduceOperations(
     return Value && Value->getOpcode() == Opcode &&
                    Same(Value->getType(), Result) &&
                    Same(Value->getLHS()->getType(),
-                        Index == 5 ? *InputCommon : ReductionOperandType) &&
+                        Index == 5 ? TermOperandType : ReductionOperandType) &&
                    Same(Value->getRHS()->getType(),
-                        Index == 5 ? *InputCommon : ReductionOperandType)
+                        Index == 5 ? TermOperandType : ReductionOperandType)
                ? Value
                : nullptr;
   };

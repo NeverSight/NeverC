@@ -4877,22 +4877,51 @@ class FunctionLowering {
         auto RightTerm = dereference(*Second, L);
         if (Wrapper2)
           RightTerm = ReferentValue(std::move(RightTerm), *Wrapper2);
-        auto TransformOperand = [&](Expression Value) {
-          if (!TypedTransformType.isNull())
-            Value = cast(std::move(Value), type(TypedTransformType, L), L);
-          if (LogicalBinaryTransform)
-            Value = cast(std::move(Value), "bool", L);
-          return cast(std::move(Value), PromotedTermType, L);
-        };
-        Term = binary(DefaultFunctionalPair ? ArithmeticFunctionalOperator(5)
-                                            : llvm::StringRef("*"),
-                      TransformOperand(std::move(Term)),
-                      TransformOperand(std::move(RightTerm)),
-                      ComparisonBinaryTransform ? "bool" : PromotedTermType, L);
-        if (LogicalBinaryTransform)
-          Term = cast(std::move(Term), "bool", L);
-        else if (!TypedTransformType.isNull() && !ComparisonBinaryTransform)
-          Term = cast(std::move(Term), DefaultTermType, L);
+        if (LogicalBinaryTransform) {
+          // Typed scalar parameters can require temporary argument conversions
+          // before the operator call. Matching types bind references instead.
+          if (!TypedTransformType.isNull()) {
+            const auto ArgumentType = TypedTransformType.getUnqualifiedType();
+            if (!A.Context.hasSameType(
+                    FirstRange.second->getPointeeType().getUnqualifiedType(),
+                    ArgumentType))
+              Term =
+                  snapshot(cast(std::move(Term), type(ArgumentType, L), L), L);
+            if (!A.Context.hasSameType(
+                    SecondRangeType->getPointeeType().getUnqualifiedType(),
+                    ArgumentType))
+              RightTerm = snapshot(
+                  cast(std::move(RightTerm), type(ArgumentType, L), L), L);
+          }
+          auto LogicalTerm = temporary("bool", L);
+          const bool And = BinaryTransformName == "logical_and";
+          const auto Right = labelName(), Short = labelName(),
+                     Done = labelName();
+          branch(cast(std::move(Term), "bool", L), And ? Right : Short,
+                 And ? Short : Right, L);
+          label(Short, L);
+          assign(LogicalTerm, boolean(!And, L), L);
+          jump(Done, L);
+          label(Right, L);
+          assign(LogicalTerm, cast(std::move(RightTerm), "bool", L), L);
+          jump(Done, L);
+          label(Done, L);
+          Term = std::move(LogicalTerm);
+        } else {
+          auto TransformOperand = [&](Expression Value) {
+            if (!TypedTransformType.isNull())
+              Value = cast(std::move(Value), type(TypedTransformType, L), L);
+            return cast(std::move(Value), PromotedTermType, L);
+          };
+          Term =
+              binary(DefaultFunctionalPair ? ArithmeticFunctionalOperator(5)
+                                           : llvm::StringRef("*"),
+                     TransformOperand(std::move(Term)),
+                     TransformOperand(std::move(RightTerm)),
+                     ComparisonBinaryTransform ? "bool" : PromotedTermType, L);
+          if (!TypedTransformType.isNull() && !ComparisonBinaryTransform)
+            Term = cast(std::move(Term), DefaultTermType, L);
+        }
       }
       if (Wrapper && LogicalReduction &&
           (DefaultUnaryFunctionalPair || DefaultFunctionalPair ||
