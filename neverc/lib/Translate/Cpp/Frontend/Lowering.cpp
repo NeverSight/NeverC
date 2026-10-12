@@ -4899,7 +4899,9 @@ class FunctionLowering {
                L);
       } else {
         const auto Operator =
-            Wrapper && Operation == UtilityOperation::NumericAccumulate &&
+            Wrapper &&
+                    (Operation == UtilityOperation::NumericAccumulate ||
+                     Operation == UtilityOperation::NumericReduce) &&
                     Call->getNumArgs() == 4
                 ? ArithmeticFunctionalOperator(3)
             : DefaultFunctionalPair      ? ArithmeticFunctionalOperator(4)
@@ -5224,8 +5226,39 @@ class FunctionLowering {
                  ValueType, L),
             L);
       } else {
+        const auto ArithmeticOperator =
+            [&]() -> std::optional<llvm::StringRef> {
+          if (!Wrapper || Call->getNumArgs() != 5)
+            return "+";
+          const auto *Record = Call->getArg(4)->getType()->getAsCXXRecordDecl();
+          if (!Record || !Record->getIdentifier())
+            return std::nullopt;
+          const auto Name = Record->getName();
+          if (Name == "plus")
+            return "+";
+          if (Name == "minus")
+            return "-";
+          if (Name == "multiplies")
+            return "*";
+          if (Name == "divides")
+            return "/";
+          if (Name == "modulus")
+            return "%";
+          if (Name == "bit_and")
+            return "&";
+          if (Name == "bit_or")
+            return "|";
+          if (Name == "bit_xor")
+            return "^";
+          return std::nullopt;
+        }();
+        if (!ArithmeticOperator)
+          reject(L, "exclusive scan",
+                 "The wrapper operation has no authenticated arithmetic "
+                 "operator.");
         assign(Next,
-               cast(binary("+", cast(json::Object(Value), DefaultSumType, L),
+               cast(binary(*ArithmeticOperator,
+                           cast(json::Object(Value), DefaultSumType, L),
                            cast(json::Object(InputValue), DefaultSumType, L),
                            DefaultSumType, L),
                     ValueType, L),

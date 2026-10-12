@@ -233494,6 +233494,669 @@ int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusiv
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyBitwisePromotionsWide) {
+  const auto Source = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-bitwise-promotions-wide.cpp");
+  const auto Output = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-bitwise-promotions-wide.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const short x=0x103,y=0x70,z=0x80;
+  const std::reference_wrapper<const short> input[]={x,y,z}; unsigned char both[3],either[3],different[3];
+  std::exclusive_scan(input,input+3,both,(unsigned char)0xf3,std::bit_and<>{});
+  std::exclusive_scan(input,input+3,either,(unsigned char)0xf3,std::bit_or<>{});
+  std::exclusive_scan(input,input+3,different,(unsigned char)0xf3,std::bit_xor<>{});
+  bool t=true,f=false; std::reference_wrapper<bool> flags[]={t,f,t}; int promoted[3];
+  std::exclusive_scan(flags,flags+3,promoted,6,std::bit_xor<>{});
+  unsigned long long p=0x8000000000000003ULL,q=0x8000000000000005ULL,s=0x8000000000000007ULL;
+  std::reference_wrapper<unsigned long long> wide[]={p,q,s}; unsigned long long wa[3],wo[3],wx[3];
+  std::exclusive_scan(wide,wide+3,wa,0x800000000000000fULL,std::bit_and<>{});
+  std::exclusive_scan(wide,wide+3,wo,0x800000000000000fULL,std::bit_or<>{});
+  std::exclusive_scan(wide,wide+3,wx,0x800000000000000fULL,std::bit_xor<>{});
+  return both[0]!=0xf3 || both[1]!=3 || both[2]!=0 ||
+         either[0]!=0xf3 || either[1]!=0xf3 || either[2]!=0xf3 ||
+         different[0]!=0xf3 || different[1]!=0xf0 || different[2]!=0x80 ||
+         promoted[0]!=6 || promoted[1]!=7 || promoted[2]!=7 ||
+         wa[0]!=0x800000000000000fULL || wa[1]!=0x8000000000000003ULL || wa[2]!=0x8000000000000001ULL ||
+         wo[0]!=0x800000000000000fULL || wo[1]!=0x800000000000000fULL || wo[2]!=0x800000000000000fULL ||
+         wx[0]!=0x800000000000000fULL || wx[1]!=12 || wx[2]!=0x8000000000000009ULL;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exclusive-scan-arithmetic-family-bitwise-promotions-wide" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyDividesOrderConversion) {
+  const auto Source = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-divides-order-conversion.cpp");
+  const auto Output = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-divides-order-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const double x=2.5,y=0.5,z=2.0;
+  const std::reference_wrapper<const double> stable[]={x,y,z}; int out[3];
+  int* a = std::exclusive_scan(stable,stable+3,out,7,std::divides<>{});
+  int p=-2,q=2,s=1; std::reference_wrapper<int> signed_input[]={p,q,s}; int signed_out[3];
+  using std::exclusive_scan;
+  int* b = exclusive_scan(signed_input,signed_input+3,signed_out,7,std::divides<void>{});
+  double two=2.0; std::reference_wrapper<double> one[]={two}; double zero[1];
+  std::exclusive_scan(one,one+1,zero,-0.0,std::divides<>{});
+  return a!=out+3 || out[0]!=7 || out[1]!=2 || out[2]!=4 ||
+         b!=signed_out+3 || signed_out[0]!=7 || signed_out[1]!=-3 || signed_out[2]!=-1 ||
+         !(1.0/zero[0]<0.0) || x!=2.5 || y!=0.5 || z!=2.0;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exclusive-scan-arithmetic-family-divides-order-conversion" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyEmptyEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-empty-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int reads=0,cleaned=0;
+struct Range{R*p;R*get(){++reads;return p;}~Range(){++cleaned;}};
+struct Output{int*p;int*get(){++reads;return p;}~Output(){++cleaned;}};
+struct Initial{int v;int get(){++reads;return v;}~Initial(){++cleaned;}};
+int main(){
+  R*p=nullptr;int*q=nullptr;
+  int*a=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::minus<>{});
+  int*b=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::multiplies<>{});
+  int*c=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::divides<>{});
+  int*d=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::modulus<>{});
+  int*e=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::bit_and<>{});
+  int*f=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::bit_or<>{});
+  int*g=std::exclusive_scan(Range{p}.get(),Range{p}.get(),Output{q}.get(),Initial{7}.get(),std::bit_xor<>{});
+  return a!=q||b!=q||c!=q||d!=q||e!=q||f!=q||g!=q||reads!=28||cleaned!=28;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exclusive-scan-arithmetic-family-empty-effects-cleanup" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyMinusStepAlias) {
+  const auto Source =
+      tmpFile("wrapper-exclusive-scan-arithmetic-family-minus-step-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-exclusive-scan-arithmetic-family-minus-step-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const double x = 3.8, y = 3.8, z = 1.2;
+  const std::reference_wrapper<const double> stable[] = {x,y,z}; int narrow[3];
+  int* a = std::exclusive_scan(stable,stable+3,narrow,10,std::minus<>{});
+  int values[] = {2,3,4,5};
+  std::reference_wrapper<int> aliases[] = {values[0],values[0],values[1],values[0]};
+  int* b = std::exclusive_scan(aliases,aliases+4,values,20,std::minus<void>{});
+  return a != narrow+3 || narrow[0]!=10 || narrow[1]!=6 || narrow[2]!=2 ||
+         b != values+4 || values[0]!=20 || values[1]!=18 || values[2]!=-2 || values[3]!=-20 ||
+         &aliases[1].get()!=&values[0] || x!=3.8 || y!=3.8 || z!=1.2;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exclusive-scan-arithmetic-family-minus-step-alias" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyModulusSignCommon) {
+  const auto Source = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-modulus-sign-common.cpp");
+  const auto Output = tmpFile(
+      "wrapper-exclusive-scan-arithmetic-family-modulus-sign-common.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int x=10,y=4,z=3; std::reference_wrapper<int> input[]={x,y,z}; int out[3];
+  std::exclusive_scan(input,input+3,out,-29,std::modulus<>{});
+  unsigned a=5,b=2,c=3; std::reference_wrapper<unsigned> mixed[]={a,b,c}; int result[3];
+  std::exclusive_scan(mixed,mixed+3,result,-13,std::modulus<>{});
+  return out[0]!=-29 || out[1]!=-9 || out[2]!=-1 || result[0]!=-13 || result[1]!=3 || result[2]!=1;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exclusive-scan-arithmetic-family-modulus-sign-common" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyMultipliesConversionAlias) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-arithmetic-family-"
+                              "multiplies-conversion-alias.cpp");
+  const auto Output = tmpFile("wrapper-exclusive-scan-arithmetic-family-"
+                              "multiplies-conversion-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  unsigned char values[] = {20,20,20,20};
+  std::reference_wrapper<unsigned char> aliases[] = {values[0],values[0],values[1],values[0]};
+  unsigned char* a = std::exclusive_scan(aliases,aliases+4,values,(unsigned char)3,std::multiplies<>{});
+  const unsigned short x=20,y=20,z=20;
+  const std::reference_wrapper<const unsigned short> stable[]={x,y,z}; unsigned char out[3];
+  unsigned char* b = std::exclusive_scan(stable,stable+3,out,20,std::multiplies<>{});
+  return a!=values+4 || values[0]!=3 || values[1]!=60 || values[2]!=180 || values[3]!=48 ||
+         b!=out+3 || out[0]!=20 || out[1]!=144 || out[2]!=64 || &aliases[1].get()!=&values[0];
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exclusive-scan-arithmetic-family-multiplies-conversion-alias" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanArithmeticFamilyRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"family-bool-accumulator", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,false,std::bit_and<>{});}
+)cpp"},
+      {"family-returned-bit-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+std::bit_or<> op(){return std::bit_or<>{};}auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,op());}
+)cpp"},
+      {"family-source-divides-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)/std::forward<W&>(b)))->decltype(std::forward<int&>(a)/std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::divides<>{});}
+)cpp"},
+      {"family-source-minus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)-std::forward<W&>(b)))->decltype(std::forward<int&>(a)-std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::minus<>{});}
+)cpp"},
+      {"family-source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0,std::bit_xor<>{});}
+)cpp"},
+      {"family-stored-multiplies", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){std::multiplies<> op;return std::exclusive_scan(a,b,out,0,op);}
+)cpp"},
+      {"family-typed-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::modulus<int>{});}
+)cpp"},
+      {"family-unknown-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;int out[3];
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::logical_or<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-exclusive-scan-family-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-exclusive-scan-family-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyBitwisePromotions) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-bitwise-promotions.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-bitwise-promotions.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const short x = 0x103, y = 0x0f3;
+  std::reference_wrapper<const short> masks[] = {x, y};
+  unsigned char initial_and = 0xff, initial_or = 0, initial_xor = 0x80;
+  unsigned char a = std::reduce(masks, masks + 2, initial_and, std::bit_and<>{});
+  unsigned char o = std::reduce(masks, masks + 2, initial_or, std::bit_or<>{});
+  unsigned char z = std::reduce(masks, masks + 2, initial_xor, std::bit_xor<>{});
+  bool t = true, f = false;
+  std::reference_wrapper<bool> flags[] = {t, f, t};
+  unsigned short initial = 2;
+  unsigned short b = std::reduce(flags, flags + 3, initial, std::bit_xor<>{});
+  return a != 3 || o != 0xf3 || z != 0x70 || b != 2 || &masks[0].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-reduce-arithmetic-family-bitwise-promotions" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyBitwiseWideAlias) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-bitwise-wide-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-bitwise-wide-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  unsigned long long x = 0x8000000000000003ULL, y = 0x8000000000000005ULL;
+  std::reference_wrapper<unsigned long long> masks[] = {x, y};
+  unsigned long long a = std::reduce(masks, masks + 2, ~0ULL, std::bit_and<>{});
+  unsigned long long o = std::reduce(masks, masks + 2, 0ULL, std::bit_or<>{});
+  std::reference_wrapper<unsigned long long> aliases[] = {x, x, y};
+  unsigned long long z = std::reduce(aliases, aliases + 3, 0ULL, std::bit_xor<>{});
+  return a != 0x8000000000000001ULL || o != 0x8000000000000007ULL || z != y ||
+         &aliases[0].get() != &x || &aliases[1].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-reduce-arithmetic-family-bitwise-wide-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperReduceArithmeticFamilyDividesStepConversion) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-divides-step-conversion.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-divides-step-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  double x = 2.0, y = 0.5;
+  std::reference_wrapper<double> values[] = {x, y};
+  int result = std::reduce(values, values + 2, 3, std::divides<>{});
+  int two = 2;
+  std::reference_wrapper<int> halves[] = {two, two};
+  double precise = std::reduce(halves, halves + 2, 9.0, std::divides<>{});
+  float precise_float = std::reduce(halves, halves + 2, 9.0f, std::divides<>{});
+  return result != 2 || precise != 2.25 || precise_float != 2.25f;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-arithmetic-family-divides-step-conversion" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyEmptyEffectsCleanup) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-empty-effects-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R = std::reference_wrapper<int>;
+int reads = 0, cleaned = 0;
+struct Range { R* p; R* get() { ++reads; return p; } ~Range() { ++cleaned; } };
+struct Initial { int get() { ++reads; return 100; } ~Initial() { ++cleaned; } };
+int main() {
+  R* p = nullptr;
+  int a = std::reduce(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::minus<>{});
+  int b = std::reduce(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::divides<>{});
+  int c = std::reduce(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::modulus<>{});
+  int d = std::reduce(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::bit_and<>{});
+  int e = std::reduce(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::bit_or<>{});
+  int f = std::reduce(Range{p}.get(), Range{p}.get(), Initial{}.get(), std::bit_xor<>{});
+  return a != 100 || b != 100 || c != 100 || d != 100 || e != 100 || f != 100 ||
+         reads != 18 || cleaned != 18;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-arithmetic-family-empty-effects-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyMinusOrderLive) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-minus-order-live.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-minus-order-live.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R = std::reference_wrapper<int>;
+using std::reduce;
+int main() {
+  int x = 3, y = 7;
+  const R values[] = {x, y};
+  int first = reduce(values, values + 2, 20, std::minus<>{});
+  y = 5;
+  int second = reduce(values, values + 2, 20, std::minus<void>());
+  return first != 10 || second != 12 || &values[0].get() != &x ||
+         &values[1].get() != &y || x != 3 || y != 5;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-reduce-arithmetic-family-minus-order-live" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyMinusStepConversion) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-minus-step-conversion.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-minus-step-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  double x = 3.5, y = 3.5;
+  std::reference_wrapper<double> values[] = {x, y};
+  int result = std::reduce(values, values + 2, 10, std::minus<>{});
+  unsigned int one = 1;
+  std::reference_wrapper<unsigned int> wrap[] = {one};
+  unsigned int wrapped = std::reduce(wrap, wrap + 1, 0u, std::minus<>{});
+  return result != 2 || wrapped != ~0u || &values[0].get() != &x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-arithmetic-family-minus-step-conversion" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyModulusSignCommon) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-modulus-sign-common.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-modulus-sign-common.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  int ten = 10, four = 4;
+  std::reference_wrapper<int> signed_values[] = {ten, four};
+  int signed_result = std::reduce(signed_values, signed_values + 2, -29, std::modulus<>{});
+  unsigned int five = 5, two = 2;
+  std::reference_wrapper<unsigned int> mixed_values[] = {five, two};
+  int mixed_result = std::reduce(mixed_values, mixed_values + 2, -13, std::modulus<>{});
+  int thirty = 30, seven = 7;
+  std::reference_wrapper<int> ordered[] = {thirty, seven};
+  int ordered_result = std::reduce(ordered, ordered + 2, 100, std::modulus<>{});
+  return signed_result != -1 || mixed_result != 1 || ordered_result != 3;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-reduce-arithmetic-family-modulus-sign-common" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperReduceArithmeticFamilyRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"family-bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::reduce(a,b,false,std::bit_and<>{});}
+)cpp"},
+      {"family-returned-bit-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_or<> op(){return std::bit_or<>{};}auto selected(P a,P b){return std::reduce(a,b,0,op());}
+)cpp"},
+      {"family-source-divides-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)/std::forward<W&>(b)))->decltype(std::forward<int>(a)/std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::reduce(a,b,0,std::divides<>{});}
+)cpp"},
+      {"family-source-minus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)-std::forward<W&>(b)))->decltype(std::forward<int>(a)-std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::reduce(a,b,0,std::minus<>{});}
+)cpp"},
+      {"family-source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::reduce(a,a+1,0,std::bit_xor<>{});}
+)cpp"},
+      {"family-stored-multiplies", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::reduce(a,b,0,op);}
+)cpp"},
+      {"family-typed-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::reduce(a,b,0,std::modulus<int>{});}
+)cpp"},
+      {"family-unknown-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::reduce(a,b,0,std::logical_or<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-reduce-family-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-reduce-family-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReduceArithmeticFamilyMultipliesStepAlias) {
+  const auto Source =
+      tmpFile("wrapper-reduce-arithmetic-family-multiplies-step-alias.cpp");
+  const auto Output =
+      tmpFile("wrapper-reduce-arithmetic-family-multiplies-step-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main() {
+  const unsigned short a=20,b=3,c=2;
+  const std::reference_wrapper<const unsigned short> narrow[]={a,b,c};
+  unsigned char first=std::reduce(narrow,narrow+3,(unsigned char)20,std::multiplies<>{});
+  const double x=1.5,y=1.5,z=1.5;
+  const std::reference_wrapper<const double> fractional[]={x,y,z};
+  int second=std::reduce(fractional,fractional+3,3,std::multiplies<void>{});
+  int p=2,q=3; std::reference_wrapper<int> repeated[]={p,p,q};
+  using std::reduce;
+  int third=reduce(repeated,repeated+3,5,std::multiplies<>{});
+  return first!=96 || second!=9 || third!=60 || p!=2 || q!=3 || &repeated[1].get()!=&p;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reduce-arithmetic-family-multiplies-step-alias" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperExclusiveScanPlusRuntimeAliasedOutput) {
   const auto Source =
       tmpFile("wrapper-exclusive-scan-plus-runtime-aliased-output.cpp");

@@ -34779,7 +34779,7 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
                                             Function->getParamDecl(2));
 }
 
-static bool utilityWrapperExclusiveScanPlus(
+static bool utilityWrapperExclusiveScanArithmetic(
     const State &S, const SourceManager &SM, const FunctionDecl *Function,
     QualType Input, QualType Output, QualType Accumulator,
     const ASTContext &Context, const CallExpr *Selected) {
@@ -34847,7 +34847,7 @@ static bool utilityWrapperExclusiveScanPlus(
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
   if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() || Record->getName() != "plus" ||
+      !Record || !Record->getIdentifier() ||
       Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
@@ -34855,6 +34855,31 @@ static bool utilityWrapperExclusiveScanPlus(
                               "__numeric/exclusive_scan.h") ||
       Function->getNumParams() != 5 ||
       !Same(Function->getReturnType(), Output) || !Args || Args->size() != 4)
+    return false;
+  const auto ArithmeticOpcode = [&]() -> std::optional<BinaryOperatorKind> {
+    const auto Name = Record->getName();
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  }();
+  if (!ArithmeticOpcode ||
+      ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
+        *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
+       !(*Common)->isIntegerType()))
     return false;
   const QualType Params[] = {Input, Input, Output, Accumulator, ObjectType};
   const QualType Types[] = {Input, Output, Accumulator, ObjectType};
@@ -34893,7 +34918,7 @@ static bool utilityWrapperExclusiveScanPlus(
            functionalInvokeParameterReference(Cast->getSubExpr(),
                                               Pattern->getParamDecl(0));
   };
-  auto Add = [&](const Expr *E) {
+  auto ArithmeticCall = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
     const auto *Method =
@@ -34940,7 +34965,8 @@ static bool utilityWrapperExclusiveScanPlus(
     const auto *R =
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
-    if (!Sum || Sum->getOpcode() != BO_Add || !Same(Sum->getType(), *Common) ||
+    if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
+        !Same(Sum->getType(), *Common) ||
         !Same(Sum->getLHS()->getType(), *Common) ||
         !Same(Sum->getRHS()->getType(), *Common) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
@@ -34989,9 +35015,10 @@ static bool utilityWrapperExclusiveScanPlus(
       !functionalInvokeParameterReference(Result->getRetValue(),
                                           Function->getParamDecl(2)) ||
       !Temp || !Same(Temp->getType(), Accumulator) ||
-      !Origin(Temp, "__numeric/exclusive_scan.h") || !Add(Temp->getInit()) ||
-      !Loop || Loop->getConditionVariable() || !True || !True->getValue() ||
-      !LB || LB->size() != 6)
+      !Origin(Temp, "__numeric/exclusive_scan.h") ||
+      !ArithmeticCall(Temp->getInit()) || !Loop ||
+      Loop->getConditionVariable() || !True || !True->getValue() || !LB ||
+      LB->size() != 6)
     return false;
   auto Statement = [&](unsigned I) { return *(LB->body_begin() + I); };
   const auto *Store = dyn_cast<BinaryOperator>(Statement(0));
@@ -35035,16 +35062,17 @@ static bool utilityWrapperExclusiveScanPlus(
       Next->getOpcode() != BO_Assign || !Same(Next->getType(), Accumulator) ||
       !Same(Next->getRHS()->getType(), Accumulator) ||
       !utilityAlgorithmReference(Next->getLHS(), Temp, Context) ||
-      !Add(Next->getRHS()))
+      !ArithmeticCall(Next->getRHS()))
     return false;
   return true;
 }
 
-static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
-                                     const FunctionDecl *Function,
-                                     QualType Input, QualType Accumulator,
-                                     const ASTContext &Context,
-                                     const CallExpr *Selected) {
+static bool utilityWrapperReduceArithmetic(const State &S,
+                                           const SourceManager &SM,
+                                           const FunctionDecl *Function,
+                                           QualType Input, QualType Accumulator,
+                                           const ASTContext &Context,
+                                           const CallExpr *Selected) {
   auto Same = [&](QualType A, QualType B) {
     return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
   };
@@ -35103,7 +35131,7 @@ static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
   if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() || Record->getName() != "plus" ||
+      !Record || !Record->getIdentifier() ||
       Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
@@ -35112,6 +35140,31 @@ static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
       Function->getNumParams() != 4 ||
       !Same(Function->getReturnType(), Accumulator) || !Args ||
       Args->size() != 3)
+    return false;
+  const auto ArithmeticOpcode = [&]() -> std::optional<BinaryOperatorKind> {
+    const auto Name = Record->getName();
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  }();
+  if (!ArithmeticOpcode ||
+      ((*ArithmeticOpcode == BO_Rem || *ArithmeticOpcode == BO_And ||
+        *ArithmeticOpcode == BO_Or || *ArithmeticOpcode == BO_Xor) &&
+       !(*Common)->isIntegerType()))
     return false;
   const QualType Params[] = {Input, Input, Accumulator, ObjectType};
   const QualType Types[] = {Input, Accumulator, ObjectType};
@@ -35154,7 +35207,7 @@ static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
            functionalInvokeParameterReference(Cast->getSubExpr(),
                                               Pattern->getParamDecl(0));
   };
-  auto Add = [&](const Expr *E) {
+  auto ArithmeticCall = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
     const auto *Method =
@@ -35204,7 +35257,8 @@ static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
     const auto *R =
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
-    if (!Sum || Sum->getOpcode() != BO_Add || !Same(Sum->getType(), *Common) ||
+    if (!Sum || Sum->getOpcode() != *ArithmeticOpcode ||
+        !Same(Sum->getType(), *Common) ||
         !Same(Sum->getLHS()->getType(), *Common) ||
         !Same(Sum->getRHS()->getType(), *Common) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
@@ -35248,7 +35302,7 @@ static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
          Same(Assign->getType(), Accumulator) &&
          functionalInvokeParameterReference(Assign->getLHS(),
                                             Function->getParamDecl(2)) &&
-         Add(Assign->getRHS()) && Result &&
+         ArithmeticCall(Assign->getRHS()) && Result &&
          functionalInvokeParameterReference(Result->getRetValue(),
                                             Function->getParamDecl(2));
 }
@@ -78290,8 +78344,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Input) &&
         Same(Call->getArg(2)->getType(), Accumulator) &&
         Same(Call->getArg(3)->getType(), Object) &&
-        utilityWrapperReducePlus(S, SM, Function, Input, Accumulator, Context,
-                                 Call))
+        utilityWrapperReduceArithmetic(S, SM, Function, Input, Accumulator,
+                                       Context, Call))
       return UtilityOperation::NumericReduce;
   }
   if (Origin->Path == "__numeric/reduce.h" && Name == "reduce" &&
@@ -78524,8 +78578,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(2)->getType(), Output) &&
         Same(Call->getArg(3)->getType(), Accumulator) &&
         Same(Call->getArg(4)->getType(), Object) &&
-        utilityWrapperExclusiveScanPlus(S, SM, Function, Input, Output,
-                                        Accumulator, Context, Call))
+        utilityWrapperExclusiveScanArithmetic(S, SM, Function, Input, Output,
+                                              Accumulator, Context, Call))
       return UtilityOperation::NumericExclusiveScan;
   }
   if (Origin->Path == "__numeric/exclusive_scan.h" &&
