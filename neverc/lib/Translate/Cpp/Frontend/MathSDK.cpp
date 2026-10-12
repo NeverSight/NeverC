@@ -32210,7 +32210,6 @@ static bool utilityWrapperAccumulate(const State &S, const SourceManager &SM,
                                      const ASTContext &Context) {
   if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -32301,7 +32300,6 @@ static bool utilityWrapperInnerProduct(const State &S, const SourceManager &SM,
   if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
       !Pointer2->isPointerType() || Pointer2.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -33547,16 +33545,13 @@ static bool utilityWrapperExclusiveScan(const State &S, const SourceManager &SM,
   };
   auto Arithmetic = [&](QualType Type) {
     return !Type.isNull() && !Type.hasQualifiers() && !Type->isEnumeralType() &&
-           !Type->isBooleanType() &&
            ((Type->isIntegerType() && Context.getTypeSize(Type) <= 64) ||
             Type->isSpecificBuiltinType(BuiltinType::Float) ||
             Type->isSpecificBuiltinType(BuiltinType::Double));
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      (!Arithmetic(Output->getPointeeType()) &&
-       !Same(Output->getPointeeType(), Context.BoolTy)) ||
-      !Arithmetic(Accumulator))
+      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -34023,7 +34018,6 @@ static bool utilityWrapperReduce(const State &S, const SourceManager &SM,
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -34247,7 +34241,6 @@ static bool utilityWrapperTransformReduce(const State &S,
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Input2->isPointerType() || Input2.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -34583,16 +34576,13 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
   };
   auto Arithmetic = [&](QualType Type) {
     return !Type.isNull() && !Type.hasQualifiers() && !Type->isEnumeralType() &&
-           !Type->isBooleanType() &&
            ((Type->isIntegerType() && Context.getTypeSize(Type) <= 64) ||
             Type->isSpecificBuiltinType(BuiltinType::Float) ||
             Type->isSpecificBuiltinType(BuiltinType::Double));
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      (!Arithmetic(Output->getPointeeType()) &&
-       !Same(Output->getPointeeType(), Context.BoolTy)) ||
-      !Arithmetic(Accumulator))
+      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -34840,16 +34830,13 @@ static bool utilityWrapperExclusiveScanArithmetic(
   };
   auto Arithmetic = [&](QualType Type) {
     return !Type.isNull() && !Type.hasQualifiers() && !Type->isEnumeralType() &&
-           !Type->isBooleanType() &&
            ((Type->isIntegerType() && Context.getTypeSize(Type) <= 64) ||
             Type->isSpecificBuiltinType(BuiltinType::Float) ||
             Type->isSpecificBuiltinType(BuiltinType::Double));
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      (!Arithmetic(Output->getPointeeType()) &&
-       !Same(Output->getPointeeType(), Context.BoolTy)) ||
-      !Arithmetic(Accumulator))
+      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -35122,7 +35109,6 @@ static bool utilityWrapperReduceArithmetic(const State &S,
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -35350,7 +35336,6 @@ static bool utilityWrapperAccumulateArithmetic(
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -35916,7 +35901,6 @@ static bool utilityWrapperInnerProductOperations(
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Input2->isPointerType() || Input2.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -36249,7 +36233,6 @@ static bool utilityWrapperTransformReduceOperations(
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Input2->isPointerType() || Input2.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -36583,7 +36566,6 @@ static bool utilityWrapperTransformReduceUnary(
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
-      Accumulator->isBooleanType() ||
       !((Accumulator->isIntegerType() &&
          Context.getTypeSize(Accumulator) <= 64) ||
         Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -36928,16 +36910,13 @@ static bool utilityWrapperTransformExclusiveScan(
   };
   auto Arithmetic = [&](QualType Type) {
     return !Type.isNull() && !Type.hasQualifiers() && !Type->isEnumeralType() &&
-           !Type->isBooleanType() &&
            ((Type->isIntegerType() && Context.getTypeSize(Type) <= 64) ||
             Type->isSpecificBuiltinType(BuiltinType::Float) ||
             Type->isSpecificBuiltinType(BuiltinType::Double));
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      (!Arithmetic(Output->getPointeeType()) &&
-       !Same(Output->getPointeeType(), Context.BoolTy)) ||
-      !Arithmetic(Accumulator))
+      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -37330,16 +37309,13 @@ static bool utilityWrapperTransformInclusiveScan(
   };
   auto Arithmetic = [&](QualType Type) {
     return !Type.isNull() && !Type.hasQualifiers() && !Type->isEnumeralType() &&
-           !Type->isBooleanType() &&
            ((Type->isIntegerType() && Context.getTypeSize(Type) <= 64) ||
             Type->isSpecificBuiltinType(BuiltinType::Float) ||
             Type->isSpecificBuiltinType(BuiltinType::Double));
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      (!Arithmetic(Output->getPointeeType()) &&
-       !Same(Output->getPointeeType(), Context.BoolTy)) ||
-      !Arithmetic(Accumulator))
+      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
