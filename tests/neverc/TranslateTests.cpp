@@ -329972,6 +329972,1281 @@ using std::max;using F=W(*)(std::initializer_list<W>);F f=&max<W>;auto selected(
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using V=std::reference_wrapper<int>;using R=V;int main(){int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeAliasedReferents) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,extra=7;R p=x,q=y;R a[4]={p,q,x,y};p=extra;q=extra;x=3;y=4;R*r=std::rotate(a,a+1,a+4);return r!=a+3||&a[0].get()!=&y||&a[1].get()!=&x||&a[2].get()!=&y||&a[3].get()!=&x||&p.get()!=&extra||&q.get()!=&extra||x!=3||y!=4||extra!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeBool) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;int main(){bool x=false,y=true,z=false,t=true;R a[4]={x,y,z,t};R*r=std::rotate(a,a+2,a+4);return r!=a+2||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&x||&a[3].get()!=&y||x||!y||z||!t;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const float>;int main(){const float x=0.0f,y=-1.0f,z=-0.0f,t=2.0f;R a[4]={x,y,z,t};R*r=std::rotate(a,a+1,a+4);return r!=a+3||&a[0].get()!=&y||&a[1].get()!=&z||&a[2].get()!=&t||&a[3].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeCoprime) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-coprime.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-coprime.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[7]={1,2,3,4,5,6,7};R a[7]={v[0],v[1],v[2],v[3],v[4],v[5],v[6]};R*r=std::rotate(a,a+3,a+7);return r!=a+4||&a[0].get()!=&v[3]||&a[1].get()!=&v[4]||&a[2].get()!=&v[5]||&a[3].get()!=&v[6]||&a[4].get()!=&v[0]||&a[5].get()!=&v[1]||&a[6].get()!=&v[2]||v[0]!=1||v[1]!=2||v[2]!=3||v[3]!=4||v[4]!=5||v[5]!=6||v[6]!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-coprime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;struct Holder{int*effects;int*cleanups;R*value;R*get(){++*effects;return value;}~Holder(){++*cleanups;}};int main(){double x=1,y=2;R a[2]={x,y};R*r=std::rotate(a,a,a+2);R*s=std::rotate(a,a+2,a+2);R*e=std::rotate(a,a,a);R*n=nullptr;R*q=std::rotate(n,n,n);int effects=0,cleanups=0;R*f=std::rotate(Holder{&effects,&cleanups,n}.get(),Holder{&effects,&cleanups,n}.get(),Holder{&effects,&cleanups,n}.get());return q!=nullptr||f!=nullptr||effects!=3||cleanups!=3||r!=a+2||s!=a||e!=a||&a[0].get()!=&x||&a[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeEqualHalves) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-equal-halves.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-equal-halves.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[4]={1,2,3,4};R a[4]={v[0],v[1],v[2],v[3]};R*r=std::rotate(a,a+2,a+4);return r!=a+2||&a[0].get()!=&v[2]||&a[1].get()!=&v[3]||&a[2].get()!=&v[0]||&a[3].get()!=&v[1]||v[0]!=1||v[1]!=2||v[2]!=3||v[3]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-equal-halves" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeFloat) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-float.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-float.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<float>;int main(){float x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-float" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeLeft) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-left.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-left.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[3]={1,2,3};R a[3]={v[0],v[1],v[2]};R*r=std::rotate(a,a+1,a+3);return r!=a+2||&a[0].get()!=&v[1]||&a[1].get()!=&v[2]||&a[2].get()!=&v[0]||v[0]!=1||v[1]!=2||v[2]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-left" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeLongLong) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-long-long.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-long-long.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<long long>;int main(){long long x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-long-long" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeNoncoprime) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-noncoprime.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-noncoprime.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[6]={1,2,3,4,5,6};R a[6]={v[0],v[1],v[2],v[3],v[4],v[5]};R*r=std::rotate(a,a+2,a+6);return r!=a+4||&a[0].get()!=&v[2]||&a[1].get()!=&v[3]||&a[2].get()!=&v[4]||&a[3].get()!=&v[5]||&a[4].get()!=&v[0]||&a[5].get()!=&v[1]||v[0]!=1||v[1]!=2||v[2]!=3||v[3]!=4||v[4]!=5||v[5]!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-noncoprime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;struct Holder{int*n;R*p;R*get(){return p;}~Holder(){++*n;}};int main(){int n=0;int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(Holder{&n,a}.get(),Holder{&n,a+2}.get(),Holder{&n,a+5}.get());return n!=3||r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int n=0;R*read(R*p){++n;return p;}int main(){int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(read(a),read(a+2),read(a+5));return n!=3||r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a+1,a+2,a+4);return r!=a+3||&a[0].get()!=&x||&a[1].get()!=&z||&a[2].get()!=&t||&a[3].get()!=&y||&a[4].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimePointer) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int*>;int main(){int i=1,j=2,k=3;int*x=&i,*y=nullptr,*z=&k;R a[3]={x,y,z};R*r=std::rotate(a,a+2,a+3);return r!=a+1||&a[0].get()!=&z||&a[1].get()!=&x||&a[2].get()!=&y||x!=&i||y!=nullptr||z!=&k;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+struct P{bool operator()(int x)const{return x==0;}};struct Item{int id,payload;};int main(){int a[]={0,2,0};Item raw[2]{{1,10},{2,20}};Item*n=nullptr;Item*q=std::rotate(n,n,n);Item*l=std::rotate(raw,raw,raw+2);Item*r=std::rotate(raw,raw+2,raw+2);Item*e=std::rotate(raw,raw,raw);return q!=nullptr||l!=raw+2||r!=raw||e!=raw||raw[0].id!=1||raw[0].payload!=10||raw[1].id!=2||raw[1].payload!=20||std::is_partitioned(a,a+3,P{})!=false;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;R*selected(R*a,R*m,R*b){return std::rotate(a,m,b);}int main(){int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=selected(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeRight) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-right.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-right.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int v[3]={1,2,3};R a[3]={v[0],v[1],v[2]};R*r=std::rotate(a,a+2,a+3);return r!=a+1||&a[0].get()!=&v[2]||&a[1].get()!=&v[0]||&a[2].get()!=&v[1]||v[0]!=1||v[1]!=2||v[2]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-right" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeRotate) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-rotate.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-rotate.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-rotate" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){int a[]={0,2,0};int*n=nullptr;int*q=std::rotate(n,n,n);int*l=std::rotate(a,a,a+3);int*r=std::rotate(a,a+3,a+3);int*e=std::rotate(a,a,a);return q!=nullptr||l!=a+3||r!=a||e!=a||a[0]!=0||a[1]!=2||a[2]!=0||std::is_partitioned(a,a+3,std::logical_not<>{})!=false;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeShort) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<short>;int main(){short x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;int main(){int x=1;R a[1]={x};R*r=std::rotate(a,a,a+1);R*s=std::rotate(a,a+1,a+1);return r!=a+1||s!=a||&a[0].get()!=&x||x!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeUnsigned) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-unsigned.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;int main(){unsigned x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=std::rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-rotate-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-rotate-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using std::rotate;int main(){int x=1,y=2,z=3,t=4,u=5;R a[5]={x,y,z,t,u};R*r=rotate(a,a+2,a+5);return r!=a+3||&a[0].get()!=&z||&a[1].get()!=&t||&a[2].get()!=&u||&a[3].get()!=&x||&a[4].get()!=&y||x!=1||y!=2||z!=3||t!=4||u!=5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperRotateRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P);auto selected(P a,P m,P b){return static_cast<F>(std::rotate<P>)(a,m,b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{A};using R=std::reference_wrapper<E>;auto selected(R*a,R*m,R*b){return std::rotate(a,m,b);}
+)cpp"},
+      {"extended-integer-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using R=std::reference_wrapper<__int128>;auto selected(R*a,R*m,R*b){return std::rotate(a,m,b);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P);auto selected(P a,P m,P b){F f=std::rotate<P>;return f(a,m,b);}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using R=std::reference_wrapper<long double>;auto selected(R*a,R*m,R*b){return std::rotate(a,m,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using R=std::reference_wrapper<W>;auto selected(R*a,R*m,R*b){return std::rotate(a,m,b);}
+)cpp"},
+      {"record-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+struct E{int x;};using R=std::reference_wrapper<E>;auto selected(R*a,R*m,R*b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-add-lvalue-reference-alias-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>using __add_lvalue_reference_t=__add_lvalue_reference(T);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-add-rvalue-reference-alias-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>using __add_rvalue_reference_t=__add_rvalue_reference(T);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-bidirectional-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct bidirectional_iterator_tag;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-classic-policy-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct _ClassicAlgPolicy;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-delegate-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S>constexpr pair<I,I> __rotate(I,I,S);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-delegate-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr pair<P,P> __rotate<_ClassicAlgPolicy,P,P>(P a,P m,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-delegate-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr pair<P,P> __rotate<_ClassicAlgPolicy,P,P>(P a,P m,P b){return {a,b};}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-dispatcher-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I>inline constexpr I __rotate_impl(I,I,I,random_access_iterator_tag);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-dispatcher-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_impl<_ClassicAlgPolicy,P>(P a,P m,P b,random_access_iterator_tag);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-dispatcher-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_impl<_ClassicAlgPolicy,P>(P a,P m,P b,random_access_iterator_tag){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-forward-loop-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_forward<_ClassicAlgPolicy,P>(P a,P m,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-forward-loop-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_forward<_ClassicAlgPolicy,P>(P a,P m,P b){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-forward-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct forward_iterator_tag;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-gcd-loop-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_gcd<_ClassicAlgPolicy,P>(P a,P m,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-gcd-loop-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_gcd<_ClassicAlgPolicy,P>(P a,P m,P b){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-gcd-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr ptrdiff_t __algo_gcd<ptrdiff_t>(ptrdiff_t a,ptrdiff_t b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-gcd-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr ptrdiff_t __algo_gcd<ptrdiff_t>(ptrdiff_t a,ptrdiff_t b){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-inner-move-backward-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __move_backward<_ClassicAlgPolicy,P,P,P>(P a,P b,P o);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-inner-move-backward-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __move_backward<_ClassicAlgPolicy,P,P,P>(P a,P b,P o){return {a,o};}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-inner-move-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __move<_ClassicAlgPolicy,P,P,P>(P a,P b,P o);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-inner-move-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __move<_ClassicAlgPolicy,P,P,P>(P a,P b,P o){return {a,o};}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-input-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct input_iterator_tag;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-integral-constant-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,T V>struct integral_constant;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-iter-swap-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void iter_swap<P,P>(P a,P b)noexcept;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-iter-swap-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void iter_swap<P,P>(P a,P b)noexcept{swap(*a,*b);}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-iterator-operations-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A>struct _IterOps;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-left-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_left<_ClassicAlgPolicy,P>(P a,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-left-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_left<_ClassicAlgPolicy,P>(P a,P b){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+P read(P p){asm volatile("");return p;}auto selected(P a,P m,P b){return std::rotate(read(a),m,b);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+int hidden(){asm volatile("");return 0;}P read(P p,int n=hidden()){return p+n;}auto selected(P a,P m,P b){return std::rotate(read(a),m,b);}
+)cpp"},
+      {"source-pair-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B>struct pair;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-pointer-move-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P&& move<P&>(P&p)noexcept;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-pointer-move-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P&& move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-distance-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr ptrdiff_t _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-distance-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr ptrdiff_t _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b){return b-a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-next-sentinel-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P a,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-next-sentinel-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P a,P b){return b;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-next-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P&>(P&a,ptrdiff_t n);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-next-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P&>(P&a,ptrdiff_t n){return a+n;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-prev-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::prev<P&>(P&a,ptrdiff_t n);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-policy-prev-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::prev<P&>(P&a,ptrdiff_t n){return a-n;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>inline I rotate(I,I,I);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P rotate<P>(P a,P m,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P rotate<P>(P a,P m,P b){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-random-access-tag-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct random_access_iterator_tag;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-right-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_right<_ClassicAlgPolicy,P>(P a,P b);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-right-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __rotate_right<_ClassicAlgPolicy,P>(P a,P b){return a;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-standard-next-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P next<P,0>(P a,ptrdiff_t n);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-standard-next-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P next<P,0>(P a,ptrdiff_t n){return a+n;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-standard-prev-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P prev<P,0>(P a,ptrdiff_t n);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-standard-prev-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P prev<P,0>(P a,ptrdiff_t n){return a-n;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-swap-ranges-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __swap_ranges<_ClassicAlgPolicy,P,P,P,P>(P a,P b,P c,P d);}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-swap-ranges-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __swap_ranges<_ClassicAlgPolicy,P,P,P,P>(P a,P b,P c,P d){return {a,c};}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-swap-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void swap<W>(W&a,W&b)noexcept;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-swap-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>void swap<W>(W&a,W&b)noexcept{W t=a;a=b;b=t;}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-trivial-move-trait-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct is_trivially_move_assignable;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-wrapper-move-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&& move<W&>(W&w)noexcept;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-wrapper-move-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&& move<W&>(W&w)noexcept{return static_cast<W&&>(w);}}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+auto selected(P a,P m,P b){return std::rotate(a,m,b);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using std::rotate;using F=P(*)(P,P,P);F selected=&rotate<P>;
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using R=std::reference_wrapper<volatile int>;auto selected(R*a,R*m,R*b){return std::rotate(a,m,b);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-rotate-runtime-guard-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-rotate-runtime-guard-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperPartitionLogicalNotRuntimeAlias) {
   const auto Source =
       tmpFile("wrapper-partition-logical-not-runtime-alias.cpp");

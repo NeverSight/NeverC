@@ -55,6 +55,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 
 
+`cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. 直接呼叫支援已檢查包裝器的可變原始指標區間，參照可為受支援的算術值或物件指標，也可為 const。SDK 證明認證迭代器類別分派、平凡移動特徵、左右移位、前向及最大公因數循環、等長區間交換、傳回指標與所選移動適配器。旋轉重排包裝器繫結，保留參照物件值，並傳回原首元素的新位置；空區間或任一半區間為空時保留標準端點語義。引數只求值一次，保留結果使用及暫存物件清理。仍拒絕 volatile 或不支援的參照、原始碼替換及間接或強制轉型的呼叫入口。
+
 `cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. 直接呼叫並直接初始化透明 logical_not，支援已檢查包裝器的可變原始指標區間，參照可為 bool、最多 64 位元整數、float 或 double，也可為 const。完整認證 SDK 的迭代器類別、借用述詞、兩層委託、端點選擇、雙向掃描、指標 pair 及迭代器交換。轉換讀取即時參照值，選擇轉換為 false 的值，按 SDK 順序交換包裝器繫結並傳回原區間的分界指標；原物件值不變，空區間不讀取或交換元素。保留引數求值、結果使用及清理。仍拒絕帶型別、儲存或傳回的操作、volatile 或不支援的參照及原始碼替換。
 
 `cpp-core-v2`: `std::minmax`, `std::initializer_list`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. 直接呼叫並直接初始化透明 less 或 greater，支援非空、同型別已檢查包裝器的初始化列表，包括 const 包裝器和參照。完整認證 SDK 路徑，檢查列表端點、借用比較器、可呼叫斷言、identity/invoke、比較配接器及成對掃描，再將兩個所選包裝器的繫結複製到值 pair；相等時選擇首個最小值和最後一個最大值。保留即時繫結、引數求值、參照身分、結果使用及清理。仍拒絕儲存、傳回或帶型別的比較器、volatile 或不相容參照及原始碼替換。

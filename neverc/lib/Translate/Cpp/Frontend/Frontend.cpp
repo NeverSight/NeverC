@@ -14659,6 +14659,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/partition_point.h";
       else if (Name->getName() == "partition")
         ExpectedPath = "__algorithm/partition.h";
+      else if (Name->getName() == "rotate")
+        ExpectedPath = "__algorithm/rotate.h";
       else if (Name->getName() == "partition_copy")
         ExpectedPath = "__algorithm/partition_copy.h";
       else if (Name->getName() == "replace_if")
