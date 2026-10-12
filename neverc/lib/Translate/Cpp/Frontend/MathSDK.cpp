@@ -35253,12 +35253,10 @@ static bool utilityWrapperReducePlus(const State &S, const SourceManager &SM,
                                             Function->getParamDecl(2));
 }
 
-static bool utilityWrapperAccumulatePlus(const State &S,
-                                         const SourceManager &SM,
-                                         const FunctionDecl *Function,
-                                         QualType Input, QualType Accumulator,
-                                         const ASTContext &Context,
-                                         const CallExpr *Selected) {
+static bool utilityWrapperAccumulateArithmetic(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    QualType Input, QualType Accumulator, const ASTContext &Context,
+    const CallExpr *Selected) {
   auto Same = [&](QualType A, QualType B) {
     return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
   };
@@ -35317,7 +35315,8 @@ static bool utilityWrapperAccumulatePlus(const State &S,
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
   if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() || Record->getName() != "plus" ||
+      !Record || !Record->getIdentifier() ||
+      (Record->getName() != "plus" && Record->getName() != "multiplies") ||
       Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
@@ -35327,6 +35326,8 @@ static bool utilityWrapperAccumulatePlus(const State &S,
       !Same(Function->getReturnType(), Accumulator) || !Args ||
       Args->size() != 3)
     return false;
+  // The names above are closed: each admits only its own built-in operation.
+  const auto ArithmeticOpcode = Record->getName() == "plus" ? BO_Add : BO_Mul;
   const QualType Params[] = {Input, Input, Accumulator, ObjectType};
   const QualType Types[] = {Input, Accumulator, ObjectType};
   for (unsigned I = 0; I != 4; ++I)
@@ -35364,7 +35365,7 @@ static bool utilityWrapperAccumulatePlus(const State &S,
            functionalInvokeParameterReference(Cast->getSubExpr(),
                                               Pattern->getParamDecl(0));
   };
-  auto Add = [&](const Expr *E) {
+  auto Apply = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
     const auto *Method =
@@ -35411,7 +35412,8 @@ static bool utilityWrapperAccumulatePlus(const State &S,
     const auto *R =
         B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
     const auto *Sum = R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
-    if (!Sum || Sum->getOpcode() != BO_Add || !Same(Sum->getType(), *Common) ||
+    if (!Sum || Sum->getOpcode() != ArithmeticOpcode ||
+        !Same(Sum->getType(), *Common) ||
         !Same(Sum->getLHS()->getType(), *Common) ||
         !Same(Sum->getRHS()->getType(), *Common) ||
         !Forward(Sum->getLHS(), Method->getParamDecl(0)))
@@ -35455,7 +35457,7 @@ static bool utilityWrapperAccumulatePlus(const State &S,
          Same(Assign->getType(), Accumulator) &&
          functionalInvokeParameterReference(Assign->getLHS(),
                                             Function->getParamDecl(2)) &&
-         Add(Assign->getRHS()) && Result &&
+         Apply(Assign->getRHS()) && Result &&
          functionalInvokeParameterReference(Result->getRetValue(),
                                             Function->getParamDecl(2));
 }
@@ -77984,8 +77986,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Input) &&
         Same(Call->getArg(2)->getType(), Accumulator) &&
         Same(Call->getArg(3)->getType(), Object) &&
-        utilityWrapperAccumulatePlus(S, SM, Function, Input, Accumulator,
-                                     Context, Call))
+        utilityWrapperAccumulateArithmetic(S, SM, Function, Input, Accumulator,
+                                           Context, Call))
       return UtilityOperation::NumericAccumulate;
   }
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&

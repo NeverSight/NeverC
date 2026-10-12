@@ -4899,7 +4899,10 @@ class FunctionLowering {
                L);
       } else {
         const auto Operator =
-            DefaultFunctionalPair        ? ArithmeticFunctionalOperator(4)
+            Wrapper && Operation == UtilityOperation::NumericAccumulate &&
+                    Call->getNumArgs() == 4
+                ? ArithmeticFunctionalOperator(3)
+            : DefaultFunctionalPair      ? ArithmeticFunctionalOperator(4)
             : DefaultUnaryFunctionalPair ? ArithmeticFunctionalOperator(3)
                                          : llvm::StringRef("+");
         auto ReductionOperand = [&](Expression Value) {

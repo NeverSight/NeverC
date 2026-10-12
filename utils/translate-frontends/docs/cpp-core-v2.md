@@ -393,6 +393,20 @@ original dependencies remain rejected.
 
 `cpp-core-v2`: `std::is_heap`, `std::reference_wrapper<T>`, `std::less<>`, `std::greater<>`. Direct calls accept checked raw-pointer wrapper ranges with supported arithmetic or object-pointer referents, including const ranges and const referents, and a directly constructed transparent comparison object. The SDK proof authenticates the borrowed comparator, reference conversions, iterator difference metadata and both child comparisons in the exact heap scan. Comparisons read live referents without changing bindings or values. The result is true exactly when the checked scan reaches the original end; empty and single-element ranges return true. Arguments are evaluated once; result use and temporary cleanup are preserved. Stored, returned or typed comparators, volatile or unsupported referents, source replacements and indirect or casted callees remain rejected. Twenty-five runtime fixtures, thirty-one native-valid rejection boundaries and ten regressions cover this finite path. NeverC’s main source frontend remains C23.
 
+Direct `std::accumulate` with transparent `std::multiplies<>` admits a raw-pointer input
+range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
+including const inputs and referents, and an independent supported non-boolean
+integer (up to 64 bits), float or double initial accumulator. Its four-argument
+form requires a directly initialized transparent `std::multiplies<>`. The
+selected SDK loop reads current referent values in order, applies the usual
+arithmetic conversions and converts each product back to the accumulator type.
+Empty input returns the initial value. Bindings and referents, single operand
+evaluation and cleanup are preserved. The selected SDK loop, multiplies construction
+and operation, lvalue accumulator forwarding and wrapper conversion are
+verified against the selected C++17 implementation. Source replacements, custom, typed, stored or dynamically produced
+operations, enum or nested-wrapper referents, unsupported accumulator types
+and indirect or casted callees remain rejected.
+
 `cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. Direct calls accept mutable raw-pointer ranges of checked wrappers with supported arithmetic or object-pointer referents, including const referents. The SDK proof authenticates category dispatch, trivial-move traits, left and right shifts, forward and greatest-common-divisor cycles, equal-length exchanges, pointer results and selected move adapters. Rotation permutes wrapper bindings, preserves referent values and returns the new position of the original first element. Empty ranges and either empty half retain their standard endpoints. Arguments are evaluated once and result use and temporary cleanup are preserved. Volatile or unsupported referents, source replacements and indirect or casted callees remain rejected. Twenty-five runtime fixtures, sixty-nine native-valid rejection boundaries and ten regressions verify this finite path. NeverC’s main source frontend remains C23.
 
 `cpp-core-v2`: `std::partition`, `std::reference_wrapper<T>`, `std::logical_not<>`. Direct calls with directly initialized transparent logical_not accept mutable raw-pointer ranges of checked wrappers with bool, integers up to 64 bits, float or double referents, optionally const. The complete authenticated SDK path checks iterator category, borrowed predicate, both delegates, endpoint selection, bidirectional scan, pointer pair and iterator swap. Lowering reads live referents, selects values that convert to false, swaps wrapper bindings in SDK order and returns the original partition boundary. Referents retain their values; empty ranges perform no reads or swaps. Argument evaluation, result use and cleanup are preserved. Typed, stored or returned operations, volatile or unsupported referents and source replacements remain rejected. Twenty-five runtime fixtures, fifty-four native-valid rejection boundaries and ten regressions verify this finite path. NeverC’s main source frontend remains C23.

@@ -331775,6 +331775,927 @@ using F=bool(*)(P,P);F selected(){using std::is_heap;return &is_heap<P>;}
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateMultipliesRuntimeAccumulateMultiplies) {
+  const auto Source = tmpFile(
+      "wrapper-accumulate-multiplies-runtime-accumulate-multiplies.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-accumulate-multiplies.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-accumulate-multiplies" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeAlias) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-accumulate-multiplies-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateMultipliesRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=18||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-aliased-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeBool) {
+  const auto Source = tmpFile("wrapper-accumulate-multiplies-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-accumulate-multiplies-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};return std::accumulate(a,a+3,1,std::multiplies<>{})!=0||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-const-input.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeDouble) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-double.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};return std::accumulate(a,a+3,1.0,std::multiplies<>{})!=13.125||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeEmpty) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-accumulate-multiplies-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a,7,std::multiplies<>{});return r!=7||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};x=8;y=-1;int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=-16||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateMultipliesRuntimeMixedAccumulator) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-mixed-accumulator.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-mixed-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};double r=std::accumulate(a,a+3,0.5,std::multiplies<>{});return r!=3.0||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-mixed-accumulator" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeNan) {
+  const auto Source = tmpFile("wrapper-accumulate-multiplies-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-accumulate-multiplies-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double r=std::accumulate(a,a+3,1.0,std::multiplies<>{});return r==r||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateMultipliesRuntimeNarrowAccumulator) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-narrow-accumulator.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-narrow-accumulator.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;int main(){double x=1.5,y=2.0,z=2.0;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=4||x!=1.5||y!=2.0||z!=2.0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-narrow-accumulator" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeNonzeroInitial) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-nonzero-initial.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-nonzero-initial.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,4,std::multiplies<>{});return r!=24||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-nonzero-initial" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 1;}~I(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(A{a}.get(),A{a+3}.get(),I{}.get(),std::multiplies<>{});return n!=3||r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 1;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(read(a),read(a+3),init(),std::multiplies<>{});return n!=3||r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+struct T{int n;};int add(int v,const T&t){return v+t.n;}int main(){T a[]={{3},{1},{2}};return std::accumulate(a,a+3,0,add)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int select(R*a,R*b,int i){return std::accumulate(a,b,i,std::multiplies<>{});}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=select(a,a+3,1);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2};return std::accumulate(a,a+3,0)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeShort) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-accumulate-multiplies-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeSignedZero) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-signed-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0;R a[]={x};double r=std::accumulate(a,a+1,1.0,std::multiplies<>{});return !(1.0/r<0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeSingle) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-single.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+1,1,std::multiplies<>{});return r!=3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeStoredResult) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-stored-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};auto r=std::accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateMultipliesRuntimeUnsigned) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-unsigned.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-unsigned.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,1u,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-accumulate-multiplies-runtime-unsigned" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateMultipliesRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-accumulate-multiplies-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-accumulate-multiplies-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::accumulate;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=accumulate(a,a+3,1,std::multiplies<>{});return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-accumulate-multiplies-runtime-using-declaration" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2WrapperAccumulateMultipliesRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,false,std::multiplies<>{});}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int,std::multiplies<void>);auto selected(P a,P b){return static_cast<F>(&std::accumulate<P,int,std::multiplies<void>>)(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,const W&b){return a+b.get();}auto selected(P a,P b){return std::accumulate(a,b,0,add);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,const W&b)const{return a+b.get();}};auto selected(P a,P b){return std::accumulate(a,b,0,Add{});}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator*(E a,const W&b){return E(int(a)*b.get());}auto selected(P a,P b){return std::accumulate(a,b,Zero,std::multiplies<>{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,__int128(0),std::multiplies<>{});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int,std::multiplies<void>);auto selected(P a,P b){F f=&std::accumulate<P,int,std::multiplies<void>>;return f(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,0.0L,std::multiplies<>{});}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::accumulate(a,b,0.0L,std::multiplies<>{});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator*(int a,const W&b){return a*b.get().get();}}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"operation-expression", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;auto selected(P a,P b){return std::accumulate(a,b,0,(++effects,std::multiplies<>{}));}
+)cpp"},
+      {"returned-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::multiplies<> op(){return std::multiplies<>{};}auto selected(P a,P b){return std::accumulate(a,b,0,op());}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::accumulate(&source(a),&a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept;}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept{return static_cast<int&>(t);}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplication", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator*(int a,const W&b){return a*b.get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)*std::forward<W&>(b)))->decltype(std::forward<int&>(a)*std::forward<W&>(b));}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)*std::forward<W&>(b)))->decltype(std::forward<int&>(a)*std::forward<W&>(b)){return a*b.get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct multiplies;}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-multiplies-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct multiplies<void>;}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::accumulate(&source(a),&a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::accumulate(&source(a),&a+1,0,std::multiplies<>{});}int main(){return 0;}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class B>T accumulate(I,I,T,B);}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int accumulate<P,int,multiplies<void>>(P,P,int,multiplies<void>);}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int accumulate<P,int,multiplies<void>>(P a,P,int n,multiplies<void>){return n+a->get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+struct R{long double n;};int operator*(int a,const R&b){return a*int(b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
+)cpp"},
+      {"stored-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"typed-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,0,std::multiplies<int>{});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int,std::multiplies<void>);F selected(){using std::accumulate;return &accumulate<P,int,std::multiplies<void>>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::accumulate(a,b,0,std::multiplies<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-accumulate-multiplies-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-accumulate-multiplies-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperRotateRuntimeAlias) {
   const auto Source = tmpFile("wrapper-rotate-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-rotate-runtime-alias.nc");
