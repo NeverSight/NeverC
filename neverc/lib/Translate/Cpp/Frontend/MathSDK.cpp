@@ -36605,6 +36605,26 @@ static bool utilityWrapperTransformReduceUnary(
         return false;
     return true;
   };
+  auto ArithmeticOpcode =
+      [&](llvm::StringRef Name) -> std::optional<BinaryOperatorKind> {
+    if (Name == "plus")
+      return BO_Add;
+    if (Name == "minus")
+      return BO_Sub;
+    if (Name == "multiplies")
+      return BO_Mul;
+    if (Name == "divides")
+      return BO_Div;
+    if (Name == "modulus")
+      return BO_Rem;
+    if (Name == "bit_and")
+      return BO_And;
+    if (Name == "bit_or")
+      return BO_Or;
+    if (Name == "bit_xor")
+      return BO_Xor;
+    return std::nullopt;
+  };
   auto Construct = [&](unsigned I,
                        llvm::StringRef Name) -> const CXXRecordDecl * {
     const auto *Argument =
@@ -36639,7 +36659,9 @@ static bool utilityWrapperTransformReduceUnary(
          !Record->getNumBases());
     if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
         !Object || !Record || !Record->getIdentifier() ||
-        Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
+        (I == 3 ? !ArithmeticOpcode(Record->getName())
+                : Record->getName() != Name) ||
+        Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
       return nullptr;
@@ -36655,6 +36677,12 @@ static bool utilityWrapperTransformReduceUnary(
   const auto *Plus = Construct(3, "plus");
   const auto *Negate = Construct(4, "negate");
   if (!Plus || !Negate || !Signature(Function, Plus, Negate))
+    return false;
+  const auto ReductionOpcode = ArithmeticOpcode(Plus->getName());
+  if (!ReductionOpcode ||
+      ((*ReductionOpcode == BO_Rem || *ReductionOpcode == BO_And ||
+        *ReductionOpcode == BO_Or || *ReductionOpcode == BO_Xor) &&
+       !(*Common)->isIntegerType()))
     return false;
   auto Forward = [&](const Expr *E, const ParmVarDecl *Parameter) {
     const auto *C =
@@ -36795,10 +36823,10 @@ static bool utilityWrapperTransformReduceUnary(
   auto Add = [&](const Expr *E) {
     const auto *C = dyn_cast_or_null<CXXOperatorCallExpr>(
         functionalInvokeStrippedExpression(E));
-    const auto *Value =
-        Operation(C, Plus, 3, Accumulator, *TermType,
-                  Context.getRValueReferenceType(Accumulator),
-                  Context.getRValueReferenceType(*TermType), *Common, BO_Add);
+    const auto *Value = Operation(C, Plus, 3, Accumulator, *TermType,
+                                  Context.getRValueReferenceType(Accumulator),
+                                  Context.getRValueReferenceType(*TermType),
+                                  *Common, *ReductionOpcode);
     if (!Value ||
         !utilityAlgorithmScalarForward(
             S, SM,

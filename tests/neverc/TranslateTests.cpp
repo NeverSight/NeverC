@@ -241037,6 +241037,255 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformReduceArithmeticBitwisePromotionsWide) {
+  const auto Source = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-bitwise-promotions-wide.cpp");
+  const auto Output = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-bitwise-promotions-wide.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ bool t=true,f=false;std::reference_wrapper<bool> flags[]={t,f,t};
+ int a=std::transform_reduce(flags,flags+3,15,std::bit_or<>{},std::negate<>{});
+ int b=std::transform_reduce(flags,flags+3,15,std::bit_xor<>{},std::negate<>{});
+ unsigned long long x=0x8000000000000001ULL,y=0x8000000000000002ULL;
+ std::reference_wrapper<unsigned long long> input[]={x,y};
+ unsigned long long c=std::transform_reduce(input,input+2,~0ULL,std::bit_and<>{},std::negate<>{});
+ return a!=-1 || b!=15 || c!=0x7ffffffffffffffeULL;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-reduce-arithmetic-bitwise-promotions-wide" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformReduceArithmeticEmptyEffectsCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-empty-effects-cleanup.cpp");
+  const auto Output = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int reads=0,cleaned=0;
+struct Range{R*p;R*get(){++reads;return p;}~Range(){++cleaned;}};
+struct Initial{int v;int get(){++reads;return v;}~Initial(){++cleaned;}};
+int main(){R*p=nullptr;
+  int v0=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::plus<>{},std::negate<>{});
+  int v1=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::minus<>{},std::negate<>{});
+  int v2=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::multiplies<>{},std::negate<>{});
+  int v3=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::divides<>{},std::negate<>{});
+  int v4=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::modulus<>{},std::negate<>{});
+  int v5=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::bit_and<>{},std::negate<>{});
+  int v6=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::bit_or<>{},std::negate<>{});
+  int v7=std::transform_reduce(Range{p}.get(),Range{p}.get(),Initial{17}.get(),std::bit_xor<>{},std::negate<>{});
+  return v0!=17||v1!=17||v2!=17||v3!=17||v4!=17||v5!=17||v6!=17||v7!=17||reads!=24||cleaned!=24;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-reduce-arithmetic-empty-effects-cleanup" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformReduceArithmeticIntegerReductionMatrix) {
+  const auto Source = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-integer-reduction-matrix.cpp");
+  const auto Output = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-integer-reduction-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){int x=-7;std::reference_wrapper<int> input[]={x};
+  if(std::transform_reduce(input,input+1,84,std::plus<>{},std::negate<>{})!=91)return 1;
+  if(std::transform_reduce(input,input+1,84,std::minus<>{},std::negate<>{})!=77)return 1;
+  if(std::transform_reduce(input,input+1,84,std::multiplies<>{},std::negate<>{})!=588)return 1;
+  if(std::transform_reduce(input,input+1,84,std::divides<>{},std::negate<>{})!=12)return 1;
+  if(std::transform_reduce(input,input+1,84,std::modulus<>{},std::negate<>{})!=0)return 1;
+  if(std::transform_reduce(input,input+1,84,std::bit_and<>{},std::negate<>{})!=4)return 1;
+  if(std::transform_reduce(input,input+1,84,std::bit_or<>{},std::negate<>{})!=87)return 1;
+  if(std::transform_reduce(input,input+1,84,std::bit_xor<>{},std::negate<>{})!=83)return 1;
+  return x!=-7 || &input[0].get()!=&x;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-reduce-arithmetic-integer-reduction-matrix" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformReduceArithmeticMixedStepConversion) {
+  const auto Source = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-mixed-step-conversion.cpp");
+  const auto Output = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-mixed-step-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ const double x=3.8,y=3.8,z=3.8; const std::reference_wrapper<const double> input[]={x,y,z};
+ int a=std::transform_reduce(input,input+3,10,std::minus<>{},std::negate<>{});
+ const double p=-1.5,q=-1.5,s=-1.5;const std::reference_wrapper<const double> positive[]={p,q,s};
+ int b=std::transform_reduce(positive,positive+3,3,std::multiplies<>{},std::negate<>{});
+ unsigned short n=2;std::reference_wrapper<unsigned short> repeated[]={n,n,n};
+ unsigned char c=std::transform_reduce(repeated,repeated+3,(unsigned char)20,std::multiplies<>{},std::negate<>{});
+ return a!=19 || b!=9 || c!=96 || n!=2 || &repeated[1].get()!=&n;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-reduce-arithmetic-mixed-step-conversion" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformReduceArithmeticSignedDivisionModulus) {
+  const auto Source = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-signed-division-modulus.cpp");
+  const auto Output = tmpFile(
+      "wrapper-unary-transform-reduce-arithmetic-signed-division-modulus.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){
+ int a=-2,b=3,c=-2;std::reference_wrapper<int> input[]={a,b,c};
+ int quotient=std::transform_reduce(input,input+3,20,std::divides<>{},std::negate<>{});
+ int d=-10,e=-4,f=-3;std::reference_wrapper<int> mod[]={d,e,f};
+ int remainder=std::transform_reduce(mod,mod+3,-29,std::modulus<>{},std::negate<>{});
+ return quotient!=-1 || remainder!=-1 || a!=-2 || d!=-10;
+}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-reduce-arithmetic-signed-division-modulus" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformReduceArithmeticRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"family-bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,false,std::bit_and<>{},std::negate<>{});}
+)cpp"},
+      {"family-returned-bit-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_or<> op(){return std::bit_or<>{};}auto selected(P a,P b){return std::transform_reduce(a,b,0,op(),std::negate<>{});}
+)cpp"},
+      {"family-source-reduction-divides", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)/std::forward<int>(b)))->decltype(std::forward<int>(a)/std::forward<int>(b)){return a+b;}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::divides<>{},std::negate<>{});}
+)cpp"},
+      {"family-source-reduction-minus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)-std::forward<int>(b)))->decltype(std::forward<int>(a)-std::forward<int>(b)){return a+b;}}}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::minus<>{},std::negate<>{});}
+)cpp"},
+      {"family-source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::bit_xor<>{},std::negate<>{});}
+)cpp"},
+      {"family-stored-multiplies", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+)cpp"},
+      {"family-typed-modulus", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::modulus<int>{},std::negate<>{});}
+)cpp"},
+      {"family-unknown-logical-or", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::logical_or<>{},std::negate<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-unary-transform-reduce-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-unary-transform-reduce-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperTransformReduceUnaryRuntimeAlias) {
   const auto Source =
       tmpFile("wrapper-transform-reduce-unary-runtime-alias.cpp");
