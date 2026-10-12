@@ -33554,7 +33554,9 @@ static bool utilityWrapperExclusiveScan(const State &S, const SourceManager &SM,
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
+      (!Arithmetic(Output->getPointeeType()) &&
+       !Same(Output->getPointeeType(), Context.BoolTy)) ||
+      !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -33836,8 +33838,8 @@ static bool utilityWrapperAdjacentDifference(const State &S,
   if (!Wrapper || !Common || InputElement.isVolatileQualified() ||
       InputElement.isRestrictQualified() || InputElement.hasAddressSpace() ||
       Wrapper->ReferentType->isEnumeralType() ||
-      ResultElement.hasQualifiers() || ResultElement->isEnumeralType() ||
-      ResultElement->isBooleanType() ||
+      Wrapper->ReferentType->isPointerType() || ResultElement.hasQualifiers() ||
+      ResultElement->isEnumeralType() ||
       !((ResultElement->isIntegerType() &&
          Context.getTypeSize(ResultElement) <= 64) ||
         ResultElement->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -34588,7 +34590,9 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
+      (!Arithmetic(Output->getPointeeType()) &&
+       !Same(Output->getPointeeType(), Context.BoolTy)) ||
+      !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -34843,7 +34847,9 @@ static bool utilityWrapperExclusiveScanArithmetic(
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
+      (!Arithmetic(Output->getPointeeType()) &&
+       !Same(Output->getPointeeType(), Context.BoolTy)) ||
+      !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -35582,8 +35588,8 @@ static bool utilityWrapperAdjacentDifferenceArithmetic(
   if (!Wrapper || !Common || InputElement.isVolatileQualified() ||
       InputElement.isRestrictQualified() || InputElement.hasAddressSpace() ||
       Wrapper->ReferentType->isEnumeralType() ||
-      ResultElement.hasQualifiers() || ResultElement->isEnumeralType() ||
-      ResultElement->isBooleanType() ||
+      Wrapper->ReferentType->isPointerType() || ResultElement.hasQualifiers() ||
+      ResultElement->isEnumeralType() ||
       !((ResultElement->isIntegerType() &&
          Context.getTypeSize(ResultElement) <= 64) ||
         ResultElement->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -36929,7 +36935,9 @@ static bool utilityWrapperTransformExclusiveScan(
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
+      (!Arithmetic(Output->getPointeeType()) &&
+       !Same(Output->getPointeeType(), Context.BoolTy)) ||
+      !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -37329,7 +37337,9 @@ static bool utilityWrapperTransformInclusiveScan(
   };
   if (!Input->isPointerType() || Input.hasQualifiers() ||
       !Output->isPointerType() || Output.hasQualifiers() ||
-      !Arithmetic(Output->getPointeeType()) || !Arithmetic(Accumulator))
+      (!Arithmetic(Output->getPointeeType()) &&
+       !Same(Output->getPointeeType(), Context.BoolTy)) ||
+      !Arithmetic(Accumulator))
     return false;
   const auto Element = Input->getPointeeType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
