@@ -240871,6 +240871,324 @@ auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_r
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformBoolOutputsEmptyEffectsCleanup) {
+  const auto Source =
+      tmpFile("wrapper-unary-transform-bool-outputs-empty-effects-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-unary-transform-bool-outputs-empty-effects-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{bool*p;~Output(){++cleaned;}bool*get(){++reads;return p;}};
+int main(){int n=3;W a[]={n};bool out[]={true,true};
+ if(std::transform(Input{a}.get(),Input{a}.get(),Output{out}.get(),std::negate<>{})!=out)return 1;
+ if(std::transform(Input{a}.get(),Input{a}.get(),Output{out}.get(),std::bit_not<>{})!=out)return 1;
+return reads!=6||cleaned!=6||out[0]!=true||out[1]!=true||n!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unary-transform-bool-outputs-empty-effects-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformBoolOutputsFloatingNanZero) {
+  const auto Source =
+      tmpFile("wrapper-unary-transform-bool-outputs-floating-nan-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-unary-transform-bool-outputs-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){const double n=0.0/0.0,z=0.0,m=-0.0,t=0x1p-100;const std::reference_wrapper<const double>a[]={n,z,m,t};bool out[5]={true,true,true,true,true};
+ if(std::transform(a,a+4,out,std::negate<>{})!=out+4)return 1;
+ if(out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true||out[4]!=true)return 2;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unary-transform-bool-outputs-floating-nan-zero" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformBoolOutputsLiveBoolAliases) {
+  const auto Source =
+      tmpFile("wrapper-unary-transform-bool-outputs-live-bool-aliases.cpp");
+  const auto Output =
+      tmpFile("wrapper-unary-transform-bool-outputs-live-bool-aliases.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){
+ {bool v[]={true,false,true,true,true};const std::reference_wrapper<bool>a[]={v[0],v[1],v[2]};
+ if(std::transform(a,a+3,v+0,std::negate<>{})!=v+3)return 1;
+ if(v[0]!=true||v[1]!=false||v[2]!=true||v[3]!=true||v[4]!=true)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {bool v[]={true,false,true,true,true};const std::reference_wrapper<bool>a[]={v[0],v[1],v[2]};
+ if(std::transform(a,a+3,v+1,std::negate<>{})!=v+4)return 1;
+ if(v[0]!=true||v[1]!=true||v[2]!=true||v[3]!=true||v[4]!=true)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {bool v[]={true,false,true,true,true};const std::reference_wrapper<bool>a[]={v[0],v[1],v[2]};
+ if(std::transform(a,a+3,v+0,std::bit_not<>{})!=v+3)return 1;
+ if(v[0]!=true||v[1]!=true||v[2]!=true||v[3]!=true||v[4]!=true)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+ {bool v[]={true,false,true,true,true};const std::reference_wrapper<bool>a[]={v[0],v[1],v[2]};
+ if(std::transform(a,a+3,v+1,std::bit_not<>{})!=v+4)return 1;
+ if(v[0]!=true||v[1]!=true||v[2]!=true||v[3]!=true||v[4]!=true)return 2;
+ if(&a[0].get()!=v||&a[1].get()!=v+1||&a[2].get()!=v+2)return 3;}
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unary-transform-bool-outputs-live-bool-aliases" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformBoolOutputsOperationMatrix) {
+  const auto Source =
+      tmpFile("wrapper-unary-transform-bool-outputs-operation-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-unary-transform-bool-outputs-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){const int z=0,p=2,n=-1;const std::reference_wrapper<const int>a[]={z,p,n,p};bool out[5]={true,true,true,true,true};
+ if(std::transform(a,a+1,out,std::negate<>{})!=out+1)return 1;
+ if(out[0]!=false||out[4]!=true)return 2;
+ if(std::transform(a,a+2,out,std::negate<>{})!=out+2)return 1;
+ if(out[0]!=false||out[1]!=true||out[4]!=true)return 2;
+ if(std::transform(a,a+4,out,std::negate<>{})!=out+4)return 1;
+ if(out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=true||out[4]!=true)return 2;
+ if(std::transform(a,a+1,out,std::bit_not<>{})!=out+1)return 1;
+ if(out[0]!=true||out[4]!=true)return 2;
+ if(std::transform(a,a+2,out,std::bit_not<>{})!=out+2)return 1;
+ if(out[0]!=true||out[1]!=true||out[4]!=true)return 2;
+ if(std::transform(a,a+4,out,std::bit_not<>{})!=out+4)return 1;
+ if(out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true||out[4]!=true)return 2;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-bool-outputs-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformBoolOutputsWideAndPromotedConversion) {
+  const auto Source = tmpFile(
+      "wrapper-unary-transform-bool-outputs-wide-and-promoted-conversion.cpp");
+  const auto Output = tmpFile(
+      "wrapper-unary-transform-bool-outputs-wide-and-promoted-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main(){const unsigned long long all=0xffffffffffffffffULL,z=0,high=0x8000000000000000ULL;const std::reference_wrapper<const unsigned long long>a[]={all,z,high};const signed char n=-1,p=1;const std::reference_wrapper<const signed char>b[]={n,p,n};bool out[5]={true,true,true,true,true};
+ if(std::transform(a,a+3,out,std::negate<>{})!=out+3)return 1;
+ if(out[0]!=true||out[1]!=false||out[2]!=true||out[4]!=true)return 2;
+ if(std::transform(a,a+3,out,std::bit_not<>{})!=out+3)return 1;
+ if(out[0]!=false||out[1]!=true||out[2]!=true||out[4]!=true)return 2;
+ if(std::transform(b,b+3,out,std::negate<>{})!=out+3)return 1;
+ if(out[0]!=true||out[1]!=true||out[2]!=true||out[4]!=true)return 2;
+ if(std::transform(b,b+3,out,std::bit_not<>{})!=out+3)return 1;
+ if(out[0]!=false||out[1]!=true||out[2]!=false||out[4]!=true)return 2;
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unary-transform-bool-outputs-wide-and-promoted-conversion" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUnaryTransformBoolOutputsRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bit_not-long-double-output", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,long double*out){return std::transform(a,b,out,std::bit_not<>{});}
+)cpp"},
+      {"bit_not-returned", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_not<>make(){return {};}
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,make());}
+)cpp"},
+      {"bit_not-source-conversion", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::bit_not<>{});}
+)cpp"},
+      {"bit_not-source-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_not<void>::operator()<W&>(W&v)const noexcept(noexcept(~std::forward<W&>(v)))->decltype(~std::forward<W&>(v)){return 0;}}}
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::bit_not<>{});}
+)cpp"},
+      {"bit_not-stored", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){std::bit_not<>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"bit_not-typed", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::bit_not<int>{});}
+)cpp"},
+      {"bit_not-volatile-output", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile bool*out){return std::transform(a,b,out,std::bit_not<>{});}
+)cpp"},
+      {"bit_not-volatile-referent", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::bit_not<>{});}
+)cpp"},
+      {"negate-long-double-output", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,long double*out){return std::transform(a,b,out,std::negate<>{});}
+)cpp"},
+      {"negate-returned", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::negate<>make(){return {};}
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,make());}
+)cpp"},
+      {"negate-source-conversion", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
+)cpp"},
+      {"negate-source-operation", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&v)const noexcept(noexcept(-std::forward<W&>(v)))->decltype(-std::forward<W&>(v)){return 0;}}}
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
+)cpp"},
+      {"negate-stored", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){std::negate<>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"negate-typed", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<int>{});}
+)cpp"},
+      {"negate-volatile-output", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile bool*out){return std::transform(a,b,out,std::negate<>{});}
+)cpp"},
+      {"negate-volatile-referent", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-unary-transform-bool-outputs-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-unary-transform-bool-outputs-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(std::filesystem::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInclusiveScanRuntimeAlias) {
   const auto Source = tmpFile("wrapper-inclusive-scan-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-inclusive-scan-runtime-alias.nc");
@@ -254032,11 +254350,12 @@ using std::transform;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9
 TEST_F(TranslateTest,
        CoreV2WrapperTransformNegateRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"bool-output", R"cpp(
+      {"volatile-bool-output", R"cpp(
 #include <algorithm>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
+auto selected(P a,P b,volatile bool*out){return std::transform(a,b,out,std::negate<>{});}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
@@ -254917,11 +255236,12 @@ int main(){int x=0;R a[]={x};int out[]={9,9};auto p=std::transform(a,a+1,out,std
 TEST_F(TranslateTest,
        CoreV2WrapperTransformBitNotRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"bool-output", R"cpp(
+      {"volatile-bool-output", R"cpp(
 #include <algorithm>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::bit_not<>{});}
+auto selected(P a,P b,volatile bool*out){return std::transform(a,b,out,std::bit_not<>{});}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>

@@ -37695,7 +37695,6 @@ static bool utilityWrapperTransformNegate(const State &S,
     return false;
   const auto OutputElement = Output->getPointeeType();
   if (OutputElement.hasQualifiers() || OutputElement->isEnumeralType() ||
-      OutputElement->isBooleanType() ||
       !((OutputElement->isIntegerType() &&
          Context.getTypeSize(OutputElement) <= 64) ||
         OutputElement->isSpecificBuiltinType(BuiltinType::Float) ||
@@ -37941,7 +37940,6 @@ static bool utilityWrapperTransformBitNot(const State &S,
     return false;
   const auto OutputElement = Output->getPointeeType();
   if (OutputElement.hasQualifiers() || OutputElement->isEnumeralType() ||
-      OutputElement->isBooleanType() ||
       !((OutputElement->isIntegerType() &&
          Context.getTypeSize(OutputElement) <= 64) ||
         OutputElement->isSpecificBuiltinType(BuiltinType::Float) ||
