@@ -16,6 +16,8 @@ Le pipeline de compilation dyncode est le cœur de la recherche NeverC. Architec
 
 **[Compilateur dyncode →](dyncode-compiler.md)**
 
+**[DynCode hébergé et traduction C++ →](hosted-dyncode.md)**
+
 | Document | Description |
 |----------|-------------|
 | [README](dyncode-compiler.md) | Vue d'ensemble, démarrage rapide, cibles supportées |

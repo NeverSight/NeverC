@@ -16,6 +16,8 @@ The dyncode compilation pipeline is NeverC's primary research focus. For archite
 
 **[DynCode Compiler →](dyncode-compiler.md)**
 
+**[Hosted DynCode and C++ translation →](hosted-dyncode.md)**
+
 | Document | Description |
 |----------|-------------|
 | [README](dyncode-compiler.md) | Overview, quick start, supported targets |

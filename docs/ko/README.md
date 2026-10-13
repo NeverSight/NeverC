@@ -16,6 +16,8 @@ DynCode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. �
 
 **[DynCode 컴파일러 →](dyncode-compiler.md)**
 
+**[Hosted DynCode와 C++ 변환 →](hosted-dyncode.md)**
+
 | 문서 | 설명 |
 |------|------|
 | [README](dyncode-compiler.md) | 개요, 빠른 시작, 지원 대상 |

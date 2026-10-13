@@ -16,6 +16,8 @@ Die DynCode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Archit
 
 **[DynCode-Compiler →](dyncode-compiler.md)**
 
+**[Hosted DynCode und C++-Übersetzung →](hosted-dyncode.md)**
+
 | Dokument | Beschreibung |
 |----------|--------------|
 | [README](dyncode-compiler.md) | Überblick, Schnellstart, unterstützte Ziele |

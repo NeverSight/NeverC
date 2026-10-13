@@ -18,6 +18,8 @@
 
 **[مُجمِّع dyncode →](dyncode-compiler.md)**
 
+**[DynCode المستضاف وترجمة C++ →](hosted-dyncode.md)**
+
 | المستند | الوصف |
 |---------|--------|
 | [README](dyncode-compiler.md) | نظرة عامة، بدء سريع، الأهداف المدعومة |

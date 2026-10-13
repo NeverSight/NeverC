@@ -16,6 +16,8 @@ DynCode 编译流水线是 NeverC 的核心研究方向。架构、CLI 选项、
 
 **[DynCode 编译器 →](dyncode-compiler.md)**
 
+**[Hosted DynCode 与 C++ 翻译 →](hosted-dyncode.md)**
+
 | 文档 | 说明 |
 |------|------|
 | [README](dyncode-compiler.md) | 概述、快速开始、支持的目标 |

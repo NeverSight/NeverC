@@ -16,6 +16,8 @@
 
 **[Компилятор dyncode →](dyncode-compiler.md)**
 
+**[Hosted DynCode и перевод C++ →](hosted-dyncode.md)**
+
 | Документ | Описание |
 |----------|----------|
 | [README](dyncode-compiler.md) | Обзор, быстрый старт, поддерживаемые цели |

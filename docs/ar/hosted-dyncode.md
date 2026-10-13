@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **Languages**: [English](../hosted-dyncode.md) | [简体中文](../zh-CN/hosted-dyncode.md) | [繁體中文](../zh-TW/hosted-dyncode.md) | [日本語](../ja/hosted-dyncode.md) | [한국어](../ko/hosted-dyncode.md) | [Français](../fr/hosted-dyncode.md) | [Deutsch](../de/hosted-dyncode.md) | [Español](../es/hosted-dyncode.md) | [Italiano](../it/hosted-dyncode.md) | [Русский](../ru/hosted-dyncode.md) | [العربية](hosted-dyncode.md)
 
 [← DynCode](dyncode-compiler.md)
@@ -20,3 +22,5 @@ neverc --no-default-config --target=aarch64-unknown-linux-gnu \
 ```
 
 يسجل التدقيق `execution_profile="hosted-v1"` و`keep_unwind=true` و`target_triple`. يحسب `input_digest` بصمة الكائن المحفوظ و`output_digest` بصمة الحمولة النهائية بعد النقل والتحقق. يجب التحقق من البصمتين والكود والمدخل وتسجيل بيانات فك المكدس الحقيقية.
+
+</div>

@@ -16,6 +16,8 @@ La pipeline di compilazione dyncode è il focus principale di ricerca di NeverC.
 
 **[Compilatore dyncode →](dyncode-compiler.md)**
 
+**[DynCode ospitato e traduzione C++ →](hosted-dyncode.md)**
+
 | Documento | Descrizione |
 |-----------|-------------|
 | [README](dyncode-compiler.md) | Panoramica, avvio rapido, target supportati |

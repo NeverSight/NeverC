@@ -16,6 +16,8 @@ El pipeline de compilación de dyncode es el foco principal de investigación de
 
 **[Compilador de dyncode →](dyncode-compiler.md)**
 
+**[DynCode alojado y traducción C++ →](hosted-dyncode.md)**
+
 | Documento | Descripción |
 |-----------|-------------|
 | [README](dyncode-compiler.md) | Resumen, inicio rápido, objetivos soportados |

@@ -16,6 +16,8 @@ DynCode 編譯管線是 NeverC 的核心研究方向。架構、CLI 選項、平
 
 **[DynCode 編譯器 →](dyncode-compiler.md)**
 
+**[Hosted DynCode 與 C++ 翻譯 →](hosted-dyncode.md)**
+
 | 文件 | 說明 |
 |------|------|
 | [README](dyncode-compiler.md) | 概述、快速開始、支援的目標 |

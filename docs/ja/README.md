@@ -16,6 +16,8 @@ DynCode コンパイルパイプラインは NeverC の主要な研究領域で�
 
 **[DynCode コンパイラ →](dyncode-compiler.md)**
 
+**[Hosted DynCode と C++ 変換 →](hosted-dyncode.md)**
+
 | ドキュメント | 説明 |
 |-------------|------|
 | [README](dyncode-compiler.md) | 概要、クイックスタート、サポートターゲット |
