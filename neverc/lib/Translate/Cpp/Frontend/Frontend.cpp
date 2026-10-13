@@ -15939,6 +15939,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     case UtilityOperation::AlgorithmUniqueCopy:
       return Function->getNumParams() == 3 ? WrapperCall(3, {})
                                           : WrapperCall(4, {3});
+    case UtilityOperation::AlgorithmEqual:
+    case UtilityOperation::AlgorithmMismatch:
+      if (Function->getNumParams() == 3)
+        return WrapperCall(3, {});
+      if (Function->getNumParams() == 4)
+        return Function->getParamDecl(3)->getType()->isPointerType()
+                   ? WrapperCall(4, {})
+                   : WrapperCall(4, {3});
+      return WrapperCall(5, {4});
     case UtilityOperation::AlgorithmCopyIf:
     case UtilityOperation::AlgorithmRemoveCopyIf:
       return WrapperCall(4, {3});

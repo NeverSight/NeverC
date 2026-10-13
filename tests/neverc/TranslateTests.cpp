@@ -278535,6 +278535,275 @@ auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::mismatch(a,b,c
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchResultQueriesComparisonsDefaults) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-result-query-comparisons-defaults.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-result-query-comparisons-defaults.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=1,y=2,z=3,l=1,m=2,k=4;using W=std::reference_wrapper<int>;const W a[]={x,y,z};W b[]={l,m,k};
+{auto result=std::equal(a,a+3,b,std::equal_to<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,std::not_equal_to<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,std::less<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::less<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,std::greater<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,std::less_equal<>{});static_assert(__is_same(decltype(result),bool));if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=true)return 1;}
+{auto result=std::equal(a,a+3,b,std::greater_equal<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,b+3,std::equal_to<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,b+3,std::not_equal_to<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,b+3,std::less<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::less<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,b+3,std::greater<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,b+3,std::less_equal<>{});static_assert(__is_same(decltype(result),bool));if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=true)return 1;}
+{auto result=std::equal(a,a+3,b,b+3,std::greater_equal<>{});static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(a,a+3,b,b+3);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::mismatch(a,a+3,b,std::equal_to<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{auto result=std::mismatch(a,a+3,b,std::not_equal_to<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{auto result=std::mismatch(a,a+3,b,std::less<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{const std::less<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{auto result=std::mismatch(a,a+3,b,std::greater<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{const std::greater<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{auto result=std::mismatch(a,a+3,b,std::less_equal<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+3||result.second!=b+3)return 1;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+3||result.second!=b+3)return 1;}
+{auto result=std::mismatch(a,a+3,b,std::greater_equal<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{auto result=std::mismatch(a,a+3,b);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3,std::equal_to<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3,std::not_equal_to<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3,std::less<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{const std::less<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3,std::greater<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{const std::greater<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3,std::less_equal<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+3||result.second!=b+3)return 1;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+3||result.second!=b+3)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3,std::greater_equal<>{});static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+)cpp"
+             R"cpp({const std::greater_equal<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{auto result=std::mismatch(a,a+3,b,b+3);static_assert(__is_same(decltype(result),std::pair<const W*,W*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+return x!=1||y!=2||z!=3||l!=1||m!=2||k!=4||&a[0].get()!=&x||&b[1].get()!=&m;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-result-query-comparisons-defaults" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchResultQueriesConstBoolFloating) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-result-query-const-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-result-query-const-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool f=false,t=true;const double zero=-0.0,positive=0.0,nan=0.0/0.0,tiny=0x1p-100,twice=0x1p-99;using B=std::reference_wrapper<const bool>;using D=std::reference_wrapper<const double>;const B a[]={f,t,f};B b[]={f,t,t};const D c[]={zero,nan,tiny};D d[]={positive,nan,twice};
+{const std::equal_to<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::equal_to<>op;auto result=std::equal(c,c+3,d,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::not_equal_to<>op;auto result=std::equal(c,c+3,d,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::less<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::less<>op;auto result=std::equal(c,c+3,d,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::greater<>op;auto result=std::equal(c,c+3,d,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=true)return 1;}
+{std::less_equal<>op;auto result=std::equal(c,c+3,d,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+3,b,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::greater_equal<>op;auto result=std::equal(c,c+3,d,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(c,c+3,d);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::equal_to<>op;auto result=std::equal(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::not_equal_to<>op;auto result=std::equal(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::less<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::less<>op;auto result=std::equal(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::greater<>op;auto result=std::equal(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=true)return 1;}
+{std::less_equal<>op;auto result=std::equal(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{std::greater_equal<>op;auto result=std::equal(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{auto result=std::equal(c,c+3,d,d+3);static_assert(__is_same(decltype(result),bool));if(result!=false)return 1;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{std::equal_to<>op;auto result=std::mismatch(c,c+3,d,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{std::not_equal_to<>op;auto result=std::mismatch(c,c+3,d,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+0||result.second!=d+0)return 1;}
+{const std::less<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{std::less<>op;auto result=std::mismatch(c,c+3,d,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+0||result.second!=d+0)return 1;}
+{const std::greater<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{std::greater<>op;auto result=std::mismatch(c,c+3,d,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+0||result.second!=d+0)return 1;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+3||result.second!=b+3)return 1;}
+{std::less_equal<>op;auto result=std::mismatch(c,c+3,d,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+3,b,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{std::greater_equal<>op;auto result=std::mismatch(c,c+3,d,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+{auto result=std::mismatch(c,c+3,d);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{std::equal_to<>op;auto result=std::mismatch(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{std::not_equal_to<>op;auto result=std::mismatch(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+0||result.second!=d+0)return 1;}
+{const std::less<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{std::less<>op;auto result=std::mismatch(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+0||result.second!=d+0)return 1;}
+{const std::greater<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+0||result.second!=b+0)return 1;}
+{std::greater<>op;auto result=std::mismatch(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+0||result.second!=d+0)return 1;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+3||result.second!=b+3)return 1;}
+{std::less_equal<>op;auto result=std::mismatch(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+)cpp"
+             R"cpp({const std::greater_equal<>op;auto result=std::mismatch(a,a+3,b,b+3,op);static_assert(__is_same(decltype(result),std::pair<const B*,B*>));if(result.first!=a+2||result.second!=b+2)return 1;}
+{std::greater_equal<>op;auto result=std::mismatch(c,c+3,d,d+3,op);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+{auto result=std::mismatch(c,c+3,d,d+3);static_assert(__is_same(decltype(result),std::pair<const D*,D*>));if(result.first!=c+1||result.second!=d+1)return 1;}
+return f||!t||&a[0].get()!=&f||&b[2].get()!=&t||&c[1].get()!=&nan||&d[2].get()!=&twice||!(tiny>0.0);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-result-query-const-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchResultQueriesEvaluationCleanup) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-result-query-evaluation-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-result-query-evaluation-cleanup.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads,cleaned;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto equal3_equal_to(P a,P b,P c,const std::equal_to<>&op){auto result=std::equal(a,b,c,op);static_assert(__is_same(decltype(result),bool));return result;}
+auto equal3_less_equal(P a,P b,P c,const std::less_equal<>&op){auto result=std::equal(a,b,c,op);static_assert(__is_same(decltype(result),bool));return result;}
+auto equal4_equal_to(P a,P b,P c,P d,const std::equal_to<>&op){auto result=std::equal(a,b,c,d,op);static_assert(__is_same(decltype(result),bool));return result;}
+auto equal4_less_equal(P a,P b,P c,P d,const std::less_equal<>&op){auto result=std::equal(a,b,c,d,op);static_assert(__is_same(decltype(result),bool));return result;}
+auto mismatch3_equal_to(P a,P b,P c,const std::equal_to<>&op){auto result=std::mismatch(a,b,c,op);static_assert(__is_same(decltype(result),std::pair<P,P>));return result;}
+auto mismatch3_less_equal(P a,P b,P c,const std::less_equal<>&op){auto result=std::mismatch(a,b,c,op);static_assert(__is_same(decltype(result),std::pair<P,P>));return result;}
+auto mismatch4_equal_to(P a,P b,P c,P d,const std::equal_to<>&op){auto result=std::mismatch(a,b,c,d,op);static_assert(__is_same(decltype(result),std::pair<P,P>));return result;}
+auto mismatch4_less_equal(P a,P b,P c,P d,const std::less_equal<>&op){auto result=std::mismatch(a,b,c,d,op);static_assert(__is_same(decltype(result),std::pair<P,P>));return result;}
+int main(){int x=1,y=2,z=3,l=1,m=2,k=4;W a[]={x,y,z};W b[]={l,m,k};const std::equal_to<>eq;const std::less_equal<>le;
+{auto result=std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get());static_assert(__is_same(decltype(result),bool));if(!result)return 1;}
+{auto result=std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get(),le);static_assert(__is_same(decltype(result),bool));if(!result)return 1;}
+{auto result=std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get());static_assert(__is_same(decltype(result),bool));if(!result)return 1;}
+{auto result=std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get(),le);static_assert(__is_same(decltype(result),bool));if(!result)return 1;}
+{auto result=std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get());static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a||result.second!=b)return 1;}
+{auto result=std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get(),le);static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a||result.second!=b)return 1;}
+{auto result=std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get());static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a||result.second!=b)return 1;}
+{auto result=std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get(),le);static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a||result.second!=b)return 1;}
+if(reads!=28||cleaned!=28)return 2;
+{auto result=equal3_equal_to(a,a+3,b,eq);static_assert(__is_same(decltype(result),bool));if(result!=false)return 3;}
+{auto result=equal3_less_equal(a,a+3,b,le);static_assert(__is_same(decltype(result),bool));if(result!=true)return 3;}
+{auto result=equal4_equal_to(a,a+3,b,b+3,eq);static_assert(__is_same(decltype(result),bool));if(result!=false)return 3;}
+{auto result=equal4_less_equal(a,a+3,b,b+3,le);static_assert(__is_same(decltype(result),bool));if(result!=true)return 3;}
+{auto result=mismatch3_equal_to(a,a+3,b,eq);static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a+2||result.second!=b+2)return 3;}
+{auto result=mismatch3_less_equal(a,a+3,b,le);static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a+3||result.second!=b+3)return 3;}
+{auto result=mismatch4_equal_to(a,a+3,b,b+3,eq);static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a+2||result.second!=b+2)return 3;}
+{auto result=mismatch4_less_equal(a,a+3,b,b+3,le);static_assert(__is_same(decltype(result),std::pair<P,P>));if(result.first!=a+3||result.second!=b+3)return 3;}
+static_assert(__is_same(decltype(std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get())),bool));
+static_assert(__is_same(decltype(std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get())),bool));
+static_assert(__is_same(decltype(std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get())),std::pair<P,P>));
+static_assert(__is_same(decltype(std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get())),std::pair<P,P>));
+return reads!=28||cleaned!=28||x!=1||y!=2||z!=3||l!=1||m!=2||k!=4||&a[0].get()!=&x||&b[2].get()!=&k;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-result-query-evaluation-cleanup" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchResultQueriesRetainSource) {
+  struct Case {
+    const char *Name, *Source, *Code;
+  };
+  const Case Cases[] = {
+      {"long-double-referent", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;auto selected(W*a,W*b,W*c,W*d){auto result=std::mismatch(a,b,c,d);static_assert(__is_same(decltype(result),std::pair<W*,W*>));return result;}
+)cpp", "TR0201"},
+      {"member-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;struct Holder{std::less_equal<>op;};auto selected(W*a,W*b,W*c,W*d){Holder h;auto result=std::equal(a,b,c,d,h.op);static_assert(__is_same(decltype(result),bool));return result;}
+)cpp", "TR0201"},
+      {"same-callee-unapproved-argument", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;struct Holder{std::equal_to<>op;};auto selected(W*a,W*b,W*c){auto allowed=std::equal(a,b,c,std::equal_to<>{});Holder h;auto denied=std::equal(a,b,c,h.op);static_assert(__is_same(decltype(allowed),bool));static_assert(__is_same(decltype(denied),bool));return allowed==denied;}
+)cpp", "TR0203"},
+      {"source-alias", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b,W*c){auto result=std::equal(a,b,c);static_assert(__is_same(decltype(result),bool));return result;}
+)cpp", "TR0201"},
+      {"source-conversion", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}auto selected(W*a,W*b,W*c,W*d){auto result=std::mismatch(a,b,c,d,std::equal_to<>{});static_assert(__is_same(decltype(result),std::pair<W*,W*>));return result;}
+)cpp", "TR0201"},
+      {"source-forward", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&w)noexcept{return w;}}}auto selected(W*a,W*b,W*c){auto result=std::mismatch(a,b,c,std::equal_to<>{});static_assert(__is_same(decltype(result),std::pair<W*,W*>));return result;}
+)cpp", "TR0201"},
+      {"source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}auto selected(W*a,W*b,W*c){auto result=std::equal(a,b,c,std::equal_to<>{});static_assert(__is_same(decltype(result),bool));return result;}
+)cpp", "TR0201"},
+      {"typed-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;auto selected(W*a,W*b,W*c){std::equal_to<int>op;auto result=std::mismatch(a,b,c,op);static_assert(__is_same(decltype(result),std::pair<W*,W*>));return result;}
+)cpp", "TR0201"},
+      {"volatile-referent", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;auto selected(W*a,W*b,W*c){auto result=std::equal(a,b,c);static_assert(__is_same(decltype(result),bool));return result;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-equal-mismatch-result-query-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
