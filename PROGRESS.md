@@ -1,5 +1,77 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-13
+
+- Cutoff: **2026-10-13 01:51 UTC / 09:51 Asia/Shanghai**. Reviewed dev remains [dfdc797e](https://github.com/NeverSight/NeverC/commit/dfdc797eece61dcc9685c07c87ff131a7c441a50).
+- Incoming range: [b0ce647f…dfdc797e](https://github.com/NeverSight/NeverC/compare/b0ce647f756fc0c64f9ac88b0b33cc2a22a152db...dfdc797eece61dcc9685c07c87ff131a7c441a50), **29 commits / 17 paths**. The October 12 PROGRESS-only commit 0d7d5da7 is reporting, not product work; 28 other author commits touch 16 paths. Counts are scope inventory, not completion percentages.
+- **One confirmed test-source portability defect; a minimal static fix is prepared but NOT committed.** The repository write remains blocked by pending action approval. Remote readback at 01:50 UTC confirmed the original test blob and unchanged source head. This report does not represent the fix as published.
+- Strictly static: source, diff, caller/interface/configuration, fixture-source and existing-CI reads only. **No project/build/test/benchmark/repository script or dynamic analysis was run; no CI was manually triggered or rerun.** Local byte counting, literal-payload comparison and diff inspection are text-only verification.
+- Root AGENTS.md, local-dev and CI-policy guidance plus the compiler-development pipeline reference were read. Root and relevant compiler/test inventories contain no additional contribution/AGENTS guide. Execution guidance yields to the explicit static-only instruction. dev is the default, unprotected branch; the sole returned ruleset is disabled. No dependency, issue field, security setting, merge or deployment changed.
+
+## Activity
+
+**9 ordinary open issues / 0 open PRs**, unchanged from the prior October 12 01:03 UTC snapshot. No new, closed or merged issue/PR in the interval. The all-state issue collection returned 18 entries including historical PRs, then an empty page; the open PR collection and its second page were empty. The final open issue read still returned nine. There is no open-PR review queue.
+
+Roadmap issues #7–#12 and #16–#18 remain open; this review does not assign owners, dates or implementation percentages. The October 10 COFF archive repair remains prior work and is not credited again.
+
+## Confirmed defect and pending minimal fix
+
+**Trigger:** compiling the translation fixture target with MSVC at dfdc797e.
+
+**Root cause/location:** nine single raw string literals in tests/neverc/TranslateTests.cpp exceed MSVC's 16,380 single-byte-character limit. Original starts are **233812, 234285, 234562, 236450, 237995, 238278, 238849, 239435 and 240239**. Payload lengths are 16,615; 23,849; 20,593; 29,258; 20,207; 24,203; 56,750; 45,647; and 41,364 bytes. The largest literals cause more than one diagnostic, so nine offending literals correspond to **13 C2026 errors**, not thirteen independent defects.
+
+Evidence: the exact-head [Windows x64 job](https://github.com/NeverSight/NeverC/actions/runs/38305792776/job/114999608272) successfully built neverc, then failed compiling TranslateTests.cpp during the “Verify compiled C++ SDK catalog bytes” step. Read logs identify C2026 at the above fixture region. [Microsoft's C2026 documentation](https://learn.microsoft.com/en-us/cpp/error-messages/compiler-errors-1/compiler-error-c2026) states the per-literal limit and adjacent-literal remedy. The actual failure is fixture compilation; the step's title does not prove SDK catalog content is wrong.
+
+**Prepared fix:** split only those nine raw literals at existing newline boundaries into adjacent raw-string tokens of at most 8,000 bytes. Concatenation preserves every fixture byte; no test assertions, compiler semantics or dependencies change.
+
+**Static proof:** the downloaded original matched Git blob **6fe6423c25a18cd53e0d2009f3a842bf70a9f7ac**. Independent literal-payload concatenation matched before/after byte for byte. The resulting candidate blob is **4df28b89d87429be9f681977b13c5caa80e53604**. All raw tokens in the file are then at most 15,302 bytes (the largest unchanged token); every newly split token is at most 8,000. Full file sizes are 17,460,411 → 17,461,435 bytes. These are static text properties, not a successful MSVC compilation.
+
+**Publication/verification limit:** the attempted update received no successful commit result and is not retried while its approval is pending. Remote still contains the original blob. There is **no fix commit or PR to link yet**. No Windows build, translation fixture or whole-suite pass is claimed.
+
+## Bounded semantic review
+
+All 29 incoming commit subjects and 17 changed paths were enumerated. Incoming work extends wrapper-list extrema, partition/rotate, heap checks, numeric operations, comparison/logical reductions and boolean outputs/accumulators, with English and localized documentation.
+
+- **Latest bool-output change:** read the complete two-line MathSDK.cpp admission change in [dfdc797e](https://github.com/NeverSight/NeverC/commit/dfdc797eece61dcc9685c07c87ff131a7c441a50), complete unary-negate/bit-not authenticators (37680–38170), their dispatch callers (83661–83716), scalar conversion helper (3251–3274), and corresponding Lowering.cpp paths (11759–11919). Checked direct transparent construction, exact selected SDK origin/redeclarations/signatures, forwarding/reference conversion and loop shape. Full promoted unary results are stored through the requested output type; bool conversion occurs after negation/complement, preserving wide unsigned complement and signed-zero/NaN cases.
+- **Selected numeric contracts:** read the complete default-wrapper accumulate authenticator (32207–32293), default reduce/delegated-plus proof (34008–34227), and current numeric-lowering body (4771–4990). Traced accumulator-type conversion on each iteration, live referent reads and source-bound helper identity. Reviewed changed lowerer hunks for logical short-circuiting and scans at diff level: plain wrapper right operands retain conditional referent reads, while transformed terms are evaluated before reduction.
+- **Allowlist:** inspected the four-line partition/rotate header mapping change. This is not a full proof of every new partition/rotate or heap recognizer.
+- **Fixture sources:** read the latest 324-added-line unary bool-output fixture patch, including five positive source scenarios and the retained rejection matrix. Cases cover empty argument cleanup, NaN/zero, in-place/shifted bool aliases, wide/promoted conversion, direct/stored/returned/typed operations and source replacement boundaries. Also inspected the oversized matrix literals for the portability fix. These assertions were not executed.
+
+**Uncovered:** most new numeric/comparison recognizers, full helper/source dependency propagation, all 46,762 added / 27,764 removed fixture lines, complete SDK/lifetime and caller proofs, multilingual prose, LLVM/DynCode/runtime/std and installed packages. Aggregate source deltas are MathSDK.cpp 3,426 additions / 745 deletions, Lowering.cpp 450 / 142 and Frontend.cpp 4 / 0. No second speculative semantic bug or patch is asserted.
+
+Large raw/file connector reads did not return complete files. Blob reads recovered the compiler sources; a read-only raw-source download recovered the 17.46-MB fixture file and its Git blob identity was verified. Tool limitations did not justify a partial-file overwrite.
+
+## Existing CI snapshot
+
+At **01:50 UTC**, exact reviewed source **dfdc797e** has **11 workflows: 4 failure, 4 in progress, 3 success**; **24 checks: 5 failure, 4 in progress, 14 success, 1 skipped**. Legacy status contexts are empty; all returned totals fit 100-entry pages. No open PR head exists.
+
+- Failed platform workflows: [Linux x64](https://github.com/NeverSight/NeverC/actions/runs/38305793280), [Linux arm64](https://github.com/NeverSight/NeverC/actions/runs/38305792835), [Windows x64](https://github.com/NeverSight/NeverC/actions/runs/38305792776), [Windows arm64](https://github.com/NeverSight/NeverC/actions/runs/38305792783).
+- Running: macOS arm64, both Windows Clang-LTO variants, and [Python plugin bindings](https://github.com/NeverSight/NeverC/actions/runs/38305793071). The Linux-x64 plugin job inside that running workflow has already failed.
+- Successful parent workflows: documentation lint, C++ frontend-tools archive audit and VBS enclave differential CI. These do not certify the failed platform/compiler gates.
+
+Existing step evidence distinguishes failures: Linux arm64 failed at installation after compiler build; Linux x64 reached the final “Fail if tests failed” gate after its test collection step; the Linux Python job failed the plugin-global-state check. Those three log downloads failed with a transport error, so their detailed root causes remain **unconfirmed** and are not conflated with C2026. Windows arm64's cause was not independently diagnosed. The pending literal split only addresses the proven MSVC fixture-compile defect.
+
+The October 12 b0ce647f snapshot later ended with **9 cancelled and 2 successful workflows** (lint-docs and cpp-frontend-tools). Cancelled native builds are not acceptance evidence. Automatically triggered documentation checks belong to the later report commit, separate from reviewed source and the uncommitted candidate.
+
+## Suggested priorities
+
+1. **Publish the minimal MSVC literal fix once its pending approval is resolved.** Dependency: approval plus a fresh blob/head check, preserving concurrent edits. Acceptance: only adjacent-literal boundaries change, fixture bytes remain identical, and authorized existing Windows CI reaches the previously blocked target on the actual fix SHA. No successful build is claimed yet.
+2. **Diagnose the other exact-head platform/plugin failures independently.** Dependency: complete logs/artifacts for Linux install/test and plugin-global-state gates, plus Windows arm64. Acceptance: a specific cause and bounded fix or explicit infrastructure limitation for each failing stage; an overall running parent is not green.
+3. **Review the remaining numeric recognizers in bounded end-to-end batches.** Dependency: selected SDK bodies, caller/source-origin proofs and focused fixture source. Acceptance: trace boolean accumulator conversion, aliasing/evaluation order and short-circuit boundaries from admission to output before broad support claims; reconcile roadmap #16 with separately identified execution/package evidence.
+
+## Daily log — 2026-10-13
+
+- Retained 9 issues / 0 PRs with no interval state changes.
+- Inventoried 29 commits / 17 paths and completed the bounded unary/selected numeric review above.
+- Proved the MSVC oversized-literal fixture defect and prepared a byte-preserving fix; **no fix commit was published** because action approval remains pending.
+- Refreshed actual CI stages and separated one diagnosed cause from other unconfirmed failures.
+- Added this English snapshot and daily record, preserving prior snapshots and human edits verbatim below.
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-12
 
 - Cutoff: **2026-10-12 01:03 UTC / 09:03 Asia/Shanghai (UTC+08:00)**. Existing CI sampled at 01:01 UTC.
@@ -977,6 +1049,8 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
 
 </details>
 
