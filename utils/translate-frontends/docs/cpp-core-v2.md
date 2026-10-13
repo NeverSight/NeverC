@@ -396,15 +396,39 @@ original dependencies remain rejected.
 Direct `std::accumulate` with transparent `std::multiplies<>` admits a raw-pointer input
 range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
 including const inputs and referents, and an independent supported bool, integer (up to 64 bits), float or double initial accumulator. Its four-argument
-form requires a directly initialized transparent `std::multiplies<>`. The
+form accepts a directly initialized transparent `std::multiplies<>` or a direct
+reference to a mutable or const variable of that SDK type. The
 selected SDK loop reads current referent values in order, applies the usual
 arithmetic conversions and converts each product back to the accumulator type.
 Empty input returns the initial value. Bindings and referents, single operand
 evaluation and cleanup are preserved. The selected SDK loop, multiplies construction
 and operation, lvalue accumulator forwarding and wrapper conversion are
-verified against the selected C++17 implementation. Source replacements, custom, typed, stored or dynamically produced
+verified against the selected C++17 implementation. Source replacements, custom, typed or dynamically produced
 operations, enum or nested-wrapper referents, unsupported accumulator types
 and indirect or casted callees remain rejected.
+
+### Transparent operation variables for wrapper reductions
+
+Explicit four-argument accumulate and reduce accept directly referenced mutable
+or const transparent SDK operation variables, including parameters. All sixteen
+arithmetic/comparison/logical names keep their scalar and valid arithmetic
+constraints. The SDK argument must use an authenticated implicit trivial nothrow
+copy/move constructor from a direct VarDecl reference of the same checked empty
+SDK object type. Full selected signatures, origins, operation bodies, wrapper
+conversion, forwarding, accumulator moves and loops remain proven. Existing
+precision, bool accumulator assignments, logical short circuiting, empty
+argument evaluation and cleanup retain their order. Typed, returned and member
+expressions remain excluded. Initialized scans retain call-site operation
+construction. Other algorithm object interfaces keep their owning proofs.
+
+Five O0/O2 fixtures cover all 32 algorithm/operation combinations with mutable,
+const and explicit void variables, bool accumulators/referents, parameter copies,
+wide/narrow values, NaN/signed zero, empty effects and cleanup. Sixteen
+native-valid guards retain member/returned/typed, source override and type
+boundaries. Twenty-two former stored-variable rejection cases now check member
+expressions across ten regression tables (248 cases). The direct variable read
+and authenticated empty trivial SDK copy have no observable effects, so the
+existing lowering preserves the operation argument's behavior.
 
 ### Boolean outputs of unary wrapper transforms
 
@@ -495,7 +519,7 @@ Arithmetic operations retain the usual common operand/result type, per-step accu
 
 Scans finish the operation and accumulator conversion before any output store. Inclusive scan writes the updated accumulator and exclusive scan the saved previous value, with independent output conversion. Output aliases therefore affect later live reads; wrapper bindings retain their addresses. Empty inputs preserve initial values or output pointers without reads or writes. Argument evaluation, returned values/end pointers and temporary cleanup remain preserved. Non-wrapper scalar and record callback paths retain their established behavior.
 
-All four proofs use a closed sixteen-name scalar-reduction mapping layered over the unchanged fourteen-name numeric mapping; binary transformed term/reduction callers retain their separate admission. Each caller still independently authenticates its selected signature, declaration origins, transparent construction, exact operation body and result/operand types, forwarding, wrapper conversion and complete loop; exclusive scan also authenticates every saved accumulator assignment. Unknown operations, typed/stored/returned objects, custom operations, source replacements, pointer/enum/volatile/extended/nested or unsupported referents, unsupported accumulators/outputs and indirect or casted callees remain excluded. Five runtime fixtures cover all 24 algorithm/comparison combinations with varied inputs, float/int precision, narrow/bool promotion, signed/unsigned 64-bit conversion, NaN and signed zero, live scan aliases, empty inputs, effects and cleanup. Sixteen further native-valid rejection cases and 210 existing selected boundaries check admission and regressions. Five further O0/O2 fixtures cover all eight algorithm/logical combinations across truth states and lengths, narrow/wide/bool/float conversions, NaN, signed zeros, output aliases, endpoints, empty arguments and cleanup. Eight obsolete logical-operation rejection cases become stored-logical-object boundaries backed by the new native sources. The previously admitted unary transformed logical reductions retain eager transform evaluation followed by short-circuited term conversion.
+All four proofs use a closed sixteen-name scalar-reduction mapping layered over the unchanged fourteen-name numeric mapping; binary transformed term/reduction callers retain their separate admission. Each caller still independently authenticates its selected signature, declaration origins, transparent construction, exact operation body and result/operand types, forwarding, wrapper conversion and complete loop; exclusive scan also authenticates every saved accumulator assignment. Unknown operations, typed/returned objects, custom operations, source replacements, pointer/enum/volatile/extended/nested or unsupported referents, unsupported accumulators/outputs and indirect or casted callees remain excluded. Five runtime fixtures cover all 24 algorithm/comparison combinations with varied inputs, float/int precision, narrow/bool promotion, signed/unsigned 64-bit conversion, NaN and signed zero, live scan aliases, empty inputs, effects and cleanup. Sixteen further native-valid rejection cases and 210 existing selected boundaries check admission and regressions. Five further O0/O2 fixtures cover all eight algorithm/logical combinations across truth states and lengths, narrow/wide/bool/float conversions, NaN, signed zeros, output aliases, endpoints, empty arguments and cleanup. Eight obsolete logical-operation rejection cases become stored-logical-object boundaries backed by the new native sources. The previously admitted unary transformed logical reductions retain eager transform evaluation followed by short-circuited term conversion.
 
 ### Transparent numeric adjacent differences over reference wrappers
 
@@ -791,26 +815,28 @@ output types and indirect or casted callees remain rejected.
 Direct `std::accumulate` with transparent `std::plus<>` admits a raw-pointer input
 range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
 including const inputs and referents, and an independent supported bool, integer (up to 64 bits), float or double initial accumulator. Its four-argument
-form requires a directly initialized transparent `std::plus<>`. The
+form accepts a directly initialized transparent `std::plus<>` or a direct
+reference to a mutable or const variable of that SDK type. The
 selected SDK loop reads current referent values in order, applies the usual
 arithmetic conversions and converts each sum back to the accumulator type.
 Empty input returns the initial value. Bindings and referents, single operand
 evaluation and cleanup are preserved. The selected SDK loop, plus construction
 and operation, lvalue accumulator forwarding and wrapper conversion are
-verified against the selected C++17 implementation. Source replacements, custom, typed, stored or dynamically produced
+verified against the selected C++17 implementation. Source replacements, custom, typed or dynamically produced
 operations, enum or nested-wrapper referents, unsupported accumulator types
 and indirect or casted callees remain rejected.
 
 Direct `std::reduce` with transparent `std::plus<>` admits a raw-pointer input
 range of checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
 including const inputs and referents, and an independent supported bool, integer (up to 64 bits), float or double initial accumulator. Its four-argument
-form requires a directly initialized transparent `std::plus<>`. The
+form accepts a directly initialized transparent `std::plus<>` or a direct
+reference to a mutable or const variable of that SDK type. The
 selected SDK loop reads current referent values in order, applies the usual
 arithmetic conversions and converts each sum back to the accumulator type.
 Empty input returns the initial value. Bindings and referents, single operand
 evaluation and cleanup are preserved. The selected SDK loop, plus construction
 and operation, accumulator moves, forwarding and wrapper conversion are
-verified. Source replacements, custom, typed, stored or dynamically produced
+verified. Source replacements, custom, typed or dynamically produced
 operations, enum or nested-wrapper referents, unsupported accumulator types
 and indirect or casted callees remain rejected.
 

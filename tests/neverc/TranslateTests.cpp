@@ -227850,12 +227850,13 @@ using std::accumulate;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=accumulate(
 TEST_F(TranslateTest,
        CoreV2WrapperAccumulateRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
+      {"member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::accumulate(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
@@ -231279,12 +231280,13 @@ using std::reduce;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=reduce(a,a+3,0)
 TEST_F(TranslateTest,
        CoreV2WrapperReduceRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
+      {"member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::reduce(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
@@ -233046,12 +233048,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)==std::forward<W&>(b)))->decltype(std::forward<int&>(a)==std::forward<W&>(b)){return a==b.get();}}}
 auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::equal_to<>{});}
 )cpp"},
-      {"accumulate-stored-not-equal", R"cpp(
+      {"accumulate-member-not-equal", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"accumulate-typed-less", R"cpp(
 #include <numeric>
@@ -233060,12 +233063,13 @@ auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::accumulate(a,b,0
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::less<int>{});}
 )cpp"},
-      {"accumulate-stored-logical-and", R"cpp(
+      {"accumulate-member-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"exclusive_scan-source-equality", R"cpp(
 #include <numeric>
@@ -233133,12 +233137,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)==std::forward<W&>(b)))->decltype(std::forward<int>(a)==std::forward<W&>(b)){return a==b.get();}}}
 auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::equal_to<>{});}
 )cpp"},
-      {"reduce-stored-not-equal", R"cpp(
+      {"reduce-member-not-equal", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::reduce(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"reduce-typed-less", R"cpp(
 #include <numeric>
@@ -233147,12 +233152,13 @@ auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::reduce(a,b,0,op)
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::less<int>{});}
 )cpp"},
-      {"reduce-stored-logical-and", R"cpp(
+      {"reduce-member-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::reduce(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -236035,12 +236041,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<W&>(b)))->decltype(std::forward<int&>(a)&&std::forward<W&>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::accumulate(a,b,0,std::logical_and<>{});}
 )cpp"},
-      {"accumulate-stored-logical", R"cpp(
+      {"accumulate-member-logical", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"accumulate-typed-logical", R"cpp(
 #include <numeric>
@@ -236125,12 +236132,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int,W&>(int&&a,W&b)const noexcept(noexcept(std::forward<int>(a)&&std::forward<W&>(b)))->decltype(std::forward<int>(a)&&std::forward<W&>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::reduce(a,b,0,std::logical_and<>{});}
 )cpp"},
-      {"reduce-stored-logical", R"cpp(
+      {"reduce-member-logical", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::reduce(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"reduce-typed-logical", R"cpp(
 #include <numeric>
@@ -240762,12 +240770,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,P c,int*out){return std::accumulate(a,b,false,std::logical_and<>{});}
 )cpp"},
-      {"accumulate-stored-object", R"cpp(
+      {"accumulate-member-object", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::accumulate(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"accumulate-volatile-referent", R"cpp(
 #include <numeric>
@@ -240827,12 +240836,13 @@ auto selected(P a,P b,P c,volatile bool*out){return std::inclusive_scan(a,b,out,
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
 )cpp"},
-      {"reduce-stored-object", R"cpp(
+      {"reduce-member-object", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::reduce(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"transform-exclusive-stored-object", R"cpp(
 #include <numeric>
@@ -241181,6 +241191,470 @@ auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
     const auto Output =
         tmpFile(std::string("wrapper-unary-transform-bool-outputs-") +
                 Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(std::filesystem::exists(Output));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredOperationsBoolAndConstVariables) {
+  const auto Source =
+      tmpFile("wrapper-stored-wrapper-operations-bool-and-const-variables.cpp");
+  const auto Output =
+      tmpFile("wrapper-stored-wrapper-operations-bool-and-const-variables.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const bool t=true,f=false;const std::reference_wrapper<const bool>b[]={t,f,t};const int n=2,q=1;const std::reference_wrapper<const int>a[]={n,q,n};
+ { const std::plus<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::plus<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::minus<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::minus<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::multiplies<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::multiplies<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::divides<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::divides<void>op; if(std::accumulate(a,a+3,true,op)!=false)return 1; }
+ { const std::modulus<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::modulus<void>op; if(std::accumulate(a,a+3,true,op)!=false)return 1; }
+ { const std::bit_and<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::bit_and<void>op; if(std::accumulate(a,a+3,true,op)!=false)return 1; }
+ { const std::bit_or<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::bit_or<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::bit_xor<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::bit_xor<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::equal_to<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::equal_to<void>op; if(std::accumulate(a,a+3,true,op)!=false)return 1; }
+ { const std::not_equal_to<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::not_equal_to<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::less<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::less<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::less_equal<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::less_equal<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::greater<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::greater<void>op; if(std::accumulate(a,a+3,true,op)!=false)return 1; }
+ { const std::greater_equal<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::greater_equal<void>op; if(std::accumulate(a,a+3,true,op)!=false)return 1; }
+ { const std::logical_and<void>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ { const std::logical_and<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { const std::logical_or<void>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ { const std::logical_or<void>op; if(std::accumulate(a,a+3,true,op)!=true)return 1; }
+ { std::plus<>op; if(std::accumulate(b,b+3,false,op)!=true)return 2; }
+ { std::minus<>op; if(std::accumulate(b,b+3,false,op)!=false)return 2; }
+ { std::bit_xor<>op; if(std::accumulate(b,b+3,false,op)!=false)return 2; }
+ { std::less<>op; if(std::accumulate(b,b+3,false,op)!=true)return 2; }
+ { std::logical_and<>op; if(std::accumulate(b,b+3,false,op)!=false)return 2; }
+ { std::logical_or<>op; if(std::accumulate(b,b+3,false,op)!=true)return 2; }
+ { const std::plus<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::plus<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::minus<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::minus<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::multiplies<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::multiplies<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::divides<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::divides<void>op; if(std::reduce(a,a+3,true,op)!=false)return 1; }
+ { const std::modulus<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::modulus<void>op; if(std::reduce(a,a+3,true,op)!=false)return 1; }
+ { const std::bit_and<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::bit_and<void>op; if(std::reduce(a,a+3,true,op)!=false)return 1; }
+ { const std::bit_or<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::bit_or<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::bit_xor<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::bit_xor<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::equal_to<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::equal_to<void>op; if(std::reduce(a,a+3,true,op)!=false)return 1; }
+ { const std::not_equal_to<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::not_equal_to<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::less<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::less<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::less_equal<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::less_equal<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::greater<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::greater<void>op; if(std::reduce(a,a+3,true,op)!=false)return 1; }
+ { const std::greater_equal<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::greater_equal<void>op; if(std::reduce(a,a+3,true,op)!=false)return 1; }
+ { const std::logical_and<void>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ { const std::logical_and<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { const std::logical_or<void>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ { const std::logical_or<void>op; if(std::reduce(a,a+3,true,op)!=true)return 1; }
+ { std::plus<>op; if(std::reduce(b,b+3,false,op)!=true)return 2; }
+ { std::minus<>op; if(std::reduce(b,b+3,false,op)!=false)return 2; }
+ { std::bit_xor<>op; if(std::reduce(b,b+3,false,op)!=false)return 2; }
+ { std::less<>op; if(std::reduce(b,b+3,false,op)!=true)return 2; }
+ { std::logical_and<>op; if(std::reduce(b,b+3,false,op)!=false)return 2; }
+ { std::logical_or<>op; if(std::reduce(b,b+3,false,op)!=true)return 2; }
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-stored-wrapper-operations-bool-and-const-variables" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredOperationsEmptyEffectsAndParameter) {
+  const auto Source = tmpFile(
+      "wrapper-stored-wrapper-operations-empty-effects-and-parameter.cpp");
+  const auto Output = tmpFile(
+      "wrapper-stored-wrapper-operations-empty-effects-and-parameter.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0,initials=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+int init(){++initials;return 7;}
+int via_parameter(P a,P b,const std::plus<>&op){return std::accumulate(a,b,0,op);}
+int main(){int n=3;W a[]={n};const std::plus<>plus;std::logical_or<>logical;
+ if(std::accumulate(Input{a}.get(),Input{a}.get(),init(),plus)!=7)return 1;
+ if(std::accumulate(Input{a}.get(),Input{a}.get(),init(),logical)!=7)return 1;
+ if(std::reduce(Input{a}.get(),Input{a}.get(),init(),plus)!=7)return 1;
+ if(std::reduce(Input{a}.get(),Input{a}.get(),init(),logical)!=7)return 1;
+if(via_parameter(a,a+1,plus)!=3)return 2;return reads!=8||cleaned!=8||initials!=4||n!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-stored-wrapper-operations-empty-effects-and-parameter" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredOperationsFloatingNanZero) {
+  const auto Source =
+      tmpFile("wrapper-stored-wrapper-operations-floating-nan-zero.cpp");
+  const auto Output =
+      tmpFile("wrapper-stored-wrapper-operations-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const double t=0x1p-100,z=0.0,m=-0.0,n=0.0/0.0;const std::reference_wrapper<const double>a[]={t,z,t};const std::reference_wrapper<const double>b[]={n,m,z};
+ {const std::equal_to<>op; if(std::accumulate(a,a+3,0,op)!=0)return 1; }
+ {const std::not_equal_to<>op; if(std::accumulate(a,a+3,0,op)!=1)return 1; }
+ {const std::less<>op; if(std::accumulate(a,a+3,0,op)!=1)return 1; }
+ {const std::less_equal<>op; if(std::accumulate(a,a+3,0,op)!=1)return 1; }
+ {const std::greater<>op; if(std::accumulate(a,a+3,0,op)!=0)return 1; }
+ {const std::greater_equal<>op; if(std::accumulate(a,a+3,0,op)!=1)return 1; }
+ {const std::logical_and<>op; if(std::accumulate(a,a+3,0,op)!=0)return 1; }
+ {const std::logical_or<>op; if(std::accumulate(a,a+3,0,op)!=1)return 1; }
+ {const std::equal_to<>op; if(std::accumulate(b,b+3,0,op)!=0)return 1; }
+ {const std::not_equal_to<>op; if(std::accumulate(b,b+3,0,op)!=1)return 1; }
+ {const std::less<>op; if(std::accumulate(b,b+3,0,op)!=0)return 1; }
+ {const std::less_equal<>op; if(std::accumulate(b,b+3,0,op)!=0)return 1; }
+ {const std::greater<>op; if(std::accumulate(b,b+3,0,op)!=0)return 1; }
+ {const std::greater_equal<>op; if(std::accumulate(b,b+3,0,op)!=1)return 1; }
+ {const std::logical_and<>op; if(std::accumulate(b,b+3,0,op)!=0)return 1; }
+ {const std::logical_or<>op; if(std::accumulate(b,b+3,0,op)!=1)return 1; }
+ {const std::equal_to<>op; if(std::reduce(a,a+3,0,op)!=0)return 1; }
+ {const std::not_equal_to<>op; if(std::reduce(a,a+3,0,op)!=1)return 1; }
+ {const std::less<>op; if(std::reduce(a,a+3,0,op)!=1)return 1; }
+ {const std::less_equal<>op; if(std::reduce(a,a+3,0,op)!=1)return 1; }
+ {const std::greater<>op; if(std::reduce(a,a+3,0,op)!=0)return 1; }
+ {const std::greater_equal<>op; if(std::reduce(a,a+3,0,op)!=1)return 1; }
+ {const std::logical_and<>op; if(std::reduce(a,a+3,0,op)!=0)return 1; }
+ {const std::logical_or<>op; if(std::reduce(a,a+3,0,op)!=1)return 1; }
+ {const std::equal_to<>op; if(std::reduce(b,b+3,0,op)!=0)return 1; }
+ {const std::not_equal_to<>op; if(std::reduce(b,b+3,0,op)!=1)return 1; }
+ {const std::less<>op; if(std::reduce(b,b+3,0,op)!=0)return 1; }
+ {const std::less_equal<>op; if(std::reduce(b,b+3,0,op)!=0)return 1; }
+ {const std::greater<>op; if(std::reduce(b,b+3,0,op)!=0)return 1; }
+ {const std::greater_equal<>op; if(std::reduce(b,b+3,0,op)!=1)return 1; }
+ {const std::logical_and<>op; if(std::reduce(b,b+3,0,op)!=0)return 1; }
+ {const std::logical_or<>op; if(std::reduce(b,b+3,0,op)!=1)return 1; }
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-stored-wrapper-operations-floating-nan-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredOperationsOperationMatrix) {
+  const auto Source =
+      tmpFile("wrapper-stored-wrapper-operations-operation-matrix.cpp");
+  const auto Output =
+      tmpFile("wrapper-stored-wrapper-operations-operation-matrix.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){int p=2,q=1;const std::reference_wrapper<int>a[]={p,q,p};
+ { std::plus<>op; if(std::accumulate(a,a+3,9,op)!=14)return 1; }
+ { const std::plus<>op; if(std::accumulate(a,a+3,9,op)!=14)return 1; }
+ { std::minus<>op; if(std::accumulate(a,a+3,9,op)!=4)return 1; }
+ { const std::minus<>op; if(std::accumulate(a,a+3,9,op)!=4)return 1; }
+ { std::multiplies<>op; if(std::accumulate(a,a+3,9,op)!=36)return 1; }
+ { const std::multiplies<>op; if(std::accumulate(a,a+3,9,op)!=36)return 1; }
+ { std::divides<>op; if(std::accumulate(a,a+3,9,op)!=2)return 1; }
+ { const std::divides<>op; if(std::accumulate(a,a+3,9,op)!=2)return 1; }
+ { std::modulus<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { const std::modulus<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { std::bit_and<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { const std::bit_and<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { std::bit_or<>op; if(std::accumulate(a,a+3,9,op)!=11)return 1; }
+ { const std::bit_or<>op; if(std::accumulate(a,a+3,9,op)!=11)return 1; }
+ { std::bit_xor<>op; if(std::accumulate(a,a+3,9,op)!=8)return 1; }
+ { const std::bit_xor<>op; if(std::accumulate(a,a+3,9,op)!=8)return 1; }
+ { std::equal_to<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { const std::equal_to<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { std::not_equal_to<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { const std::not_equal_to<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { std::less<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { const std::less<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { std::less_equal<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { const std::less_equal<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { std::greater<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { const std::greater<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { std::greater_equal<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { const std::greater_equal<>op; if(std::accumulate(a,a+3,9,op)!=0)return 1; }
+ { std::logical_and<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { const std::logical_and<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { std::logical_or<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { const std::logical_or<>op; if(std::accumulate(a,a+3,9,op)!=1)return 1; }
+ { std::plus<>op; if(std::reduce(a,a+3,9,op)!=14)return 1; }
+ { const std::plus<>op; if(std::reduce(a,a+3,9,op)!=14)return 1; }
+ { std::minus<>op; if(std::reduce(a,a+3,9,op)!=4)return 1; }
+ { const std::minus<>op; if(std::reduce(a,a+3,9,op)!=4)return 1; }
+ { std::multiplies<>op; if(std::reduce(a,a+3,9,op)!=36)return 1; }
+ { const std::multiplies<>op; if(std::reduce(a,a+3,9,op)!=36)return 1; }
+ { std::divides<>op; if(std::reduce(a,a+3,9,op)!=2)return 1; }
+ { const std::divides<>op; if(std::reduce(a,a+3,9,op)!=2)return 1; }
+ { std::modulus<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { const std::modulus<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { std::bit_and<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { const std::bit_and<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { std::bit_or<>op; if(std::reduce(a,a+3,9,op)!=11)return 1; }
+ { const std::bit_or<>op; if(std::reduce(a,a+3,9,op)!=11)return 1; }
+ { std::bit_xor<>op; if(std::reduce(a,a+3,9,op)!=8)return 1; }
+ { const std::bit_xor<>op; if(std::reduce(a,a+3,9,op)!=8)return 1; }
+ { std::equal_to<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { const std::equal_to<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { std::not_equal_to<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { const std::not_equal_to<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { std::less<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { const std::less<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { std::less_equal<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { const std::less_equal<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { std::greater<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { const std::greater<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { std::greater_equal<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { const std::greater_equal<>op; if(std::reduce(a,a+3,9,op)!=0)return 1; }
+ { std::logical_and<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { const std::logical_and<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { std::logical_or<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+ { const std::logical_or<>op; if(std::reduce(a,a+3,9,op)!=1)return 1; }
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-stored-wrapper-operations-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredOperationsWideAndPromotedOperands) {
+  const auto Source = tmpFile(
+      "wrapper-stored-wrapper-operations-wide-and-promoted-operands.cpp");
+  const auto Output = tmpFile(
+      "wrapper-stored-wrapper-operations-wide-and-promoted-operands.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+int main(){const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x};const signed char n=-1,p=2;const std::reference_wrapper<const signed char>b[]={n,p,n};
+ {const std::less<>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ {const std::logical_and<>op; if(std::accumulate(a,a+3,false,op)!=false)return 1; }
+ {const std::logical_or<>op; if(std::accumulate(a,a+3,false,op)!=true)return 1; }
+ {std::plus<>op; if(std::accumulate(b,b+3,3,op)!=3)return 2; }
+ {std::minus<>op; if(std::accumulate(b,b+3,3,op)!=3)return 2; }
+ {std::bit_xor<>op; if(std::accumulate(b,b+3,3,op)!=1)return 2; }
+ {const std::less<>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ {const std::logical_and<>op; if(std::reduce(a,a+3,false,op)!=false)return 1; }
+ {const std::logical_or<>op; if(std::reduce(a,a+3,false,op)!=true)return 1; }
+ {std::plus<>op; if(std::reduce(b,b+3,3,op)!=3)return 2; }
+ {std::minus<>op; if(std::reduce(b,b+3,3,op)!=3)return 2; }
+ {std::bit_xor<>op; if(std::reduce(b,b+3,3,op)!=1)return 2; }
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-stored-wrapper-operations-wide-and-promoted-operands" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredOperationsRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"accumulate-long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){const std::logical_or<>op;return std::accumulate(a,b,0.0L,op);}
+)cpp"},
+      {"accumulate-member-object", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
+)cpp"},
+      {"accumulate-pointer-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b){const std::logical_or<>op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"accumulate-returned-object", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {}; }
+auto selected(P a,P b){return std::accumulate(a,b,0,make());}
+)cpp"},
+      {"accumulate-source-operation", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<int&,W&>(int&v,W&w)const noexcept(noexcept(std::forward<int&>(v)||std::forward<W&>(w)))->decltype(std::forward<int&>(v)||std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){const std::logical_or<>op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"accumulate-source-wrapper-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b){const std::logical_or<>op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"accumulate-typed-variable", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_or<int>op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"accumulate-volatile-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b){const std::logical_or<>op;return std::accumulate(a,b,0,op);}
+)cpp"},
+      {"reduce-long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){const std::logical_or<>op;return std::reduce(a,b,0.0L,op);}
+)cpp"},
+      {"reduce-member-object", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
+)cpp"},
+      {"reduce-pointer-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b){const std::logical_or<>op;return std::reduce(a,b,0,op);}
+)cpp"},
+      {"reduce-returned-object", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {}; }
+auto selected(P a,P b){return std::reduce(a,b,0,make());}
+)cpp"},
+      {"reduce-source-operation", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<int,W&>(int&&v,W&w)const noexcept(noexcept(std::forward<int>(v)||std::forward<W&>(w)))->decltype(std::forward<int>(v)||std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){const std::logical_or<>op;return std::reduce(a,b,0,op);}
+)cpp"},
+      {"reduce-source-wrapper-conversion", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b){const std::logical_or<>op;return std::reduce(a,b,0,op);}
+)cpp"},
+      {"reduce-typed-variable", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_or<int>op;return std::reduce(a,b,0,op);}
+)cpp"},
+      {"reduce-volatile-referent", R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b){const std::logical_or<>op;return std::reduce(a,b,0,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-stored-wrapper-operations-") + Case.first +
+                ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-stored-wrapper-operations-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
@@ -242710,12 +243184,13 @@ int main() {
 TEST_F(TranslateTest,
        CoreV2WrapperReduceArithmeticFamilyRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"family-stored-object-bool-accumulator", R"cpp(
+      {"family-member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::reduce(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"family-returned-bit-or", R"cpp(
 #include <numeric>
@@ -242744,11 +243219,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(W*a,W*b){return std::reduce(a,a+1,0,std::bit_xor<>{});}
 )cpp"},
-      {"family-stored-multiplies", R"cpp(
+      {"family-member-multiplies", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::multiplies<> op;return std::reduce(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"family-typed-modulus", R"cpp(
 #include <numeric>
@@ -242756,12 +243233,13 @@ auto selected(P a,P b){std::multiplies<> op;return std::reduce(a,b,0,op);}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::reduce(a,b,0,std::modulus<int>{});}
 )cpp"},
-      {"family-stored-logical-and", R"cpp(
+      {"family-member-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::reduce(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -244371,12 +244849,13 @@ using std::reduce;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=reduce(a,a+3,0,
 TEST_F(TranslateTest,
        CoreV2WrapperReducePlusRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
+      {"member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::reduce(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
@@ -244617,11 +245096,13 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::reduce(a,a+1,0,std::plus<>{});}
 )cpp"},
-      {"stored-operation", R"cpp(
+      {"member-operation", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::plus<> op;return std::reduce(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
 )cpp"},
       {"typed-operation", R"cpp(
 #include <numeric>
@@ -245292,12 +245773,13 @@ using std::accumulate;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=accumulate(
 TEST_F(TranslateTest,
        CoreV2WrapperAccumulatePlusRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
+      {"member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::accumulate(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
@@ -245517,11 +245999,13 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::plus<>{});}
 )cpp"},
-      {"stored-operation", R"cpp(
+      {"member-operation", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::plus<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"typed-operation", R"cpp(
 #include <numeric>
@@ -343477,12 +343961,13 @@ int main() {
 TEST_F(TranslateTest,
        CoreV2WrapperAccumulateArithmeticFamilyRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"family-stored-object-bool-accumulator", R"cpp(
+      {"family-member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::accumulate(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"family-enum-referents", R"cpp(
 #include <functional>
@@ -343516,11 +344001,13 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::minus<>{});}
 )cpp"},
-      {"family-stored-bit-and", R"cpp(
+      {"family-member-bit-and", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::bit_and<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"family-typed-modulus", R"cpp(
 #include <numeric>
@@ -343528,12 +344015,13 @@ auto selected(P a,P b){std::bit_and<> op;return std::accumulate(a,b,0,op);}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::accumulate(a,b,0,std::modulus<int>{});}
 )cpp"},
-      {"family-stored-logical-and", R"cpp(
+      {"family-member-logical-and", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"family-wide-accumulator", R"cpp(
 #include <numeric>
@@ -344187,12 +344675,13 @@ TEST_F(
     TranslateTest,
     CoreV2WrapperAccumulateMultipliesRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
+      {"member-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::accumulate(a,b,false,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
@@ -344412,11 +344901,13 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::accumulate(a,a+1,0,std::multiplies<>{});}
 )cpp"},
-      {"stored-operation", R"cpp(
+      {"member-operation", R"cpp(
 #include <numeric>
 #include <functional>
+#include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::multiplies<> op;return std::accumulate(a,b,0,op);}
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b){Holder h;return std::accumulate(a,b,0,h.op);}
 )cpp"},
       {"typed-operation", R"cpp(
 #include <numeric>
