@@ -156375,6 +156375,120 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorAssignmentsAllowAllocatorAddressReuse) {
+  const auto Source = tmpFile("vector-assignment-address-reuse.cpp");
+  const auto Output = tmpFile("vector-assignment-address-reuse.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copies;
+int assignments;
+int destroyed;
+int first_calls;
+int last_calls;
+int tracing;
+int sequence;
+void note(int n) { if (tracing) sequence = sequence * 10 + n; }
+void *reuse_target;
+bool reuse_enabled;
+bool reuse_ready;
+int reuse_count;
+void *operator new(Size n) {
+  ++allocations;
+  if (n > sizeof(int) && reuse_ready) {
+    reuse_ready = false;
+    ++reuse_count;
+    return reuse_target;
+  }
+  return malloc(n > sizeof(int) && n < 128 ? 128 : n);
+}
+void release(void *p) {
+  ++releases;
+  if (reuse_enabled && p == reuse_target) {
+    reuse_enabled = false;
+    reuse_ready = true;
+    return;
+  }
+  free(p);
+}
+void operator delete(void *p) noexcept { release(p); }
+void operator delete(void *p, Size) noexcept { release(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &other) : value(new int(*other.value)) {
+    ++live;
+    ++copies;
+    note(2);
+  }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &other) {
+    int *next = new int(*other.value);
+    delete value;
+    value = next;
+    ++assignments;
+    note(6);
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() { delete value; --live; ++destroyed; note(4); }
+};
+int main() {
+  for (int mode = 0; mode != 3; ++mode) {
+    Box seed(3);
+    std::vector<Box> source(3, seed);
+    std::vector<Box> target;
+    target.reserve(1);
+    target.push_back(Box(9));
+    int before_allocations = allocations;
+    int before_releases = releases;
+    int before_copies = copies;
+    reuse_target = target.data();
+    reuse_enabled = true;
+    if (mode == 0)
+      target.assign(source.cbegin(), source.cend());
+    else if (mode == 1)
+      target = {Box(3), Box(4), Box(5)};
+    else
+      target.assign(3, seed);
+    if (reuse_count != mode + 1 || reuse_enabled || reuse_ready ||
+        allocations - before_allocations != (mode == 1 ? 7 : 4) ||
+        releases - before_releases != (mode == 1 ? 5 : 2) ||
+        copies - before_copies != 3 || target.size() != 3 ||
+        target.capacity() != 3 || *target[0].value != 3 ||
+        *target[2].value != (mode == 1 ? 5 : 3))
+      return 1 + mode;
+  }
+  return live == 0 && allocations == releases ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-assignment-address-reuse" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedAssignFillRun) {
   const auto Source = tmpFile("vector-source-owned-assign-fill.cpp");
   const auto Output = tmpFile("vector-source-owned-assign-fill.nc");
@@ -156460,12 +156574,14 @@ int main() {
     values.reserve(2);
     values.push_back(Box(4));
     values.push_back(Box(5));
-    auto storage = values.data();
     Box donor(8);
+    int before_allocations = allocations;
+    int before_releases = releases;
     sequence = 0; tracing = 1;
     values.assign(4, donor);
     tracing = 0;
-    if (sequence != 442222 || values.data() == storage ||
+    if (sequence != 442222 || allocations - before_allocations != 5 ||
+        releases - before_releases != 3 ||
         values.size() != 4 || values.capacity() != 4 ||
         *values[0].value != 8 || *values[3].value != 8 ||
         values[0].value == donor.value) return 5;
@@ -156475,10 +156591,12 @@ int main() {
     values.reserve(2);
     values.push_back(Box(6));
     values.push_back(Box(7));
-    auto storage = values.data();
+    int before_allocations = allocations;
+    int before_releases = releases;
     int before = copies;
     values.assign(4, values[0]);
-    if (values.data() == storage || values.size() != 4 ||
+    if (allocations - before_allocations != 6 ||
+        releases - before_releases != 4 || values.size() != 4 ||
         *values[0].value != 6 || *values[3].value != 6 ||
         values[0].value == values[1].value || copies - before != 5)
       return 6;
@@ -156594,11 +156712,13 @@ int main() {
     std::vector<Box> target;
     target.reserve(1);
     target.push_back(Box(9));
-    auto storage = target.data();
+    int before_allocations = allocations;
+    int before_releases = releases;
     sequence = 0; tracing = 1;
     target.assign(source.cbegin(), source.cend());
     tracing = 0;
-    if (sequence != 4222 || target.data() == storage ||
+    if (sequence != 4222 || allocations - before_allocations != 4 ||
+        releases - before_releases != 2 ||
         target.size() != 3 || target.capacity() != 3 ||
         *target[0].value != 3 || *target[2].value != 3 ||
         target[0].value == source[0].value) return 5;
@@ -156695,9 +156815,11 @@ int main() {
     std::vector<Box> values;
     values.reserve(1);
     values.push_back(Box(9));
-    auto storage = values.data();
+    int before_allocations = allocations;
+    int before_releases = releases;
     auto &result = (values = {Box(3), Box(4), Box(5)});
-    if (&result != &values || values.data() == storage ||
+    if (&result != &values || allocations - before_allocations != 7 ||
+        releases - before_releases != 5 ||
         values.size() != 3 || values.capacity() != 3 ||
         *values[0].value != 3 || *values[2].value != 5 ||
         copies != 3) return 2;
