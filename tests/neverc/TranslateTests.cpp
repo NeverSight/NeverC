@@ -1938,12 +1938,329 @@ TEST_F(TranslateTest, CoreV2OperatorsAcceptOrdinaryAssignmentSignatures) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionCarrierRegressionsPointerFormations) {
+  const auto Source = tmpFile("function-carrier-pointer-formations.cpp");
+  const auto Output = tmpFile("function-carrier-pointer-formations.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <memory>
+namespace case_0{
+struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}
+}
+namespace case_1{
+struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}
+}
+namespace case_2{
+struct R{template<class T>int f(T){return 3;}};int run(){auto p=&R::f<int>;R r;return (r.*p)(3);}
+}
+int main(){
+case_0::f();case_0::R a{4};auto member=&case_0::R::operator+;if((a.*member)(5)!=9)return 1;
+case_1::f();case_1::R b{6};auto free=&case_1::operator+;if(free(b,7)!=13)return 2;
+if(case_2::run()!=3)return 3;
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-carrier-pointer-formations" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionCarrierRegressionsReferenceBindings) {
+  const auto Source = tmpFile("function-carrier-reference-bindings.cpp");
+  const auto Output = tmpFile("function-carrier-reference-bindings.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <memory>
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);
+extern "C" void free(void*);
+int allocations=0,releases=0;
+void*operator new(Size n){++allocations;return malloc(n);}
+void*operator new[](Size n){++allocations;return malloc(n);}
+void operator delete(void*p)noexcept{++releases;free(p);}
+void operator delete(void*p,Size)noexcept{++releases;free(p);}
+void operator delete[](void*p)noexcept{++releases;free(p);}
+void operator delete[](void*p,Size)noexcept{++releases;free(p);}
+namespace Imported{using std::move_if_noexcept;}
+namespace Alias=Imported;
+namespace case_0{
+int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}
+}
+namespace case_1{
+int one(int v){return v;}int run(){auto&ref=std::move_if_noexcept(one);return ref(0);}
+}
+namespace case_2{
+int one(int v){return v;}int run(){auto&ref=std::as_const(one);return ref(0);}
+}
+namespace case_3{
+
+using Function=int(int);int f(Function&p){static_assert(__is_same(decltype(std::as_const(p)),Function&));return 0;}
+}
+namespace case_4{
+
+using F=int(int);int f(F&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<F&>(v)),F&));return 0;}
+}
+namespace case_5{
+
+using Function=int(int);int f(Function&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Function&));return 0;}
+}
+namespace case_6{
+
+int f(std::unique_ptr<int>&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),std::unique_ptr<int>&&));return 0;}
+}
+int one(int v){return v+9;}
+int main(){{std::unique_ptr<int>owner(new int(7));int*pointer=owner.get();
+{auto&&ref=case_0::g();if(&ref!=&case_0::f||ref()!=1)return 1;}
+if(case_1::run()!=0)return 2;
+if(case_2::run()!=0)return 2;
+if(case_3::f(one)!=0)return 4;
+if(case_4::f(one)!=0)return 4;
+if(case_5::f(one)!=0)return 4;
+if(case_6::f(owner)!=0||owner.get()!=pointer||*owner!=7)return 3;
+if(one(2)!=11||allocations!=1||releases!=0)return 5;}return allocations!=1||releases!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-carrier-reference-bindings" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateSourceRegressionsHeadersAndDeclarations) {
+  const auto Source = tmpFile("template-source-headers-and-declarations.cpp");
+  const auto Output = tmpFile("template-source-headers-and-declarations.nc");
+  writeFile(Source, R"cpp(#include <vector>
+namespace inline_case{
+namespace N{inline namespace V{int n=3;}}
+}
+namespace query_case{
+int f()noexcept;static_assert(noexcept(f()));
+}
+namespace template_case{
+template<class T>T f(T v){return v;}
+}
+int main(){return inline_case::N::n!=3||template_case::f(8)!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("template-source-headers-and-declarations" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateSourceRegressionsCallbackArguments) {
+  const auto Source = tmpFile("template-source-callback-template-arguments.cpp");
+  const auto Output = tmpFile("template-source-callback-template-arguments.nc");
+  writeFile(Source, R"cpp(namespace case_0{struct R{int n;};int get(R r){return r.n;}template<class T>auto p=&get;int run(){return p<int>(R{3});}}
+namespace case_1{int get(){return 3;}template<int(*P)()>auto p=P;int run(){return p<get>();}}
+int main(){return case_0::run()!=3||case_1::run()!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("template-source-callback-template-arguments" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateSourceRegressionsErasedFunctionAddresses) {
+  const auto Source = tmpFile("template-source-erased-function-addresses.cpp");
+  const auto Output = tmpFile("template-source-erased-function-addresses.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace case_0{
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){return std::get<Erased<&owned>>(values);}
+int run(){return 0;}
+}
+namespace case_1{
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){static_assert(__is_same(decltype(std::get<Erased<&owned>>(values)),int&));return 0;}
+int run(){return 0;}
+}
+int main(){std::pair<int,long>values{7,9};if(case_0::run()!=0||case_1::run()!=0||case_0::probe(values)!=7||case_1::probe(values)!=0)return 1;return values.first!=7||values.second!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("template-source-erased-function-addresses" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnerAdapterRegressionsNestedArrays) {
+  const auto Source = tmpFile("owner-adapter-nested-array-adapters.cpp");
+  const auto Output = tmpFile("owner-adapter-nested-array-adapters.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <memory>
+#include <tuple>
+#include <utility>
+namespace case_0{
+struct Box { int value; };
+int run(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}
+}
+namespace case_1{
+struct Box { int value; int read() const { return value; } };
+int run() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }
+}
+int main(){return case_0::run()!=2||case_1::run()!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owner-adapter-nested-array-adapters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnerAdapterRegressionsFactoryQueries) {
+  const auto Source = tmpFile("owner-adapter-factory-result-queries.cpp");
+  const auto Output = tmpFile("owner-adapter-factory-result-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);
+extern "C" void free(void*);
+int allocations=0,releases=0;
+void*operator new(Size n){++allocations;return malloc(n);}
+void*operator new[](Size n){++allocations;return malloc(n);}
+void operator delete(void*p)noexcept{++releases;free(p);}
+void operator delete(void*p,Size)noexcept{++releases;free(p);}
+void operator delete[](void*p)noexcept{++releases;free(p);}
+void operator delete[](void*p,Size)noexcept{++releases;free(p);}
+namespace case_0{
+
+int f(Size n) { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>(n)) == sizeof(p)); return 0; }
+
+}
+namespace case_1{
+
+int f() { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>(Size(65537))) == sizeof(p)); return 0; }
+
+}
+namespace case_2{
+
+int f() { static_assert(sizeof(std::make_unique<int>(1)) == sizeof(std::unique_ptr<int>)); return 0; }
+
+}
+namespace case_3{
+
+struct R { R(int) noexcept {} R(short) noexcept {} };
+int f() { auto p=std::make_unique<R>(1); static_assert(sizeof(std::make_unique<R>(short(2))) == sizeof(p)); return 0; }
+
+}
+int main(){if(case_0::f(1)!=0||case_0::f(65537)!=0||case_1::f()!=0||case_2::f()!=0||case_3::f()!=0)return 1;return allocations!=4||releases!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owner-adapter-factory-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnerAdapterRegressionsPointerReferenceAddresses) {
+  const auto Source = tmpFile("owner-adapter-pointer-reference-addresses.cpp");
+  const auto Output = tmpFile("owner-adapter-pointer-reference-addresses.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <memory>
+#include <tuple>
+#include <utility>
+namespace case_0{
+using F=int(int);F*address(F&ref){return std::pointer_traits<F*>::pointer_to(ref);}
+}
+namespace case_1{
+int one(int n){return n;}int run(){auto&ref=one;return std::pointer_traits<int(*)(int)>::pointer_to(ref)(0);}
+}
+int one(int n){return n+8;}
+int main(){if(case_0::address(one)!=&one||case_0::address(one)(3)!=11||case_1::run()!=0)return 1;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owner-adapter-pointer-reference-addresses" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnerAdapterRegressionsOverriddenFieldInitializer) {
+  const auto Source = tmpFile("owner-adapter-overridden-field-initializer.cpp");
+  const auto Output = tmpFile("owner-adapter-overridden-field-initializer.nc");
+  writeFile(Source, R"cpp(int missing();struct R{int n=missing();};void f(){R r{7};}
+int main(){f();R value{7};return value.n!=7;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owner-adapter-overridden-field-initializer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"volatile-receiver", "struct R{int n;int operator()()volatile{return n;}};", "TR0201"},
       {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
-      {"member-pointer", "struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}", "TR0201"},
-      {"free-pointer", "struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] int operator()()const{return n;}};", "TR0201"},
       {"virtual", "struct R{int n;virtual int operator()()const{return n;}};", "TR0201"},
       {"binary-arity", "struct R{int n;int operator+(int,int){return n;}};", "TR0202"},
@@ -10839,7 +11156,6 @@ TEST_F(TranslateTest, CoreV2InlineNamespacesRetainSourceClosureAndLanguageBounda
       {"unused-body", "namespace N{inline namespace V{int f(){long double n=3;return static_cast<int>(n);}}}", "TR0201"},
       {"skipped-body", "namespace N{inline namespace V{int f(){if(false){long double n=3;}return 0;}}}", "TR0201"},
       {"folded-initializer", "namespace N{inline namespace V{int n=static_cast<int>(3.0L);}}", "TR0201"},
-      {"active-include", "#include <vector>\nnamespace N{inline namespace V{int n=3;}}", "TR0201"},
       {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nnamespace N{inline namespace V{int n=3;}}", "TR0201"},
       {"inline-mismatch", "namespace N{}inline namespace N{}", "TR0202"},
       {"block", "void f(){inline namespace N{}}", "TR0202"},
@@ -12026,7 +12342,6 @@ TEST_F(TranslateTest, CoreV2MemberFunctionTemplatesRetainSourceAndResourceChecks
       {"constructor-hidden-initializer", "struct R{int n;template<class T>R(T v):n(int(1.0L)+int(v)){}};int main(){R r(3);return r.n;}"},
       {"conversion-hidden-body", "struct R{template<class T>operator T(){return T(int(1.0L));}};int main(){R r;return static_cast<int>(r);}"},
       {"own-specialized-hidden-body", "template<class C>struct R{template<class T>int f(T){return 3;}};template<>template<class T>int R<int>::f(T n){return int(1.0L)+int(n);}int main(){R<int>r;return r.f(3);}"},
-      {"member-function-pointer", "struct R{template<class T>int f(T){return 3;}};int main(){auto p=&R::f<int>;R r;return (r.*p)(3);}"},
       {"volatile-member", "struct R{template<class T>int f(T)volatile{return 3;}};int main(){R r;return r.f(3);}"},
       {"specialized-default-hidden", "template<class T>struct R{template<class U>int f(int n=int(sizeof(long double))+int(sizeof(T)));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>();}"},
       {"hidden-function-default", "struct R{template<class T=int>int f(int n=int(sizeof(long double))+int(sizeof(T))){return n;}};int main(){R r;return r.f<int>();}"},
@@ -18368,8 +18683,6 @@ TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesRetainSourceAndSignatureBou
       {"thread-local", "int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}"},
       {"volatile", "int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}"},
       {"nonstatic-member-pointer", "struct R{int get(){return 3;}};template<class T>auto p=&R::get;int main(){R r;return (r.*p<int>)();}"},
-      {"record-callback-signature", "struct R{int n;};int get(R r){return r.n;}template<class T>auto p=&get;int main(){return p<int>(R{3});}"},
-      {"pointer-nontype-argument", "int get(){return 3;}template<int(*P)()>auto p=P;int main(){return p<get>();}"},
       {"hidden-written-argument", "int get(){return 3;}template<class T>auto p=&get;int main(){return p<decltype((sizeof(long double),1))>();}"},
       {"hidden-default-argument", "int get(){return 3;}template<class T=decltype((sizeof(long double),1))>auto p=&get;int main(){return p<>();}"},
       {"hidden-initializer", "int get(){return 3;}template<class T>auto p=(sizeof(long double),&get);int main(){return p<int>();}"},
@@ -22501,7 +22814,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"declared-signature-runtime-after-query", "template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));int main(){return f(1);}", "TR0203"},
       {"declared-signature-runtime-address", "template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));auto pointer=&f<int>;", "TR0203"},
       {"declared-signature-explicit-extern", "template<class T>T f(T)noexcept;extern template int f<int>(int)noexcept;static_assert(noexcept(f(1)));", "TR0203"},
-      {"declared-signature-ordinary-function", "int f()noexcept;static_assert(noexcept(f()));", "TR0203"},
       {"declared-signature-member-function", "struct R{template<class T>T f(T)noexcept;};R*r;static_assert(noexcept(r->f(1)));", "TR0203"},
       {"declared-signature-friend-function", "struct R{template<class T>friend T f(R,T)noexcept;};static_assert(noexcept(f(R{},1)));", "TR0203"},
       {"declared-signature-undeduced-return", "template<class T>auto f(T)noexcept;using A=decltype(f(1));", "TR0202"},
@@ -22518,7 +22830,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
       {"attribute", "template<class T>[[nodiscard]]T f(T v){return v;}", "TR0201"},
       {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},
-      {"active-include", "#include <vector>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"inactive-include", "#if 0\n#include <utility>\n#endif\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"non-template-discarded", "int f(){if constexpr(true)return 1;else return static_cast<int>(1.0L);}", "TR0201"},
       {"unused-consteval", "template<class T>int f(){if consteval{return 1;}else{return 2;}}", "TR0202"},
@@ -24626,7 +24937,6 @@ TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"reference-return", "int&&f(){return 1;}", "TR0201"},
       {"volatile-reference", "int f(volatile int&&n){return n;}", "TR0201"},
-      {"function-reference", "int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}", "TR0201"},
       {"direct-lvalue-binding", "void f(){int n=1;int&&r=n;}", "TR0202"},
       {"lvalue-method-on-xvalue", "struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}", "TR0202"},
       {"rvalue-method-on-lvalue", "struct R{int n;int get()&&{return n;}};int f(R&r){return r.get();}", "TR0202"},
@@ -24819,7 +25129,7 @@ TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
   }
   const auto Source = tmpFile("default-member-boundary.cpp");
   const auto Output = tmpFile("default-member-boundary.nc");
-  writeFile(Source, "int missing();struct R{int n=missing();};void f(){R r{7};}");
+  writeFile(Source, "int missing();struct R{int n=missing();};void f(){R r;}");
   auto Missing = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
   expectCode(Missing, "TR0203");
   expectNoArtifacts(Output);
@@ -26867,11 +27177,6 @@ int object=0; struct Owner {int value;}; template<auto Value>using Erased=int;
 int probe(std::tuple<int&>& values){return std::get<(sizeof(Erased<&object>),0)>(values);}
 int main(){return 0;}
 )cpp"},
-      {"runtime-function-declaration-type", R"cpp(#include <utility>
-int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
-int probe(std::pair<int,long>& values){return std::get<Erased<&owned>>(values);}
-int main(){return 0;}
-)cpp"},
       {"decltype-long-double-type", R"cpp(#include <utility>
 int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
 int probe(std::pair<int,long>& values){using Result=decltype(std::get<decltype((sizeof(long double),int()))>(values));return 0;}
@@ -26885,11 +27190,6 @@ int main(){return 0;}
       {"query-long-double-index", R"cpp(#include <tuple>
 int object=0; struct Owner {int value;}; template<auto Value>using Erased=int;
 int probe(std::tuple<int&>& values){static_assert(__is_same(decltype(std::get<(sizeof(long double),0)>(values)),int&));return 0;}
-int main(){return 0;}
-)cpp"},
-      {"query-function-declaration-type", R"cpp(#include <utility>
-int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
-int probe(std::pair<int,long>& values){static_assert(__is_same(decltype(std::get<Erased<&owned>>(values)),int&));return 0;}
 int main(){return 0;}
 )cpp"},
       {"member-construct-hidden-long-double", R"cpp(#include <memory>
@@ -27435,9 +27735,6 @@ template<class>using F=int(int);int one(int v){return v;}auto f(){return std::mo
       {"missing-target", R"cpp(#include <utility>
 int one(int);auto f(){return std::move_if_noexcept(one);}
 )cpp", "TR0203"},
-      {"reference-storage", R"cpp(#include <utility>
-int one(int v){return v;}int main(){auto&ref=std::move_if_noexcept(one);return ref(0);}
-)cpp", "TR0201"},
       {"receiver-source", R"cpp(#include <utility>
 struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::move_if_noexcept(T{}.call);}
 )cpp", "TR0201"},
@@ -27654,9 +27951,6 @@ template<class>using F=int(int);int one(int v){return v;}auto f(){return std::as
       {"missing-target", R"cpp(#include <utility>
 int one(int);auto f(){return std::as_const(one);}
 )cpp", "TR0203"},
-      {"reference-storage", R"cpp(#include <utility>
-int one(int v){return v;}int main(){auto&ref=std::as_const(one);return ref(0);}
-)cpp", "TR0201"},
       {"receiver-source", R"cpp(#include <utility>
 struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::as_const(T{}.call);}
 )cpp", "TR0201"},
@@ -54272,12 +54566,6 @@ int main(){Box b{3};std::pair<volatile std::reference_wrapper<Box>,int> p(std::r
 struct Box { int value; };
 int main(){long double b=3;std::pair<std::reference_wrapper<long double>,int> p(std::ref(b),2);return p.second;}
 )cpp", "TR0201"},
-      {"wrapper-array-field", R"cpp(#include <array>
-#include <functional>
-#include <utility>
-struct Box { int value; };
-int main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}
-)cpp", "TR0201"},
       {"wrapper-user-conversion", R"cpp(#include <array>
 #include <functional>
 #include <utility>
@@ -58757,13 +59045,6 @@ int empty() { return 0; }
 int main() { std::array<Item, 0> array{}; return std::apply(empty, array); }
 )cpp", "TR0201"},
 
-      {"array-wrapper-receiver", R"cpp(#include <array>
-#include <functional>
-#include <tuple>
-#include <utility>
-struct Box { int value; int read() const { return value; } };
-int main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }
-)cpp", "TR0203"},
 
       {"nested-array-value-parameter", R"cpp(#include <array>
 #include <functional>
@@ -72978,10 +73259,6 @@ using Bad=int[sizeof(long double)];int f(Bad&p){static_assert(__is_same(decltype
 struct Box{int n[sizeof(long double)];};int f(Box&p){static_assert(__is_same(decltype(std::as_const(p)),const Box&));return 0;}
 )cpp",
        "TR0201"},
-      {"function-reference", R"cpp(
-using Function=int(int);int f(Function&p){static_assert(__is_same(decltype(std::as_const(p)),Function&));return 0;}
-)cpp",
-       "TR0201"},
       {"member-pointer", R"cpp(
 struct Box{int n;};using Member=int Box::*;int f(Member&p){static_assert(__is_same(decltype(std::as_const(p)),const Member&));return 0;}
 )cpp",
@@ -73753,9 +74030,6 @@ int f(volatile int&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<v
       {"unknown-bound", R"cpp(
 using Bad=int[];int f(Bad&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<Bad&&>(v)),Bad&&));return 0;}
 )cpp", "TR0201"},
-      {"function-reference", R"cpp(
-using F=int(int);int f(F&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<F&>(v)),F&));return 0;}
-)cpp", "TR0201"},
       {"member-pointer", R"cpp(
 struct R{int n;};using P=int R::*;int f(P&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<P&&>(v)),P&&));return 0;}
 )cpp", "TR0201"},
@@ -74368,19 +74642,10 @@ int f(long double*&p){static_assert(__is_same(decltype(std::move_if_noexcept(p))
 using Array=int[sizeof(long double)];int f(Array&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Array&&));return 0;}
 )cpp",
        "TR0201"},
-      {"function-reference", R"cpp(
-using Function=int(int);int f(Function&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Function&));return 0;}
-)cpp",
-       "TR0201"},
       {"member-pointer", R"cpp(
 struct Box{int n;};using Member=int Box::*;int f(Member&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Member&&));return 0;}
 )cpp",
        "TR0201"},
-      {"owner-reference", R"cpp(
-#include <memory>
-int f(std::unique_ptr<int>&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),std::unique_ptr<int>&&));return 0;}
-)cpp",
-       "TR0203"},
       {"reference-argument-source", R"cpp(
 int f(int&p){static_assert(__is_same(decltype(std::move_if_noexcept<decltype((sizeof(long double),p))>(p)),int&));return p;}
 )cpp",
@@ -78246,23 +78511,6 @@ int f() { R r(1); auto p=std::make_unique<R>(r); static_assert(sizeof(std::make_
 int f() { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>((sizeof(long double), Size(3)))) == sizeof(p)); return 0; }
 )cpp",
        "TR0201"},
-      {"array-runtime-count", R"cpp(
-int f(Size n) { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>(n)) == sizeof(p)); return 0; }
-)cpp",
-       "TR0201"},
-      {"array-count-limit", R"cpp(
-int f() { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>(Size(65537))) == sizeof(p)); return 0; }
-)cpp",
-       "TR0201"},
-      {"query-only-specialization", R"cpp(
-int f() { static_assert(sizeof(std::make_unique<int>(1)) == sizeof(std::unique_ptr<int>)); return 0; }
-)cpp",
-       "TR0201"},
-      {"query-only-record-constructor", R"cpp(
-struct R { R(int) noexcept {} R(short) noexcept {} };
-int f() { auto p=std::make_unique<R>(1); static_assert(sizeof(std::make_unique<R>(short(2))) == sizeof(p)); return 0; }
-)cpp",
-       "TR0201"},
       {"independent-function-address", R"cpp(
 using Factory = std::unique_ptr<int> (*)(int &&);
 int f() { auto p=std::make_unique<int>(1); static_assert(sizeof(static_cast<Factory>(&std::make_unique<int, int>)) == sizeof(Factory)); return 0; }
@@ -80559,12 +80807,6 @@ using F=int(int);int one(int n){return n;}F*select(int n=sizeof(long double))noe
       {"missing-target", R"cpp(#include <memory>
 int one(int);auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(one);}
 )cpp", "TR0203"},
-      {"reference-parameter", R"cpp(#include <memory>
-using F=int(int);F*address(F&ref){return std::pointer_traits<F*>::pointer_to(ref);}
-)cpp", "TR0201"},
-      {"reference-storage", R"cpp(#include <memory>
-int one(int n){return n;}int main(){auto&ref=one;return std::pointer_traits<int(*)(int)>::pointer_to(ref)(0);}
-)cpp", "TR0201"},
       {"receiver-source", R"cpp(#include <memory>
 struct T{long double hidden;static int call(int n){return n;}};auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(T{}.call);}
 )cpp", "TR0201"},
