@@ -278804,6 +278804,602 @@ using W=std::reference_wrapper<volatile int>;auto selected(W*a,W*b,W*c){auto res
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperSearchStoredPredicatesOperationMatrix) {
+  const auto Source = tmpFile("wrapper-search-stored-predicate-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-search-stored-predicate-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=1,y=2,z=3;using W=std::reference_wrapper<int>;W a[]={x,y,y,z,y,y};W b[]={y,y};const W c[]={x,y,y,z,y,y};const W d[]={y,y};for(int variant=0;variant!=3;++variant){int n=variant==2?6:variant;int m=variant==2?2:variant;
+{std::equal_to<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::find_first_of(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::find_first_of(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{std::not_equal_to<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::not_equal_to<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::not_equal_to<>op;auto result=std::find_first_of(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:0))return 1;}
+{const std::not_equal_to<>op;auto result=std::find_first_of(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{std::less<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less<>op;auto result=std::find_first_of(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less<>op;auto result=std::find_first_of(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{std::greater<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:3))return 1;}
+{const std::greater<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:3))return 1;}
+{const std::greater<>op;auto result=std::find_first_of(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:3))return 1;}
+{const std::greater<>op;auto result=std::find_first_of(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:3))return 1;}
+{std::less_equal<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less_equal<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less_equal<>op;auto result=std::find_first_of(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less_equal<>op;auto result=std::find_first_of(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{std::greater_equal<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::find_first_of(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::find_first_of(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::find_first_of(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{std::equal_to<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::search(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::search(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{std::not_equal_to<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::search(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::search(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{std::less<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::less<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::less<>op;auto result=std::search(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:6))return 1;}
+{const std::less<>op;auto result=std::search(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{std::greater<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::search(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::search(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{std::less_equal<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less_equal<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less_equal<>op;auto result=std::search(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:0))return 1;}
+{const std::less_equal<>op;auto result=std::search(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:0))return 1;}
+{std::greater_equal<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::search(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::search(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::search(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{std::equal_to<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:4))return 1;}
+{const std::equal_to<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:4))return 1;}
+{const std::equal_to<>op;auto result=std::find_end(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:4))return 1;}
+{const std::equal_to<>op;auto result=std::find_end(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:4))return 1;}
+{std::not_equal_to<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::find_end(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::find_end(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{std::less<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::less<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{const std::less<>op;auto result=std::find_end(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:6))return 1;}
+{const std::less<>op;auto result=std::find_end(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:6))return 1;}
+{std::greater<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::find_end(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:6))return 1;}
+)cpp"
+             R"cpp({const std::greater<>op;auto result=std::find_end(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{std::less_equal<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:4))return 1;}
+{const std::less_equal<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?0:4))return 1;}
+{const std::less_equal<>op;auto result=std::find_end(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?0:4))return 1;}
+{const std::less_equal<>op;auto result=std::find_end(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?0:4))return 1;}
+{std::greater_equal<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:4))return 1;}
+{const std::greater_equal<>op;auto result=std::find_end(a,a+n,b,b+m,op);if(result!=a+(variant==0?0:variant==1?1:4))return 1;}
+{const std::greater_equal<>op;auto result=std::find_end(c,c+n,b,b+m,op);if(result!=c+(variant==0?0:variant==1?1:4))return 1;}
+{const std::greater_equal<>op;auto result=std::find_end(a,a+n,d,d+m,op);if(result!=a+(variant==0?0:variant==1?1:4))return 1;}
+{std::equal_to<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::search_n(c,c+n,2,b[0],op);if(result!=c+(variant==0?0:variant==1?1:1))return 1;}
+{const std::equal_to<>op;auto result=std::search_n(a,a+n,2,d[0],op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{std::not_equal_to<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::search_n(c,c+n,2,b[0],op);if(result!=c+(variant==0?0:variant==1?1:6))return 1;}
+{const std::not_equal_to<>op;auto result=std::search_n(a,a+n,2,d[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{std::less<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::less<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::less<>op;auto result=std::search_n(c,c+n,2,b[0],op);if(result!=c+(variant==0?0:variant==1?1:6))return 1;}
+{const std::less<>op;auto result=std::search_n(a,a+n,2,d[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{std::greater<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::search_n(c,c+n,2,b[0],op);if(result!=c+(variant==0?0:variant==1?1:6))return 1;}
+{const std::greater<>op;auto result=std::search_n(a,a+n,2,d[0],op);if(result!=a+(variant==0?0:variant==1?1:6))return 1;}
+{std::less_equal<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:0))return 1;}
+{const std::less_equal<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:0))return 1;}
+{const std::less_equal<>op;auto result=std::search_n(c,c+n,2,b[0],op);if(result!=c+(variant==0?0:variant==1?1:0))return 1;}
+{const std::less_equal<>op;auto result=std::search_n(a,a+n,2,d[0],op);if(result!=a+(variant==0?0:variant==1?1:0))return 1;}
+{std::greater_equal<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::search_n(a,a+n,2,b[0],op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::search_n(c,c+n,2,b[0],op);if(result!=c+(variant==0?0:variant==1?1:1))return 1;}
+{const std::greater_equal<>op;auto result=std::search_n(a,a+n,2,d[0],op);if(result!=a+(variant==0?0:variant==1?1:1))return 1;}
+}return x!=1||y!=2||z!=3||&a[0].get()!=&x||&c[4].get()!=&y||&b[1].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-search-stored-predicate-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchStoredPredicatesLiveBindings) {
+  const auto Source = tmpFile("wrapper-search-stored-predicate-live-bindings.cpp");
+  const auto Output = tmpFile("wrapper-search-stored-predicate-live-bindings.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=1,y=2,z=3,k=4;using W=std::reference_wrapper<int>;W a[]={x,y,y,z,y,y};W b[]={y,y};const std::equal_to<>op;
+if(std::find_first_of(a,a+6,b,b+2,op)!=a+1||std::search(a,a+6,b,b+2,op)!=a+1||std::find_end(a,a+6,b,b+2,op)!=a+4||std::search_n(a,a+6,2,b[0],op)!=a+1)return 1;
+y=5;if(std::search(a,a+6,b,b+2,op)!=a+1||std::find_end(a,a+6,b,b+2,op)!=a+4)return 2;
+b[0]=std::ref(k);b[1]=std::ref(k);if(std::search(a,a+6,b,b+2,op)!=a+6||std::search_n(a,a+6,2,b[0],op)!=a+6)return 3;
+a[4]=std::ref(k);a[5]=std::ref(k);if(std::find_first_of(a,a+6,b,b+2,op)!=a+4||std::search(a,a+6,b,b+2,op)!=a+4||std::find_end(a,a+6,b,b+2,op)!=a+4||std::search_n(a,a+6,2,b[0],op)!=a+4)return 4;
+if(std::search(a,a+6,b,b,op)!=a||std::find_end(a,a+6,b,b,op)!=a+6||std::find_first_of(a,a+6,b,b,op)!=a+6)return 5;
+if(std::search_n(a,a+6,0,b[0],op)!=a||std::search_n(a,a+6,8,b[0],op)!=a+6)return 6;
+return x!=1||y!=5||z!=3||k!=4||&a[4].get()!=&k||&b[0].get()!=&k;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-search-stored-predicate-live-bindings" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchStoredPredicatesBoolFloating) {
+  const auto Source = tmpFile("wrapper-search-stored-predicate-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-search-stored-predicate-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool f=false,t=true;const double zero=-0.0,nan=0.0/0.0,tiny=0x1p-100;using B=std::reference_wrapper<const bool>;using D=std::reference_wrapper<const double>;const B a[]={f,t,t,f,t,t};B b[]={t,t};const D c[]={zero,nan,tiny,tiny,nan,zero};D d[]={tiny,tiny};
+{const std::equal_to<>op;if(std::find_first_of(a,a+6,b,b+2,op)!=a+1||std::find_first_of(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::not_equal_to<>op;if(std::find_first_of(a,a+6,b,b+2,op)!=a+0||std::find_first_of(c,c+6,d,d+2,op)!=c+0)return 1;}
+{const std::less<>op;if(std::find_first_of(a,a+6,b,b+2,op)!=a+0||std::find_first_of(c,c+6,d,d+2,op)!=c+0)return 1;}
+{const std::greater<>op;if(std::find_first_of(a,a+6,b,b+2,op)!=a+6||std::find_first_of(c,c+6,d,d+2,op)!=c+6)return 1;}
+{const std::less_equal<>op;if(std::find_first_of(a,a+6,b,b+2,op)!=a+0||std::find_first_of(c,c+6,d,d+2,op)!=c+0)return 1;}
+{const std::greater_equal<>op;if(std::find_first_of(a,a+6,b,b+2,op)!=a+1||std::find_first_of(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::equal_to<>op;if(std::search(a,a+6,b,b+2,op)!=a+1||std::search(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::not_equal_to<>op;if(std::search(a,a+6,b,b+2,op)!=a+6||std::search(c,c+6,d,d+2,op)!=c+0)return 1;}
+{const std::less<>op;if(std::search(a,a+6,b,b+2,op)!=a+6||std::search(c,c+6,d,d+2,op)!=c+6)return 1;}
+{const std::greater<>op;if(std::search(a,a+6,b,b+2,op)!=a+6||std::search(c,c+6,d,d+2,op)!=c+6)return 1;}
+{const std::less_equal<>op;if(std::search(a,a+6,b,b+2,op)!=a+0||std::search(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::greater_equal<>op;if(std::search(a,a+6,b,b+2,op)!=a+1||std::search(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::equal_to<>op;if(std::find_end(a,a+6,b,b+2,op)!=a+4||std::find_end(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::not_equal_to<>op;if(std::find_end(a,a+6,b,b+2,op)!=a+6||std::find_end(c,c+6,d,d+2,op)!=c+4)return 1;}
+{const std::less<>op;if(std::find_end(a,a+6,b,b+2,op)!=a+6||std::find_end(c,c+6,d,d+2,op)!=c+6)return 1;}
+{const std::greater<>op;if(std::find_end(a,a+6,b,b+2,op)!=a+6||std::find_end(c,c+6,d,d+2,op)!=c+6)return 1;}
+{const std::less_equal<>op;if(std::find_end(a,a+6,b,b+2,op)!=a+4||std::find_end(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::greater_equal<>op;if(std::find_end(a,a+6,b,b+2,op)!=a+4||std::find_end(c,c+6,d,d+2,op)!=c+2)return 1;}
+{const std::equal_to<>op;if(std::search_n(a,a+6,2,b[0],op)!=a+1||std::search_n(c,c+6,2,d[0],op)!=c+2)return 1;}
+{const std::not_equal_to<>op;if(std::search_n(a,a+6,2,b[0],op)!=a+6||std::search_n(c,c+6,2,d[0],op)!=c+0)return 1;}
+{const std::less<>op;if(std::search_n(a,a+6,2,b[0],op)!=a+6||std::search_n(c,c+6,2,d[0],op)!=c+6)return 1;}
+{const std::greater<>op;if(std::search_n(a,a+6,2,b[0],op)!=a+6||std::search_n(c,c+6,2,d[0],op)!=c+6)return 1;}
+{const std::less_equal<>op;if(std::search_n(a,a+6,2,b[0],op)!=a+0||std::search_n(c,c+6,2,d[0],op)!=c+2)return 1;}
+{const std::greater_equal<>op;if(std::search_n(a,a+6,2,b[0],op)!=a+1||std::search_n(c,c+6,2,d[0],op)!=c+2)return 1;}
+return f||!t||!(tiny>0.0)||&c[1].get()!=&nan||&d[1].get()!=&tiny;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-search-stored-predicate-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchStoredPredicatesEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-search-stored-predicate-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-search-stored-predicate-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads,cleaned;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto parameter_find_first_of(P a,P b,P c,P d,const std::equal_to<>&op){return std::find_first_of(a,b,c,d,op);}
+auto parameter_search(P a,P b,P c,P d,const std::equal_to<>&op){return std::search(a,b,c,d,op);}
+auto parameter_find_end(P a,P b,P c,P d,const std::equal_to<>&op){return std::find_end(a,b,c,d,op);}
+auto parameter_search_n(P a,P b,P c,P d,const std::equal_to<>&op){return std::search_n(a,b,2,c[0],op);}
+int main(){int x=1,y=2,z=3;W a[]={x,y,y,z,y,y};W b[]={y,y};const std::equal_to<>op;
+if(std::find_first_of(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b+2}.get(),op)!=a)return 1;
+if(std::search(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b+2}.get(),op)!=a)return 1;
+if(std::find_end(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b+2}.get(),op)!=a)return 1;
+if(std::search_n(Input{a}.get(),Input{a}.get(),2,b[0],op)!=a)return 1;
+if(reads!=14||cleaned!=14)return 2;
+if(parameter_find_first_of(a,a+6,b,b+2,op)!=a+1)return 3;
+if(parameter_search(a,a+6,b,b+2,op)!=a+1)return 3;
+if(parameter_find_end(a,a+6,b,b+2,op)!=a+4)return 3;
+if(parameter_search_n(a,a+6,b,b+2,op)!=a+1)return 3;
+return reads!=14||cleaned!=14||x!=1||y!=2||z!=3||&a[4].get()!=&y||&b[0].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-search-stored-predicate-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchStoredPredicatesFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-search-stored-predicate-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-search-stored-predicate-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_first_of(a,b,out,out+1,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::search(a,b,out,out+1,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_end(a,b,out,out+1,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=const W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::search_n(a,b,2,out[0],op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::search_n(a,b,2,out[0],op);}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_first_of(a,b,out,out+1,op);}
+}
+namespace case_6{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::search(a,b,out,out+1,op);}
+}
+namespace case_7{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_end(a,b,out,out+1,op);}
+}
+int main(){int x=1,y=2,z=3;std::reference_wrapper<int>a[]={x,y,y,z,y,y};std::reference_wrapper<int>b[]={y,y};
+if(case_0::selected(a,a+6,b)!=a+1)return 1;
+if(case_1::selected(a,a+6,b)!=a+1)return 1;
+if(case_2::selected(a,a+6,b)!=a+5)return 1;
+if(case_3::selected(a,a+6,b)!=a+1)return 1;
+if(case_4::selected(a,a+6,b)!=a+1)return 1;
+if(case_5::selected(a,a+6,b)!=a+1)return 1;
+if(case_6::selected(a,a+6,b)!=a+1)return 1;
+if(case_7::selected(a,a+6,b)!=a+5)return 1;
+return x!=1||y!=2||z!=3||&a[4].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-search-stored-predicate-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchStoredPredicatesRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"find_end-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::find_end(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"find_end-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::find_end(a,b,c,d,h.op);}
+)cpp"},
+      {"find_end-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::find_end(a,b,c,d,make());}
+)cpp"},
+      {"find_end-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::find_end(a,b,c,d,op);}
+)cpp"},
+      {"find_end-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::find_end(a,b,c,d,op);}
+)cpp"},
+      {"find_end-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::find_end(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"find_end-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::find_end(a,b,c,d,h.op);}
+)cpp"},
+      {"find_end-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::find_end(a,b,c,d,make());}
+)cpp"},
+      {"find_end-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::find_end(a,b,c,d,op);}
+)cpp"},
+      {"find_end-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::find_end(a,b,c,d,op);}
+)cpp"},
+      {"find_first_of-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::find_first_of(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"find_first_of-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::find_first_of(a,b,c,d,h.op);}
+)cpp"},
+      {"find_first_of-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::find_first_of(a,b,c,d,make());}
+)cpp"},
+      {"find_first_of-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::find_first_of(a,b,c,d,op);}
+)cpp"},
+      {"find_first_of-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::find_first_of(a,b,c,d,op);}
+)cpp"},
+      {"find_first_of-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::find_first_of(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"find_first_of-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::find_first_of(a,b,c,d,h.op);}
+)cpp"},
+      {"find_first_of-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::find_first_of(a,b,c,d,make());}
+)cpp"},
+      {"find_first_of-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::find_first_of(a,b,c,d,op);}
+)cpp"},
+      {"find_first_of-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::find_first_of(a,b,c,d,op);}
+)cpp"},
+      {"search-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::search(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"search-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::search(a,b,c,d,h.op);}
+)cpp"},
+      {"search-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::search(a,b,c,d,make());}
+)cpp"},
+      {"search-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::search(a,b,c,d,op);}
+)cpp"},
+      {"search-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::search(a,b,c,d,op);}
+)cpp"},
+      {"search-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::search(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"search-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::search(a,b,c,d,h.op);}
+)cpp"},
+      {"search-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::search(a,b,c,d,make());}
+)cpp"},
+      {"search-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::search(a,b,c,d,op);}
+)cpp"},
+      {"search-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::search(a,b,c,d,op);}
+)cpp"},
+      {"search_n-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::search_n(a,b,2,c[0],(++effects,op));}
+)cpp"},
+      {"search_n-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::search_n(a,b,2,c[0],h.op);}
+)cpp"},
+      {"search_n-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::search_n(a,b,2,c[0],make());}
+)cpp"},
+      {"search_n-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,const W&>(W&a,const W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<const W&>(b)))->decltype(std::forward<W&>(a)==std::forward<const W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::search_n(a,b,2,c[0],op);}
+)cpp"},
+      {"search_n-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::search_n(a,b,2,c[0],op);}
+)cpp"},
+      {"search_n-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::search_n(a,b,2,c[0],(++effects,op));}
+)cpp"},
+      {"search_n-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::search_n(a,b,2,c[0],h.op);}
+)cpp"},
+      {"search_n-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::search_n(a,b,2,c[0],make());}
+)cpp"},
+      {"search_n-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,const W&>(W&a,const W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<const W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<const W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::search_n(a,b,2,c[0],op);}
+)cpp"},
+      {"search_n-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::search_n(a,b,2,c[0],op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-search-stored-predicate-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
@@ -313650,12 +314246,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::find_first_of(a,a+1,out,out+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_first_of(a,b,out,out+1,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -314871,12 +315461,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::search(a,a+1,out,out+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::search(a,b,out,out+1,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -315964,12 +316548,6 @@ auto selected(W*a,W*b,W*out){return std::find_end(a,a+1,out,out+1,std::equal_to<
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::find_end(a,a+1,out,out+1,std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_end(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -317286,12 +317864,6 @@ auto selected(P a,P b){return std::search_n(a,a+1,1,*b,std::equal_to<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(const W*a,const W*b,W*out){return std::search_n(a,a+1,2,out[0],std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=const W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::search_n(a,b,2,out[0],op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -318643,12 +319215,6 @@ auto selected(P a,P b){return std::search_n(a,a+1,1,*b,std::equal_to<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::search_n(a,a+1,2,out[0],std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::search_n(a,b,2,out[0],op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -323740,12 +324306,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::find_first_of(a,a+1,out,out+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_first_of(a,b,out,out+1,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -325013,12 +325573,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::search(a,a+1,out,out+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::search(a,b,out,out+1,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -326157,12 +326711,6 @@ auto selected(W*a,W*b,W*out){return std::find_end(a,a+1,out,out+1,std::equal_to<
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::find_end(a,a+1,out,out+1,std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::find_end(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>

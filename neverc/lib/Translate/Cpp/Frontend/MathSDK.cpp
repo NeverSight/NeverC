@@ -53791,6 +53791,15 @@ static bool utilityWrapperFindFirstOfComparison(const State &S,
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -53802,8 +53811,9 @@ static bool utilityWrapperFindFirstOfComparison(const State &S,
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -54013,6 +54023,15 @@ static bool utilityWrapperSearchComparison(const State &S,
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -54024,8 +54043,9 @@ static bool utilityWrapperSearchComparison(const State &S,
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -54600,6 +54620,15 @@ static bool utilityWrapperFindEndComparison(const State &S,
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -54611,8 +54640,9 @@ static bool utilityWrapperFindEndComparison(const State &S,
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -55001,6 +55031,15 @@ static bool utilityWrapperSearchNComparison(const State &S,
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -55012,8 +55051,9 @@ static bool utilityWrapperSearchNComparison(const State &S,
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -55618,6 +55658,15 @@ static bool utilityWrapperSearchNComparisonInputs(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -55629,8 +55678,9 @@ static bool utilityWrapperSearchNComparisonInputs(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -57586,6 +57636,15 @@ static bool utilityWrapperFindFirstOfComparisonInputs(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -57597,8 +57656,9 @@ static bool utilityWrapperFindFirstOfComparisonInputs(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -57807,6 +57867,15 @@ static bool utilityWrapperSearchComparisonInputs(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -57818,8 +57887,9 @@ static bool utilityWrapperSearchComparisonInputs(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -58395,6 +58465,15 @@ static bool utilityWrapperFindEndComparisonInputs(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -58406,8 +58485,9 @@ static bool utilityWrapperFindEndComparisonInputs(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
