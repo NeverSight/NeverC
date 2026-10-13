@@ -15932,6 +15932,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     case UtilityOperation::AlgorithmIsPartitioned:
     case UtilityOperation::AlgorithmPartitionPoint:
       return WrapperCall(3, {2});
+    case UtilityOperation::AlgorithmAdjacentFind:
+    case UtilityOperation::AlgorithmUnique:
+      return Function->getNumParams() == 2 ? WrapperCall(2, {})
+                                          : WrapperCall(3, {2});
+    case UtilityOperation::AlgorithmUniqueCopy:
+      return Function->getNumParams() == 3 ? WrapperCall(3, {})
+                                          : WrapperCall(4, {3});
     case UtilityOperation::AlgorithmCopyIf:
     case UtilityOperation::AlgorithmRemoveCopyIf:
       return WrapperCall(4, {3});

@@ -277664,6 +277664,201 @@ auto selected(P a,P b,P out){std::equal_to<int>op;return std::unique(a,b,op);}
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueResultQueriesComparisonsDefaults) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-result-query-comparisons-defaults.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-result-query-comparisons-defaults.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=2,y=2,z=1,k=3,d=9;using W=std::reference_wrapper<int>;const W a[]={x,y,z,k};
+{auto p=std::adjacent_find(a,a+4,std::equal_to<>{});static_assert(__is_same(decltype(p),const W*));if(p!=a+0)return 1;}
+{const std::equal_to<>op;auto p=std::adjacent_find(a,a+4,op);static_assert(__is_same(decltype(p),const W*));if(p!=a+0)return 1;}
+{auto p=std::adjacent_find(a,a+4,std::not_equal_to<>{});static_assert(__is_same(decltype(p),const W*));if(p!=a+1)return 1;}
+{const std::not_equal_to<>op;auto p=std::adjacent_find(a,a+4,op);static_assert(__is_same(decltype(p),const W*));if(p!=a+1)return 1;}
+{auto p=std::adjacent_find(a,a+4,std::less<>{});static_assert(__is_same(decltype(p),const W*));if(p!=a+2)return 1;}
+{const std::less<>op;auto p=std::adjacent_find(a,a+4,op);static_assert(__is_same(decltype(p),const W*));if(p!=a+2)return 1;}
+{auto p=std::adjacent_find(a,a+4,std::greater<>{});static_assert(__is_same(decltype(p),const W*));if(p!=a+1)return 1;}
+{const std::greater<>op;auto p=std::adjacent_find(a,a+4,op);static_assert(__is_same(decltype(p),const W*));if(p!=a+1)return 1;}
+{auto p=std::adjacent_find(a,a+4,std::less_equal<>{});static_assert(__is_same(decltype(p),const W*));if(p!=a+0)return 1;}
+{const std::less_equal<>op;auto p=std::adjacent_find(a,a+4,op);static_assert(__is_same(decltype(p),const W*));if(p!=a+0)return 1;}
+{auto p=std::adjacent_find(a,a+4,std::greater_equal<>{});static_assert(__is_same(decltype(p),const W*));if(p!=a+0)return 1;}
+{const std::greater_equal<>op;auto p=std::adjacent_find(a,a+4,op);static_assert(__is_same(decltype(p),const W*));if(p!=a+0)return 1;}
+{auto p=std::adjacent_find(a,a+4);static_assert(__is_same(decltype(p),const W*));if(p!=a)return 2;}
+{W u[]={x,y,z,k};auto p=std::unique(u,u+4);static_assert(__is_same(decltype(p),W*));if(p!=u+3||&u[0].get()!=&x||&u[1].get()!=&z||&u[2].get()!=&k)return 3;}
+{W out[]={d,d,d,d};auto p=std::unique_copy(a,a+4,out);static_assert(__is_same(decltype(p),W*));if(p!=out+3||&out[0].get()!=&x||&out[1].get()!=&z||&out[2].get()!=&k||&out[3].get()!=&d)return 4;}
+{W u[]={x,y,z,k};auto p=std::unique(u,u+4,std::equal_to<>{});static_assert(__is_same(decltype(p),W*));if(p!=u+3||&u[0].get()!=&x||&u[1].get()!=&z||&u[2].get()!=&k)return 3;}
+{W out[]={d,d,d,d};auto p=std::unique_copy(a,a+4,out,std::equal_to<>{});static_assert(__is_same(decltype(p),W*));if(p!=out+3||&out[0].get()!=&x||&out[1].get()!=&z||&out[2].get()!=&k||&out[3].get()!=&d)return 4;}
+{W u[]={x,y,z,k};const std::equal_to<>op;auto p=std::unique(u,u+4,op);static_assert(__is_same(decltype(p),W*));if(p!=u+3||&u[0].get()!=&x||&u[1].get()!=&z||&u[2].get()!=&k)return 3;}
+{W out[]={d,d,d,d};const std::equal_to<>op;auto p=std::unique_copy(a,a+4,out,op);static_assert(__is_same(decltype(p),W*));if(p!=out+3||&out[0].get()!=&x||&out[1].get()!=&z||&out[2].get()!=&k||&out[3].get()!=&d)return 4;}
+return x!=2||y!=2||z!=1||k!=3||d!=9||&a[1].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-result-query-comparisons-defaults" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueResultQueriesConstBoolFloating) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-result-query-const-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-result-query-const-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool f=false,t=true;const double zero=-0.0,positive=0.0,nan=0.0/0.0,tiny=0x1p-100;using B=std::reference_wrapper<const bool>;using D=std::reference_wrapper<const double>;const B a[]={f,f,t,t};const D b[]={zero,positive,nan,tiny};
+{const std::equal_to<>op;auto p=std::adjacent_find(a,a+4,op);auto q=std::adjacent_find(b,b+4,op);static_assert(__is_same(decltype(p),const B*));static_assert(__is_same(decltype(q),const D*));if(p!=a+0||q!=b+0)return 1;}
+{const std::not_equal_to<>op;auto p=std::adjacent_find(a,a+4,op);auto q=std::adjacent_find(b,b+4,op);static_assert(__is_same(decltype(p),const B*));static_assert(__is_same(decltype(q),const D*));if(p!=a+1||q!=b+1)return 1;}
+{const std::less<>op;auto p=std::adjacent_find(a,a+4,op);auto q=std::adjacent_find(b,b+4,op);static_assert(__is_same(decltype(p),const B*));static_assert(__is_same(decltype(q),const D*));if(p!=a+1||q!=b+4)return 1;}
+{const std::greater<>op;auto p=std::adjacent_find(a,a+4,op);auto q=std::adjacent_find(b,b+4,op);static_assert(__is_same(decltype(p),const B*));static_assert(__is_same(decltype(q),const D*));if(p!=a+4||q!=b+4)return 1;}
+{const std::less_equal<>op;auto p=std::adjacent_find(a,a+4,op);auto q=std::adjacent_find(b,b+4,op);static_assert(__is_same(decltype(p),const B*));static_assert(__is_same(decltype(q),const D*));if(p!=a+0||q!=b+0)return 1;}
+{const std::greater_equal<>op;auto p=std::adjacent_find(a,a+4,op);auto q=std::adjacent_find(b,b+4,op);static_assert(__is_same(decltype(p),const B*));static_assert(__is_same(decltype(q),const D*));if(p!=a+0||q!=b+0)return 1;}
+const std::equal_to<>op;B u[]={f,f,t,t};B out[]={t,t,t,t};D v[]={zero,positive,nan,tiny};D dest[]={tiny,tiny,tiny,tiny};
+auto p=std::unique(u,u+4,op);auto q=std::unique_copy(a,a+4,out,op);auto r=std::unique(v,v+4);auto s=std::unique_copy(b,b+4,dest);
+static_assert(__is_same(decltype(p),B*));static_assert(__is_same(decltype(q),B*));static_assert(__is_same(decltype(r),D*));static_assert(__is_same(decltype(s),D*));
+if(p!=u+2||q!=out+2||&u[0].get()!=&f||&u[1].get()!=&t||&out[0].get()!=&f||&out[1].get()!=&t)return 2;
+if(r!=v+3||s!=dest+3||&v[0].get()!=&zero||&v[1].get()!=&nan||&v[2].get()!=&tiny||&dest[1].get()!=&nan||&dest[3].get()!=&tiny)return 3;
+return f||!t||&b[0].get()!=&zero||&b[1].get()!=&positive||&b[2].get()!=&nan||!(tiny>0.0);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-result-query-const-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueResultQueriesEvaluationCleanup) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-result-query-evaluation-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-result-query-evaluation-cleanup.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads,cleaned;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto adjacent_equal_to(P a,P b,const std::equal_to<>&op){auto p=std::adjacent_find(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto adjacent_not_equal_to(P a,P b,const std::not_equal_to<>&op){auto p=std::adjacent_find(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto adjacent_less(P a,P b,const std::less<>&op){auto p=std::adjacent_find(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto adjacent_greater(P a,P b,const std::greater<>&op){auto p=std::adjacent_find(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto adjacent_less_equal(P a,P b,const std::less_equal<>&op){auto p=std::adjacent_find(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto adjacent_greater_equal(P a,P b,const std::greater_equal<>&op){auto p=std::adjacent_find(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto compact(P a,P b,const std::equal_to<>&op){auto p=std::unique(a,b,op);static_assert(__is_same(decltype(p),P));return p;}
+auto copy(P a,P b,P out,const std::equal_to<>&op){auto p=std::unique_copy(a,b,out,op);static_assert(__is_same(decltype(p),P));return p;}
+int main(){int x=2,y=2,z=1,k=3,d=9;W a[]={x,y,z,k};W out[]={d,d,d,d};
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get());static_assert(__is_same(decltype(p),P));if(p!=a)return 1;}
+{auto p=std::unique(Input{a}.get(),Input{a}.get());static_assert(__is_same(decltype(p),P));if(p!=a)return 1;}
+{auto p=std::unique_copy(Input{a}.get(),Input{a}.get(),Input{out}.get());static_assert(__is_same(decltype(p),P));if(p!=out)return 1;}
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get(),std::equal_to<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 2;}
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get(),std::not_equal_to<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 2;}
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get(),std::less<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 2;}
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get(),std::greater<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 2;}
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get(),std::less_equal<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 2;}
+{auto p=std::adjacent_find(Input{a}.get(),Input{a}.get(),std::greater_equal<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 2;}
+{auto p=std::unique(Input{a}.get(),Input{a}.get(),std::equal_to<>{});static_assert(__is_same(decltype(p),P));if(p!=a)return 3;}
+{auto p=std::unique_copy(Input{a}.get(),Input{a}.get(),Input{out}.get(),std::equal_to<>{});static_assert(__is_same(decltype(p),P));if(p!=out)return 4;}
+if(reads!=24||cleaned!=24||&out[0].get()!=&d)return 5;
+{const std::equal_to<>op;auto p=adjacent_equal_to(a,a+4,op);static_assert(__is_same(decltype(p),P));if(p!=a+0)return 6;}
+{const std::not_equal_to<>op;auto p=adjacent_not_equal_to(a,a+4,op);static_assert(__is_same(decltype(p),P));if(p!=a+1)return 6;}
+{const std::less<>op;auto p=adjacent_less(a,a+4,op);static_assert(__is_same(decltype(p),P));if(p!=a+2)return 6;}
+{const std::greater<>op;auto p=adjacent_greater(a,a+4,op);static_assert(__is_same(decltype(p),P));if(p!=a+1)return 6;}
+{const std::less_equal<>op;auto p=adjacent_less_equal(a,a+4,op);static_assert(__is_same(decltype(p),P));if(p!=a+0)return 6;}
+{const std::greater_equal<>op;auto p=adjacent_greater_equal(a,a+4,op);static_assert(__is_same(decltype(p),P));if(p!=a+0)return 6;}
+const std::equal_to<>op;auto p=copy(a,a+4,out,op);auto q=compact(a,a+4,op);static_assert(__is_same(decltype(p),P));static_assert(__is_same(decltype(q),P));
+static_assert(__is_same(decltype(std::adjacent_find(Input{a}.get(),Input{a}.get())),P));
+static_assert(__is_same(decltype(std::unique(Input{a}.get(),Input{a}.get(),std::equal_to<>{})),P));
+static_assert(__is_same(decltype(std::unique_copy(Input{a}.get(),Input{a}.get(),Input{out}.get())),P));
+return p!=out+3||q!=a+3||&a[1].get()!=&z||&out[1].get()!=&z||x!=2||y!=2||z!=1||k!=3||d!=9||reads!=24||cleaned!=24;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-result-query-evaluation-cleanup" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueResultQueriesRetainSource) {
+  struct Case {
+    const char *Name, *Source, *Code;
+  };
+  const Case Cases[] = {
+      {"long-double-referent", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;auto selected(W*a,W*b,W*out){auto p=std::unique_copy(a,b,out);static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"member-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;struct Holder{std::less<>op;};auto selected(W*a,W*b){Holder h;auto p=std::adjacent_find(a,b,h.op);static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"same-callee-unapproved-argument", R"cpp(#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+struct Holder{std::equal_to<>op;};
+auto selected(W*a,W*b){auto allowed=std::adjacent_find(a,b,std::equal_to<>{});Holder h;auto denied=std::adjacent_find(a,b,h.op);static_assert(__is_same(decltype(allowed),W*));static_assert(__is_same(decltype(denied),W*));return allowed==denied;}
+)cpp", "TR0203"},
+      {"source-alias", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){auto p=std::adjacent_find(a,b);static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"source-conversion", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}auto selected(W*a,W*b,W*out){auto p=std::unique_copy(a,b,out,std::equal_to<>{});static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"source-forward", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&w)noexcept{return w;}}}auto selected(W*a,W*b){auto p=std::unique(a,b,std::equal_to<>{});static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}auto selected(W*a,W*b){auto p=std::adjacent_find(a,b,std::equal_to<>{});static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"typed-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;auto selected(W*a,W*b){std::equal_to<int>op;auto p=std::unique(a,b,op);static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+      {"volatile-referent", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;auto selected(W*a,W*b){auto p=std::adjacent_find(a,b);static_assert(__is_same(decltype(p),W*));return p;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-adjacent-unique-result-query-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
