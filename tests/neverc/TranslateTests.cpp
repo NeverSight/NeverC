@@ -11004,7 +11004,7 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
       {"crossing-case", "void f(int n){switch(n){if constexpr(true){case 0:break;}}}", "TR0202"},
       {"condition-scope", "int f(){if constexpr(const int n=3){}return n;}", "TR0202"},
       {"break-without-loop", "void f(){if constexpr(true)break;}", "TR0202"},
-      {"discarded-function", "int missing();int f(){if constexpr(false)return missing();return 0;}", "TR0203"},
+      {"discarded-and-runtime-function", "int missing();int f(){if constexpr(false)return missing();return missing();}", "TR0203"},
       {"discarded-global", "extern int missing;int f(){if constexpr(false)return missing;return 0;}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -17149,7 +17149,7 @@ TEST_F(TranslateTest, CoreV2DeletedDeclarationsRetainSourceDiagnostics) {
       {"volatile-method", "struct R{int denied()volatile=delete;};", "TR0201"},
       {"virtual-method", "struct R{virtual int denied()=delete;};", "TR0201"},
       {"variadic", "int denied(...)=delete;", "TR0201"},
-      {"missing-default", "int missing();int denied(int n=missing())=delete;", "TR0203"},
+      {"missing-default-runtime-use", "int missing();int denied(int n=missing())=delete;int f(){return missing();}", "TR0203"},
       {"missing-other-definition", "int denied(int)=delete;int needed(int);", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -22788,8 +22788,8 @@ TEST_F(TranslateTest, CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries) 
       {"bad-conversion", "int f(int n=nullptr){return n;}", "TR0202"},
       {"call-arity", "int f(int a,int b=1){return a+b;}int main(){return f();}", "TR0202"},
       {"defaulted-copy-extra", "struct R{int n;R(const R&r,int n=0)=default;};", "TR0202"},
-      {"default-call", "int g();int f(int n=g()){return n;}", "TR0203"},
-      {"overridden-missing", "int g();int f(int n=g()){return n;}int main(){return f(0);}", "TR0203"},
+      {"default-call-selected", "int g();int f(int n=g()){return n;}int h(){return f();}", "TR0203"},
+      {"overridden-missing-evaluated", "int g();int f(int n=g()){return n;}int main(){return f(0)+g();}", "TR0203"},
       {"default-destructor", "struct R{int n;~R();};int f(const R&r=R{1}){return r.n;}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -24100,7 +24100,7 @@ TEST_F(TranslateTest, CoreV2NoexceptInspectsUnevaluatedSource) {
       {"incompatible-redeclaration", "int f()noexcept;int f()noexcept(false){return 1;}", "TR0202"},
       {"typed-dynamic-spec", "int f()throw(int){return 1;}", "TR0202"},
       {"invalid-query-operand", "bool f(){return noexcept(unknown());}", "TR0202"},
-      {"query-call", "int missing()noexcept;bool f(){return noexcept(missing());}", "TR0203"},
+      {"query-and-runtime-call", "int missing()noexcept;bool f(){return noexcept(missing());}int g(){return missing();}", "TR0203"},
       {"query-constructor", "struct R{int n;R()noexcept;};bool f(){return noexcept(R());}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -105764,6 +105764,96 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemberQueriesAcceptDeclarationOnlyReceivers) {
+  // The materialized adapter runs, but its query-only receiver has no definition.
+  const auto Source = tmpFile("member-query-declarations.cpp");
+  const auto Output = tmpFile("member-query-declarations.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+namespace invoke_mem_fn {
+struct C{int value;int other;int run(int n)noexcept{return value+n;}};
+
+C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, source(c))),int&));return n;}
+}
+namespace mem_fn {
+struct C{int value;int other;int run(int n)noexcept{return value+n;}};
+
+C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=m(c);static_assert(__is_same(decltype(m(source(c))),int&));return n;}
+}
+namespace data_member {
+struct C{int value;int other;};
+
+C&source(C&c)noexcept;int f(C&c){int n=std::invoke(&C::value,c);static_assert(__is_same(decltype(std::invoke(&C::value,source(c))),int&));return n;}
+}
+namespace member_function {
+struct C{int value;int run(int n)noexcept{return n;}int other(int n)noexcept{return n+1;}};
+
+C&source(C&c)noexcept;int f(C&c){int n=std::invoke(&C::run,c,1);static_assert(__is_same(decltype(std::invoke(&C::run,source(c),1)),int));return n;}
+}
+int main() {
+  { invoke_mem_fn::C c{7,9}; if (invoke_mem_fn::f(c) != 7) return 1; }
+  { mem_fn::C c{7,9}; if (mem_fn::f(c) != 7) return 2; }
+  { data_member::C c{7,9}; if (data_member::f(c) != 7) return 3; }
+  { member_function::C c{7}; if (member_function::f(c) != 1) return 4; }
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("member-query-declarations" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionMetadataDeclarationsLinkWithoutDefinitions) {
+  // Queries, discarded calls and unused defaults must not emit undefined calls.
+  const auto Source = tmpFile("function-metadata-declarations.cpp");
+  const auto Output = tmpFile("function-metadata-declarations.nc");
+  writeFile(Source, R"cpp(namespace discarded {
+int missing();int f(){if constexpr(false)return missing();return 0;}
+}
+namespace deleted_default {
+int missing();int denied(int n=missing())=delete;
+}
+namespace unused_default {
+int g();int f(int n=g()){return n;}
+}
+namespace overridden_default {
+int g();int f(int n=g()){return n;}int run_explicit(){return f(0);}
+}
+namespace noexcept_query {
+int missing()noexcept;bool f(){return noexcept(missing());}
+}
+int main() {
+  if (discarded::f() != 0) return 1;
+  if (unused_default::f(7) != 7) return 3;
+  if (overridden_default::run_explicit() != 0) return 4;
+  if (!noexcept_query::f()) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-metadata-declarations" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2InvokeMemFnQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
@@ -105863,8 +105953,8 @@ struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket(
       {"missing-temporary-destructor", R"cpp(
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m, c,1);static_assert(__is_same(decltype(std::invoke(m, c,arg())),int));return n;}
 )cpp", "TR0203"},
-      {"missing-receiver-definition", R"cpp(
-C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, source(c))),int&));return n;}
+      {"evaluated-receiver-needs-definition", R"cpp(
+C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, source(c))),int&));(void)source(c);return n;}
 )cpp", "TR0203"},
       {"written-wrapper-type", R"cpp(
 int f(C&c){auto m=std::mem_fn(&C::run);decltype(m)copy=m;int n=std::invoke(copy, c,1);static_assert(__is_same(decltype(std::invoke(copy, c,1)),int));return n;}
@@ -106126,8 +106216,8 @@ struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket(
       {"missing-temporary-destructor", R"cpp(
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(C&c){auto m=std::mem_fn(&C::run);int n=m(c,1);static_assert(__is_same(decltype(m(c,arg())),int));return n;}
 )cpp", "TR0203"},
-      {"missing-receiver-definition", R"cpp(
-C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=m(c);static_assert(__is_same(decltype(m(source(c))),int&));return n;}
+      {"evaluated-receiver-needs-definition", R"cpp(
+C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=m(c);static_assert(__is_same(decltype(m(source(c))),int&));(void)source(c);return n;}
 )cpp", "TR0203"},
       {"written-wrapper-type", R"cpp(
 int f(C&c){auto m=std::mem_fn(&C::run);decltype(m)copy=m;int n=copy(c,1);static_assert(__is_same(decltype(copy(c,1)),int));return n;}
@@ -106354,8 +106444,8 @@ struct Ticket{~Ticket()noexcept{long double hidden=0;}};C&source(C&c,Ticket t=Ti
       {"missing-temporary-destructor", R"cpp(
 struct Ticket{~Ticket()noexcept;};C&source(C&c,Ticket t=Ticket())noexcept{return c;}int f(C&c){int n=std::invoke(&C::value,c);static_assert(__is_same(decltype(std::invoke(&C::value,source(c))),int&));return n;}
 )cpp", "TR0203"},
-      {"missing-receiver-definition", R"cpp(
-C&source(C&c)noexcept;int f(C&c){int n=std::invoke(&C::value,c);static_assert(__is_same(decltype(std::invoke(&C::value,source(c))),int&));return n;}
+      {"evaluated-receiver-needs-definition", R"cpp(
+C&source(C&c)noexcept;int f(C&c){int n=std::invoke(&C::value,c);static_assert(__is_same(decltype(std::invoke(&C::value,source(c))),int&));(void)source(c);return n;}
 )cpp", "TR0203"},
       {"volatile-field", R"cpp(
 struct D{volatile int value;};int f(D&d){int n=std::invoke(&D::value,d);static_assert(__is_same(decltype(std::invoke(&D::value,d)),volatile int&));return n;}
@@ -106625,8 +106715,8 @@ struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket(
       {"missing-temporary-destructor", R"cpp(
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(C&c){int n=std::invoke(&C::run,c,1);static_assert(__is_same(decltype(std::invoke(&C::run,c,arg())),int));return n;}
 )cpp", "TR0203"},
-      {"missing-receiver-definition", R"cpp(
-C&source(C&c)noexcept;int f(C&c){int n=std::invoke(&C::run,c,1);static_assert(__is_same(decltype(std::invoke(&C::run,source(c),1)),int));return n;}
+      {"evaluated-receiver-needs-definition", R"cpp(
+C&source(C&c)noexcept;int f(C&c){int n=std::invoke(&C::run,c,1);static_assert(__is_same(decltype(std::invoke(&C::run,source(c),1)),int));(void)source(c);return n;}
 )cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
