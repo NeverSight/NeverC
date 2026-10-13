@@ -276627,6 +276627,554 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperFilterStoredPredicatesOperationMatrix) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int check_0_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&x||&out[1].get()!=&x;}
+int check_0_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&x||&out[1].get()!=&x;}
+int check_1_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::is_partitioned(a,a+4,pred);
+return !result;}
+int check_1_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::is_partitioned(a,a+4,pred);
+return !result;}
+int check_2_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_copy(a,a+4,out,other,pred);
+return result.first!=out+2||result.second!=other+2||&out[0].get()!=&x||&other[0].get()!=&y;}
+int check_2_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_copy(a,a+4,out,other,pred);
+return result.first!=out+2||result.second!=other+2||&out[0].get()!=&x||&other[0].get()!=&y;}
+int check_3_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_point(a,a+4,pred);
+return result!=a+2;}
+int check_3_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_point(a,a+4,pred);
+return result!=a+2;}
+int check_4_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&y||&out[1].get()!=&z;}
+int check_4_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&y||&out[1].get()!=&z;}
+int check_5_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_if(a,a+4,pred);
+return result!=a+2||&a[0].get()!=&y||&a[1].get()!=&z;}
+int check_5_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_if(a,a+4,pred);
+return result!=a+2||&a[0].get()!=&y||&a[1].get()!=&z;}
+int check_6_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::replace_copy_if(a,a+4,out,pred,replacement);
+return result!=out+4||&out[0].get()!=&k||&out[2].get()!=&y;}
+int check_6_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::replace_copy_if(a,a+4,out,pred,replacement);
+return result!=out+4||&out[0].get()!=&k||&out[2].get()!=&y;}
+int check_7_0(){std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);std::replace_if(a,a+4,pred,replacement);
+return &a[0].get()!=&k||&a[1].get()!=&k||&a[2].get()!=&y;}
+int check_7_1(){const std::logical_not<> pred;int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);std::replace_if(a,a+4,pred,replacement);
+return &a[0].get()!=&k||&a[1].get()!=&k||&a[2].get()!=&y;}
+int main(){return check_0_0()||check_0_1()||check_1_0()||check_1_1()||check_2_0()||check_2_1()||check_3_0()||check_3_1()||check_4_0()||check_4_1()||check_5_0()||check_5_1()||check_6_0()||check_6_1()||check_7_0()||check_7_1();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterStoredPredicatesOutputCarriers) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-output-carriers.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-output-carriers.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int check_scalar_copy(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::copy_if(a,a+4,values,pred);return result!=values+2||values[0]!=0||values[1]!=0||values[2]!=77;}
+int check_scalar_remove_copy(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::remove_copy_if(a,a+4,values,pred);return result!=values+2||values[0]!=3||values[1]!=-1||values[2]!=77;}
+int check_scalar_replace(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::replace_copy_if(a,a+4,values,pred,k);return result!=values+4||values[0]!=9||values[1]!=9||values[2]!=3||values[3]!=-1;}
+int check_wrapped_replacement_scalar_output(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::replace_copy_if(a,a+4,values,pred,replacement);return result!=values+4||values[0]!=9||values[1]!=9||values[2]!=3||values[3]!=-1;}
+int check_scalar_partition(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::partition_copy(a,a+4,values,false_values,pred);return result.first!=values+2||result.second!=false_values+2||values[0]!=0||false_values[0]!=3||false_values[1]!=-1;}
+int check_mixed_record_true_output(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::partition_copy(a,a+4,out,false_values,pred);return result.first!=out+2||result.second!=false_values+2||&out[0].get()!=&x||false_values[0]!=3||false_values[1]!=-1;}
+int check_mixed_record_false_output(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);int values[4]={77,77,77,77},false_values[4]={77,77,77,77};const std::logical_not<> pred;auto result=std::partition_copy(a,a+4,values,other,pred);return result.first!=values+2||result.second!=other+2||values[0]!=0||&other[0].get()!=&y||&other[1].get()!=&z;}
+int main(){return check_scalar_copy()||check_scalar_remove_copy()||check_scalar_replace()||check_wrapped_replacement_scalar_output()||check_scalar_partition()||check_mixed_record_true_output()||check_mixed_record_false_output();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-output-carriers" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterStoredPredicatesBoolFloating) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int check_0_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&x||&out[1].get()!=&x;}
+int check_0_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&x||&out[1].get()!=&x;}
+int check_1_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::is_partitioned(a,a+4,pred);
+return !result;}
+int check_1_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::is_partitioned(a,a+4,pred);
+return !result;}
+int check_2_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_copy(a,a+4,out,other,pred);
+return result.first!=out+2||result.second!=other+2||&out[0].get()!=&x||&other[0].get()!=&y;}
+int check_2_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_copy(a,a+4,out,other,pred);
+return result.first!=out+2||result.second!=other+2||&out[0].get()!=&x||&other[0].get()!=&y;}
+int check_3_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_point(a,a+4,pred);
+return result!=a+2;}
+int check_3_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_point(a,a+4,pred);
+return result!=a+2;}
+int check_4_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&y||&out[1].get()!=&z;}
+int check_4_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_copy_if(a,a+4,out,pred);
+return result!=out+2||&out[0].get()!=&y||&out[1].get()!=&z;}
+int check_5_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_if(a,a+4,pred);
+return result!=a+2||&a[0].get()!=&y||&a[1].get()!=&z;}
+int check_5_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_if(a,a+4,pred);
+return result!=a+2||&a[0].get()!=&y||&a[1].get()!=&z;}
+int check_6_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::replace_copy_if(a,a+4,out,pred,replacement);
+return result!=out+4||&out[0].get()!=&k||&out[2].get()!=&y;}
+int check_6_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::replace_copy_if(a,a+4,out,pred,replacement);
+return result!=out+4||&out[0].get()!=&k||&out[2].get()!=&y;}
+int check_7_bool(){const std::logical_not<> pred;const bool x=false,y=true,z=true,k=true;using R=std::reference_wrapper<const bool>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);std::replace_if(a,a+4,pred,replacement);
+return &a[0].get()!=&k||&a[1].get()!=&k||&a[2].get()!=&y;}
+int check_7_floating(){const std::logical_not<> pred;const double x=-0.0,y=0x1p-100,z=0.0/0.0,k=9.0;using R=std::reference_wrapper<const double>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);std::replace_if(a,a+4,pred,replacement);
+return &a[0].get()!=&k||&a[1].get()!=&k||&a[2].get()!=&y;}
+int main(){return check_0_bool()||check_0_floating()||check_1_bool()||check_1_floating()||check_2_bool()||check_2_floating()||check_3_bool()||check_3_floating()||check_4_bool()||check_4_floating()||check_5_bool()||check_5_floating()||check_6_bool()||check_6_floating()||check_7_bool()||check_7_floating();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterStoredPredicatesEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads,cleaned;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto copy(P a,P b,P out,const std::logical_not<>&op){return std::copy_if(a,b,out,op);}
+auto remove_copy(P a,P b,P out,const std::logical_not<>&op){return std::remove_copy_if(a,b,out,op);}
+auto replace_copy(P a,P b,P out,const std::logical_not<>&op,const W&value){return std::replace_copy_if(a,b,out,op,value);}
+auto remove(P a,P b,const std::logical_not<>&op){return std::remove_if(a,b,op);}
+void replace(P a,P b,const std::logical_not<>&op,const W&value){std::replace_if(a,b,op,value);}
+auto partitioned(P a,P b,const std::logical_not<>&op){return std::is_partitioned(a,b,op);}
+auto point(P a,P b,const std::logical_not<>&op){return std::partition_point(a,b,op);}
+auto split(P a,P b,P out,P other,const std::logical_not<>&op){return std::partition_copy(a,b,out,other,op);}
+int main(){int x=0,y=3,z=-1,k=9;W a[]={x,x,y,z};W out[]={k,k,k,k};W other[]={k,k,k,k};W value(k);const std::logical_not<> op;
+if(std::copy_if(Input{a}.get(),Input{a}.get(),Input{out}.get(),op)!=out)return 1;
+if(std::remove_copy_if(Input{a}.get(),Input{a}.get(),Input{out}.get(),op)!=out)return 2;
+if(std::replace_copy_if(Input{a}.get(),Input{a}.get(),Input{out}.get(),op,value)!=out)return 3;
+if(std::remove_if(Input{a}.get(),Input{a}.get(),op)!=a)return 4;
+std::replace_if(Input{a}.get(),Input{a}.get(),op,value);
+if(!std::is_partitioned(Input{a}.get(),Input{a}.get(),op))return 5;
+if(std::partition_point(Input{a}.get(),Input{a}.get(),op)!=a)return 6;
+auto empty=std::partition_copy(Input{a}.get(),Input{a}.get(),Input{out}.get(),Input{other}.get(),op);
+if(empty.first!=out||empty.second!=other||reads!=21||cleaned!=21)return 7;
+if(copy(a,a+4,out,op)!=out+2||&out[0].get()!=&x)return 8;
+if(remove_copy(a,a+4,out,op)!=out+2||&out[0].get()!=&y)return 9;
+if(replace_copy(a,a+4,out,op,value)!=out+4||&out[0].get()!=&k)return 10;
+if(!partitioned(a,a+4,op)||point(a,a+4,op)!=a+2)return 11;
+auto result=split(a,a+4,out,other,op);if(result.first!=out+2||result.second!=other+2)return 12;
+replace(a,a+4,op,value);if(&a[0].get()!=&k||&a[2].get()!=&y)return 13;
+a[0]=std::ref(x);a[1]=std::ref(x);if(remove(a,a+4,op)!=a+2||&a[0].get()!=&y||&a[1].get()!=&z)return 14;
+return x!=0||y!=3||z!=-1||k!=9||reads!=21||cleaned!=21;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterStoredPredicatesFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,7);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_if(a,b,op,a[0]);}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_if(a,b,op);}
+}
+namespace case_6{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::is_partitioned(a,b,op);}
+}
+namespace case_7{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::partition_point(a,b,op);}
+}
+int main(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R records[]={k,k,k,k};int out[4]={77,77,77,77};
+if(case_0::selected(a,a+4,out)!=out+2||out[0]!=0||out[1]!=0)return 1;
+if(case_1::selected(a,a+4,out)!=out+2||out[0]!=3||out[1]!=-1)return 2;
+if(case_2::selected(a,a+4,out)!=out+4||out[0]!=7||out[1]!=7||out[2]!=3||out[3]!=-1)return 3;
+auto split=case_3::selected(a,a+4,out);if(split.first!=out+2||split.second!=out+2||out[0]!=3||out[1]!=-1)return 4;
+case_4::selected(a,a+4,records);if(&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&y)return 5;
+if(!case_6::selected(a,a+4,out)||case_7::selected(a,a+4,out)!=a+2)return 6;
+if(case_5::selected(a,a+4,records)!=a+2||&a[0].get()!=&y||&a[1].get()!=&z)return 7;
+return x!=0||y!=3||z!=-1||k!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterStoredPredicatesRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"copy_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::copy_if(a,b,out,(++effects,op));}
+)cpp"},
+      {"copy_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::copy_if(a,b,out,h.op);}
+)cpp"},
+      {"copy_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::copy_if(a,b,out,make());}
+)cpp"},
+      {"copy_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::copy_if(a,b,out,op);}
+)cpp"},
+      {"copy_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::copy_if(a,b,out,op);}
+)cpp"},
+      {"is_partitioned-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::is_partitioned(a,b,(++effects,op));}
+)cpp"},
+      {"is_partitioned-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::is_partitioned(a,b,h.op);}
+)cpp"},
+      {"is_partitioned-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::is_partitioned(a,b,make());}
+)cpp"},
+      {"is_partitioned-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::is_partitioned(a,b,op);}
+)cpp"},
+      {"is_partitioned-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::is_partitioned(a,b,op);}
+)cpp"},
+      {"partition_copy-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::partition_copy(a,b,out,out,(++effects,op));}
+)cpp"},
+      {"partition_copy-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::partition_copy(a,b,out,out,h.op);}
+)cpp"},
+      {"partition_copy-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::partition_copy(a,b,out,out,make());}
+)cpp"},
+      {"partition_copy-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::partition_copy(a,b,out,out,op);}
+)cpp"},
+      {"partition_copy-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::partition_copy(a,b,out,out,op);}
+)cpp"},
+      {"partition_point-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::partition_point(a,b,(++effects,op));}
+)cpp"},
+      {"partition_point-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::partition_point(a,b,h.op);}
+)cpp"},
+      {"partition_point-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::partition_point(a,b,make());}
+)cpp"},
+      {"partition_point-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::partition_point(a,b,op);}
+)cpp"},
+      {"partition_point-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::partition_point(a,b,op);}
+)cpp"},
+      {"remove_copy_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::remove_copy_if(a,b,out,(++effects,op));}
+)cpp"},
+      {"remove_copy_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::remove_copy_if(a,b,out,h.op);}
+)cpp"},
+      {"remove_copy_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::remove_copy_if(a,b,out,make());}
+)cpp"},
+      {"remove_copy_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::remove_copy_if(a,b,out,op);}
+)cpp"},
+      {"remove_copy_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::remove_copy_if(a,b,out,op);}
+)cpp"},
+      {"remove_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::remove_if(a,b,(++effects,op));}
+)cpp"},
+      {"remove_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::remove_if(a,b,h.op);}
+)cpp"},
+      {"remove_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::remove_if(a,b,make());}
+)cpp"},
+      {"remove_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::remove_if(a,b,op);}
+)cpp"},
+      {"remove_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::remove_if(a,b,op);}
+)cpp"},
+      {"replace_copy_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::replace_copy_if(a,b,out,(++effects,op),a[0]);}
+)cpp"},
+      {"replace_copy_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::replace_copy_if(a,b,out,h.op,a[0]);}
+)cpp"},
+      {"replace_copy_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::replace_copy_if(a,b,out,make(),a[0]);}
+)cpp"},
+      {"replace_copy_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::replace_copy_if(a,b,out,op,a[0]);}
+)cpp"},
+      {"replace_copy_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::replace_copy_if(a,b,out,op,a[0]);}
+)cpp"},
+      {"replace_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::logical_not<>op;return std::replace_if(a,b,(++effects,op),a[0]);}
+)cpp"},
+      {"replace_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,P out){Holder h;return std::replace_if(a,b,h.op,a[0]);}
+)cpp"},
+      {"replace_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,P out){return std::replace_if(a,b,make(),a[0]);}
+)cpp"},
+      {"replace_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,P out){std::logical_not<>op;return std::replace_if(a,b,op,a[0]);}
+)cpp"},
+      {"replace_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::logical_not<int>op;return std::replace_if(a,b,op,a[0]);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-query-stored-predicate-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
@@ -283562,12 +284110,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::copy_if(a,a+1,out,std::logical_not<>{});}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -284459,12 +285001,6 @@ auto selected(W*a,W*b,int*out){return std::remove_copy_if(a,a+1,out,std::logical
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::remove_copy_if(a,a+1,out,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -287184,12 +287720,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::replace_copy_if(a,a+1,out,std::logical_not<>{},7);}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,7);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -288123,12 +288653,6 @@ auto selected(W*a,W*b,int*out){return std::partition_copy(a,a+1,out,out,std::log
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::partition_copy(a,a+1,out,out,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -292803,12 +293327,6 @@ auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::replace_if(a,a+1,std::logical_not<>{},a[0]);}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_if(a,b,op,a[0]);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -299131,12 +299649,6 @@ auto selected(W*a,W*b,W*out){return std::remove_if(a,a+1,std::logical_not<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::remove_if(a,a+1,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_if(a,b,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -341975,12 +342487,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::is_partitioned(a,a+1,std::logical_not<>{});}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::is_partitioned(a,b,op);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -342904,12 +343410,6 @@ auto selected(W*a,W*b,int*out){return std::partition_point(a,a+1,std::logical_no
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::partition_point(a,a+1,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::partition_point(a,b,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
