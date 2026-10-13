@@ -276627,6 +276627,209 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperTransformNumericResultQueriesTransform) {
+  const auto Source = tmpFile("wrapper-transform-numeric-query-transform.cpp");
+  const auto Output = tmpFile("wrapper-transform-numeric-query-transform.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+int check_transform_unary(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::transform(a,a+2,out,std::negate<>{});
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=-2||out[1]!=-1;}
+int check_transform_binary(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::transform(a,a+2,a,out,std::plus<>{});
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=4||out[1]!=2;}
+int main(){return check_transform_unary()||check_transform_binary();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-transform-numeric-query-transform" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformNumericResultQueriesReduction) {
+  const auto Source = tmpFile("wrapper-transform-numeric-query-reduction.cpp");
+  const auto Output = tmpFile("wrapper-transform-numeric-query-reduction.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+int check_accumulate(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::accumulate(a,a+2,3,std::plus<>{});
+static_assert(__is_same(decltype(result),int));
+return result!=6;}
+int check_reduce(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::reduce(a,a+2,3,std::plus<>{});
+static_assert(__is_same(decltype(result),int));
+return result!=6;}
+int check_inner_product(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::inner_product(a,a+2,a,3,std::plus<>{},std::multiplies<>{});
+static_assert(__is_same(decltype(result),int));
+return result!=8;}
+int check_transform_reduce_binary(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::transform_reduce(a,a+2,a,3,std::plus<>{},std::multiplies<>{});
+static_assert(__is_same(decltype(result),int));
+return result!=8;}
+int check_transform_reduce_unary(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::transform_reduce(a,a+2,3,std::plus<>{},std::negate<>{});
+static_assert(__is_same(decltype(result),int));
+return result!=0;}
+int main(){return check_accumulate()||check_reduce()||check_inner_product()||check_transform_reduce_binary()||check_transform_reduce_unary();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-transform-numeric-query-reduction" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformNumericResultQueriesScans) {
+  const auto Source = tmpFile("wrapper-transform-numeric-query-scans.cpp");
+  const auto Output = tmpFile("wrapper-transform-numeric-query-scans.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+int check_adjacent_difference(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::adjacent_difference(a,a+2,out,std::minus<>{});
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=2||out[1]!=-1;}
+int check_inclusive_scan_init(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::inclusive_scan(a,a+2,out,std::plus<>{},3);
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=5||out[1]!=6;}
+int check_exclusive_scan(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::exclusive_scan(a,a+2,out,3,std::plus<>{});
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=3||out[1]!=5;}
+int check_transform_inclusive_scan_init(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::transform_inclusive_scan(a,a+2,out,std::plus<>{},std::negate<>{},3);
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=1||out[1]!=0;}
+int check_transform_exclusive_scan(){int x=2,y=1;std::reference_wrapper<int>a[]={x,y};int out[3]={77,77,77};auto result=std::transform_exclusive_scan(a,a+2,out,3,std::plus<>{},std::negate<>{});
+static_assert(__is_same(decltype(result),int*));
+return result!=out+2||out[0]!=3||out[1]!=1;}
+int main(){return check_adjacent_difference()||check_inclusive_scan_init()||check_exclusive_scan()||check_transform_inclusive_scan_init()||check_transform_exclusive_scan();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-transform-numeric-query-scans" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformNumericResultQueriesEffectsParameters) {
+  const auto Source = tmpFile("wrapper-transform-numeric-query-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-transform-numeric-query-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int reads,cleanup;
+struct Token{~Token(){++cleanup;}};
+R* input(R*p,Token token=Token{}){++reads;return p;}
+int* output(int*p,Token token=Token{}){++reads;return p;}
+int check(R*p,int*out,const std::plus<>&reduce,const std::negate<>&unary){
+ auto sum=std::accumulate(input(p),input(p+2),3,reduce);
+ static_assert(__is_same(decltype(sum),int));
+ if(sum!=6||reads!=2||cleanup!=2)return 1;
+ auto transformed=std::transform(input(p),input(p+2),output(out),unary);
+ static_assert(__is_same(decltype(transformed),int*));
+ if(transformed!=out+2||out[0]!=-2||out[1]!=-1||reads!=5||cleanup!=5)return 2;
+ auto combined=std::transform_reduce(input(p),input(p+2),3,reduce,unary);
+ static_assert(__is_same(decltype(combined),int));
+ if(combined!=0||reads!=7||cleanup!=7)return 3;
+ auto scanned=std::inclusive_scan(input(p),input(p+2),output(out),reduce,3);
+ static_assert(__is_same(decltype(scanned),int*));
+ if(scanned!=out+2||out[0]!=5||out[1]!=6||reads!=10||cleanup!=10)return 4;
+ return 0;
+}
+int main(){int x=2,y=1;R a[]={x,y};int out[3]={77,77,77};const std::plus<> reduce;const std::negate<> unary;int result=check(a,out,reduce,unary);return result?result:(x!=2||y!=1||out[2]!=77);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-transform-numeric-query-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTransformNumericResultQueriesRetainSource) {
+  struct Case {
+    const char *Name, *Source, *Code;
+  };
+  const Case Cases[] = {
+      {"address-after-checked-call", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+int f(std::reference_wrapper<int>*p){auto n=std::accumulate(p,p+1,0,std::plus<>{});using Fn=decltype(&std::accumulate<std::reference_wrapper<int>*,int,std::plus<>>);static_assert(__is_pointer(Fn));return n;}
+)cpp", "TR0201"},
+      {"caller-pointer-source", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+template<int>using Input=std::reference_wrapper<int>*;int f(Input<sizeof(long double)>p){auto n=std::accumulate(p,p+1,0,std::plus<>{});static_assert(__is_same(decltype(n),int));return n;}
+)cpp", "TR0201"},
+      {"explicit-specialization", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+namespace std{template<> int accumulate<reference_wrapper<int>*,int,plus<>>(reference_wrapper<int>*,reference_wrapper<int>*,int,plus<>){return 0;}}int f(std::reference_wrapper<int>*p){auto n=std::accumulate(p,p+1,0,std::plus<>{});static_assert(__is_same(decltype(n),int));return n;}
+)cpp", "TR0201"},
+      {"original-input-source", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+int f(std::reference_wrapper<int>*p,int*out){auto end=std::transform((sizeof(long double),p),p+1,out,std::negate<>{});static_assert(__is_same(decltype(end),int*));return end!=out;}
+)cpp", "TR0201"},
+      {"original-output-source", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+int f(std::reference_wrapper<int>*p,int*out){auto end=std::transform(p,p+1,(sizeof(long double),out),std::negate<>{});static_assert(__is_same(decltype(end),int*));return end!=out;}
+)cpp", "TR0201"},
+      {"returned-operation", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+std::plus<> make(){return {};}int f(std::reference_wrapper<int>*p){auto n=std::accumulate(p,p+1,0,make());static_assert(__is_same(decltype(n),int));return n;}
+)cpp", "TR0201"},
+      {"source-callback-signature", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+template<int>using Erased=int;struct P{Erased<sizeof(long double)> operator()(int a,int b)const{return a+b;}};int f(int*p){auto n=std::accumulate(p,p+1,0,P{});static_assert(__is_same(decltype(n),int));return n;}
+)cpp", "TR0201"},
+      {"written-template-source", R"cpp(#include <algorithm>
+#include <numeric>
+#include <functional>
+template<int>using Erased=std::plus<>;int f(std::reference_wrapper<int>*p){auto n=std::accumulate<std::reference_wrapper<int>*,int,Erased<sizeof(long double)>>(p,p+1,0,std::plus<>{});static_assert(__is_same(decltype(n),int));return n;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-transform-numeric-query-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperAlgorithmResultTypeQueriesReturnedObjectIterator) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-returned-object-iterator.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-returned-object-iterator.nc");

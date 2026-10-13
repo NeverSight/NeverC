@@ -15897,6 +15897,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Function = Call->getDirectCallee();
     if (!Function)
       return std::nullopt;
+    auto WrapperCall = [&](unsigned Parameters, llvm::ArrayRef<unsigned> Objects)
+        -> std::optional<AlgorithmCallableSource> {
+      if (Function->getNumParams() != Parameters ||
+          Call->getNumArgs() != Parameters)
+        return std::nullopt;
+      const auto Input = Function->getParamDecl(0)->getType();
+      if (!Input->isPointerType() ||
+          !approvedFunctionalReferenceRecord(
+              A.S, A.Sources, Input->getPointeeType()->getAsCXXRecordDecl(),
+              A.Context))
+        return std::nullopt;
+      for (const auto Index : Objects)
+        if (Index >= Parameters ||
+            !approvedFunctionalObjectRecord(
+                A.S, A.Sources,
+                Function->getParamDecl(Index)->getType()->getAsCXXRecordDecl(),
+                A.Context))
+          return std::nullopt;
+      // The complete existing algorithm proof owns this exact SDK call.
+      // Original arguments, template types and constructions remain roots.
+      return AlgorithmCallableSource{Function, nullptr};
+    };
     switch (*Operation) {
     case UtilityOperation::AlgorithmForEach:
     case UtilityOperation::AlgorithmForEachN:
@@ -15905,23 +15927,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     case UtilityOperation::AlgorithmCountIf:
     case UtilityOperation::AlgorithmAllOf:
     case UtilityOperation::AlgorithmAnyOf:
-    case UtilityOperation::AlgorithmNoneOf: {
-      // These wrapper algorithms have a separate complete SDK loop proof.
-      // Attach ownership only to this exact admitted call, retaining its
-      // original arguments, written template types and selected constructions.
-      if (Function->getNumParams() != 3)
-        return std::nullopt;
-      const auto Input = Function->getParamDecl(0)->getType();
-      const auto Object = Function->getParamDecl(2)->getType();
-      if (Input->isPointerType() &&
-          approvedFunctionalReferenceRecord(
-              A.S, A.Sources, Input->getPointeeType()->getAsCXXRecordDecl(),
-              A.Context) &&
-          approvedFunctionalObjectRecord(A.S, A.Sources,
-                                         Object->getAsCXXRecordDecl(), A.Context))
-        return AlgorithmCallableSource{Function, nullptr};
-      return std::nullopt;
-    }
+    case UtilityOperation::AlgorithmNoneOf:
+      return WrapperCall(3, {2});
+    case UtilityOperation::AlgorithmTransformUnary:
+    case UtilityOperation::NumericAccumulate:
+    case UtilityOperation::NumericReduce:
+    case UtilityOperation::NumericAdjacentDifference:
+      return WrapperCall(4, {3});
+    case UtilityOperation::AlgorithmTransformBinary:
+      return WrapperCall(5, {4});
+    case UtilityOperation::NumericInnerProduct:
+      return WrapperCall(6, {4, 5});
+    case UtilityOperation::NumericTransformReduce:
+      return Function->getNumParams() == 5 ? WrapperCall(5, {3, 4})
+                                          : WrapperCall(6, {4, 5});
+    case UtilityOperation::NumericInclusiveScan:
+      return WrapperCall(5, {3});
+    case UtilityOperation::NumericExclusiveScan:
+      return WrapperCall(5, {4});
+    case UtilityOperation::NumericTransformInclusiveScan:
+      return WrapperCall(6, {3, 4});
+    case UtilityOperation::NumericTransformExclusiveScan:
+      return WrapperCall(6, {4, 5});
     default:
       break;
     }
