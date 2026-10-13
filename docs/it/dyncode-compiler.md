@@ -6,6 +6,8 @@
 
 Compila sorgenti C direttamente in dyncode binario piatto **indipendente dalla posizione, zero rilocazioni, senza sezione dati**.
 
+Vedere [DynCode ospitato e traduzione C++](hosted-dyncode.md).
+
 ## Guide
 
 - [Tutorial assembly ARM64 (AArch64) — Prospettiva DynCode](dyncode-compiler-arm64-assembly-tutorial.md)

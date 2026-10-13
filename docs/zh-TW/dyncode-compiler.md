@@ -6,6 +6,8 @@
 
 将 C 源码直接編譯为**位置无关、零重定位、零数据段**的扁平二进制 dyncode。
 
+參見 [Hosted DynCode 與 C++ 翻譯](hosted-dyncode.md).
+
 ## 指南
 
 - [ARM64 (AArch64) 組語教學 — DynCode 視角](dyncode-compiler-arm64-assembly-tutorial.md)

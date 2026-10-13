@@ -133,6 +133,10 @@ Expected<std::string> DynCodeReport::toCanonicalJSON() const {
   Out.push_back(':');
   appendJSONString(Out, Summary.EntrySymbol);
   Out.push_back(',');
+  appendJSONString(Out, "execution_profile");
+  Out.push_back(':');
+  appendJSONString(Out, Summary.ExecutionProfile);
+  Out.push_back(',');
   appendUIntField(Out, "image_size", Summary.ImageSize);
   Out.push_back(',');
   appendHexField(Out, "input_digest", Summary.InputDigest);
@@ -164,6 +168,8 @@ Expected<std::string> DynCodeReport::toCanonicalJSON() const {
   }
   Out.push_back(']');
   Out.push_back(',');
+  appendJSONString(Out, "keep_unwind");
+  Out += Summary.KeepUnwind ? ":true," : ":false,";
 
   appendHexField(Out, "output_digest", Summary.OutputDigest);
   Out.push_back(',');
@@ -184,6 +190,10 @@ Expected<std::string> DynCodeReport::toCanonicalJSON() const {
   appendUIntField(Out, "runtime_contract_count", Summary.RuntimeContractCount);
   Out.push_back(',');
   appendUIntField(Out, "selected_section_count", Summary.SelectedSectionCount);
+  Out.push_back(',');
+  appendJSONString(Out, "target_triple");
+  Out.push_back(':');
+  appendJSONString(Out, Summary.TargetTriple);
 
   Out.push_back('}');
   return Out;

@@ -785,6 +785,12 @@ OPTION(prefix_1, "-fdyncode-heap-arena", fdyncode_heap_arena,
        "mmap via syscall on Linux/macOS). Enabled by default in dyncode "
        "mode.",
        nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-hosted", fdyncode_hosted, Flag,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Produce code-only hosted functions without implicit syscall/PEB or "
+       "heap/string runtime lowering; reject mutable/TLS globals and retain "
+       "native unwind metadata in the required kept object",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fdyncode-inline-all", fdyncode_inline_all,
        Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Force-inline all non-entry functions into the dyncode entry "
@@ -794,6 +800,11 @@ OPTION(prefix_1, "-fdyncode-keep-obj=", fdyncode_keep_obj_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Copy the intermediate object file (Mach-O / ELF / COFF) to <path> so "
        "otool -rv / llvm-objdump -dr / dumpbin can inspect relocations",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-keep-unwind", fdyncode_keep_unwind, Flag,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Retain compiler unwind records in the -fdyncode-keep-obj sidecar; "
+       "unwind metadata is still excluded from the flat DynCode image",
        nullptr, nullptr)
 OPTION(prefix_1, "-fdyncode-max-length=", fdyncode_max_length_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,

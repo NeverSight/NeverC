@@ -6,6 +6,8 @@
 
 Компилирует исходный код C напрямую в плоский бинарный dyncode: **позиционно-независимый, без релокаций, без секции данных**.
 
+См. [Hosted DynCode и перевод C++](hosted-dyncode.md).
+
 ## Руководства
 
 - [Учебник по ассемблеру ARM64 (AArch64) — Перспектива DynCode](dyncode-compiler-arm64-assembly-tutorial.md)

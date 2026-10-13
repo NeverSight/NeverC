@@ -23,6 +23,48 @@ bool containsArgument(llvm::ArrayRef<const char *> Args,
 } // namespace
 
 TEST(DynCodeDriverIntegrationTest,
+     HostedProfileRetainsUnwindAndNoImplicitRuntime) {
+  llvm::SmallVector<const char *, 8> Args = {"neverc",
+                                             "-fdyncode",
+                                             "-fdyncode-hosted",
+                                             "-fdyncode-keep-obj=out.o",
+                                             "--target=x86_64-linux-gnu",
+                                             "input.c"};
+  DynCodeDriverSetup Setup;
+  ASSERT_EQ(prepareDriverDynCode(Args, Setup), 0);
+  EXPECT_TRUE(Setup.Opts.Hosted);
+  EXPECT_TRUE(Setup.Opts.KeepUnwind);
+  EXPECT_FALSE(Setup.Opts.SyscallInlining);
+  EXPECT_FALSE(Setup.Opts.WindowsPEBImport);
+  EXPECT_FALSE(Setup.Opts.HeapArena);
+  EXPECT_TRUE(containsArgument(Args, "-funwind-tables"));
+  EXPECT_FALSE(containsArgument(Args, "-fno-unwind-tables"));
+  EXPECT_FALSE(containsArgument(Args, "-fno-asynchronous-unwind-tables"));
+}
+
+TEST(DynCodeDriverIntegrationTest,
+     HostedProfileRequiresObjectAndRejectsRuntime) {
+  for (const char *Extra :
+       {"-mdyncode-syscall", "-mdyncode-win-peb-import", "-fdyncode-heap-arena",
+        "-mdyncode-context=kernel"}) {
+    llvm::SmallVector<const char *, 8> Args = {"neverc",
+                                               "-fdyncode",
+                                               "-fdyncode-hosted",
+                                               "-fdyncode-keep-obj=out.o",
+                                               "--target=x86_64-linux-gnu",
+                                               Extra,
+                                               "input.c"};
+    DynCodeDriverSetup Setup;
+    EXPECT_NE(prepareDriverDynCode(Args, Setup), 0) << Extra;
+  }
+  llvm::SmallVector<const char *, 8> Args = {
+      "neverc", "-fdyncode", "-fdyncode-hosted", "--target=x86_64-linux-gnu",
+      "input.c"};
+  DynCodeDriverSetup Setup;
+  EXPECT_NE(prepareDriverDynCode(Args, Setup), 0);
+}
+
+TEST(DynCodeDriverIntegrationTest,
      OrdinaryDriverArgumentsDoNotNeedDynCodePreparation) {
   llvm::SmallVector<const char *, 8> Args = {
       "neverc", "--target=x86_64-linux-gnu", "input.o", "-o", "output"};

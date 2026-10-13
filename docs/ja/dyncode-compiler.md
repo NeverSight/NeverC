@@ -6,6 +6,8 @@
 
 C ソースを**位置独立・ゼロリロケーション・ゼロデータセクション**のフラットバイナリ dyncode に直接コンパイルする。
 
+参照 [Hosted DynCode と C++ 変換](hosted-dyncode.md).
+
 ## ガイド
 
 - [ARM64 (AArch64) アセンブリチュートリアル — DynCode の観点から](dyncode-compiler-arm64-assembly-tutorial.md)

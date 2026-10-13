@@ -6,6 +6,8 @@
 
 Compile C source code directly into **position-independent, zero-relocation, zero-data-section** flat binary dyncode.
 
+See [Hosted DynCode and C++ translation](hosted-dyncode.md).
+
 ## Guides
 
 - [ARM64 (AArch64) Assembly Tutorial — DynCode Perspective](dyncode-compiler-arm64-assembly-tutorial.md)

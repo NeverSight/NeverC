@@ -8,6 +8,8 @@
 
 يُحوِّل مصدر C مباشرةً إلى dyncode ثنائي مسطح **مستقل عن الموضع، بلا إعادة تموضع، بلا قسم بيانات**.
 
+راجع [DynCode المستضاف وترجمة C++](hosted-dyncode.md).
+
 ## الأدلة
 
 - [دليل تجميع ARM64 (AArch64) — منظور DynCode](dyncode-compiler-arm64-assembly-tutorial.md)

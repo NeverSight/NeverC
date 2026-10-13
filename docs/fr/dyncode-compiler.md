@@ -6,6 +6,8 @@
 
 Compilez du C directement en dyncode binaire plat **indépendant de la position, sans relocalisation, sans section de données**.
 
+Voir [DynCode hébergé et traduction C++](hosted-dyncode.md).
+
 ## Guides
 
 - [Tutoriel assemblage ARM64 (AArch64) — Perspective DynCode](dyncode-compiler-arm64-assembly-tutorial.md)

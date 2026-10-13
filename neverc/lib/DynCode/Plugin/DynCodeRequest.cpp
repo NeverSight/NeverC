@@ -113,6 +113,10 @@ freezeDynCodeRequest(const DynCodeOptions &Opts,
     Req.Flags |= NEVERC_DYNCODE_REQUEST_ALL_BLR;
   if (!Opts.KeepObjPath.empty())
     Req.Flags |= NEVERC_DYNCODE_REQUEST_KEEP_OBJECT;
+  if (Opts.KeepUnwind)
+    Req.Flags |= NEVERC_DYNCODE_REQUEST_KEEP_UNWIND;
+  if (Opts.Hosted)
+    Req.Flags |= NEVERC_DYNCODE_REQUEST_HOSTED;
   Req.Flags |= NEVERC_DYNCODE_REQUEST_DETERMINISTIC;
 
   Req.MaxLength = Opts.MaxLength.value_or(0);

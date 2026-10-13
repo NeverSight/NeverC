@@ -2877,6 +2877,7 @@ add_executable(neverc-translate-tests
   TranslateCppSdkTests.cpp
   TranslateRuntimeCapabilityTests.cpp
   TranslateProcessTests.cpp
+  HostedPatchCompilerTests.cpp
 )
 target_link_libraries(neverc-translate-tests PRIVATE
   GTest::gtest GTest::gtest_main nevercTranslate LLVMBitWriter

@@ -6,6 +6,8 @@
 
 Kompiliert C-Quellcode direkt in **positionsunabhängigen, relocationsfreien, datensektionslosen** flachen Binär-DynCode.
 
+Siehe [Hosted DynCode und C++-Übersetzung](hosted-dyncode.md).
+
 ## Anleitungen
 
 - [ARM64 (AArch64) Assembly-Tutorial — DynCode-Perspektive](dyncode-compiler-arm64-assembly-tutorial.md)

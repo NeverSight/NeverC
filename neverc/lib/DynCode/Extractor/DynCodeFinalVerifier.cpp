@@ -29,6 +29,17 @@ llvm::Error verifyDynCodeFinalImage(const DynCodeExtractionPlan &Plan,
   if (llvm::Error E = check("binary", verifyDynCodeBinary(Image, Opts)))
     return E;
 
+  // Relocation, binary rewriting and sizing can all change the candidate.
+  // Bind the public receipt to the bytes this sealed gate actually verified,
+  // rather than the unrelocated image assembled by the section planner.
+  auto Summary = Report.summary();
+  Summary.OutputDigest = Image.digest();
+  Summary.ImageSize = Image.size();
+  Summary.Alignment = Image.outputAlignment();
+  Summary.PaddingSize = Image.paddingSize();
+  if (llvm::Error E = Report.setSummary(Summary))
+    return E;
+
   // The final verifier is the sealed gate that blesses the image.  It is
   // idempotent with respect to an image the binary phase executor already
   // marked verified; a committed/aborted image is a programming error.

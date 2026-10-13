@@ -6,6 +6,8 @@
 
 Compila código C directamente en dyncode binario plano **independiente de la posición, sin reubicaciones y sin sección de datos**.
 
+Véase [DynCode alojado y traducción C++](hosted-dyncode.md).
+
 ## Guías
 
 - [Tutorial de ensamblaje ARM64 (AArch64) — Perspectiva DynCode](dyncode-compiler-arm64-assembly-tutorial.md)

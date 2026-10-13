@@ -218,6 +218,8 @@ bool collectOptions(const llvm::opt::InputArgList &Args, DynCodeOptions &Out) {
   Out.Enabled = Args.hasFlag(opts::OPT_fdyncode, opts::OPT_fno_dyncode,
                              /*Default=*/false);
   Out.AllBlr = Args.hasArg(opts::OPT_fdyncode_all_blr);
+  Out.Hosted = Args.hasArg(opts::OPT_fdyncode_hosted);
+  Out.KeepUnwind = Out.Hosted || Args.hasArg(opts::OPT_fdyncode_keep_unwind);
   Out.SyscallInlining = Args.hasArg(opts::OPT_mdyncode_syscall) ||
                         Args.hasArg(opts::OPT_mdyncode_libsystem);
   Out.WindowsPEBImport = Args.hasArg(opts::OPT_mdyncode_win_peb_import);
@@ -255,6 +257,16 @@ bool collectOptions(const llvm::opt::InputArgList &Args, DynCodeOptions &Out) {
   Out.InlineAll = Args.hasFlag(opts::OPT_fdyncode_inline_all,
                                opts::OPT_fno_dyncode_inline_all,
                                /*Default=*/false);
+  if (Out.Hosted) {
+    if (Out.SyscallInlining || Out.WindowsPEBImport ||
+        Out.Level != ExecutionLevel::User ||
+        Args.hasArg(opts::OPT_fdyncode_heap_arena)) {
+      llvm::errs() << "neverc: error: -fdyncode-hosted does not admit "
+                      "syscall/PEB/kernel/heap-arena runtime lowering\n";
+      return false;
+    }
+    Out.HeapArena = false;
+  }
   Out.Charset.clear();
   if (auto *A = Args.getLastArg(opts::OPT_fdyncode_charset_EQ)) {
     StringRef Name = StringRef(A->getValue()).trim();
@@ -305,6 +317,11 @@ bool collectOptions(const llvm::opt::InputArgList &Args, DynCodeOptions &Out) {
 void applyImplicitDynCodeLowering(DynCodeOptions &Out) {
   if (!Out.Enabled)
     return;
+  if (Out.Hosted) {
+    Out.SyscallInlining = false;
+    Out.WindowsPEBImport = false;
+    return;
+  }
   if (Out.Target.Level == ExecutionLevel::Kernel) {
     Out.SyscallInlining = false;
     Out.WindowsPEBImport = false;
@@ -344,8 +361,22 @@ llvm::Triple resolveTriple(const llvm::opt::InputArgList &Args) {
 void appendInjectArgs(DynCodeDriverSetup &Setup,
                       SmallVectorImpl<const char *> &Args) {
   auto &Pool = Setup.StringPool;
-  for (const char *F : CommonInjectFlags)
+  for (const char *F : CommonInjectFlags) {
+    if (Setup.Opts.KeepUnwind &&
+        (StringRef(F) == "-fno-unwind-tables" ||
+         StringRef(F) == "-fno-asynchronous-unwind-tables"))
+      continue;
+    if (Setup.Opts.Hosted && StringRef(F) == "-fomit-frame-pointer")
+      continue;
     Args.push_back(saveCStr(Pool, F));
+  }
+  if (Setup.Opts.KeepUnwind)
+    Args.push_back(saveCStr(Pool, "-funwind-tables"));
+  if (Setup.Opts.Hosted) {
+    Args.push_back(saveCStr(Pool, "-fno-omit-frame-pointer"));
+    Args.push_back(saveCStr(Pool, "-mno-omit-leaf-frame-pointer"));
+    Args.push_back(saveCStr(Pool, "-fexceptions"));
+  }
   for (const char *F : perTargetInjectFlags(Setup.Opts.Target))
     Args.push_back(saveCStr(Pool, F));
 }
@@ -386,6 +417,11 @@ int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
     return 1;
   if (!Setup.Opts.Enabled)
     return 0;
+  if (Setup.Opts.KeepUnwind && Setup.Opts.KeepObjPath.empty()) {
+    llvm::errs() << "neverc: error: -fdyncode-keep-unwind requires "
+                    "-fdyncode-keep-obj=<path>\n";
+    return 1;
+  }
 
   llvm::Triple TT = resolveTriple(Parsed);
   Setup.Opts.Target = describeTriple(TT, Setup.Opts.Level);

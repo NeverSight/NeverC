@@ -75,13 +75,15 @@ void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
     if (!Opts.Enabled)
       return;
 
-    MPM.addPass(DynCodePreparePass(Opts.EntrySymbol, Opts.InlineAll));
+    MPM.addPass(
+        DynCodePreparePass(Opts.EntrySymbol, Opts.InlineAll, Opts.Hosted));
     MPM.addPass(IndirectBrPass());
     MPM.addPass(MemIntrinPass());
     bool DynArena = Opts.Target.Level != ExecutionLevel::Kernel;
-    MPM.addPass(StringRuntimePass(
-        StringRuntimePass::arenaSizeFor(Opts.Target.Level), DynArena,
-        Opts.Target.OS));
+    if (!Opts.Hosted)
+      MPM.addPass(
+          StringRuntimePass(StringRuntimePass::arenaSizeFor(Opts.Target.Level),
+                            DynArena, Opts.Target.OS));
     if (Opts.HeapArena) {
       HeapFallbackMode FB = HeapFallbackMode::None;
       if (Opts.WindowsPEBImport)

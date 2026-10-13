@@ -272,6 +272,10 @@ llvm::Error resolveAndApplyDynCodeRelocations(const DynCodeExtractionPlan &Plan,
 
   if (llvm::Error E = executeDynCodeRelocations(Image, Work))
     return E;
+  auto Summary = Report.summary();
+  Summary.PatchedRelocationCount = Work.size();
+  if (llvm::Error E = Report.setSummary(Summary))
+    return E;
 
   if (llvm::Error E = Report.addRecord(
           {26, "builtin.relocation_executor", "relocations.applied",

@@ -207,13 +207,14 @@ unsigned auditConstantPool(MachineFunction &MF) {
 
 /// Returns the number of forbidden strip pseudos that survived the transform.
 /// Every hit is a hard violation of the post-transform invariant.
-unsigned countForbiddenPseudos(MachineFunction &MF, LLVMContext &Ctx) {
+unsigned countForbiddenPseudos(MachineFunction &MF, LLVMContext &Ctx,
+                               bool KeepUnwind) {
   const bool CheckSEH = MF.getTarget().getTargetTriple().isOSWindows();
   unsigned Count = 0;
   for (const MachineBasicBlock &MBB : MF) {
     for (const MachineInstr &MI : MBB) {
-      const bool Strip = isDynCodeStripPseudo(MI.getOpcode());
-      const bool SEH = CheckSEH && isSEHPseudoByMnemonic(MI);
+      const bool Strip = isDynCodeStripPseudo(MI.getOpcode(), KeepUnwind);
+      const bool SEH = CheckSEH && isSEHPseudoByMnemonic(MI, KeepUnwind);
       if (!Strip && !SEH)
         continue;
       ++Count;
@@ -239,7 +240,8 @@ public:
   static char ID;
 
   explicit DynCodeMIRVerifierPass(const DynCodeOptions &Opts)
-      : MachineFunctionPass(ID), Enabled(Opts.Enabled), Target(Opts.Target) {}
+      : MachineFunctionPass(ID), Enabled(Opts.Enabled),
+        KeepUnwind(Opts.KeepUnwind), Target(Opts.Target) {}
 
   StringRef getPassName() const override {
     return "NeverC DynCode MIR Final Verify";
@@ -255,7 +257,7 @@ public:
       return false;
 
     // Hard gate: no strip/SEH pseudo may survive into the emitted object.
-    (void)countForbiddenPseudos(MF, MF.getFunction().getContext());
+    (void)countForbiddenPseudos(MF, MF.getFunction().getContext(), KeepUnwind);
 
     // Diagnostic audits: the downstream extractor remains the authority that
     // rejects leftover external references and data sections.
@@ -267,6 +269,7 @@ public:
 
 private:
   bool Enabled = false;
+  bool KeepUnwind = false;
   TargetDesc Target;
 };
 

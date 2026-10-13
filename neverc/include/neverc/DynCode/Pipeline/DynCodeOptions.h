@@ -13,6 +13,12 @@ namespace dyncode {
 struct DynCodeOptions {
   bool Enabled = false;
   bool AllBlr = false;
+  /// Keep compiler unwind metadata in the object sidecar, never in the flat
+  /// image. Hosted installers need that metadata to unwind nonleaf frames.
+  bool KeepUnwind = false;
+  /// A hosted, code-only function. Never lower ordinary runtime calls into
+  /// syscalls/PEB resolution or turn persistent state into entry stack locals.
+  bool Hosted = false;
   bool SyscallInlining = false;
   bool WindowsPEBImport = false;
   ExecutionLevel Level = ExecutionLevel::User;

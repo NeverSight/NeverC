@@ -37,6 +37,9 @@ struct DynCodeReportSummary {
   uint64_t BadByteHitCount = 0;
   uint64_t EntryOffset = 0;
   std::string EntrySymbol;
+  std::string ExecutionProfile;
+  std::string TargetTriple;
+  bool KeepUnwind = false;
 };
 
 struct DynCodeReportRecord {

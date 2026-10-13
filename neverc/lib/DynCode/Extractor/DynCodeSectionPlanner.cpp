@@ -94,8 +94,20 @@ llvm::Error ObjectGraphExtractor::planSections() {
                              "dyncode extraction: object graph has no code "
                              "section to extract");
 
+  // A hosted installer retains the native object's unwind ownership. Do not
+  // reorder or realign function fragments independently of those records.
+  // Stackify already puts the requested entry first in the producer module.
+  if (Opts.Hosted &&
+      (CodeSections.size() != 1 || !EntrySymbol || EntryValueInSection != 0 ||
+       CodeSections.front().Section->ID != EntrySectionID))
+    return createStringError(inconvertibleErrorCode(),
+                             "hosted DynCode requires one unchanged native "
+                             "code section with its entry at offset zero");
+
   // Gather function boundaries for each code section.
   for (const plugin::PluginObjectSymbol &Sym : Graph.symbols()) {
+    if (Opts.Hosted)
+      break;
     if (Sym.Definition != NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED)
       continue;
     if (Sym.Type != NEVERC_OBJECT_SYMBOL_TYPE_FUNCTION)

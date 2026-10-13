@@ -6,6 +6,8 @@
 
 C 소스를 **위치 독립·제로 재배치·제로 데이터 섹션** 플랫 바이너리 dyncode로 직접 컴파일합니다.
 
+참고 [Hosted DynCode와 C++ 변환](hosted-dyncode.md).
+
 ## 가이드
 
 - [ARM64 (AArch64) 어셈블리 튜토리얼 — DynCode 관점](dyncode-compiler-arm64-assembly-tutorial.md)

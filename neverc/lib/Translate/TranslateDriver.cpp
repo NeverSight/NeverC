@@ -270,8 +270,8 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
   }
   if (I.Sources.size() != 1)
     return error("core profiles accept exactly one source file");
-  if (!I.Database.empty() || !I.ProjectRoot.empty() || !I.Target.empty() ||
-      !I.Quoting.empty() || !I.EntrySelectors.empty())
+  if (!I.Database.empty() || !I.ProjectRoot.empty() || !I.Quoting.empty() ||
+      !I.EntrySelectors.empty())
     return error("project context options require an explicit project profile");
   std::vector<std::string> Normalized{"-std=c++17"};
   for (size_t N = 0; N < I.Arguments.size(); ++N) {
@@ -291,7 +291,8 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
     return fail(D, "TR0004", I.Source, "source compiler option",
                 "option is not in the selected core profile: " + A.str(),
                 "Use -std=c++17 and supported -D/-U macros; "
-                "target/layout/include options require another profile.");
+                "Use --target for the target ABI; layout/include options "
+                "require another profile.");
   }
   I.Arguments = std::move(Normalized);
   return true;
@@ -310,7 +311,7 @@ void help() {
          "sources\n"
          "  --project-root PATH   Explicit ownership root (required for "
          "projects)\n"
-         "  --target TRIPLE       Project target; defaults to the native "
+         "  --target TRIPLE       Translation target; defaults to the native "
          "target\n"
          "  --compdb-entry F=N    Select zero-based database entry N for "
          "source F\n"

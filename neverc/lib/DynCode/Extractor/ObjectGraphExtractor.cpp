@@ -146,6 +146,9 @@ llvm::Expected<ObjectGraphExtractionResult> ObjectGraphExtractor::run() {
   Summary.Alignment = Image.outputAlignment();
   Summary.EntryOffset = EntryOutputOffset;
   Summary.EntrySymbol = EntrySymbol ? EntrySymbol->Name : "";
+  Summary.ExecutionProfile = Opts.Hosted ? "hosted-v1" : "standalone-v1";
+  Summary.TargetTriple = Opts.TargetTriple;
+  Summary.KeepUnwind = Opts.KeepUnwind;
   Summary.OutputDigest = Image.digest();
   if (llvm::Error E = Report.setSummary(Summary))
     return std::move(E);

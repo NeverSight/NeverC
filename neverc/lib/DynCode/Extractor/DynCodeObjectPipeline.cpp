@@ -20,6 +20,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/SHA256.h"
 #include <memory>
 #include <optional>
 
@@ -146,6 +147,10 @@ runDynCodeExtractionPipeline(ArrayRef<uint8_t> ObjectBytes,
   DynCodeExtractedOutput Output;
   Output.Image = std::move(Extracted->Image);
   Output.Report = std::move(Extracted->Report);
+  auto Summary = Output.Report.summary();
+  Summary.InputDigest = llvm::SHA256::hash(ObjectBytes);
+  if (Error E = Output.Report.setSummary(Summary))
+    return std::move(E);
   DynCodeExtractionPlan &Plan = Extracted->Plan;
 
   // Apply the intra-image relocations (dyncode.extract.relocate).

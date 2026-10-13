@@ -299,7 +299,8 @@ public:
   static char ID;
 
   explicit DynCodeMIRTransformPass(const DynCodeOptions &Opts)
-      : MachineFunctionPass(ID), Enabled(Opts.Enabled) {}
+      : MachineFunctionPass(ID), Enabled(Opts.Enabled),
+        KeepUnwind(Opts.KeepUnwind) {}
 
   StringRef getPassName() const override {
     return "NeverC DynCode MIR Transform";
@@ -315,8 +316,8 @@ public:
     for (MachineBasicBlock &MBB : MF) {
       for (auto It = MBB.begin(), End = MBB.end(); It != End;) {
         MachineInstr &MI = *It++;
-        if (isDynCodeStripPseudo(MI.getOpcode()) ||
-            (CheckSEH && isSEHPseudoByMnemonic(MI))) {
+        if (isDynCodeStripPseudo(MI.getOpcode(), KeepUnwind) ||
+            (CheckSEH && isSEHPseudoByMnemonic(MI, KeepUnwind))) {
           MI.eraseFromParent();
           Changed = true;
         }
@@ -329,6 +330,7 @@ public:
 
 private:
   bool Enabled = false;
+  bool KeepUnwind = false;
 };
 
 } // namespace

@@ -20,7 +20,9 @@ namespace dyncode {
 /// True for a dyncode strip pseudo: an opcode that must never survive into the
 /// emitted object.  The set is the frozen MIRStripPseudoOpcodes.def table plus
 /// any user extension.
-inline bool isDynCodeStripPseudo(unsigned Opc) {
+inline bool isDynCodeStripPseudo(unsigned Opc, bool KeepUnwind = false) {
+  if (Opc == llvm::TargetOpcode::CFI_INSTRUCTION && KeepUnwind)
+    return false;
   switch (Opc) {
 #define NEVERC_MIR_STRIP_PSEUDO(name, category) case llvm::TargetOpcode::name:
 #include "neverc/DynCode/Tables/MIRStripPseudoOpcodes.def"
@@ -34,7 +36,10 @@ inline bool isDynCodeStripPseudo(unsigned Opc) {
 
 /// True for a Windows SEH pseudo (mnemonic starts with "SEH_").  These carry
 /// unwind metadata that a position-independent dyncode image cannot reference.
-inline bool isSEHPseudoByMnemonic(const llvm::MachineInstr &MI) {
+inline bool isSEHPseudoByMnemonic(const llvm::MachineInstr &MI,
+                                  bool KeepUnwind = false) {
+  if (KeepUnwind)
+    return false;
   const llvm::MachineFunction *MF = MI.getParent()->getParent();
   if (!MF)
     return false;

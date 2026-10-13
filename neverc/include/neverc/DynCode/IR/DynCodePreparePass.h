@@ -16,10 +16,12 @@ namespace dyncode {
 struct DynCodePreparePass : public llvm::PassInfoMixin<DynCodePreparePass> {
   std::string EntrySymbol;
   bool InlineAll = false;
+  bool Hosted = false;
 
   DynCodePreparePass() = default;
-  explicit DynCodePreparePass(llvm::StringRef Entry, bool InlineAll = false)
-      : EntrySymbol(Entry.str()), InlineAll(InlineAll) {}
+  explicit DynCodePreparePass(llvm::StringRef Entry, bool InlineAll = false,
+                              bool Hosted = false)
+      : EntrySymbol(Entry.str()), InlineAll(InlineAll), Hosted(Hosted) {}
 
   llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM);
   static llvm::StringRef name() { return "DynCodePreparePass"; }
