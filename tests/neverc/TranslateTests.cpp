@@ -277859,6 +277859,682 @@ using W=std::reference_wrapper<volatile int>;auto selected(W*a,W*b){auto p=std::
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchStoredPredicatesOperationMatrix) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-stored-predicate-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-stored-predicate-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=1,y=2,z=3,l=1,m=2,k=4;using W=std::reference_wrapper<int>;W a[]={x,y,z};W b[]={l,m,k};const W c[]={x,y,z};const W d[]={l,m,k};for(int variant=0;variant!=3;++variant){int n=variant==2?3:variant;
+{std::equal_to<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(c,c+n,b,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+n,d,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(c,c+n,d,op);if(result!=(n<=2))return 1;}
+{std::not_equal_to<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(c,c+n,b,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+n,d,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(c,c+n,d,op);if(result!=(n<=0))return 1;}
+{std::less<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(c,c+n,b,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(a,a+n,d,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(c,c+n,d,op);if(result!=(n<=0))return 1;}
+{std::greater<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(c,c+n,b,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+n,d,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(c,c+n,d,op);if(result!=(n<=0))return 1;}
+{std::less_equal<>op;auto result=std::equal(a,a+n,b,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+n,b,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(c,c+n,b,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+n,d,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(c,c+n,d,op);if(result!=true)return 1;}
+{std::greater_equal<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+n,b,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(c,c+n,b,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+n,d,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(c,c+n,d,op);if(result!=(n<=2))return 1;}
+{std::equal_to<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(c,c+n,b,b+n,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+n,d,d+n,op);if(result!=(n<=2))return 1;}
+{const std::equal_to<>op;auto result=std::equal(c,c+n,d,d+n,op);if(result!=(n<=2))return 1;}
+{std::not_equal_to<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(c,c+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+n,d,d+n,op);if(result!=(n<=0))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(c,c+n,d,d+n,op);if(result!=(n<=0))return 1;}
+{std::less<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(c,c+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(a,a+n,d,d+n,op);if(result!=(n<=0))return 1;}
+{const std::less<>op;auto result=std::equal(c,c+n,d,d+n,op);if(result!=(n<=0))return 1;}
+{std::greater<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(c,c+n,b,b+n,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+n,d,d+n,op);if(result!=(n<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(c,c+n,d,d+n,op);if(result!=(n<=0))return 1;}
+{std::less_equal<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(c,c+n,b,b+n,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+n,d,d+n,op);if(result!=true)return 1;}
+{const std::less_equal<>op;auto result=std::equal(c,c+n,d,d+n,op);if(result!=true)return 1;}
+{std::greater_equal<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+n,b,b+n,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(c,c+n,b,b+n,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+n,d,d+n,op);if(result!=(n<=2))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(c,c+n,d,d+n,op);if(result!=(n<=2))return 1;}
+{std::equal_to<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(c,c+n,b,op);if(result.first!=c+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+n,d,op);if(result.first!=a+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(c,c+n,d,op);if(result.first!=c+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{std::not_equal_to<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(c,c+n,b,op);if(result.first!=c+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+n,d,op);if(result.first!=a+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(c,c+n,d,op);if(result.first!=c+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{std::less<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(c,c+n,b,op);if(result.first!=c+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(a,a+n,d,op);if(result.first!=a+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(c,c+n,d,op);if(result.first!=c+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{std::greater<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+)cpp"
+             R"cpp({const std::greater<>op;auto result=std::mismatch(c,c+n,b,op);if(result.first!=c+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(a,a+n,d,op);if(result.first!=a+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(c,c+n,d,op);if(result.first!=c+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{std::less_equal<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<3?n:3)||result.second!=b+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<3?n:3)||result.second!=b+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(c,c+n,b,op);if(result.first!=c+(n<3?n:3)||result.second!=b+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+n,d,op);if(result.first!=a+(n<3?n:3)||result.second!=d+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(c,c+n,d,op);if(result.first!=c+(n<3?n:3)||result.second!=d+(n<3?n:3))return 2;}
+{std::greater_equal<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+n,b,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(c,c+n,b,op);if(result.first!=c+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+n,d,op);if(result.first!=a+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(c,c+n,d,op);if(result.first!=c+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{std::equal_to<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(c,c+n,b,b+n,op);if(result.first!=c+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+n,d,d+n,op);if(result.first!=a+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(c,c+n,d,d+n,op);if(result.first!=c+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{std::not_equal_to<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(c,c+n,b,b+n,op);if(result.first!=c+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+n,d,d+n,op);if(result.first!=a+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(c,c+n,d,d+n,op);if(result.first!=c+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{std::less<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(c,c+n,b,b+n,op);if(result.first!=c+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(a,a+n,d,d+n,op);if(result.first!=a+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(c,c+n,d,d+n,op);if(result.first!=c+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{std::greater<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(c,c+n,b,b+n,op);if(result.first!=c+(n<0?n:0)||result.second!=b+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(a,a+n,d,d+n,op);if(result.first!=a+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(c,c+n,d,d+n,op);if(result.first!=c+(n<0?n:0)||result.second!=d+(n<0?n:0))return 2;}
+{std::less_equal<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<3?n:3)||result.second!=b+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<3?n:3)||result.second!=b+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(c,c+n,b,b+n,op);if(result.first!=c+(n<3?n:3)||result.second!=b+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+n,d,d+n,op);if(result.first!=a+(n<3?n:3)||result.second!=d+(n<3?n:3))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(c,c+n,d,d+n,op);if(result.first!=c+(n<3?n:3)||result.second!=d+(n<3?n:3))return 2;}
+{std::greater_equal<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+n,b,b+n,op);if(result.first!=a+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(c,c+n,b,b+n,op);if(result.first!=c+(n<2?n:2)||result.second!=b+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+n,d,d+n,op);if(result.first!=a+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(c,c+n,d,d+n,op);if(result.first!=c+(n<2?n:2)||result.second!=d+(n<2?n:2))return 2;}
+}return x!=1||y!=2||z!=3||l!=1||m!=2||k!=4||&a[1].get()!=&y||&b[2].get()!=&k||&c[0].get()!=&x||&d[1].get()!=&m;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-stored-predicate-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchStoredPredicatesLiveBindings) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-stored-predicate-live-bindings.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-stored-predicate-live-bindings.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=1,y=2,z=3,l=1,m=2,k=4;using W=std::reference_wrapper<int>;W a[]={x,y,z};W b[]={l,m,k};const std::less_equal<>op;
+if(!std::equal(a,a+3,b,op)||!std::equal(a,a+3,b,b+3,op))return 1;
+y=5;auto p=std::mismatch(a,a+3,b,op);auto q=std::mismatch(a,a+3,b,b+3,op);if(p.first!=a+1||p.second!=b+1||q.first!=a+1||q.second!=b+1)return 2;
+m=6;if(!std::equal(a,a+3,b,op))return 3;
+b[2]=std::ref(x);p=std::mismatch(a,a+3,b,op);if(p.first!=a+2||p.second!=b+2)return 4;
+a[2]=std::ref(l);if(!std::equal(a,a+3,b,b+3,op))return 5;
+p=std::mismatch(a,a+3,b,b+1,op);if(p.first!=a+1||p.second!=b+1||std::equal(a,a+3,b,b+1,op))return 6;
+return x!=1||y!=5||z!=3||l!=1||m!=6||k!=4||&a[2].get()!=&l||&b[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-stored-predicate-live-bindings" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchStoredPredicatesBoolFloating) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-stored-predicate-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-stored-predicate-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool f=false,t=true;const double zero=-0.0,positive=0.0,nan=0.0/0.0,tiny=0x1p-100,twice=0x1p-99;using B=std::reference_wrapper<const bool>;using D=std::reference_wrapper<const double>;const B a[]={f,t,f};B b[]={f,t,t};const D c[]={zero,nan,tiny};D d[]={positive,nan,twice};
+{const std::equal_to<>op;auto result=std::equal(a,a+3,b,op);if(result!=(3<=2))return 1;}
+{std::equal_to<>op;auto result=std::equal(c,c+3,d,op);if(result!=(3<=1))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+3,b,op);if(result!=(3<=0))return 1;}
+{std::not_equal_to<>op;auto result=std::equal(c,c+3,d,op);if(result!=(3<=0))return 1;}
+{const std::less<>op;auto result=std::equal(a,a+3,b,op);if(result!=(3<=0))return 1;}
+{std::less<>op;auto result=std::equal(c,c+3,d,op);if(result!=(3<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+3,b,op);if(result!=(3<=0))return 1;}
+{std::greater<>op;auto result=std::equal(c,c+3,d,op);if(result!=(3<=0))return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+3,b,op);if(result!=true)return 1;}
+{std::less_equal<>op;auto result=std::equal(c,c+3,d,op);if(result!=(3<=1))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+3,b,op);if(result!=(3<=2))return 1;}
+{std::greater_equal<>op;auto result=std::equal(c,c+3,d,op);if(result!=(3<=1))return 1;}
+{const std::equal_to<>op;auto result=std::equal(a,a+3,b,b+3,op);if(result!=(3<=2))return 1;}
+{std::equal_to<>op;auto result=std::equal(c,c+3,d,d+3,op);if(result!=(3<=1))return 1;}
+{const std::not_equal_to<>op;auto result=std::equal(a,a+3,b,b+3,op);if(result!=(3<=0))return 1;}
+{std::not_equal_to<>op;auto result=std::equal(c,c+3,d,d+3,op);if(result!=(3<=0))return 1;}
+{const std::less<>op;auto result=std::equal(a,a+3,b,b+3,op);if(result!=(3<=0))return 1;}
+{std::less<>op;auto result=std::equal(c,c+3,d,d+3,op);if(result!=(3<=0))return 1;}
+{const std::greater<>op;auto result=std::equal(a,a+3,b,b+3,op);if(result!=(3<=0))return 1;}
+{std::greater<>op;auto result=std::equal(c,c+3,d,d+3,op);if(result!=(3<=0))return 1;}
+{const std::less_equal<>op;auto result=std::equal(a,a+3,b,b+3,op);if(result!=true)return 1;}
+{std::less_equal<>op;auto result=std::equal(c,c+3,d,d+3,op);if(result!=(3<=1))return 1;}
+{const std::greater_equal<>op;auto result=std::equal(a,a+3,b,b+3,op);if(result!=(3<=2))return 1;}
+{std::greater_equal<>op;auto result=std::equal(c,c+3,d,d+3,op);if(result!=(3<=1))return 1;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+3,b,op);if(result.first!=a+(3<2?3:2)||result.second!=b+(3<2?3:2))return 2;}
+{std::equal_to<>op;auto result=std::mismatch(c,c+3,d,op);if(result.first!=c+(3<1?3:1)||result.second!=d+(3<1?3:1))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+3,b,op);if(result.first!=a+(3<0?3:0)||result.second!=b+(3<0?3:0))return 2;}
+{std::not_equal_to<>op;auto result=std::mismatch(c,c+3,d,op);if(result.first!=c+(3<0?3:0)||result.second!=d+(3<0?3:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(a,a+3,b,op);if(result.first!=a+(3<0?3:0)||result.second!=b+(3<0?3:0))return 2;}
+{std::less<>op;auto result=std::mismatch(c,c+3,d,op);if(result.first!=c+(3<0?3:0)||result.second!=d+(3<0?3:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(a,a+3,b,op);if(result.first!=a+(3<0?3:0)||result.second!=b+(3<0?3:0))return 2;}
+{std::greater<>op;auto result=std::mismatch(c,c+3,d,op);if(result.first!=c+(3<0?3:0)||result.second!=d+(3<0?3:0))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+3,b,op);if(result.first!=a+(3<3?3:3)||result.second!=b+(3<3?3:3))return 2;}
+{std::less_equal<>op;auto result=std::mismatch(c,c+3,d,op);if(result.first!=c+(3<1?3:1)||result.second!=d+(3<1?3:1))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+3,b,op);if(result.first!=a+(3<2?3:2)||result.second!=b+(3<2?3:2))return 2;}
+{std::greater_equal<>op;auto result=std::mismatch(c,c+3,d,op);if(result.first!=c+(3<1?3:1)||result.second!=d+(3<1?3:1))return 2;}
+{const std::equal_to<>op;auto result=std::mismatch(a,a+3,b,b+3,op);if(result.first!=a+(3<2?3:2)||result.second!=b+(3<2?3:2))return 2;}
+{std::equal_to<>op;auto result=std::mismatch(c,c+3,d,d+3,op);if(result.first!=c+(3<1?3:1)||result.second!=d+(3<1?3:1))return 2;}
+{const std::not_equal_to<>op;auto result=std::mismatch(a,a+3,b,b+3,op);if(result.first!=a+(3<0?3:0)||result.second!=b+(3<0?3:0))return 2;}
+{std::not_equal_to<>op;auto result=std::mismatch(c,c+3,d,d+3,op);if(result.first!=c+(3<0?3:0)||result.second!=d+(3<0?3:0))return 2;}
+{const std::less<>op;auto result=std::mismatch(a,a+3,b,b+3,op);if(result.first!=a+(3<0?3:0)||result.second!=b+(3<0?3:0))return 2;}
+{std::less<>op;auto result=std::mismatch(c,c+3,d,d+3,op);if(result.first!=c+(3<0?3:0)||result.second!=d+(3<0?3:0))return 2;}
+{const std::greater<>op;auto result=std::mismatch(a,a+3,b,b+3,op);if(result.first!=a+(3<0?3:0)||result.second!=b+(3<0?3:0))return 2;}
+{std::greater<>op;auto result=std::mismatch(c,c+3,d,d+3,op);if(result.first!=c+(3<0?3:0)||result.second!=d+(3<0?3:0))return 2;}
+{const std::less_equal<>op;auto result=std::mismatch(a,a+3,b,b+3,op);if(result.first!=a+(3<3?3:3)||result.second!=b+(3<3?3:3))return 2;}
+{std::less_equal<>op;auto result=std::mismatch(c,c+3,d,d+3,op);if(result.first!=c+(3<1?3:1)||result.second!=d+(3<1?3:1))return 2;}
+{const std::greater_equal<>op;auto result=std::mismatch(a,a+3,b,b+3,op);if(result.first!=a+(3<2?3:2)||result.second!=b+(3<2?3:2))return 2;}
+{std::greater_equal<>op;auto result=std::mismatch(c,c+3,d,d+3,op);if(result.first!=c+(3<1?3:1)||result.second!=d+(3<1?3:1))return 2;}
+return f||!t||&a[0].get()!=&f||&b[2].get()!=&t||&c[1].get()!=&nan||&d[2].get()!=&twice||!(tiny>0.0);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-stored-predicate-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchStoredPredicatesEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-stored-predicate-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-stored-predicate-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads,cleaned;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto equal3_equal_to(P a,P b,P c,const std::equal_to<>&op){return std::equal(a,b,c,op);}
+auto equal3_less_equal(P a,P b,P c,const std::less_equal<>&op){return std::equal(a,b,c,op);}
+auto equal4_equal_to(P a,P b,P c,P d,const std::equal_to<>&op){return std::equal(a,b,c,d,op);}
+auto equal4_less_equal(P a,P b,P c,P d,const std::less_equal<>&op){return std::equal(a,b,c,d,op);}
+auto mismatch3_equal_to(P a,P b,P c,const std::equal_to<>&op){return std::mismatch(a,b,c,op);}
+auto mismatch3_less_equal(P a,P b,P c,const std::less_equal<>&op){return std::mismatch(a,b,c,op);}
+auto mismatch4_equal_to(P a,P b,P c,P d,const std::equal_to<>&op){return std::mismatch(a,b,c,d,op);}
+auto mismatch4_less_equal(P a,P b,P c,P d,const std::less_equal<>&op){return std::mismatch(a,b,c,d,op);}
+int main(){int x=1,y=2,z=3,l=1,m=2,k=4;W a[]={x,y,z};W b[]={l,m,k};const std::equal_to<>eq;const std::less_equal<>le;
+{auto result=std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get(),le);if(!result)return 1;}
+{auto result=std::equal(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get(),le);if(!result)return 1;}
+{auto result=std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get(),le);if(result.first!=a||result.second!=b)return 1;}
+{auto result=std::mismatch(Input{a}.get(),Input{a}.get(),Input{b}.get(),Input{b}.get(),le);if(result.first!=a||result.second!=b)return 1;}
+if(reads!=14||cleaned!=14)return 2;
+{auto result=equal3_equal_to(a,a+3,b,eq);if(result!=false)return 3;}
+{auto result=equal3_less_equal(a,a+3,b,le);if(result!=true)return 3;}
+{auto result=equal4_equal_to(a,a+3,b,b+3,eq);if(result!=false)return 3;}
+{auto result=equal4_less_equal(a,a+3,b,b+3,le);if(result!=true)return 3;}
+{auto result=mismatch3_equal_to(a,a+3,b,eq);if(result.first!=a+2||result.second!=b+2)return 3;}
+{auto result=mismatch3_less_equal(a,a+3,b,le);if(result.first!=a+3||result.second!=b+3)return 3;}
+{auto result=mismatch4_equal_to(a,a+3,b,b+3,eq);if(result.first!=a+2||result.second!=b+2)return 3;}
+{auto result=mismatch4_less_equal(a,a+3,b,b+3,le);if(result.first!=a+3||result.second!=b+3)return 3;}
+return reads!=14||cleaned!=14||x!=1||y!=2||z!=3||l!=1||m!=2||k!=4||&a[0].get()!=&x||&b[2].get()!=&k;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-stored-predicate-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchStoredPredicatesFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-equal-mismatch-stored-predicate-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-equal-mismatch-stored-predicate-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::equal(a,b,out,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::equal(a,b,out,out+1,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::mismatch(a,b,out,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::mismatch(a,b,out,out+1,op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,op);}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,out+1,op);}
+}
+namespace case_6{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,op);}
+}
+namespace case_7{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,out+1,op);}
+}
+namespace case_8{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,op);}
+}
+namespace case_9{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,out+1,op);}
+}
+namespace case_10{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,op);}
+}
+namespace case_11{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,out+1,op);}
+}
+int main(){int x=1,y=2,z=3,l=1,m=2,k=4;std::reference_wrapper<int>a[]={x,y,z};std::reference_wrapper<int>b[]={l,m,k};
+{auto r=case_0::selected(a,a+3,b);if(r!=false)return 1;}
+{auto r=case_1::selected(a,a+3,b);if(r!=false)return 1;}
+{auto r=case_2::selected(a,a+3,b);if(r.first!=a+2||r.second!=b+2)return 1;}
+{auto r=case_3::selected(a,a+3,b);if(r.first!=a+1||r.second!=b+1)return 1;}
+{auto r=case_4::selected(a,a+3,b);if(r!=true)return 1;}
+{auto r=case_5::selected(a,a+3,b);if(r!=false)return 1;}
+{auto r=case_6::selected(a,a+3,b);if(r.first!=a+3||r.second!=b+3)return 1;}
+{auto r=case_7::selected(a,a+3,b);if(r.first!=a+1||r.second!=b+1)return 1;}
+{auto r=case_8::selected(a,a+3,b);if(r!=true)return 1;}
+{auto r=case_9::selected(a,a+3,b);if(r!=false)return 1;}
+{auto r=case_10::selected(a,a+3,b);if(r.first!=a+3||r.second!=b+3)return 1;}
+{auto r=case_11::selected(a,a+3,b);if(r.first!=a+1||r.second!=b+1)return 1;}
+return x!=1||y!=2||z!=3||l!=1||m!=2||k!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-equal-mismatch-stored-predicate-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualMismatchStoredPredicatesRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"equal-four-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::equal(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"equal-four-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::equal(a,b,c,d,h.op);}
+)cpp"},
+      {"equal-four-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::equal(a,b,c,d,make());}
+)cpp"},
+      {"equal-four-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::equal(a,b,c,d,op);}
+)cpp"},
+      {"equal-four-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::equal(a,b,c,d,op);}
+)cpp"},
+      {"equal-four-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::equal(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"equal-four-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::equal(a,b,c,d,h.op);}
+)cpp"},
+      {"equal-four-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::equal(a,b,c,d,make());}
+)cpp"},
+      {"equal-four-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::equal(a,b,c,d,op);}
+)cpp"},
+      {"equal-four-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::equal(a,b,c,d,op);}
+)cpp"},
+      {"equal-three-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::equal(a,b,c,(++effects,op));}
+)cpp"},
+      {"equal-three-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::equal(a,b,c,h.op);}
+)cpp"},
+      {"equal-three-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::equal(a,b,c,make());}
+)cpp"},
+      {"equal-three-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::equal(a,b,c,op);}
+)cpp"},
+      {"equal-three-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::equal(a,b,c,op);}
+)cpp"},
+      {"equal-three-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::equal(a,b,c,(++effects,op));}
+)cpp"},
+      {"equal-three-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::equal(a,b,c,h.op);}
+)cpp"},
+      {"equal-three-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::equal(a,b,c,make());}
+)cpp"},
+      {"equal-three-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::equal(a,b,c,op);}
+)cpp"},
+      {"equal-three-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::equal(a,b,c,op);}
+)cpp"},
+      {"mismatch-four-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::mismatch(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"mismatch-four-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::mismatch(a,b,c,d,h.op);}
+)cpp"},
+      {"mismatch-four-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::mismatch(a,b,c,d,make());}
+)cpp"},
+      {"mismatch-four-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::mismatch(a,b,c,d,op);}
+)cpp"},
+      {"mismatch-four-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::mismatch(a,b,c,d,op);}
+)cpp"},
+      {"mismatch-four-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::mismatch(a,b,c,d,(++effects,op));}
+)cpp"},
+      {"mismatch-four-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::mismatch(a,b,c,d,h.op);}
+)cpp"},
+      {"mismatch-four-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::mismatch(a,b,c,d,make());}
+)cpp"},
+      {"mismatch-four-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::mismatch(a,b,c,d,op);}
+)cpp"},
+      {"mismatch-four-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::mismatch(a,b,c,d,op);}
+)cpp"},
+      {"mismatch-three-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::mismatch(a,b,c,(++effects,op));}
+)cpp"},
+      {"mismatch-three-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::mismatch(a,b,c,h.op);}
+)cpp"},
+      {"mismatch-three-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::mismatch(a,b,c,make());}
+)cpp"},
+      {"mismatch-three-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::equal_to<>op;return std::mismatch(a,b,c,op);}
+)cpp"},
+      {"mismatch-three-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::equal_to<int>op;return std::mismatch(a,b,c,op);}
+)cpp"},
+      {"mismatch-three-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::mismatch(a,b,c,(++effects,op));}
+)cpp"},
+      {"mismatch-three-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P c,P d){Holder h;return std::mismatch(a,b,c,h.op);}
+)cpp"},
+      {"mismatch-three-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P c,P d){return std::mismatch(a,b,c,make());}
+)cpp"},
+      {"mismatch-three-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c,P d){std::less_equal<>op;return std::mismatch(a,b,c,op);}
+)cpp"},
+      {"mismatch-three-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::mismatch(a,b,c,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-equal-mismatch-stored-predicate-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
@@ -304880,12 +305556,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::equal(a,a+1,out,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::equal(a,b,out,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -305811,12 +306481,6 @@ auto selected(P a,P b,P other){return std::equal(a,b,other,other+1,std::equal_to
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::equal(a,a+1,out,out+1,std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::equal(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -306798,12 +307462,6 @@ auto selected(P a,P b,P other){return std::mismatch(a,b,other,std::equal_to<>{})
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::mismatch(a,b,out,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -307828,12 +308486,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::mismatch(a,b,out,out+1,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -308764,12 +309416,6 @@ auto selected(P a,P b,P other){return std::equal(a,b,other,std::less_equal<>{});
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::equal(a,a+1,out,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -309735,12 +310381,6 @@ auto selected(P a,P b,P other){return std::equal(a,b,other,other+1,std::less_equ
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::equal(a,a+1,out,out+1,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -310760,12 +311400,6 @@ auto selected(P a,P b,P other){return std::mismatch(a,b,other,std::less_equal<>{
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -311833,12 +312467,6 @@ auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -318727,12 +319355,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::equal(a,a+1,out,std::less_equal<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -319746,12 +320368,6 @@ auto selected(P a,P b,P other){return std::equal(a,b,other,other+1,std::less_equ
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::equal(a,a+1,out,out+1,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::equal(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -320806,12 +321422,6 @@ auto selected(P a,P b,P other){return std::mismatch(a,b,other,std::less_equal<>{
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -321911,12 +322521,6 @@ auto selected(P a,P b,P other){return std::mismatch(a,b,other,other+1,std::less_
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::mismatch(a,a+1,out,out+1,std::less_equal<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::less_equal<> op;return std::mismatch(a,b,out,out+1,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
