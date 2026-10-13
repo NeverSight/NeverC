@@ -62518,6 +62518,104 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayQueriesAcceptDeclarationOnlyOperands) {
+  // Query-only functions need no definition, including empty-array operands.
+  // Calling every enclosing function checks that no query operand reaches the linker.
+  const auto Source = tmpFile("array-query-declarations.cpp");
+  const auto Output = tmpFile("array-query-declarations.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+namespace swap_peer {
+using A=std::array<int,2>;
+A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+}
+namespace empty_swap_receiver {
+using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(source(a).swap(a)));}
+}
+namespace empty_swap_peer {
+using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+}
+namespace fill_argument {
+using Row=std::array<int,2>;
+int value()noexcept;void f(Row&a){static_assert(!noexcept(a.fill(value())));}
+}
+namespace fill_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
+}
+namespace at_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).at(0)));}
+}
+namespace at_index {
+using Row=std::array<int,2>;
+Row::size_type index()noexcept;void f(Row&a){static_assert(!noexcept(a.at(index())));}
+}
+namespace front_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).front()));}
+}
+namespace subscript_index {
+using Row=std::array<int,2>;
+Row::size_type index()noexcept;void f(Row&a){static_assert(noexcept(a[index()]));}
+}
+namespace empty_subscript_index {
+using Empty=std::array<int,0>;
+unsigned position()noexcept;void f(Empty&a){static_assert(noexcept(a[position()]));}
+}
+namespace empty_subscript_receiver {
+using Empty=std::array<int,0>;
+Empty&source(Empty&)noexcept;void f(Empty&a){static_assert(noexcept(source(a)[0]));}
+}
+namespace size_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).size()));}
+}
+namespace rend_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).rend()));}
+}
+namespace end_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).end()));}
+}
+namespace data_receiver {
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).data()));}
+}
+int main() {
+  { swap_peer::A a{}; swap_peer::f(a); }
+  { empty_swap_receiver::A a{}; empty_swap_receiver::f(a); }
+  { empty_swap_peer::A a{}; empty_swap_peer::f(a); }
+  { fill_argument::Row a{}; fill_argument::f(a); }
+  { fill_receiver::Row a{}; fill_receiver::f(a); }
+  { at_receiver::Row a{}; at_receiver::f(a); }
+  { at_index::Row a{}; at_index::f(a); }
+  { front_receiver::Row a{}; front_receiver::f(a); }
+  { subscript_index::Row a{}; subscript_index::f(a); }
+  { empty_subscript_index::Empty a{}; empty_subscript_index::f(a); }
+  { empty_subscript_receiver::Empty a{}; empty_subscript_receiver::f(a); }
+  { size_receiver::Row a{}; size_receiver::f(a); }
+  { rend_receiver::Row a{}; rend_receiver::f(a); }
+  { end_receiver::Row a{}; end_receiver::f(a); }
+  { data_receiver::Row a{}; data_receiver::f(a); }
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-query-declarations" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArraySwapQueriesRequireSource) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
@@ -62576,10 +62674,10 @@ A&source(A&a,int n=(sizeof(long double),0))noexcept{return a;}void f(A&a){static
 using A=std::array<int,2>;
 A&source(A&a)noexcept{(void)sizeof(long double);return a;}void f(A&a){using T=decltype(source(a).swap(a));}
 )cpp", "TR0201"},
-      {"peer-declaration", R"cpp(#include <array>
+      {"peer-runtime-declaration", R"cpp(#include <array>
 #include <utility>
 using A=std::array<int,2>;
-A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));(void)std::swap(a,source(a));}
 )cpp", "TR0203"},
       {"peer-conversion", R"cpp(#include <array>
 #include <utility>
@@ -62886,11 +62984,11 @@ using A=std::array<int,0>;A&source(A&a,int n=(sizeof(long double),0))noexcept{re
       {"receiver-body", R"cpp(#include <array>
 using A=std::array<int,0>;A&source(A&a)noexcept{(void)sizeof(long double);return a;}void f(A&a){using T=decltype(source(a).swap(a));}
 )cpp", "TR0201"},
-      {"receiver-declaration", R"cpp(#include <array>
-using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(source(a).swap(a)));}
+      {"receiver-runtime-declaration", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(source(a).swap(a)));(void)source(a).swap(a);}
 )cpp", "TR0203"},
-      {"free-argument-declaration", R"cpp(#include <array>
-using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+      {"free-argument-runtime-declaration", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));(void)std::swap(a,source(a));}
 )cpp", "TR0203"},
       {"argument-conversion", R"cpp(#include <array>
 using A=std::array<int,0>;struct V{A*p;operator A&()const noexcept{(void)sizeof(long double);return *p;}};void f(A&a){static_assert(noexcept(a.swap(V{&a})));}
@@ -63186,9 +63284,9 @@ int value(int n=(sizeof(long double),1))noexcept{return n;}void f(Row&a){static_
 using Row=std::array<int,2>;
 int value()noexcept{(void)sizeof(long double);return 1;}void f(Row&a){static_assert(!noexcept(a.fill(value())));}
 )cpp", "TR0201"},
-      {"argument-declaration", R"cpp(#include <array>
+      {"argument-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-int value()noexcept;void f(Row&a){static_assert(!noexcept(a.fill(value())));}
+int value()noexcept;void f(Row&a){static_assert(!noexcept(a.fill(value())));(void)a.fill(value());}
 )cpp", "TR0203"},
       {"argument-exception", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -63206,9 +63304,9 @@ Row&source(Row&a,int n=(sizeof(long double),1))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
 )cpp", "TR0201"},
-      {"receiver-declaration", R"cpp(#include <array>
+      {"receiver-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).fill(1)));(void)source(a).fill(1);}
 )cpp", "TR0203"},
       {"receiver-exception", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -63631,13 +63729,13 @@ Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(!noexcept(source(a).at(0)));}
 )cpp", "TR0201"},
-      {"receiver-declaration", R"cpp(#include <array>
+      {"receiver-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).at(0)));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).at(0)));(void)source(a).at(0);}
 )cpp", "TR0203"},
-      {"index-declaration", R"cpp(#include <array>
+      {"index-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row::size_type index()noexcept;void f(Row&a){static_assert(!noexcept(a.at(index())));}
+Row::size_type index()noexcept;void f(Row&a){static_assert(!noexcept(a.at(index())));(void)a.at(index());}
 )cpp", "TR0203"},
       {"temporary-initializer", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -63981,13 +64079,13 @@ Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a)[0]));}
 )cpp", "TR0201"},
-      {"receiver-declaration", R"cpp(#include <array>
+      {"receiver-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).front()));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).front()));(void)source(a).front();}
 )cpp", "TR0203"},
-      {"index-declaration", R"cpp(#include <array>
+      {"index-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row::size_type index()noexcept;void f(Row&a){static_assert(noexcept(a[index()]));}
+Row::size_type index()noexcept;void f(Row&a){static_assert(noexcept(a[index()]));(void)a[index()];}
 )cpp", "TR0203"},
       {"receiver-exception", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -64307,9 +64405,9 @@ unsigned position()noexcept{(void)sizeof(long double);return 0;}void f(Empty&a){
 using Empty=std::array<int,0>;
 struct I{operator Empty::size_type()const noexcept{(void)sizeof(long double);return 0;}};void f(Empty&a){static_assert(noexcept(a[I{}]));}
 )cpp", "TR0201"},
-      {"index-declaration", R"cpp(#include <array>
+      {"index-runtime-declaration", R"cpp(#include <array>
 using Empty=std::array<int,0>;
-unsigned position()noexcept;void f(Empty&a){static_assert(noexcept(a[position()]));}
+unsigned position()noexcept;void f(Empty&a){static_assert(noexcept(a[position()]));(void)position();}
 )cpp", "TR0203"},
       {"receiver-default", R"cpp(#include <array>
 using Empty=std::array<int,0>;
@@ -64323,9 +64421,9 @@ Empty&source(Empty&a)noexcept{(void)sizeof(long double);return a;}void f(Empty&a
 using Empty=std::array<int,0>;
 Empty&source(Empty&a)noexcept(sizeof(long double)>0){return a;}void f(Empty&a){static_assert(noexcept(source(a)[0]));}
 )cpp", "TR0201"},
-      {"receiver-declaration", R"cpp(#include <array>
+      {"receiver-runtime-declaration", R"cpp(#include <array>
 using Empty=std::array<int,0>;
-Empty&source(Empty&)noexcept;void f(Empty&a){static_assert(noexcept(source(a)[0]));}
+Empty&source(Empty&)noexcept;void f(Empty&a){static_assert(noexcept(source(a)[0]));(void)source(a).size();}
 )cpp", "TR0203"},
       {"temporary-destructor", R"cpp(#include <array>
 using Empty=std::array<int,0>;
@@ -64602,9 +64700,9 @@ Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).empty()));}
 )cpp", "TR0201"},
-      {"receiver-declaration-size", R"cpp(#include <array>
+      {"receiver-runtime-declaration-size", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).size()));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).size()));(void)source(a).size();}
 )cpp", "TR0203"},
       {"receiver-exception-max_size", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -64889,9 +64987,9 @@ Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).rbegin()));}
 )cpp", "TR0201"},
-      {"receiver-declaration-rend", R"cpp(#include <array>
+      {"receiver-runtime-declaration-rend", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).rend()));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).rend()));(void)source(a).rend();}
 )cpp", "TR0203"},
       {"receiver-exception-crbegin", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -65171,9 +65269,9 @@ Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).begin()));}
 )cpp", "TR0201"},
-      {"receiver-declaration-end", R"cpp(#include <array>
+      {"receiver-runtime-declaration-end", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).end()));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).end()));(void)source(a).end();}
 )cpp", "TR0203"},
       {"receiver-exception-cbegin", R"cpp(#include <array>
 using Row=std::array<int,2>;
@@ -65389,9 +65487,9 @@ Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){
 using Row=std::array<int,2>;
 Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).data()));}
 )cpp", "TR0201"},
-      {"receiver-declaration", R"cpp(#include <array>
+      {"receiver-runtime-declaration", R"cpp(#include <array>
 using Row=std::array<int,2>;
-Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).data()));}
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).data()));(void)source(a).data();}
 )cpp", "TR0203"},
       {"receiver-exception", R"cpp(#include <array>
 using Row=std::array<int,2>;
