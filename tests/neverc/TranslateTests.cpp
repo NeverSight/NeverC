@@ -230108,6 +230108,416 @@ int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::adjacent
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceStoredOperationsOperationMatrix) {
+  const auto Source = tmpFile("wrapper-adjacent-stored-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-stored-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){int x=2,y=1;const std::reference_wrapper<int>a[]={x,y,x};
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=3||out[2]!=3||out[3]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=3||out[2]!=3||out[3]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=-1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=-1||out[2]!=1||out[3]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=2||out[2]!=2||out[3]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=2||out[2]!=2||out[3]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=2||out[3]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=2||out[3]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=3||out[2]!=3||out[3]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=3||out[2]!=3||out[3]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=3||out[2]!=3||out[3]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=3||out[2]!=3||out[3]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+)cpp"
+             R"cpp({ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+0,out,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+1,out,op); if(end!=out+1||out[0]!=2||out[1]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=2||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+return x!=2||y!=1||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-stored-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceStoredOperationsBoolAndPromotions) {
+  const auto Source = tmpFile("wrapper-adjacent-stored-bool-and-promotions.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-stored-bool-and-promotions.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){const int x=2,y=1;const std::reference_wrapper<const int>a[]={x,y,x};
+{ std::plus<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::plus<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::minus<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::minus<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::multiplies<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::multiplies<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::divides<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ const std::divides<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ std::modulus<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ const std::modulus<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ std::bit_and<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=false)return 1; }
+{ const std::bit_and<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=false)return 1; }
+{ std::bit_or<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::bit_or<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::bit_xor<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::bit_xor<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::equal_to<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=false)return 1; }
+{ const std::equal_to<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=false)return 1; }
+{ std::not_equal_to<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::less<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ const std::less<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ std::less_equal<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ const std::less_equal<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ std::greater<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ const std::greater<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ std::greater_equal<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ std::logical_and<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::logical_and<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ std::logical_or<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+{ const std::logical_or<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+signed char negative=-3,positive=2;std::reference_wrapper<signed char>b[]={negative,positive,negative};
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=-3||out[1]!=-1||out[2]!=-1||out[3]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=-3||out[1]!=5||out[2]!=-5||out[3]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=-3||out[1]!=-6||out[2]!=-6||out[3]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=-3||out[1]!=-1||out[2]!=-1||out[3]!=97)return 1; }
+const unsigned long long high=0x8000000000000000ULL,zero=0;const std::reference_wrapper<const unsigned long long>c[]={high,zero,high};
+{ const std::equal_to<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=false)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+)cpp"
+             R"cpp({ const std::less<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ const std::less_equal<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=false)return 1; }
+{ const std::greater<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1; }
+{ const std::logical_and<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=false)return 1; }
+{ const std::logical_or<void> op; bool out[4]={false,false,false,false}; auto end=std::adjacent_difference(c,c+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1; }
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-stored-bool-and-promotions" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceStoredOperationsLiveAliases) {
+  const auto Source = tmpFile("wrapper-adjacent-stored-live-aliases.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-stored-live-aliases.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=false||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=false||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=false||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=5||data[2]!=8||data[3]!=7||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=3||data[2]!=6||data[3]!=6||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=-1||data[2]!=4||data[3]!=7||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=3||data[2]!=0||data[3]!=0||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=1||data[2]!=2||data[3]!=7||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=3||data[2]!=0||data[3]!=0||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=1||data[2]!=0||data[3]!=7||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=3||data[2]!=0||data[3]!=0||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=1||data[2]!=1||data[3]!=7||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=3||data[2]!=1||data[3]!=1||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::adjacent_difference(a,a+3,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=1||data[2]!=1||data[3]!=7||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+)cpp"
+             R"cpp({ int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::adjacent_difference(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=3||data[2]!=1||data[3]!=1||data[4]!=11)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-stored-live-aliases" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceStoredOperationsFloatingNanZero) {
+  const auto Source = tmpFile("wrapper-adjacent-stored-floating-nan-zero.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-stored-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){const double tiny=0x1p-100,zero=0.0,minus=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>a[]={tiny,zero,tiny};const std::reference_wrapper<const double>b[]={nan,minus,zero};
+{ const std::equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::less<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::less_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::logical_and<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::logical_or<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(a,a+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::less<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::less_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::greater<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::logical_and<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::logical_or<void> op; bool out[4]={true,true,true,true}; auto end=std::adjacent_difference(b,b+3,out,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{double z=-0.0;std::reference_wrapper<double>a[]={z,z};const std::plus<>op;double out[3]={1.0,1.0,7.0};auto end=std::adjacent_difference(a,a+2,out,op);if(end!=out+2||out[0]!=0.0||out[1]!=0.0||1.0/out[0]>0.0||1.0/out[1]>0.0||out[2]!=7.0)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-stored-floating-nan-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceStoredOperationsEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-adjacent-stored-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-stored-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+int*addition(P a,P b,int*out,const std::plus<>&op){return std::adjacent_difference(a,b,out,op);}
+int*subtraction(P a,P b,int*out,std::minus<>&op){return std::adjacent_difference(a,b,out,op);}
+int main(){int x=3,y=1;W a[]={x,y,x};int out[4]={11,12,13,14};const std::logical_or<>logic;std::plus<>plus;std::minus<>minus;
+if(std::adjacent_difference(Input{a}.get(),Input{a}.get(),Output{out}.get(),logic)!=out)return 1;
+if(std::adjacent_difference(Input{a}.get(),Input{a}.get(),Output{out}.get(),plus)!=out)return 1;
+if(reads!=6||cleaned!=6||out[0]!=11||out[1]!=12||out[2]!=13||out[3]!=14)return 2;
+if(addition(a,a+3,out,plus)!=out+3||out[0]!=3||out[1]!=4||out[2]!=4||out[3]!=14)return 3;
+if(subtraction(a,a+3,out,minus)!=out+3||out[0]!=3||out[1]!=-2||out[2]!=2||out[3]!=14)return 4;
+return x!=3||y!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-stored-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceStoredOperationsRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,(++effects,op));}
+)cpp"},
+      {"enum-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+enum E{zero,one};
+using W=std::reference_wrapper<E>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"indirect-callee", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;using F=int*(*)(P,P,int*,std::logical_or<>);F function=&std::adjacent_difference<P,int*,std::logical_or<>>;return function(a,b,out,op);}
+)cpp"},
+      {"long-double-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::adjacent_difference(a,b,out,h.op);}
+)cpp"},
+      {"pointer-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,bool*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {};}
+auto selected(P a,P b,int*out){return std::adjacent_difference(a,b,out,make());}
+)cpp"},
+      {"source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)||std::forward<W&>(b)))->decltype(std::forward<W&>(a)||std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"source-wrapper-conversion", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"volatile-output", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::adjacent_difference(a,b,out,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-adjacent-stored-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperAdjacentDifferenceRuntimeAlias) {
   const auto Source = tmpFile("wrapper-adjacent-difference-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-adjacent-difference-runtime-alias.nc");
@@ -238032,13 +238442,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::less<>{});}
 )cpp"},
-      {"less-stored", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::less<> op;return std::adjacent_difference(a,b,o,op);}
-)cpp"},
       {"less-typed", R"cpp(
 #include <numeric>
 #include <functional>
@@ -238090,13 +238493,6 @@ auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::logical_
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,int*o){return std::adjacent_difference(a,b,o,std::logical_and<>{});}
-)cpp"},
-      {"logical_and-stored", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::adjacent_difference(a,b,o,op);}
 )cpp"},
       {"logical_and-typed", R"cpp(
 #include <numeric>
@@ -238995,13 +239391,6 @@ auto selected(P a,P b,bool*o){return std::adjacent_difference(a,b,o,std::equal_t
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,bool*o){return std::adjacent_difference(a,b,o,std::logical_or<>{});}
-)cpp"},
-      {"adjacent-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*o){std::logical_and<> op;return std::adjacent_difference(a,b,o,op);}
 )cpp"},
       {"adjacent-volatile-output", R"cpp(
 #include <numeric>
@@ -247284,24 +247673,11 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::bit_xor<>{});}
 )cpp"},
-      {"family-stored-multiplies", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){std::multiplies<> op;return std::adjacent_difference(a,b,out,op);}
-)cpp"},
       {"family-typed-modulus", R"cpp(
 #include <numeric>
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;int out[3];
 auto selected(P a,P b){return std::adjacent_difference(a,b,out,std::modulus<int>{});}
-)cpp"},
-      {"family-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::adjacent_difference(a,b,o,op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -248236,12 +248612,6 @@ int out[3];
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::adjacent_difference(a,a+1,out,std::minus<>{});}
-)cpp"},
-      {"stored-operation", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){std::minus<> op;return std::adjacent_difference(a,b,out,op);}
 )cpp"},
       {"typed-operation", R"cpp(
 #include <numeric>
