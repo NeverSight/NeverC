@@ -261164,6 +261164,1015 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsOperationMatrix) {
+  const auto Source = tmpFile("wrapper-binary-transform-stored-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-binary-transform-stored-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=-6,y=2,z=9;const int r=3,s=2,t=-3;std::reference_wrapper<int>a[]={x,y,z};const std::reference_wrapper<const int>b[]={r,s,t};for(int variant=0;variant!=3;++variant){int n=variant==2?3:variant;
+{std::plus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-3)||(n>1&&out[1]!=4)||(n>2&&out[2]!=6)||out[n]!=91)return 1;}
+{const std::plus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-3)||(n>1&&out[1]!=4)||(n>2&&out[2]!=6)||out[n]!=91)return 1;}
+{std::minus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=12)||out[n]!=91)return 1;}
+{const std::minus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=12)||out[n]!=91)return 1;}
+{std::multiplies<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-18)||(n>1&&out[1]!=4)||(n>2&&out[2]!=-27)||out[n]!=91)return 1;}
+{const std::multiplies<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-18)||(n>1&&out[1]!=4)||(n>2&&out[2]!=-27)||out[n]!=91)return 1;}
+{std::divides<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-2)||(n>1&&out[1]!=1)||(n>2&&out[2]!=-3)||out[n]!=91)return 1;}
+{const std::divides<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-2)||(n>1&&out[1]!=1)||(n>2&&out[2]!=-3)||out[n]!=91)return 1;}
+{std::modulus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{const std::modulus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{std::bit_and<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=2)||(n>1&&out[1]!=2)||(n>2&&out[2]!=9)||out[n]!=91)return 1;}
+{const std::bit_and<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=2)||(n>1&&out[1]!=2)||(n>2&&out[2]!=9)||out[n]!=91)return 1;}
+{std::bit_or<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-5)||(n>1&&out[1]!=2)||(n>2&&out[2]!=-3)||out[n]!=91)return 1;}
+{const std::bit_or<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-5)||(n>1&&out[1]!=2)||(n>2&&out[2]!=-3)||out[n]!=91)return 1;}
+{std::bit_xor<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-7)||(n>1&&out[1]!=0)||(n>2&&out[2]!=-12)||out[n]!=91)return 1;}
+{const std::bit_xor<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=-7)||(n>1&&out[1]!=0)||(n>2&&out[2]!=-12)||out[n]!=91)return 1;}
+{std::equal_to<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{const std::equal_to<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{std::not_equal_to<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{const std::not_equal_to<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{std::less<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{const std::less<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{std::less_equal<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{const std::less_equal<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0)||out[n]!=91)return 1;}
+{std::greater<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{const std::greater<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{std::greater_equal<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{const std::greater_equal<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{std::logical_and<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{const std::logical_and<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{std::logical_or<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+{const std::logical_or<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+n,b,out,op);if(end!=out+n||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1)||out[n]!=91)return 1;}
+}return x!=-6||y!=2||z!=9||&a[0].get()!=&x||&b[2].get()!=&t;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-transform-stored-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsBoolPromotions) {
+  const auto Source = tmpFile("wrapper-binary-transform-stored-bool-promotions.cpp");
+  const auto Output = tmpFile("wrapper-binary-transform-stored-bool-promotions.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool x=false,y=true,z=false,r=true;const std::reference_wrapper<const bool>a[]={x,y,z},b[]={r,r,r};
+{const std::plus<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1;}
+{const std::plus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=2||out[2]!=1||out[3]!=91)return 1;}
+{const std::minus<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1;}
+{const std::minus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=-1||out[1]!=0||out[2]!=-1||out[3]!=91)return 1;}
+{const std::multiplies<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::multiplies<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::divides<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::divides<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::modulus<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1;}
+{const std::modulus<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::bit_and<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::bit_and<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::bit_or<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1;}
+{const std::bit_or<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::bit_xor<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1;}
+{const std::bit_xor<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::equal_to<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::equal_to<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::not_equal_to<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1;}
+{const std::not_equal_to<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::less<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1;}
+{const std::less<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::less_equal<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1;}
+{const std::less_equal<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::greater<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1;}
+{const std::greater<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater_equal<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::greater_equal<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_and<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::logical_and<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_or<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1;}
+{const std::logical_or<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+signed char small=-3,positive=2;const short right=2;std::reference_wrapper<signed char>c[]={small,positive,small};const std::reference_wrapper<const short>d[]={right,right,right};
+{const std::plus<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-1||out[1]!=4||out[2]!=-1||out[3]!=91)return 1;}
+{const std::minus<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-5||out[1]!=0||out[2]!=-5||out[3]!=91)return 1;}
+{const std::multiplies<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-6||out[1]!=4||out[2]!=-6||out[3]!=91)return 1;}
+{const std::divides<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-1||out[1]!=1||out[2]!=-1||out[3]!=91)return 1;}
+{const std::modulus<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-1||out[1]!=0||out[2]!=-1||out[3]!=91)return 1;}
+{const std::bit_and<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=0||out[1]!=2||out[2]!=0||out[3]!=91)return 1;}
+{const std::bit_or<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-1||out[1]!=2||out[2]!=-1||out[3]!=91)return 1;}
+{const std::bit_xor<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=-1||out[1]!=0||out[2]!=-1||out[3]!=91)return 1;}
+{const std::equal_to<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::not_equal_to<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::less<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::less_equal<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+)cpp"
+             R"cpp({const std::greater<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater_equal<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_and<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::logical_or<void>op;long long out[4]={91,91,91,91};auto end=std::transform(c,c+3,d,out,op);if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+return small!=-3||positive!=2||!r;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-transform-stored-bool-promotions" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsFloatingNanZero) {
+  const auto Source = tmpFile("wrapper-binary-transform-stored-floating-nan-zero.cpp");
+  const auto Output = tmpFile("wrapper-binary-transform-stored-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const double tiny=0x1p-100,zero=-0.0,nan=0.0/0.0,one=1.0,two=2.0;const std::reference_wrapper<const double>a[]={tiny,zero,nan},b[]={tiny,one,two};
+{const std::equal_to<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1;}
+{const std::not_equal_to<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=true)return 1;}
+{const std::less<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::less_equal<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::greater<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1;}
+{const std::greater_equal<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1;}
+{const std::logical_and<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1;}
+{const std::logical_or<void>op;bool out[4]={true,true,true,true};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1;}
+{const std::plus<>op;double out[4]={91.0,91.0,91.0,91.0};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0x1p-99||out[1]!=1.0||out[2]==out[2]||out[3]!=91.0)return 2;}
+{const std::minus<>op;double out[4]={91.0,91.0,91.0,91.0};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0.0||out[1]!=-1.0||out[2]==out[2]||out[3]!=91.0)return 2;}
+{const std::multiplies<>op;double out[4]={91.0,91.0,91.0,91.0};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=0x1p-200||out[1]!=0.0||out[2]==out[2]||out[3]!=91.0)return 2;if(1.0/out[1]>0.0)return 3;}
+{const std::divides<>op;double out[4]={91.0,91.0,91.0,91.0};auto end=std::transform(a,a+3,b,out,op);if(end!=out+3||out[0]!=1.0||out[1]!=0.0||out[2]==out[2]||out[3]!=91.0)return 2;if(1.0/out[1]>0.0)return 3;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-transform-stored-floating-nan-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsLiveAliases) {
+  const auto Source = tmpFile("wrapper-binary-transform-stored-live-aliases.cpp");
+  const auto Output = tmpFile("wrapper-binary-transform-stored-live-aliases.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::plus<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=8||data[1]!=5||data[2]!=10||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::plus<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=8||data[2]!=10||data[3]!=8||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::minus<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=4||data[1]!=1||data[2]!=2||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::minus<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=4||data[2]!=2||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::multiplies<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=12||data[1]!=6||data[2]!=24||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::multiplies<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=12||data[2]!=24||data[3]!=12||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::divides<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=3||data[1]!=1||data[2]!=1||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::divides<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=3||data[2]!=1||data[3]!=3||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::modulus<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=0||data[1]!=1||data[2]!=0||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::modulus<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=0||data[2]!=0||data[3]!=0||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::bit_and<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=2||data[1]!=2||data[2]!=2||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::bit_and<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=2||data[2]!=2||data[3]!=2||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::bit_or<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=6||data[1]!=3||data[2]!=6||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::bit_or<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=6||data[2]!=6||data[3]!=6||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::bit_xor<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=4||data[1]!=1||data[2]!=6||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::bit_xor<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=4||data[2]!=6||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::equal_to<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=0||data[1]!=0||data[2]!=0||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::equal_to<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=0||data[2]!=0||data[3]!=0||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::not_equal_to<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=1||data[1]!=1||data[2]!=1||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+)cpp"
+             R"cpp({int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::not_equal_to<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=1||data[2]!=1||data[3]!=1||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::less<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=0||data[1]!=0||data[2]!=1||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::less<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=0||data[2]!=1||data[3]!=0||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::less_equal<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=0||data[1]!=0||data[2]!=1||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::less_equal<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=0||data[2]!=1||data[3]!=0||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::greater<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=1||data[1]!=1||data[2]!=0||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::greater<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=1||data[2]!=0||data[3]!=1||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::greater_equal<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=1||data[1]!=1||data[2]!=0||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::greater_equal<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=1||data[2]!=0||data[3]!=1||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::logical_and<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=1||data[1]!=1||data[2]!=1||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::logical_and<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=1||data[2]!=1||data[3]!=1||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::logical_or<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=1||data[1]!=1||data[2]!=1||data[3]!=4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{int data[]={6,3,9,4,11};const int right=2;std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const int>b[]={right,right,right};const std::logical_or<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=6||data[1]!=1||data[2]!=1||data[3]!=1||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::plus<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::plus<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::minus<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::minus<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::multiplies<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::multiplies<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+)cpp"
+             R"cpp({bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::divides<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::divides<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::modulus<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=false||data[2]!=false||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::modulus<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=false||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::bit_and<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::bit_and<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::bit_or<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::bit_or<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::bit_xor<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::bit_xor<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::equal_to<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::equal_to<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::not_equal_to<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::not_equal_to<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::less<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::less<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::less_equal<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+)cpp"
+             R"cpp({bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::less_equal<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::greater<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=false||data[2]!=false||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::greater<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=false||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::greater_equal<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::greater_equal<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::logical_and<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::logical_and<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::logical_or<>op;auto end=std::transform(a,a+3,b,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+{bool data[]={true,false,true,false,true};const bool right=true;std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::reference_wrapper<const bool>b[]={right,right,right};const std::logical_or<>op;auto end=std::transform(a,a+3,b,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data||&b[0].get()!=&right)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-transform-stored-live-aliases" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-binary-transform-stored-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-binary-transform-stored-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads=0,cleaned=0;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+int*parameter_plus(P a,P b,P rhs,int*out,const std::plus<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_minus(P a,P b,P rhs,int*out,const std::minus<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_multiplies(P a,P b,P rhs,int*out,const std::multiplies<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_divides(P a,P b,P rhs,int*out,const std::divides<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_modulus(P a,P b,P rhs,int*out,const std::modulus<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_bit_and(P a,P b,P rhs,int*out,const std::bit_and<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_bit_or(P a,P b,P rhs,int*out,const std::bit_or<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_bit_xor(P a,P b,P rhs,int*out,const std::bit_xor<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_equal_to(P a,P b,P rhs,int*out,const std::equal_to<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_not_equal_to(P a,P b,P rhs,int*out,const std::not_equal_to<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_less(P a,P b,P rhs,int*out,const std::less<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_less_equal(P a,P b,P rhs,int*out,const std::less_equal<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_greater(P a,P b,P rhs,int*out,const std::greater<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_greater_equal(P a,P b,P rhs,int*out,const std::greater_equal<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_logical_and(P a,P b,P rhs,int*out,const std::logical_and<>&op){return std::transform(a,b,rhs,out,op);}
+int*parameter_logical_or(P a,P b,P rhs,int*out,const std::logical_or<>&op){return std::transform(a,b,rhs,out,op);}
+int main(){int x=-6,y=2,z=9,r=3,s=2,t=-3;W a[]={x,y,z},b[]={r,s,t};int out[4]={91,91,91,91};
+{std::plus<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::minus<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::multiplies<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::divides<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::modulus<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::bit_and<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::bit_or<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::bit_xor<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::equal_to<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::not_equal_to<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::less<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::less_equal<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::greater<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::greater_equal<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::logical_and<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+{std::logical_or<>op;if(std::transform(Input{a}.get(),Input{a}.get(),Input{b}.get(),Output{out}.get(),op)!=out)return 1;}
+if(reads!=64||cleaned!=64||out[0]!=91||out[1]!=91||out[2]!=91||out[3]!=91)return 2;
+{const std::plus<>op;if(parameter_plus(a,a+3,b,out,op)!=out+3||out[0]!=-3||out[1]!=4||out[2]!=6||out[3]!=91)return 3;}
+{const std::minus<>op;if(parameter_minus(a,a+3,b,out,op)!=out+3||out[0]!=-9||out[1]!=0||out[2]!=12||out[3]!=91)return 3;}
+{const std::multiplies<>op;if(parameter_multiplies(a,a+3,b,out,op)!=out+3||out[0]!=-18||out[1]!=4||out[2]!=-27||out[3]!=91)return 3;}
+{const std::divides<>op;if(parameter_divides(a,a+3,b,out,op)!=out+3||out[0]!=-2||out[1]!=1||out[2]!=-3||out[3]!=91)return 3;}
+{const std::modulus<>op;if(parameter_modulus(a,a+3,b,out,op)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 3;}
+{const std::bit_and<>op;if(parameter_bit_and(a,a+3,b,out,op)!=out+3||out[0]!=2||out[1]!=2||out[2]!=9||out[3]!=91)return 3;}
+{const std::bit_or<>op;if(parameter_bit_or(a,a+3,b,out,op)!=out+3||out[0]!=-5||out[1]!=2||out[2]!=-3||out[3]!=91)return 3;}
+{const std::bit_xor<>op;if(parameter_bit_xor(a,a+3,b,out,op)!=out+3||out[0]!=-7||out[1]!=0||out[2]!=-12||out[3]!=91)return 3;}
+{const std::equal_to<>op;if(parameter_equal_to(a,a+3,b,out,op)!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 3;}
+{const std::not_equal_to<>op;if(parameter_not_equal_to(a,a+3,b,out,op)!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=91)return 3;}
+{const std::less<>op;if(parameter_less(a,a+3,b,out,op)!=out+3||out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=91)return 3;}
+{const std::less_equal<>op;if(parameter_less_equal(a,a+3,b,out,op)!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=91)return 3;}
+{const std::greater<>op;if(parameter_greater(a,a+3,b,out,op)!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=91)return 3;}
+{const std::greater_equal<>op;if(parameter_greater_equal(a,a+3,b,out,op)!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 3;}
+{const std::logical_and<>op;if(parameter_logical_and(a,a+3,b,out,op)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 3;}
+{const std::logical_or<>op;if(parameter_logical_or(a,a+3,b,out,op)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 3;}
+return x!=-6||y!=2||z!=9||r!=3||s!=2||t!=-3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-transform-stored-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-binary-transform-stored-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-binary-transform-stored-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::multiplies<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::minus<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::divides<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::modulus<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_and<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_6{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_or<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_7{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_xor<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_8{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_and<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_9{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_or<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_10{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::equal_to<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_11{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::not_equal_to<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_12{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::less<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_13{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::greater<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_14{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::less_equal<> op;return std::transform(a,b,a,out,op);}
+}
+namespace case_15{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::greater_equal<> op;return std::transform(a,b,a,out,op);}
+}
+int main(){int x=3,y=2;std::reference_wrapper<int>a[]={x,y,x};int out[4]={91,91,91,91};
+if(case_0::selected(a,a+3,out)!=out+3||out[0]!=9||out[1]!=4||out[2]!=9||out[3]!=91)return 1;
+if(case_1::selected(a,a+3,out)!=out+3||out[0]!=6||out[1]!=4||out[2]!=6||out[3]!=91)return 1;
+if(case_2::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;
+if(case_3::selected(a,a+3,out)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;
+if(case_4::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;
+if(case_5::selected(a,a+3,out)!=out+3||out[0]!=3||out[1]!=2||out[2]!=3||out[3]!=91)return 1;
+if(case_6::selected(a,a+3,out)!=out+3||out[0]!=3||out[1]!=2||out[2]!=3||out[3]!=91)return 1;
+if(case_7::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;
+if(case_8::selected(a,a+3,out)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;
+if(case_9::selected(a,a+3,out)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;
+if(case_10::selected(a,a+3,out)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;
+if(case_11::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;
+if(case_12::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;
+if(case_13::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;
+if(case_14::selected(a,a+3,out)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;
+if(case_15::selected(a,a+3,out)!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;
+return x!=3||y!=2||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-transform-stored-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryTransformStoredOperationsRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"bit_and-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::bit_and<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"bit_and-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::bit_and<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"bit_and-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_and<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"bit_and-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_and<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)&std::forward<W&>(b)))->decltype(std::forward<W&>(a)&std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::bit_and<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"bit_and-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_and<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"bit_or-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::bit_or<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"bit_or-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::bit_or<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"bit_or-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_or<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"bit_or-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_or<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)|std::forward<W&>(b)))->decltype(std::forward<W&>(a)|std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::bit_or<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"bit_or-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_or<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"bit_xor-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::bit_xor<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"bit_xor-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::bit_xor<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"bit_xor-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_xor<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"bit_xor-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_xor<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)^std::forward<W&>(b)))->decltype(std::forward<W&>(a)^std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::bit_xor<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"bit_xor-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_xor<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"divides-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::divides<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"divides-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::divides<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"divides-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::divides<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"divides-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)/std::forward<W&>(b)))->decltype(std::forward<W&>(a)/std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::divides<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"divides-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::divides<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::equal_to<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::equal_to<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::equal_to<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"greater-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::greater<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"greater-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::greater<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"greater-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::greater<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"greater-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>std::forward<W&>(b)))->decltype(std::forward<W&>(a)>std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::greater<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"greater-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::greater<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"greater_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::greater_equal<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"greater_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::greater_equal<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"greater_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::greater_equal<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"greater_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>=std::forward<W&>(b)))->decltype(std::forward<W&>(a)>=std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::greater_equal<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"greater_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::greater_equal<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"less-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::less<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"less-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"less-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"less-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::less<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"less-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::less<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::less_equal<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::less_equal<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::less_equal<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"logical_and-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::logical_and<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"logical_and-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_and<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"logical_and-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_and<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"logical_and-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)&&std::forward<W&>(b)))->decltype(std::forward<W&>(a)&&std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::logical_and<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"logical_and-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_and<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"logical_or-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::logical_or<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"logical_or-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"logical_or-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"logical_or-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)||std::forward<W&>(b)))->decltype(std::forward<W&>(a)||std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::logical_or<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"logical_or-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_or<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"minus-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::minus<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"minus-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::minus<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"minus-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::minus<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"minus-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto minus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)-std::forward<W&>(b)))->decltype(std::forward<W&>(a)-std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::minus<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"minus-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::minus<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"modulus-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::modulus<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"modulus-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::modulus<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"modulus-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::modulus<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"modulus-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto modulus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)%std::forward<W&>(b)))->decltype(std::forward<W&>(a)%std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::modulus<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"modulus-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::modulus<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"multiplies-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::multiplies<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"multiplies-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::multiplies<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"multiplies-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::multiplies<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"multiplies-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto multiplies<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)*std::forward<W&>(b)))->decltype(std::forward<W&>(a)*std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::multiplies<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"multiplies-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::multiplies<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"not_equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::not_equal_to<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"not_equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::not_equal_to<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"not_equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::not_equal_to<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"not_equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto not_equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)!=std::forward<W&>(b)))->decltype(std::forward<W&>(a)!=std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::not_equal_to<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"not_equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::not_equal_to<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"plus-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::plus<>op;return std::transform(a,b,a,out,(++effects,op));}
+)cpp"},
+      {"plus-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::plus<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,a,out,h.op);}
+)cpp"},
+      {"plus-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::plus<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,a,out,make());}
+)cpp"},
+      {"plus-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)+std::forward<W&>(b)))->decltype(std::forward<W&>(a)+std::forward<W&>(b)){return 0;}}}
+auto selected(P a,P b,int*out){std::plus<>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+      {"plus-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::transform(a,b,a,out,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-binary-transform-stored-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperTransformMultipliesRuntimeAlias) {
   const auto Source = tmpFile("wrapper-transform-multiplies-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-transform-multiplies-runtime-alias.nc");
@@ -262020,12 +263029,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::multiplies<>{});}
-)cpp"},
-      {"stored-multiply", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::multiplies<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-multiply", R"cpp(
 #include <algorithm>
@@ -262915,12 +263918,6 @@ auto selected(P a,P b,int*out){return std::transform(a,b,a,out,std::plus<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::plus<>{});}
-)cpp"},
-      {"stored-plus", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::plus<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-plus", R"cpp(
 #include <algorithm>
@@ -263812,12 +264809,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::minus<>{});}
-)cpp"},
-      {"stored-minus", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::minus<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-minus", R"cpp(
 #include <algorithm>
@@ -264711,12 +265702,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::divides<>{});}
-)cpp"},
-      {"stored-divides", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::divides<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-divides", R"cpp(
 #include <algorithm>
@@ -265618,12 +266603,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::modulus<>{});}
 )cpp"},
-      {"stored-modulus", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::modulus<> op;return std::transform(a,b,a,out,op);}
-)cpp"},
       {"typed-modulus", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -266523,12 +267502,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_and<>{});}
-)cpp"},
-      {"stored-bit-and", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::bit_and<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-bit-and", R"cpp(
 #include <algorithm>
@@ -267430,12 +268403,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_or<>{});}
 )cpp"},
-      {"stored-bit-or", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::bit_or<> op;return std::transform(a,b,a,out,op);}
-)cpp"},
       {"typed-bit-or", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -268335,12 +269302,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::bit_xor<>{});}
-)cpp"},
-      {"stored-bit-xor", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::bit_xor<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-bit-xor", R"cpp(
 #include <algorithm>
@@ -269274,12 +270235,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::logical_and<>{});}
 )cpp"},
-      {"stored-logical-and", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_and<> op;return std::transform(a,b,a,out,op);}
-)cpp"},
       {"typed-logical-and", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -270207,12 +271162,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::logical_or<>{});}
 )cpp"},
-      {"stored-logical-or", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_or<> op;return std::transform(a,b,a,out,op);}
-)cpp"},
       {"typed-logical-or", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -271106,12 +272055,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::equal_to<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
@@ -272030,12 +272973,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::not_equal_to<>{});}
 )cpp"},
-      {"stored-not-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::not_equal_to<> op;return std::transform(a,b,a,out,op);}
-)cpp"},
       {"typed-not-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -272924,12 +273861,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::less<>{});}
-)cpp"},
-      {"stored-less", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::less<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-less", R"cpp(
 #include <algorithm>
@@ -273823,12 +274754,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::greater<>{});}
-)cpp"},
-      {"stored-greater", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::greater<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-greater", R"cpp(
 #include <algorithm>
@@ -274731,12 +275656,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::less_equal<>{});}
-)cpp"},
-      {"stored-less-equal", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::less_equal<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-less-equal", R"cpp(
 #include <algorithm>
@@ -275662,12 +276581,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,a,out,std::greater_equal<>{});}
-)cpp"},
-      {"stored-greater-equal", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::greater_equal<> op;return std::transform(a,b,a,out,op);}
 )cpp"},
       {"typed-greater-equal", R"cpp(
 #include <algorithm>
