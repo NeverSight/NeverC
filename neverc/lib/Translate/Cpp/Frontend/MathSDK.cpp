@@ -47284,6 +47284,15 @@ static bool utilityWrapperForEachLogicalNot(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -47295,8 +47304,9 @@ static bool utilityWrapperForEachLogicalNot(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -47605,6 +47615,15 @@ static bool utilityWrapperForEachNLogicalNot(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -47616,8 +47635,9 @@ static bool utilityWrapperForEachNLogicalNot(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -47835,6 +47855,15 @@ static bool utilityWrapperForEachNegate(const State &S, const SourceManager &SM,
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -47846,8 +47875,9 @@ static bool utilityWrapperForEachNegate(const State &S, const SourceManager &SM,
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -48065,6 +48095,15 @@ static bool utilityWrapperForEachBitNot(const State &S, const SourceManager &SM,
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -48076,8 +48115,9 @@ static bool utilityWrapperForEachBitNot(const State &S, const SourceManager &SM,
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -48383,6 +48423,15 @@ static bool utilityWrapperForEachNNegate(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -48394,8 +48443,9 @@ static bool utilityWrapperForEachNNegate(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())
@@ -48701,6 +48751,15 @@ static bool utilityWrapperForEachNBitNot(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -48712,8 +48771,9 @@ static bool utilityWrapperForEachNBitNot(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         Record->getName() != Name || Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !Record->getTemplateArgs().get(0).getAsType()->isVoidType())

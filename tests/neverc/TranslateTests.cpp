@@ -292542,12 +292542,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::for_each(a,a+1,std::logical_not<>{});}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::logical_not<> op;return std::for_each(a,b,op);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -293418,12 +293412,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::for_each_n(a,1,std::logical_not<>{});}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::logical_not<> op;return std::for_each_n(a,1,op);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -293459,6 +293447,426 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperForEachStoredOperationsOperationMatrix) {
+  const auto Source = tmpFile("wrapper-for-each-stored-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-for-each-stored-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=-3,y=0,z=2;const std::reference_wrapper<int>a[]={x,y,x};for(int variant=0;variant!=3;++variant){int n=variant==2?3:variant;
+{std::negate<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=3||result(0)!=0||sizeof(result)!=sizeof(op))return 1;}
+{const std::negate<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=3||result(0)!=0||sizeof(result)!=sizeof(op))return 1;}
+{std::bit_not<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=2||result(0)!=-1||sizeof(result)!=sizeof(op))return 1;}
+{const std::bit_not<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=2||result(0)!=-1||sizeof(result)!=sizeof(op))return 1;}
+{std::logical_not<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=false||result(0)!=true||sizeof(result)!=sizeof(op))return 1;}
+{const std::logical_not<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=false||result(0)!=true||sizeof(result)!=sizeof(op))return 1;}
+{std::negate<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{const std::negate<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{std::bit_not<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{const std::bit_not<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{std::logical_not<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{const std::logical_not<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+}
+{const std::negate<void>op;auto result=std::for_each_n(a,-3,op);if(result!=a+(-3>0?-3:0))return 2;}
+{const std::bit_not<void>op;auto result=std::for_each_n(a,-3,op);if(result!=a+(-3>0?-3:0))return 2;}
+{const std::logical_not<void>op;auto result=std::for_each_n(a,-3,op);if(result!=a+(-3>0?-3:0))return 2;}
+return x!=-3||y!=0||z!=2||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-for-each-stored-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperForEachStoredOperationsBoolPromotions) {
+  const auto Source = tmpFile("wrapper-for-each-stored-bool-promotions.cpp");
+  const auto Output = tmpFile("wrapper-for-each-stored-bool-promotions.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool t=true,f=false;const std::reference_wrapper<const bool>a[]={t,f,t};int n=3;
+{const std::negate<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=3||result(0)!=0||sizeof(result)!=sizeof(op))return 1;}
+{const std::bit_not<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=2||result(0)!=-1||sizeof(result)!=sizeof(op))return 1;}
+{const std::logical_not<void>op;auto result=std::for_each(a,a+n,op);if(result(-3)!=false||result(0)!=true||sizeof(result)!=sizeof(op))return 1;}
+{const std::negate<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{const std::bit_not<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+{const std::logical_not<void>op;auto result=std::for_each_n(a,n,op);if(result!=a+(n>0?n:0))return 2;}
+signed char x=-3,y=2;std::reference_wrapper<signed char>b[]={x,y,x};
+{std::negate<void>op;auto result=std::for_each(b,b+n,op);if(result(-3)!=3||result(0)!=0||sizeof(result)!=sizeof(op))return 1;}
+{std::bit_not<void>op;auto result=std::for_each(b,b+n,op);if(result(-3)!=2||result(0)!=-1||sizeof(result)!=sizeof(op))return 1;}
+{std::logical_not<void>op;auto result=std::for_each(b,b+n,op);if(result(-3)!=false||result(0)!=true||sizeof(result)!=sizeof(op))return 1;}
+{std::negate<void>op;auto result=std::for_each_n(b,n,op);if(result!=b+(n>0?n:0))return 2;}
+{std::bit_not<void>op;auto result=std::for_each_n(b,n,op);if(result!=b+(n>0?n:0))return 2;}
+{std::logical_not<void>op;auto result=std::for_each_n(b,n,op);if(result!=b+(n>0?n:0))return 2;}
+return x!=-3||y!=2||!t||f||&a[0].get()!=&t||&b[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-for-each-stored-bool-promotions" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperForEachStoredOperationsFloatingNanZero) {
+  const auto Source = tmpFile("wrapper-for-each-stored-floating-nan-zero.cpp");
+  const auto Output = tmpFile("wrapper-for-each-stored-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const double tiny=0x1p-100,zero=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>a[]={tiny,zero,nan};int n=3;
+{const std::negate<>op;auto result=std::for_each(a,a+3,op);double small=result(tiny),positive=result(zero),missing=result(nan);if(small!=-tiny||positive!=0.0||1.0/positive<0.0||missing==missing)return 1;if(std::for_each_n(a,n,op)!=a+3)return 3;}
+{const std::logical_not<>op;auto result=std::for_each(a,a+3,op);if(result(tiny)||!result(zero)||result(nan))return 2;if(std::for_each_n(a,n,op)!=a+3)return 3;}
+return &a[0].get()!=&tiny||&a[1].get()!=&zero||&a[2].get()!=&nan;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-for-each-stored-floating-nan-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperForEachStoredOperationsEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-for-each-stored-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-for-each-stored-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads=0,cleaned=0;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};struct Count{int n;~Count(){++cleaned;}int get(){++reads;return n;}};
+auto each_negate(P a,P b,const std::negate<>&op){return std::for_each(a,b,op);}
+P count_negate(P a,int n,const std::negate<>&op){return std::for_each_n(a,n,op);}
+auto each_bit_not(P a,P b,const std::bit_not<>&op){return std::for_each(a,b,op);}
+P count_bit_not(P a,int n,const std::bit_not<>&op){return std::for_each_n(a,n,op);}
+auto each_logical_not(P a,P b,const std::logical_not<>&op){return std::for_each(a,b,op);}
+P count_logical_not(P a,int n,const std::logical_not<>&op){return std::for_each_n(a,n,op);}
+int main(){int x=-3,y=0;W a[]={x,y,x};
+{std::negate<>op;auto empty=std::for_each(Input{a}.get(),Input{a}.get(),op);if(empty(3)!=-3)return 1;if(std::for_each_n(Input{a}.get(),Count{0}.get(),op)!=a)return 2;if(std::for_each_n(Input{a}.get(),Count{-3}.get(),op)!=a)return 3;}
+{std::bit_not<>op;auto empty=std::for_each(Input{a}.get(),Input{a}.get(),op);if(empty(3)!=-4)return 1;if(std::for_each_n(Input{a}.get(),Count{0}.get(),op)!=a)return 2;if(std::for_each_n(Input{a}.get(),Count{-3}.get(),op)!=a)return 3;}
+{std::logical_not<>op;auto empty=std::for_each(Input{a}.get(),Input{a}.get(),op);if(empty(3)!=false)return 1;if(std::for_each_n(Input{a}.get(),Count{0}.get(),op)!=a)return 2;if(std::for_each_n(Input{a}.get(),Count{-3}.get(),op)!=a)return 3;}
+if(reads!=18||cleaned!=18)return 4;
+{const std::negate<>op;auto result=each_negate(a,a+3,op);if(result(-3)!=3||count_negate(a,3,op)!=a+3||count_negate(a,-3,op)!=a)return 5;}
+{const std::bit_not<>op;auto result=each_bit_not(a,a+3,op);if(result(-3)!=2||count_bit_not(a,3,op)!=a+3||count_bit_not(a,-3,op)!=a)return 5;}
+{const std::logical_not<>op;auto result=each_logical_not(a,a+3,op);if(result(-3)!=false||count_logical_not(a,3,op)!=a+3||count_logical_not(a,-3,op)!=a)return 5;}
+return x!=-3||y!=0||&a[0].get()!=&x||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-for-each-stored-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperForEachStoredOperationsFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-for-each-stored-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-for-each-stored-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::for_each(a,b,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::for_each_n(a,1,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::negate<> op;return std::for_each(a,b,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::bit_not<> op;return std::for_each(a,b,op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::negate<> op;return std::for_each_n(a,1,op);}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::bit_not<> op;return std::for_each_n(a,1,op);}
+}
+int main(){int x=-3,y=0;std::reference_wrapper<int>a[]={x,y,x};
+{auto op=case_0::selected(a,a+3,a);if(op(3)!=false||op(0)!=true)return 2;}
+if(case_1::selected(a,a+3,a)!=a+1)return 1;
+{auto op=case_2::selected(a,a+3,a);if(op(3)!=-3||op(0)!=0)return 2;}
+{auto op=case_3::selected(a,a+3,a);if(op(3)!=-4||op(0)!=-1)return 2;}
+if(case_4::selected(a,a+3,a)!=a+1)return 1;
+if(case_5::selected(a,a+3,a)!=a+1)return 1;
+return x!=-3||y!=0||&a[0].get()!=&x||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-for-each-stored-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperForEachStoredOperationsRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"for_each-bit_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::bit_not<>op;return std::for_each(a,b,(++effects,op));}
+)cpp"},
+      {"for_each-bit_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::bit_not<>op;};
+auto selected(P a,P b){Holder h;return std::for_each(a,b,h.op);}
+)cpp"},
+      {"for_each-bit_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_not<>make(){return {};}
+auto selected(P a,P b){return std::for_each(a,b,make());}
+)cpp"},
+      {"for_each-bit_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_not<void>::operator()<W&>(W&w)const noexcept(noexcept(~std::forward<W&>(w)))->decltype(~std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b){std::bit_not<>op;return std::for_each(a,b,op);}
+)cpp"},
+      {"for_each-bit_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::bit_not<int>op;return std::for_each(a,b,op);}
+)cpp"},
+      {"for_each-logical_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::for_each(a,b,(++effects,op));}
+)cpp"},
+      {"for_each-logical_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::for_each(a,b,h.op);}
+)cpp"},
+      {"for_each-logical_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::for_each(a,b,make());}
+)cpp"},
+      {"for_each-logical_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::for_each(a,b,op);}
+)cpp"},
+      {"for_each-logical_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::for_each(a,b,op);}
+)cpp"},
+      {"for_each-negate-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::negate<>op;return std::for_each(a,b,(++effects,op));}
+)cpp"},
+      {"for_each-negate-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::negate<>op;};
+auto selected(P a,P b){Holder h;return std::for_each(a,b,h.op);}
+)cpp"},
+      {"for_each-negate-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::negate<>make(){return {};}
+auto selected(P a,P b){return std::for_each(a,b,make());}
+)cpp"},
+      {"for_each-negate-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&w)const noexcept(noexcept(-std::forward<W&>(w)))->decltype(-std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b){std::negate<>op;return std::for_each(a,b,op);}
+)cpp"},
+      {"for_each-negate-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::negate<int>op;return std::for_each(a,b,op);}
+)cpp"},
+      {"for_each_n-bit_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::bit_not<>op;return std::for_each_n(a,3,(++effects,op));}
+)cpp"},
+      {"for_each_n-bit_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::bit_not<>op;};
+auto selected(P a,P b){Holder h;return std::for_each_n(a,3,h.op);}
+)cpp"},
+      {"for_each_n-bit_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_not<>make(){return {};}
+auto selected(P a,P b){return std::for_each_n(a,3,make());}
+)cpp"},
+      {"for_each_n-bit_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_not<void>::operator()<W&>(W&w)const noexcept(noexcept(~std::forward<W&>(w)))->decltype(~std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b){std::bit_not<>op;return std::for_each_n(a,3,op);}
+)cpp"},
+      {"for_each_n-bit_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::bit_not<int>op;return std::for_each_n(a,3,op);}
+)cpp"},
+      {"for_each_n-logical_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::for_each_n(a,3,(++effects,op));}
+)cpp"},
+      {"for_each_n-logical_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::for_each_n(a,3,h.op);}
+)cpp"},
+      {"for_each_n-logical_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::for_each_n(a,3,make());}
+)cpp"},
+      {"for_each_n-logical_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::for_each_n(a,3,op);}
+)cpp"},
+      {"for_each_n-logical_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::for_each_n(a,3,op);}
+)cpp"},
+      {"for_each_n-negate-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::negate<>op;return std::for_each_n(a,3,(++effects,op));}
+)cpp"},
+      {"for_each_n-negate-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::negate<>op;};
+auto selected(P a,P b){Holder h;return std::for_each_n(a,3,h.op);}
+)cpp"},
+      {"for_each_n-negate-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::negate<>make(){return {};}
+auto selected(P a,P b){return std::for_each_n(a,3,make());}
+)cpp"},
+      {"for_each_n-negate-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&w)const noexcept(noexcept(-std::forward<W&>(w)))->decltype(-std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b){std::negate<>op;return std::for_each_n(a,3,op);}
+)cpp"},
+      {"for_each_n-negate-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::negate<int>op;return std::for_each_n(a,3,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-for-each-stored-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
     expectNoArtifacts(Output);
   }
 }
@@ -294238,12 +294646,6 @@ auto selected(W*a,W*b,W*out){return std::for_each(a,a+1,std::negate<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::for_each(a,a+1,std::negate<>{});}
-)cpp"},
-      {"stored-negate", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::negate<> op;return std::for_each(a,b,op);}
 )cpp"},
       {"typed-negate", R"cpp(
 #include <algorithm>
@@ -295066,12 +295468,6 @@ auto selected(W*a,W*b,W*out){return std::for_each(a,a+1,std::bit_not<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::for_each(a,a+1,std::bit_not<>{});}
-)cpp"},
-      {"stored-bit-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::bit_not<> op;return std::for_each(a,b,op);}
 )cpp"},
       {"typed-bit-not", R"cpp(
 #include <algorithm>
@@ -295920,12 +296316,6 @@ auto selected(W*a,W*b,W*out){return std::for_each_n(a,1,std::negate<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::for_each_n(a,1,std::negate<>{});}
-)cpp"},
-      {"stored-negate", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::negate<> op;return std::for_each_n(a,1,op);}
 )cpp"},
       {"typed-negate", R"cpp(
 #include <algorithm>
@@ -296780,12 +297170,6 @@ auto selected(W*a,W*b,W*out){return std::for_each_n(a,1,std::bit_not<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::for_each_n(a,1,std::bit_not<>{});}
-)cpp"},
-      {"stored-bit-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::bit_not<> op;return std::for_each_n(a,1,op);}
 )cpp"},
       {"typed-bit-not", R"cpp(
 #include <algorithm>
