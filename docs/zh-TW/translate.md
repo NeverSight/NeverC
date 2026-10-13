@@ -193,6 +193,8 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 已檢查的包裝器一元及二元 `std::transform`、`std::accumulate`、`std::reduce`、`std::inner_product`、一元及二元 `std::transform_reduce`、`std::adjacent_difference`、帶初值的 `std::inclusive_scan`、`std::exclusive_scan`、帶初值的 `std::transform_inclusive_scan` 和 `std::transform_exclusive_scan` 的已求值結果也支援型別查詢。每個明寫的操作引數都必須是已檢查的 SDK 函式物件，而且該精確呼叫須先通過現有的完整演算法驗證。呼叫端的原始型別、範本引數、運算式、建構及選定的原始碼運算子仍須接受檢查。查詢保留結果型別，不增加執行期呼叫、運算元求值或清理。
 
+使用獲准 SDK 謂詞的已檢查包裝器 `std::copy_if`、`std::remove_copy_if`、`std::replace_copy_if`、`std::remove_if`、`std::is_partitioned`、`std::partition_point` 和 `std::partition_copy` 也支援對已求值結果進行型別查詢，包括 partition_copy 傳回的原始迭代器對。執行獲准的 `std::replace_if` 呼叫後，其已檢查的精確呼叫形式可提供 `void` 型別查詢。仍須通過完整演算法驗證及原始引數、範本、建構和原始碼運算子檢查。查詢不增加複製、繫結替換、引數求值或清理。
+
 直接呼叫 `std::for_each_n`，搭配直接初始化的透明 `std::negate<>`，支援 `std::reference_wrapper<T>` 原始指標區間和最多 64 位元整數計數，包括 bool 及進行整數提升的小整數。支援常數包裝器元素與常數算術引用。正計數呼叫述詞並前進指標，零和負計數傳回原指標。綁定及引用值保持不變。驗證完整 SDK 計數轉換、迴圈、述詞、轉送及引用轉換，保留指標結果、引數求值與暫存物件清理。列舉、浮點或擴充整數計數，volatile 或列舉引用，long double、巢狀包裝器及成員或傳回的輸入運算式仍不支援。 一元負號保留整數提升與浮點行為，運算結果被捨棄。
 
 直接呼叫 `std::for_each`，搭配直接初始化的透明 `std::bit_not<>`，支援 bool 與最多 64 位元整數的 `std::reference_wrapper<T>` 原始指標區間，包括常數包裝器元素和常數引用。位元反相保留整數提升，綁定及引用值保持不變。傳回的空操作物件可捨棄、儲存或傳回，並保留位元呼叫行為。驗證完整 SDK 迴圈、結果物件的精確平凡移動、操作、轉送與轉換，保留空區間、引數求值及暫存物件清理。浮點、volatile、列舉或擴充整數引用，巢狀包裝器及成員或傳回的輸入運算式仍不支援。

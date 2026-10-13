@@ -276627,6 +276627,170 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
+  const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
+  const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int check_copy_if(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::copy_if(a,a+4,out,std::logical_not<>{});
+static_assert(__is_same(decltype(result),R*));
+return result!=out+2||&out[0].get()!=&x||&out[1].get()!=&x;}
+int check_remove_copy_if(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_copy_if(a,a+4,out,std::logical_not<>{});
+static_assert(__is_same(decltype(result),R*));
+return result!=out+2||&out[0].get()!=&y||&out[1].get()!=&z;}
+int check_replace_copy_if(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::replace_copy_if(a,a+4,out,std::logical_not<>{},replacement);
+static_assert(__is_same(decltype(result),R*));
+return result!=out+4||&out[0].get()!=&k||&out[2].get()!=&y;}
+int check_remove_if(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::remove_if(a,a+4,std::logical_not<>{});
+static_assert(__is_same(decltype(result),R*));
+return result!=a+2||&a[0].get()!=&y||&a[1].get()!=&z;}
+int check_replace_if(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);std::replace_if(a,a+4,std::logical_not<>{},replacement);
+static_assert(__is_same(decltype(std::replace_if(a,a+4,std::logical_not<>{},replacement)),void));
+return &a[0].get()!=&k||&a[1].get()!=&k||&a[2].get()!=&y;}
+int main(){return check_copy_if()||check_remove_copy_if()||check_replace_copy_if()||check_remove_if()||check_replace_if();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-algorithm-result-query-filter-bindings" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesPartitionTypes) {
+  const auto Source = tmpFile("wrapper-algorithm-result-query-partition-types.cpp");
+  const auto Output = tmpFile("wrapper-algorithm-result-query-partition-types.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int check_is_partitioned(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::is_partitioned(a,a+4,std::logical_not<>{});
+static_assert(__is_same(decltype(result),bool));
+return !result;}
+int check_partition_point(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_point(a,a+4,std::logical_not<>{});
+static_assert(__is_same(decltype(result),R*));
+return result!=a+2;}
+int check_partition_copy(){int x=0,y=3,z=-1,k=9;using R=std::reference_wrapper<int>;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);auto result=std::partition_copy(a,a+4,out,other,std::logical_not<>{});
+static_assert(__is_same(decltype(result),std::pair<R*,R*>));
+return result.first!=out+2||result.second!=other+2||&out[0].get()!=&x||&other[0].get()!=&y;}
+int main(){return check_is_partitioned()||check_partition_point()||check_partition_copy();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-algorithm-result-query-partition-types" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesEvaluationCleanup) {
+  const auto Source = tmpFile("wrapper-algorithm-result-query-evaluation-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-algorithm-result-query-evaluation-cleanup.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int reads,cleanup;
+struct Token{~Token(){++cleanup;}};
+R* pointer(R*p,Token token=Token{}){++reads;return p;}
+int main(){int x=0,y=3,z=-1,k=9;R a[]={x,x,y,z};R out[]={k,k,k,k};R other[]={k,k,k,k};R replacement(k);
+ auto copied=std::copy_if(pointer(a),pointer(a+4),pointer(out),std::logical_not<>{});
+ static_assert(__is_same(decltype(copied),R*));
+ if(copied!=out+2||reads!=3||cleanup!=3)return 1;
+ auto pair=std::partition_copy(pointer(a),pointer(a+4),pointer(out),pointer(other),std::logical_not<>{});
+ static_assert(__is_same(decltype(pair),std::pair<R*,R*>));
+ if(pair.first!=out+2||pair.second!=other+2||reads!=7||cleanup!=7)return 2;
+ std::replace_if(pointer(a),pointer(a+4),std::logical_not<>{},replacement);
+ static_assert(__is_same(decltype(std::replace_if(pointer(a),pointer(a+4),std::logical_not<>{},replacement)),void));
+ if(reads!=9||cleanup!=9||&a[0].get()!=&k||&a[1].get()!=&k||&a[2].get()!=&y||x!=0||y!=3||z!=-1||k!=9)return 3;
+ return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-algorithm-result-query-evaluation-cleanup" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesRetainSource) {
+  struct Case {
+    const char *Name, *Source, *Code;
+  };
+  const Case Cases[] = {
+      {"address-after-checked-call", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int f(std::reference_wrapper<int>*p){auto b=std::is_partitioned(p,p+1,std::logical_not<>{});using Fn=decltype(&std::is_partitioned<std::reference_wrapper<int>*,std::logical_not<>>);static_assert(__is_pointer(Fn));return b;}
+)cpp", "TR0201"},
+      {"caller-pointer-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+template<int>using Input=std::reference_wrapper<int>*;int f(Input<sizeof(long double)>p){auto b=std::is_partitioned(p,p+1,std::logical_not<>{});static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+      {"explicit-specialization", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace std{template<> bool is_partitioned<reference_wrapper<int>*,logical_not<>>(reference_wrapper<int>*,reference_wrapper<int>*,logical_not<>){return true;}}int f(std::reference_wrapper<int>*p){auto b=std::is_partitioned(p,p+1,std::logical_not<>{});static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+      {"original-input-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int f(std::reference_wrapper<int>*p,std::reference_wrapper<int>*out){auto end=std::copy_if((sizeof(long double),p),p+1,out,std::logical_not<>{});static_assert(__is_same(decltype(end),decltype(out)));return end!=out;}
+)cpp", "TR0201"},
+      {"original-output-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int f(std::reference_wrapper<int>*p,std::reference_wrapper<int>*out){auto end=std::copy_if(p,p+1,(sizeof(long double),out),std::logical_not<>{});static_assert(__is_same(decltype(end),decltype(out)));return end!=out;}
+)cpp", "TR0201"},
+      {"returned-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+std::logical_not<> make(){return {};}int f(std::reference_wrapper<int>*p){auto b=std::is_partitioned(p,p+1,make());static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+      {"source-callback-signature", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+template<int>using Erased=bool;struct P{Erased<sizeof(long double)> operator()(int n)const{return n==0;}};int f(int*p){auto b=std::is_partitioned(p,p+1,P{});static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+      {"written-template-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+template<int>using Erased=std::logical_not<>;int f(std::reference_wrapper<int>*p){auto b=std::is_partitioned<std::reference_wrapper<int>*,Erased<sizeof(long double)>>(p,p+1,std::logical_not<>{});static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-algorithm-result-query-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperTransformNumericResultQueriesTransform) {
   const auto Source = tmpFile("wrapper-transform-numeric-query-transform.cpp");
   const auto Output = tmpFile("wrapper-transform-numeric-query-transform.nc");

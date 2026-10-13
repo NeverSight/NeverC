@@ -193,6 +193,8 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 已检查的包装器一元和二元 `std::transform`、`std::accumulate`、`std::reduce`、`std::inner_product`、一元和二元 `std::transform_reduce`、`std::adjacent_difference`、带初值的 `std::inclusive_scan`、`std::exclusive_scan`、带初值的 `std::transform_inclusive_scan` 和 `std::transform_exclusive_scan` 的已求值结果也支持类型查询。每个显式操作参数都必须是已检查的 SDK 函数对象，且该精确调用须先通过现有的完整算法验证。调用方的原始类型、模板参数、表达式、构造和选中的源代码操作符仍须接受检查。查询保留结果类型，不增加运行时调用、操作数求值或清理。
 
+使用获准 SDK 谓词的已检查包装器 `std::copy_if`、`std::remove_copy_if`、`std::replace_copy_if`、`std::remove_if`、`std::is_partitioned`、`std::partition_point` 和 `std::partition_copy` 也支持对已求值结果进行类型查询，包括 partition_copy 返回的原始迭代器对。执行获准的 `std::replace_if` 调用后，其已检查的精确调用形式可提供 `void` 类型查询。仍须通过完整算法验证及原始参数、模板、构造和源代码操作符检查。查询不增加复制、绑定替换、参数求值或清理。
+
 直接调用 `std::for_each_n`，配合直接初始化的透明 `std::negate<>`，支持 `std::reference_wrapper<T>` 原始指针区间和最多 64 位整数计数，包括 bool 及进行整数提升的小整数。支持常量包装器元素与常量算术引用。正计数调用谓词并前进指针，零和负计数返回原指针。绑定及引用值保持不变。验证完整 SDK 计数转换、循环、谓词、转发及引用转换，保留指针结果、实参求值与临时对象清理。枚举、浮点或扩展整数计数，volatile 或枚举引用，long double、嵌套包装器及成员或返回的输入运算表达式仍不支持。 一元负号保留整数提升与浮点行为，运算结果被丢弃。
 
 直接调用 `std::for_each`，配合直接初始化的透明 `std::bit_not<>`，支持 bool 与最多 64 位整数的 `std::reference_wrapper<T>` 原始指针区间，包括常量包装器元素和常量引用。按位取反保留整数提升，绑定及引用值保持不变。返回的空操作对象可丢弃、存储或返回，并保留按位调用行为。验证完整 SDK 循环、结果对象的准确平凡移动、操作、转发与转换，保留空区间、实参求值及临时对象清理。浮点、volatile、枚举或扩展整数引用，嵌套包装器及成员或返回的输入运算表达式仍不支持。

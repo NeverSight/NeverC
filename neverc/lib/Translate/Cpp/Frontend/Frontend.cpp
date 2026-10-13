@@ -15928,7 +15928,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     case UtilityOperation::AlgorithmAllOf:
     case UtilityOperation::AlgorithmAnyOf:
     case UtilityOperation::AlgorithmNoneOf:
+    case UtilityOperation::AlgorithmRemoveIf:
+    case UtilityOperation::AlgorithmIsPartitioned:
+    case UtilityOperation::AlgorithmPartitionPoint:
       return WrapperCall(3, {2});
+    case UtilityOperation::AlgorithmCopyIf:
+    case UtilityOperation::AlgorithmRemoveCopyIf:
+      return WrapperCall(4, {3});
+    case UtilityOperation::AlgorithmReplaceIf:
+      return WrapperCall(4, {2});
+    case UtilityOperation::AlgorithmReplaceCopyIf:
+      return WrapperCall(5, {3});
+    case UtilityOperation::AlgorithmPartitionCopy:
+      return WrapperCall(5, {4});
     case UtilityOperation::AlgorithmTransformUnary:
     case UtilityOperation::NumericAccumulate:
     case UtilityOperation::NumericReduce:
