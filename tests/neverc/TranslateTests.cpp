@@ -92025,6 +92025,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SDKCallbackLogicalPredicateRegressionsOrdinary) {
+  const auto Source = tmpFile("sdk-callback-logical-ordinary-callbacks.cpp");
+  const auto Output = tmpFile("sdk-callback-logical-ordinary-callbacks.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using Callback=int(*)(int);
+int calls=0;int one(int x){++calls;return x+1;}int two(int x){++calls;return x+2;}
+int main(){Callback replacement=two;
+{Callback a[]={nullptr,one,one,nullptr,one};if(std::find_if(a,a+5,std::logical_not<Callback>{})!=a||std::count_if(a,a+5,std::logical_not<Callback>{})!=2)return 1;if(std::find_if(a,a,std::logical_not<Callback>{})!=a||std::count_if(a,a,std::logical_not<Callback>{})!=0)return 2;}
+{Callback a[]={nullptr,one,one,nullptr,one};std::replace_if(a,a+5,std::logical_not<Callback>{},replacement);if(a[0]!=two||a[1]!=one||a[2]!=one||a[3]!=two||a[4]!=one)return 3;}
+{Callback a[]={nullptr,one,one,nullptr,one},out[6]={one,one,one,one,one,two};if(std::replace_copy_if(a,a+5,out,std::logical_not<Callback>{},replacement)!=out+5||out[0]!=two||out[1]!=one||out[3]!=two||out[5]!=two||a[0]!=nullptr)return 4;}
+{Callback a[]={nullptr,one,one,nullptr,one},out[6]={one,one,one,one,one,two};if(std::copy_if(a,a+5,out,std::logical_not<Callback>{})!=out+2||out[0]!=nullptr||out[1]!=nullptr||out[2]!=one||a[3]!=nullptr)return 5;}
+{Callback a[]={nullptr,one,one,nullptr,one},out[6]={two,two,two,two,two,two};if(std::remove_copy_if(a,a+5,out,std::logical_not<Callback>{})!=out+3||out[0]!=one||out[1]!=one||out[2]!=one||out[3]!=two||a[3]!=nullptr)return 6;}
+{Callback a[]={nullptr,nullptr,one,one,one},mixed[]={nullptr,one,nullptr};if(!std::is_partitioned(a,a+5,std::logical_not<Callback>{})||std::is_partitioned(mixed,mixed+3,std::logical_not<Callback>{})||std::partition_point(a,a+5,std::logical_not<Callback>{})!=a+2||std::partition_point(a,a,std::logical_not<Callback>{})!=a)return 7;}
+{Callback a[]={nullptr,one,one,nullptr,one},yes[3]={two,two,two},no[4]={two,two,two,two};auto ends=std::partition_copy(a,a+5,yes,no,std::logical_not<Callback>{});if(ends.first!=yes+2||ends.second!=no+3||yes[0]!=nullptr||yes[1]!=nullptr||yes[2]!=two||no[0]!=one||no[1]!=one||no[2]!=one||no[3]!=two||a[0]!=nullptr)return 8;}
+{Callback a[]={nullptr,one,one,nullptr,one};auto end=std::remove_if(a,a+5,std::logical_not<Callback>{});if(end!=a+3||a[0]!=one||a[1]!=one||a[2]!=one)return 9;}
+return calls!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-callback-logical-ordinary-callbacks" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SDKCallbackLogicalPredicateRegressionsNoexcept) {
+  const auto Source = tmpFile("sdk-callback-logical-noexcept-callbacks.cpp");
+  const auto Output = tmpFile("sdk-callback-logical-noexcept-callbacks.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using NoexceptCallback=int(*)(int) noexcept;
+int calls=0;int one(int x) noexcept{++calls;return x+1;}int two(int x) noexcept{++calls;return x+2;}
+int main(){NoexceptCallback replacement=two;
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one};if(std::find_if(a,a+5,std::logical_not<NoexceptCallback>{})!=a||std::count_if(a,a+5,std::logical_not<NoexceptCallback>{})!=2)return 1;if(std::find_if(a,a,std::logical_not<NoexceptCallback>{})!=a||std::count_if(a,a,std::logical_not<NoexceptCallback>{})!=0)return 2;}
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one};std::replace_if(a,a+5,std::logical_not<NoexceptCallback>{},replacement);if(a[0]!=two||a[1]!=one||a[2]!=one||a[3]!=two||a[4]!=one)return 3;}
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one},out[6]={one,one,one,one,one,two};if(std::replace_copy_if(a,a+5,out,std::logical_not<NoexceptCallback>{},replacement)!=out+5||out[0]!=two||out[1]!=one||out[3]!=two||out[5]!=two||a[0]!=nullptr)return 4;}
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one},out[6]={one,one,one,one,one,two};if(std::copy_if(a,a+5,out,std::logical_not<NoexceptCallback>{})!=out+2||out[0]!=nullptr||out[1]!=nullptr||out[2]!=one||a[3]!=nullptr)return 5;}
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one},out[6]={two,two,two,two,two,two};if(std::remove_copy_if(a,a+5,out,std::logical_not<NoexceptCallback>{})!=out+3||out[0]!=one||out[1]!=one||out[2]!=one||out[3]!=two||a[3]!=nullptr)return 6;}
+{NoexceptCallback a[]={nullptr,nullptr,one,one,one},mixed[]={nullptr,one,nullptr};if(!std::is_partitioned(a,a+5,std::logical_not<NoexceptCallback>{})||std::is_partitioned(mixed,mixed+3,std::logical_not<NoexceptCallback>{})||std::partition_point(a,a+5,std::logical_not<NoexceptCallback>{})!=a+2||std::partition_point(a,a,std::logical_not<NoexceptCallback>{})!=a)return 7;}
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one},yes[3]={two,two,two},no[4]={two,two,two,two};auto ends=std::partition_copy(a,a+5,yes,no,std::logical_not<NoexceptCallback>{});if(ends.first!=yes+2||ends.second!=no+3||yes[0]!=nullptr||yes[1]!=nullptr||yes[2]!=two||no[0]!=one||no[1]!=one||no[2]!=one||no[3]!=two||a[0]!=nullptr)return 8;}
+{NoexceptCallback a[]={nullptr,one,one,nullptr,one};auto end=std::remove_if(a,a+5,std::logical_not<NoexceptCallback>{});if(end!=a+3||a[0]!=one||a[1]!=one||a[2]!=one)return 9;}
+return calls!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-callback-logical-noexcept-callbacks" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmCallbackForEachObjectsRequireExactTypes) {
   struct Rejection {
     const char *Name;
@@ -93151,7 +93215,6 @@ TEST_F(TranslateTest,
       {"non-bool-result",
        "struct F { int operator()(Callback) & { return 1; } };", "input",
        "F{}"},
-      {"sdk-object", "", "input", "std::logical_not<Callback>{}"},
   };
   for (const auto &Case : Cases) {
     for (const std::string &Algorithm : {"find_if", "count_if"}) {
@@ -94245,8 +94308,6 @@ TEST_F(TranslateTest,
       {"non-bool-result",
        "struct F { int operator()(Callback) & { return 1; } };", "input",
        "output", "F{}", "replacement", false},
-      {"sdk-object", "", "input", "output", "std::logical_not<Callback>{}",
-       "replacement", false},
       {"output-conversion",
        "struct F { bool operator()(NoexceptCallback) & { return true; } };",
        "safe", "output", "F{}", "safe_replacement", true},
@@ -95230,7 +95291,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackFilterCopyObjectsRequireExactTypes)
        "input", "output", "F{}"},
       {"non-bool-result", "struct F { int operator()(Callback) & { return 1; } };",
        "input", "output", "F{}"},
-      {"sdk-object", "", "input", "output", "std::logical_not<Callback>{}"},
   };
   for (const auto &Case : Cases) {
     for (const std::string &Algorithm : {"copy_if", "remove_copy_if"}) {
@@ -96007,7 +96067,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackPartitionObjectsRequireExactTypes) 
        "input", "yes", "no", "F{}", false},
       {"non-bool-result", "struct F { int operator()(Callback) & { return 1; } };",
        "input", "yes", "no", "F{}", false},
-      {"sdk-object", "", "input", "yes", "no", "std::logical_not<Callback>{}", false},
       {"true-conversion", "struct F { bool operator()(NoexceptCallback) & { return true; } };",
        "safe", "yes", "safe_no", "F{}", true},
       {"false-conversion", "struct F { bool operator()(NoexceptCallback) & { return true; } };",
@@ -96686,8 +96745,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackRemoveObjectsRequireExactTypes) {
        "input", "F{}"},
       {"nontrivial-destructor", "struct F { ~F() {} bool operator()(Callback) & { return true; } };",
        "input", "F{}"},
-      {"sdk-object", "", "input", "std::logical_not<Callback>{}"},
-      {"sdk-noexcept-object", "", "safe", "std::logical_not<NoexceptCallback>{}"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
