@@ -73432,6 +73432,31 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StandaloneRecordCopyFallbackQueryLinksWithoutOperations) {
+  const auto Source = tmpFile("standalone-copy-query.cpp");
+  const auto Output = tmpFile("standalone-copy-query.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <utility>
+namespace Alias{using std::move_if_noexcept;}
+
+struct Owned{int value;Owned(const Owned&){}Owned(Owned&&){}};int f(Owned&e){static_assert(__is_same(decltype(Alias::move_if_noexcept(e)),const Owned&));return 0;}
+
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("standalone-copy-query" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleLikeCopyFallbackQueriesRetainSourceBoundaries) {
   const struct {
     const char *Name, *Source, *Code;
@@ -73498,9 +73523,6 @@ struct Bad{int value;Bad()=default;Bad(const Bad&)=default;Bad(Bad&&)noexcept((s
 )cpp", "TR0201"},
       {"nontrivial-owned-element", R"cpp(
 struct Owned{int value;Owned(const Owned&){}Owned(Owned&&){}};using T=std::pair<Owned,int>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),const T&));return 0;}
-)cpp", "TR0201"},
-      {"nontrivial-noncontainer-record", R"cpp(
-struct Owned{int value;Owned(const Owned&){}Owned(Owned&&){}};int f(Owned&e){static_assert(__is_same(decltype(Alias::move_if_noexcept(e)),const Owned&));return 0;}
 )cpp", "TR0201"},
       {"temporary-destructor-source", R"cpp(
 struct Ticket{~Ticket()noexcept{long double hidden=0;}};Row&source(Row&r,Ticket t=Ticket())noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Alias::move_if_noexcept(source(r))),const Row&));return 0;}
@@ -85734,27 +85756,23 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmOrderRequiresPinnedArithmeticForms) {
-  struct Rejection {
-    const char *Name;
-    const char *Source;
-  };
-  const Rejection Cases[] = {
-      {"pointer-elements",
-       "#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};"
-       "return std::min_element(p,p+2)==p?0:1;}"},
-  };
-  for (const auto &Case : Cases) {
-    SCOPED_TRACE(Case.Name);
-    const auto Source =
-        tmpFile(std::string("algorithm-order-") + Case.Name + ".cpp");
-    const auto Output =
-        tmpFile(std::string("algorithm-order-") + Case.Name + ".nc");
-    writeFile(Source, Case.Source);
-    expectCode(
-        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
-        "TR0203");
-    expectNoArtifacts(Output);
+TEST_F(TranslateTest, CoreV2AlgorithmOrderAdmitsPointersWithinOneArray) {
+  const auto Source = tmpFile("owned-pointer-order.cpp");
+  const auto Output = tmpFile("owned-pointer-order.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int main(){int a[2]{};int*p[2]{a,a+1};return std::min_element(p,p+2)==p?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-pointer-order" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
 
