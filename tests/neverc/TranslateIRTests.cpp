@@ -2514,7 +2514,7 @@ TEST(TranslateIR, CoreV2FloatingBitCastsRequireExactUnsignedCarriers) {
     Bad = M;
     Bad.Functions[0].Params[0].ValueType = uintType();
     Bad.Functions[0].Body.back().Value->Args[0].ValueType = uintType();
-    invalid(Bad, "float, double or object pointer");
+    invalid(Bad, "Bit casts require a core-v2");
     Bad = M;
     Bad.Functions[0].Result = integerType(Pair.second.integerBits(), false);
     Bad.Functions[0].Body.back().Value->ValueType =
@@ -2523,35 +2523,39 @@ TEST(TranslateIR, CoreV2FloatingBitCastsRequireExactUnsignedCarriers) {
   }
 }
 
-TEST(TranslateIR, CoreV2ObjectPointerBitCastsRequireExactUnsignedCarriers) {
-  const auto Pointer = pointerType(intType());
-  const auto Carrier = integerType(64, true);
-  auto M = module(true);
-  M.Functions[0].Result = Carrier;
-  M.Functions[0].Params = {{"nct_pointer", Pointer, InputLoc}};
-  M.Functions[0].Body.back() = ret(pointerExpr(
-      ExprKind::BitCast, Carrier, {variable("nct_pointer", Pointer)}));
-  Diagnostics D;
-  EmittedSource Output;
-  ASSERT_TRUE(emitNC(M, context(M), Output, D));
-  EXPECT_NE(Output.Text.find("nct_bit_cast_source"), std::string::npos);
-  EXPECT_NE(Output.Text.find("nct_bit_cast_result"), std::string::npos);
+TEST(TranslateIR, CoreV2PointerBitCastsRequireExactUnsignedCarriers) {
+  const std::vector<std::pair<const char *, Type>> Cases = {
+      {"object-pointer", pointerType(intType())},
+      {"void-pointer", pointerType({TypeKind::Void, {}})},
+      {"const-void-pointer", pointerType({TypeKind::Void, {}}, true)},
+      {"function-pointer",
+       {TypeKind::FunctionPointer, {}, {intType(), intType()}}},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto &Pointer = Case.second;
+    const auto Carrier = integerType(64, true);
+    auto M = module(true);
+    M.Functions[0].Result = Carrier;
+    M.Functions[0].Params = {{"nct_pointer", Pointer, InputLoc}};
+    M.Functions[0].Body.back() = ret(pointerExpr(
+        ExprKind::BitCast, Carrier, {variable("nct_pointer", Pointer)}));
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find("nct_bit_cast_source"), std::string::npos);
+    EXPECT_NE(Output.Text.find("nct_bit_cast_result"), std::string::npos);
 
-  auto Bad = M;
-  Bad.Functions[0].Result = uintType();
-  Bad.Functions[0].Body.back().Value->ValueType = uintType();
-  invalid(Bad, "same-width unsigned integer");
+    auto Bad = M;
+    Bad.Functions[0].Result = uintType();
+    Bad.Functions[0].Body.back().Value->ValueType = uintType();
+    invalid(Bad, "same-width unsigned integer");
 
-  Bad = M;
-  const auto VoidPointer = pointerType({TypeKind::Void, {}});
-  Bad.Functions[0].Params[0].ValueType = VoidPointer;
-  Bad.Functions[0].Body.back().Value->Args[0].ValueType = VoidPointer;
-  invalid(Bad, "object pointer");
-
-  Bad = M;
-  Bad.Functions[0].Result = integerType(64, false);
-  Bad.Functions[0].Body.back().Value->ValueType = integerType(64, false);
-  invalid(Bad, "unsigned integer");
+    Bad = M;
+    Bad.Functions[0].Result = integerType(64, false);
+    Bad.Functions[0].Body.back().Value->ValueType = integerType(64, false);
+    invalid(Bad, "unsigned integer");
+  }
 }
 
 TEST(TranslateIR, CoreV2FloatingLayoutAndMutableStorageAreIndependent) {
