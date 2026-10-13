@@ -77,7 +77,9 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 六参数 `std::inner_product` 与二元 `std::transform_reduce` 的两个运算位置，还支持全部十六种透明运算的可变或 const 变量及引用参数。每个实参必须直接引用变量，并选中经过认证的同类型空 SDK 对象的隐式、平凡且不抛异常的复制。项运算与归约运算分别检查。数值转换、累加器转发、包装器绑定、空区间参数求值和清理保留原有规则。
 
-对已验证的引用包装器指针范围，直接调用五参数一元 `std::transform_reduce` 与六参数 `std::transform_inclusive_scan`／`std::transform_exclusive_scan`，支持直接初始化的透明 `std::negate<>`、整数 `std::bit_not<>` 或 `std::logical_not<>`，搭配比较运算 `std::equal_to<>`, `std::not_equal_to<>`, `std::less<>`, `std::less_equal<>`, `std::greater<>`, `std::greater_equal<>`，并保留八种算术归约。支持 const 包装器及被引用对象；值可为 bool、最多 64 位整数、float 或 double，累加器仍使用支持的算术类型，可写扫描输出也支持 bool。取负与按位取反保留提升后的项精度，逻辑非产生 bool。每步以累加器为左操作数、转换后的项为右操作数，按通常公共类型比较，再将 bool 结果转回累加器。NaN 和正负零的比较保持 SDK 行为。transform_reduce 保留移动后的累加器，扫描保留左值参数，并在写入更新值或前值之前完成转换、比较与累加器转换。保留实时别名、输出末尾、空输入、参数求值与清理。验证 SDK 来源、签名、构造、精确一元及二元运算码、forward、转换和完整循环。仍拒绝有类型、已存储或函数返回的运算对象、不支持的类型和源代码替换。这三个接口也支持 `std::logical_and<>` / `std::logical_or<>`。每步先求值一元变换，再将累加器转为 bool，并按短路规则决定是否转换已算出的项。两个真值判断之前均不进行算术公共类型转换。bool 结果在输出或下一步之前转回累加器类型。
+对已验证的引用包装器指针范围，直接调用五参数一元 `std::transform_reduce` 与六参数 `std::transform_inclusive_scan`／`std::transform_exclusive_scan`，支持直接初始化的透明 `std::negate<>`、整数 `std::bit_not<>` 或 `std::logical_not<>`，搭配比较运算 `std::equal_to<>`, `std::not_equal_to<>`, `std::less<>`, `std::less_equal<>`, `std::greater<>`, `std::greater_equal<>`，并保留八种算术归约。支持 const 包装器及被引用对象；值可为 bool、最多 64 位整数、float 或 double，累加器仍使用支持的算术类型，可写扫描输出也支持 bool。取负与按位取反保留提升后的项精度，逻辑非产生 bool。每步以累加器为左操作数、转换后的项为右操作数，按通常公共类型比较，再将 bool 结果转回累加器。NaN 和正负零的比较保持 SDK 行为。transform_reduce 保留移动后的累加器，扫描保留左值参数，并在写入更新值或前值之前完成转换、比较与累加器转换。保留实时别名、输出末尾、空输入、参数求值与清理。验证 SDK 来源、签名、构造、精确一元及二元运算码、forward、转换和完整循环。仍拒绝有类型、成员、函数返回或带副作用的运算表达式、不支持的类型和源代码替换。这三个接口也支持 `std::logical_and<>` / `std::logical_or<>`。每步先求值一元变换，再将累加器转为 bool，并按短路规则决定是否转换已算出的项。两个真值判断之前均不进行算术公共类型转换。bool 结果在输出或下一步之前转回累加器类型。
+
+一元 `std::transform_reduce` 和带初值的 `std::transform_inclusive_scan`／`std::transform_exclusive_scan`，在两个运算位置还支持可变或 const 变量及引用参数。归约保留全部十六种透明运算，变换保留 `std::negate<>`、整数 `std::bit_not<>` 和 `std::logical_not<>`。实参必须直接引用变量，并选中经过认证的同类型空 SDK 对象的隐式、平凡且不抛异常的复制。项精度、累加器转发、变换先求值、扫描写入、实时绑定及参数清理均保持 SDK 顺序。
 
 `cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. 直接调用支持已检查包装器的可变原始指针区间，引用可为受支持的算术值或对象指针，也可为 const。SDK 证明认证迭代器类别分派、平凡移动特征、左右移位、前向和最大公约数循环、等长区间交换、返回指针及所选移动适配器。旋转重排包装器绑定，保留引用对象值，并返回原首元素的新位置；空区间或任一半区间为空时保持标准端点语义。实参仅求值一次，保留结果使用和临时对象清理。仍拒绝 volatile 或不支持的引用、源代码替换及间接或强制转换的调用入口。
 
@@ -269,7 +271,7 @@ Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move
 
 直接一元 `std::transform` 现在接受受支持算术引用类型的 `std::reference_wrapper<T>` 原始指针区间、可写标量输出区间，以及直接初始化的透明 `std::negate<>`。有限路径验证 SDK 入口、negate、转发、引用转换和完整循环。每轮读取引用的当前值，执行一元提升与取负，再转换为输出元素类型并推进；输出重叠时保留这一顺序。空区间返回原输出指针，实参副作用和清理保持完整。存储、返回、逗号表达式及有类型的运算对象、间接调用和源代码替换仍不属于此路径。
 
-一元 `std::transform_reduce` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 可为受支持的内置标量，输入和 referent 均可为 const。五参数形式要求直接初始化的透明 `std::plus<>` 和 `std::negate<>`，累加器可为不超过 64 位的受支持整数、float 或 double。经校验的 C++17 SDK 循环按通常的一元提升规则对当前 referent 取负，与移动后的累加器相加，并在每一步将和转换回累加器类型；空区间返回初值。保留绑定、referent、操作数单次求值和清理语义，并校验两个运算对象的初始化、转发、转换及完整 SDK 循环。仍拒绝自定义、带类型、已保存或动态生成的运算对象及源码替换。
+一元 `std::transform_reduce` 支持经校验 SDK `std::reference_wrapper<T>` 的原始指针区间，referent 可为受支持的内置标量，输入和 referent 均可为 const。五参数形式支持直接初始化的透明 `std::plus<>` 和 `std::negate<>`，或满足上述复制认证规则的直接变量引用；累加器可为不超过 64 位的受支持整数、float 或 double。经校验的 C++17 SDK 循环按通常的一元提升规则对当前 referent 取负，与移动后的累加器相加，并在每一步将和转换回累加器类型；空区间返回初值。保留绑定、referent、操作数单次求值和清理语义，并校验两个运算对象的初始化、转发、转换及完整 SDK 循环。仍拒绝自定义、带类型、成员、返回或带副作用的运算表达式及源码替换。
 
 显式传入透明 plus 和 multiplies 的 `std::transform_reduce` 支持两个经校验 SDK `std::reference_wrapper<T>` 的原始指针范围；引用对象为内建标量，可含 const 输入、const 引用对象和不同引用类型，累加器须为支持的算术类型。它依次读取当前引用值，对每次乘积和求和执行通常算术转换，并将每次求和结果转换回累加器类型；第一范围为空时返回初始值。保留包装器绑定、引用对象、操作数的一次求值和清理。所选 SDK 模板、完整循环及两侧包装器转换均经过校验。仍拒绝源码替换、自定义运算、枚举或嵌套包装器引用对象、不支持的累加器、标量与包装器混合范围，以及间接或强转后的被调用函数。 默认四参数 SDK 委托、透明 plus 与 multiplies 对象、累加器移动及转发也均经过校验。 所选 C++17 SDK 循环移动累加器，两个初始化、运算及转发均经过校验；仍拒绝带类型、成员、返回或带副作用的运算表达式。
 

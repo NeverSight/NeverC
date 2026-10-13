@@ -77,7 +77,9 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 六參數 `std::inner_product` 與二元 `std::transform_reduce` 的兩個運算位置，亦支援全部十六種透明運算的可變或 const 變數與參照參數。每個引數必須直接參照變數，並選中經驗證的同型別空 SDK 物件的隱含、平凡且不擲出例外的複製。項運算與歸約運算分別檢查。數值轉換、累加器轉送、包裝器繫結、空區間引數求值與清理保留原有規則。
 
-對已驗證的參考包裝器指標範圍，直接呼叫五參數一元 `std::transform_reduce` 與六參數 `std::transform_inclusive_scan`／`std::transform_exclusive_scan`，支援直接初始化的透明 `std::negate<>`、整數 `std::bit_not<>` 或 `std::logical_not<>`，搭配比較運算 `std::equal_to<>`, `std::not_equal_to<>`, `std::less<>`, `std::less_equal<>`, `std::greater<>`, `std::greater_equal<>`，並保留八種算術歸約。支援 const 包裝器與被參考物件；值可為 bool、最多 64 位元整數、float 或 double，累加器仍使用支援的算術型別，可寫掃描輸出亦支援 bool。取負與位元反相保留提升後的項精度，邏輯非產生 bool。每步以累加器為左側、轉換後的項為右側，依一般共同型別比較，再將 bool 結果轉回累加器。NaN 與正負零的比較保持 SDK 行為。transform_reduce 保留移動後的累加器，掃描保留左值引數，並於寫入更新值或前值前完成轉換、比較與累加器轉換。保留即時別名、輸出末尾、空輸入、引數求值與清理。驗證 SDK 來源、簽章、建構、精確一元及二元運算碼、forward、轉換與完整迴圈。仍拒絕具型別、已儲存或函式回傳的運算物件、不支援的型別與原始碼替換。這三個介面也支援 `std::logical_and<>` / `std::logical_or<>`。每步先求值一元變換，再將累加器轉為 bool，並依短路規則決定是否轉換已算出的項。兩個真值判斷之前均不進行算術共同型別轉換。bool 結果在輸出或下一步之前轉回累加器型別。
+對已驗證的參考包裝器指標範圍，直接呼叫五參數一元 `std::transform_reduce` 與六參數 `std::transform_inclusive_scan`／`std::transform_exclusive_scan`，支援直接初始化的透明 `std::negate<>`、整數 `std::bit_not<>` 或 `std::logical_not<>`，搭配比較運算 `std::equal_to<>`, `std::not_equal_to<>`, `std::less<>`, `std::less_equal<>`, `std::greater<>`, `std::greater_equal<>`，並保留八種算術歸約。支援 const 包裝器與被參考物件；值可為 bool、最多 64 位元整數、float 或 double，累加器仍使用支援的算術型別，可寫掃描輸出亦支援 bool。取負與位元反相保留提升後的項精度，邏輯非產生 bool。每步以累加器為左側、轉換後的項為右側，依一般共同型別比較，再將 bool 結果轉回累加器。NaN 與正負零的比較保持 SDK 行為。transform_reduce 保留移動後的累加器，掃描保留左值引數，並於寫入更新值或前值前完成轉換、比較與累加器轉換。保留即時別名、輸出末尾、空輸入、引數求值與清理。驗證 SDK 來源、簽章、建構、精確一元及二元運算碼、forward、轉換與完整迴圈。仍拒絕具型別、成員、函式回傳或帶副作用的運算式、不支援的型別與原始碼替換。這三個介面也支援 `std::logical_and<>` / `std::logical_or<>`。每步先求值一元變換，再將累加器轉為 bool，並依短路規則決定是否轉換已算出的項。兩個真值判斷之前均不進行算術共同型別轉換。bool 結果在輸出或下一步之前轉回累加器型別。
+
+一元 `std::transform_reduce` 與具初值的 `std::transform_inclusive_scan`／`std::transform_exclusive_scan`，在兩個運算位置亦支援可變或 const 變數與參照參數。歸約保留全部十六種透明運算，變換保留 `std::negate<>`、整數 `std::bit_not<>` 與 `std::logical_not<>`。引數必須直接參照變數，並選中經驗證的同型別空 SDK 物件的隱含、平凡且不擲出例外的複製。項精度、累加器轉送、變換先求值、掃描寫入、即時繫結與引數清理均保持 SDK 順序。
 
 `cpp-core-v2`: `std::rotate`, `std::reference_wrapper<T>`. 直接呼叫支援已檢查包裝器的可變原始指標區間，參照可為受支援的算術值或物件指標，也可為 const。SDK 證明認證迭代器類別分派、平凡移動特徵、左右移位、前向及最大公因數循環、等長區間交換、傳回指標與所選移動適配器。旋轉重排包裝器繫結，保留參照物件值，並傳回原首元素的新位置；空區間或任一半區間為空時保留標準端點語義。引數只求值一次，保留結果使用及暫存物件清理。仍拒絕 volatile 或不支援的參照、原始碼替換及間接或強制轉型的呼叫入口。
 
@@ -269,7 +271,7 @@ Core v2 也支援固定版本的 `<utility>`。純量 `move`、`forward`、`move
 
 直接一元 `std::transform` 現在接受受支援算術引用型別的 `std::reference_wrapper<T>` 原始指標區間、可寫純量輸出區間，以及直接初始化的透明 `std::negate<>`。有限路徑驗證 SDK 入口、negate、轉送、引用轉換與完整迴圈。每輪讀取引用的目前值，執行一元提升與取負，再轉換為輸出元素型別並推進；輸出重疊時保留此順序。空區間傳回原輸出指標，實參副作用與清理保持完整。儲存、傳回、逗號運算式及有型別的運算物件、間接呼叫和原始碼替換仍不屬於此路徑。
 
-一元 `std::transform_reduce` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 可為受支援的內建純量，輸入與 referent 均可為 const。五參數形式要求直接初始化的透明 `std::plus<>` 與 `std::negate<>`，累加器可為不超過 64 位元的受支援整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常的一元提升規則對目前 referent 取負，與移動後的累加器相加，並在每一步將和轉換回累加器型別；空區間傳回初值。保留繫結、referent、運算元單次求值與清理語義，並驗證兩個運算物件的初始化、轉送、轉換及完整 SDK 迴圈。仍拒絕自訂、帶型別、已儲存或動態產生的運算物件及原始碼替換。
+一元 `std::transform_reduce` 支援經驗證 SDK `std::reference_wrapper<T>` 的原始指標區間，referent 可為受支援的內建純量，輸入與 referent 均可為 const。五參數形式支援直接初始化的透明 `std::plus<>` 與 `std::negate<>`，或符合上述複製驗證規則的直接變數參照；累加器可為不超過 64 位元的受支援整數、float 或 double。經驗證的 C++17 SDK 迴圈依通常的一元提升規則對目前 referent 取負，與移動後的累加器相加，並在每一步將和轉換回累加器型別；空區間傳回初值。保留繫結、referent、運算元單次求值與清理語義，並驗證兩個運算物件的初始化、轉送、轉換及完整 SDK 迴圈。仍拒絕自訂、具型別、成員、傳回或帶副作用的運算式及原始碼替換。
 
 明確傳入透明 plus 與 multiplies 的 `std::transform_reduce` 支援兩個經驗證 SDK `std::reference_wrapper<T>` 的原始指標範圍；參照物件為內建純量，可含 const 輸入、const 參照物件與不同參照型別，累加器須為支援的算術型別。它依序讀取目前參照值，對每次乘積與加總執行通常算術轉換，並將每次加總結果轉換回累加器型別；第一範圍為空時傳回初始值。保留包裝器繫結、參照物件、運算元的一次求值與清理。所選 SDK 範本、完整迴圈與兩側包裝器轉換均經過驗證。仍拒絕原始碼替換、自訂運算、列舉或巢狀包裝器參照物件、不支援的累加器、純量與包裝器混合範圍，以及間接或轉型後的被呼叫函式。 預設四參數 SDK 委派、透明 plus 與 multiplies 物件、累加器移動與轉送也均經過驗證。 所選 C++17 SDK 迴圈移動累加器，兩個初始化、運算與轉送均經過驗證；仍拒絕具型別、成員、傳回或帶副作用的運算式。
 

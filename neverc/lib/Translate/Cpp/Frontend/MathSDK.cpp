@@ -36714,6 +36714,15 @@ static bool utilityWrapperTransformReduceUnary(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -36725,8 +36734,9 @@ static bool utilityWrapperTransformReduceUnary(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         (I == 3 ? !ReductionOpcodeFor(Record->getName())
                 : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
@@ -37064,6 +37074,15 @@ static bool utilityWrapperTransformExclusiveScan(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -37075,8 +37094,9 @@ static bool utilityWrapperTransformExclusiveScan(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         (I == 4 ? !ReductionOpcodeFor(Record->getName())
                 : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
@@ -37463,6 +37483,15 @@ static bool utilityWrapperTransformInclusiveScan(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -37474,8 +37503,9 @@ static bool utilityWrapperTransformInclusiveScan(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         (I == 3 ? !ReductionOpcodeFor(Record->getName())
                 : !UnaryOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||

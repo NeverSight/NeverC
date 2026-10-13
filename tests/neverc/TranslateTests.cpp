@@ -236165,26 +236165,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)==std::forward<int>(b)))->decltype(std::forward<int&>(a)==std::forward<int>(b)){return a==b;}}}
 auto selected(P a,P b,int*o){return std::transform_exclusive_scan(a,b,o,0,std::equal_to<>{},std::negate<>{});}
 )cpp"},
-      {"exclusive-stored-equality", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::equal_to<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::negate<>{});}
-)cpp"},
       {"exclusive-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::transform_exclusive_scan(a,b,o,0,std::less<int>{},std::negate<>{});}
-)cpp"},
-      {"exclusive-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::negate<>{});}
 )cpp"},
       {"inclusive-returned-comparison", R"cpp(
 #include <numeric>
@@ -236202,26 +236188,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)==std::forward<int>(b)))->decltype(std::forward<int&>(a)==std::forward<int>(b)){return a==b;}}}
 auto selected(P a,P b,int*o){return std::transform_inclusive_scan(a,b,o,std::equal_to<>{},std::negate<>{},0);}
 )cpp"},
-      {"inclusive-stored-equality", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::equal_to<> op;return std::transform_inclusive_scan(a,b,o,op,std::negate<>{},0);}
-)cpp"},
       {"inclusive-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::transform_inclusive_scan(a,b,o,std::less<int>{},std::negate<>{},0);}
-)cpp"},
-      {"inclusive-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_inclusive_scan(a,b,o,op,std::negate<>{},0);}
 )cpp"},
       {"reduce-returned-comparison", R"cpp(
 #include <numeric>
@@ -236247,26 +236219,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)==std::forward<int>(b)))->decltype(std::forward<int>(a)==std::forward<int>(b)){return a==b;}}}
 auto selected(P a,P b,int*o){return std::transform_reduce(a,b,0,std::equal_to<>{},std::negate<>{});}
 )cpp"},
-      {"reduce-stored-equality", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::equal_to<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
-)cpp"},
       {"reduce-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::transform_reduce(a,b,0,std::less<int>{},std::negate<>{});}
-)cpp"},
-      {"reduce-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -238131,13 +238089,6 @@ return 0;}
 TEST_F(TranslateTest,
        CoreV2WrapperUnaryLogicalReductionsRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"exclusive-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
-)cpp"},
       {"exclusive-returned-logical", R"cpp(
 #include <numeric>
 #include <functional>
@@ -238153,13 +238104,6 @@ auto selected(P a,P b,int*o){return std::transform_exclusive_scan(a,b,o,0,op(),s
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<int>(b)))->decltype(std::forward<int&>(a)&&std::forward<int>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::transform_exclusive_scan(a,b,o,0,std::logical_and<>{},std::negate<>{});}
-)cpp"},
-      {"exclusive-stored-logical", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::negate<>{});}
 )cpp"},
       {"exclusive-typed-logical", R"cpp(
 #include <numeric>
@@ -238191,26 +238135,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<int>(b)))->decltype(std::forward<int&>(a)&&std::forward<int>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::transform_inclusive_scan(a,b,o,std::logical_and<>{},std::negate<>{},0);}
 )cpp"},
-      {"inclusive-stored-logical", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_inclusive_scan(a,b,o,op,std::negate<>{},0);}
-)cpp"},
       {"inclusive-typed-logical", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::transform_inclusive_scan(a,b,o,std::logical_and<int>{},std::negate<>{},0);}
-)cpp"},
-      {"reduce-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
 )cpp"},
       {"reduce-returned-logical", R"cpp(
 #include <numeric>
@@ -238235,13 +238165,6 @@ auto selected(P a,P b){return std::transform_reduce(a,b,0,std::logical_and<>{},s
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)&&std::forward<int>(b)))->decltype(std::forward<int>(a)&&std::forward<int>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::transform_reduce(a,b,0,std::logical_and<>{},std::negate<>{});}
-)cpp"},
-      {"reduce-stored-logical", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
 )cpp"},
       {"reduce-typed-logical", R"cpp(
 #include <numeric>
@@ -241312,13 +241235,6 @@ auto selected(P a,P b,volatile bool*o){return std::transform_exclusive_scan(a,b,
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,long double*o){return std::transform_inclusive_scan(a,b,o,std::logical_and<>{},std::logical_not<>{},9);}
 )cpp"},
-      {"transform-inclusive-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*o){std::logical_and<> op;return std::transform_inclusive_scan(a,b,o,op,std::logical_not<>{},9);}
-)cpp"},
       {"transform-inclusive-volatile-output", R"cpp(
 #include <numeric>
 #include <functional>
@@ -243326,27 +243242,6 @@ auto selected(P a,P b,P c,volatile bool*out){return std::inclusive_scan(a,b,out,
 using W=std::reference_wrapper<int>;using P=W*;
 struct Holder{std::logical_or<>op;};
 auto selected(P a,P b){Holder h;return std::reduce(a,b,0,h.op);}
-)cpp"},
-      {"transform-exclusive-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
-)cpp"},
-      {"transform-inclusive-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}
-)cpp"},
-      {"unary-reduce-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -253329,13 +253224,6 @@ int main(){
 TEST_F(TranslateTest,
        CoreV2WrapperUnaryTransformReduceArithmeticRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"family-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
-)cpp"},
       {"family-returned-bit-or", R"cpp(
 #include <numeric>
 #include <functional>
@@ -253363,24 +253251,11 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::bit_xor<>{},std::negate<>{});}
 )cpp"},
-      {"family-stored-multiplies", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::multiplies<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
-)cpp"},
       {"family-typed-modulus", R"cpp(
 #include <numeric>
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::transform_reduce(a,b,0,std::modulus<int>{},std::negate<>{});}
-)cpp"},
-      {"family-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -253611,13 +253486,6 @@ auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::bit
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::logical_not<int>{});}
 )cpp"},
-      {"stored-bit-not", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::bit_not<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
-)cpp"},
       {"returned-logical-not", R"cpp(
 #include <numeric>
 #include <functional>
@@ -253701,13 +253569,6 @@ auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::log
 using W=std::reference_wrapper<long double>;using P=W*;
 auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::logical_not<>{});}
 )cpp"},
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
-)cpp"},
       {"source-floating-bit-not", R"cpp(
 #include <numeric>
 #include <functional>
@@ -253732,6 +253593,1080 @@ auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},std::bit
     EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsTransformReduceMatrix) {
+  const auto Source = tmpFile("wrapper-unary-stored-transform-reduce-matrix.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-transform-reduce-matrix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{int x[]={-1,-2,-1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?10:13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?10:13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=-1||x[1]!=-2)return 2;}
+{int x[]={-2,-3,-2};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?10:13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?10:13))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=-2||x[1]!=-3)return 2;}
+{int x[]={0,0,0};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?10:12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?10:12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:6))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?9:9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:8))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?8:8))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?0:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+n,9,reduce,term);if(value!=(n==0?9:n==1?1:1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=0||x[1]!=0)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-transform-reduce-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsTransformInclusiveMatrix) {
+  const auto Source = tmpFile("wrapper-unary-stored-transform-inclusive-scan-matrix.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-transform-inclusive-scan-matrix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{int x[]={-1,-2,-1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=10)||(n>1&&out[1]!=12)||(n>2&&out[2]!=13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=10)||(n>1&&out[1]!=12)||(n>2&&out[2]!=13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=6)||(n>2&&out[2]!=5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=6)||(n>2&&out[2]!=5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=18)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=18)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=4)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=4)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=11)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=11)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=10)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=10)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=-1||x[1]!=-2)return 2;}
+{int x[]={-2,-3,-2};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=10)||(n>1&&out[1]!=12)||(n>2&&out[2]!=13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=10)||(n>1&&out[1]!=12)||(n>2&&out[2]!=13))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=6)||(n>2&&out[2]!=5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=6)||(n>2&&out[2]!=5))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=18)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=18)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=4)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=4)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=11)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=11)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=10)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=10)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=-2||x[1]!=-3)return 2;}
+{int x[]={0,0,0};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=10)||(n>1&&out[1]!=11)||(n>2&&out[2]!=12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=10)||(n>1&&out[1]!=11)||(n>2&&out[2]!=12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=7)||(n>2&&out[2]!=6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=7)||(n>2&&out[2]!=6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=9)||(n>2&&out[2]!=8))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=8)||(n>1&&out[1]!=9)||(n>2&&out[2]!=8))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=0)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+n,out,reduce,term,9);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=1)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=0||x[1]!=0)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-transform-inclusive-scan-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsTransformExclusiveMatrix) {
+  const auto Source = tmpFile("wrapper-unary-stored-transform-exclusive-scan-matrix.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-transform-exclusive-scan-matrix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{int x[]={-1,-2,-1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=10)||(n>2&&out[2]!=12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=10)||(n>2&&out[2]!=12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=10))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=10))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=-1||x[1]!=-2)return 2;}
+{int x[]={-2,-3,-2};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=10)||(n>2&&out[2]!=12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=10)||(n>2&&out[2]!=12))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=6))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=18))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=4))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=10))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=10))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::bit_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=-2||x[1]!=-3)return 2;}
+{int x[]={0,0,0};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::plus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=10)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::plus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=10)||(n>2&&out[2]!=11))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::minus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=7))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::minus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=7))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::multiplies<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::multiplies<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::divides<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::divides<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::modulus<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::modulus<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_and<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_and<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_or<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_or<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=9)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::bit_xor<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=9))return 1;}
+)cpp"
+             R"cpp(for(int state=0;state!=3;++state){int n=state==2?3:state;const std::bit_xor<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=8)||(n>2&&out[2]!=9))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::equal_to<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::equal_to<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::not_equal_to<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::not_equal_to<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::less_equal<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::less_equal<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=0)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=0))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::greater_equal<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::greater_equal<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_and<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_and<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;std::logical_or<void>reduce;const std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+for(int state=0;state!=3;++state){int n=state==2?3:state;const std::logical_or<void>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+n,out,9,reduce,term);if(value!=out+n||out[n]!=91||(n>0&&out[0]!=9)||(n>1&&out[1]!=1)||(n>2&&out[2]!=1))return 1;}
+if(&a[0].get()!=x||&a[1].get()!=x+1||x[0]!=0||x[1]!=0)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-transform-exclusive-scan-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsBoolAndPromotions) {
+  const auto Source = tmpFile("wrapper-unary-stored-bool-and-promotions.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-bool-and-promotions.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){for(int state=0;state!=2;++state){bool initial=state!=0;
+{const int x[]={-1,-2,-1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]};
+{const std::plus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::multiplies<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::modulus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::bit_or<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::equal_to<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::not_equal_to<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::less<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::less_equal<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::logical_and<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::plus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::multiplies<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::modulus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_or<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::equal_to<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::not_equal_to<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::less<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::less_equal<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::logical_and<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+)cpp"
+             R"cpp({const std::plus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::multiplies<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::modulus<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_or<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::equal_to<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::not_equal_to<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::less<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::less_equal<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::logical_and<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::negate<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+}
+{const int x[]={-2,-3,-2};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]};
+{const std::plus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::multiplies<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::modulus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::bit_or<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::equal_to<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::not_equal_to<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::less<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::less_equal<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::logical_and<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+)cpp"
+             R"cpp({const std::plus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::multiplies<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::modulus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_or<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::equal_to<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::not_equal_to<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::less<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:true)||out[2]!=(initial?false:false))return 1;}
+{const std::less_equal<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::logical_and<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::plus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::multiplies<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::modulus<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_or<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::equal_to<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::not_equal_to<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+{const std::less<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:true))return 1;}
+)cpp"
+             R"cpp({const std::less_equal<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?false:false))return 1;}
+{const std::logical_and<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::bit_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+}
+{const int x[]={0,0,0};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]};
+{const std::plus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:true))return 1;}
+{const std::multiplies<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::modulus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::bit_or<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:true))return 1;}
+{const std::equal_to<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::not_equal_to<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:true))return 1;}
+{const std::less<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:true))return 1;}
+{const std::less_equal<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::logical_and<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_reduce(a,a+3,initial,reduce,term);if(value!=(initial?true:true))return 1;}
+{const std::plus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:false)||out[2]!=(initial?false:true))return 1;}
+{const std::multiplies<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::modulus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::bit_or<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:false)||out[2]!=(initial?false:true))return 1;}
+{const std::equal_to<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::not_equal_to<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:false)||out[2]!=(initial?false:true))return 1;}
+{const std::less<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:true)||out[1]!=(initial?true:false)||out[2]!=(initial?false:true))return 1;}
+)cpp"
+             R"cpp({const std::less_equal<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?false:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_and<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,initial);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:true)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::plus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::minus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:false))return 1;}
+{const std::multiplies<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::divides<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::modulus<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::bit_and<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::bit_or<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::bit_xor<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:false))return 1;}
+{const std::equal_to<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::not_equal_to<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:false))return 1;}
+{const std::less<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:true)||out[2]!=(initial?true:false))return 1;}
+{const std::less_equal<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+{const std::greater<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?false:false)||out[2]!=(initial?false:false))return 1;}
+{const std::greater_equal<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_and<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:false)||out[2]!=(initial?true:false))return 1;}
+{const std::logical_or<>reduce;std::logical_not<void>term;bool out[4]={false,false,false,true};auto value=std::transform_exclusive_scan(a,a+3,out,initial,reduce,term);if(value!=out+3||out[3]!=true||out[0]!=(initial?true:false)||out[1]!=(initial?true:true)||out[2]!=(initial?true:true))return 1;}
+}
+}
+{signed char x=-3,y=2;std::reference_wrapper<signed char>a[]={x,y,x};const std::plus<>reduce;std::negate<>term;if(std::transform_reduce(a,a+3,0,reduce,term)!=4)return 2;}
+{const unsigned long long high=0x8000000000000000ULL,zero=0;std::reference_wrapper<const unsigned long long>a[]={high,zero,high};const std::logical_or<>reduce;std::logical_not<>term;if(!std::transform_reduce(a,a+3,false,reduce,term))return 3;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-bool-and-promotions" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsFloatingNanZero) {
+  const auto Source = tmpFile("wrapper-unary-stored-floating-nan-zero.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){const double tiny=0x1p-100,minus=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>a[]={tiny,minus,nan};
+{const std::equal_to<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::equal_to<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::not_equal_to<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=1)return 1;}
+{const std::not_equal_to<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=1)return 1;}
+{const std::less<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::less<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::less_equal<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::less_equal<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::greater<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::greater<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::greater_equal<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::greater_equal<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=1)return 1;}
+{const std::logical_and<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::logical_and<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=0)return 1;}
+{const std::logical_or<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=1)return 1;}
+{const std::logical_or<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_reduce(a,a+3,0,reduce,term);if(value!=1)return 1;}
+{double z=0.0;std::reference_wrapper<double>a[]={z,z};std::plus<>reduce;const std::negate<>term;double out[3]={1.0,1.0,9.0};auto value=std::transform_reduce(a,a+2,-0.0,reduce,term);if(value!=0.0||1.0/value>0.0)return 2;}
+{const std::equal_to<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::equal_to<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::not_equal_to<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::not_equal_to<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::less<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::less<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::less_equal<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::less_equal<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater_equal<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater_equal<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::logical_and<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_and<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_or<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::logical_or<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_inclusive_scan(a,a+3,out,reduce,term,0);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{double z=0.0;std::reference_wrapper<double>a[]={z,z};std::plus<>reduce;const std::negate<>term;double out[3]={1.0,1.0,9.0};auto value=std::transform_inclusive_scan(a,a+2,out,reduce,term,-0.0);if(value!=out+2||out[0]!=0.0||out[1]!=0.0||1.0/out[0]>0.0||1.0/out[1]>0.0||out[2]!=9.0)return 2;}
+{const std::equal_to<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::equal_to<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::not_equal_to<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::not_equal_to<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::less<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::less<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+)cpp"
+             R"cpp({const std::less_equal<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{const std::less_equal<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::greater<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::greater<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::greater_equal<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::greater_equal<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::logical_and<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_and<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=91)return 1;}
+{const std::logical_or<>reduce;std::negate<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=91)return 1;}
+{const std::logical_or<>reduce;std::logical_not<>term;int out[4]={91,91,91,91};auto value=std::transform_exclusive_scan(a,a+3,out,0,reduce,term);if(value!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=91)return 1;}
+{double z=0.0;std::reference_wrapper<double>a[]={z,z};std::plus<>reduce;const std::negate<>term;double out[3]={1.0,1.0,9.0};auto value=std::transform_exclusive_scan(a,a+2,out,-0.0,reduce,term);if(value!=out+2||out[0]!=0.0||out[1]!=0.0||1.0/out[0]>0.0||1.0/out[1]>0.0||out[2]!=9.0)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-floating-nan-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsLiveAliases) {
+  const auto Source = tmpFile("wrapper-unary-stored-live-aliases.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-live-aliases.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=10||data[1]!=12||data[2]!=2||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=10||data[2]!=0||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=9||data[1]!=10||data[2]!=0||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=-1||data[3]!=-1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=9||data[1]!=9||data[2]!=9||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=9||data[3]!=9||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=8||data[1]!=10||data[2]!=-14||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=8||data[2]!=-16||data[3]!=-15||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=9||data[1]!=8||data[2]!=-2||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=-1||data[3]!=-1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=9||data[1]!=9||data[2]!=9||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=9||data[3]!=9||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=0||data[1]!=1||data[2]!=0||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=0||data[2]!=0||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=0||data[1]!=1||data[2]!=0||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=0||data[2]!=0||data[3]!=0||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=0||data[1]!=0||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=0||data[2]!=1||data[3]!=0||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=1||data[1]!=1||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::negate<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=1||data[2]!=1||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=1||data[1]!=1||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::bit_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=1||data[2]!=1||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+)cpp"
+             R"cpp({int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+0,reduce,term,9);if(value!=data+3||data[0]!=1||data[1]!=1||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::logical_not<>term;auto value=std::transform_inclusive_scan(a,a+3,data+1,reduce,term,9);if(value!=data+4||data[0]!=-1||data[1]!=1||data[2]!=1||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=10||data[2]!=12||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=10||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=9||data[2]!=10||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=9||data[3]!=-1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=9||data[2]!=9||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::plus<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=9||data[3]!=9||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=8||data[2]!=10||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=8||data[3]!=-1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=9||data[2]!=8||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=9||data[3]!=-1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=9||data[2]!=9||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_xor<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=9||data[3]!=9||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=0||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=0||data[3]!=0||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=0||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=0||data[3]!=0||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=0||data[2]!=0||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::less<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=0||data[3]!=0||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=1||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::negate<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=1||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+)cpp"
+             R"cpp({int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=1||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::bit_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=1||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+0,9,reduce,term);if(value!=data+3||data[0]!=9||data[1]!=1||data[2]!=1||data[3]!=5||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={-1,-2,3,5,7};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_or<>reduce;std::logical_not<>term;auto value=std::transform_exclusive_scan(a,a+3,data+1,9,reduce,term);if(value!=data+4||data[0]!=-1||data[1]!=9||data[2]!=1||data[3]!=1||data[4]!=7)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-live-aliases" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-unary-stored-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Initial{int value;~Initial(){++cleaned;}int get(){++reads;return value;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+int reduction(P a,P b,const std::plus<>&reduce,std::negate<>&term){return std::transform_reduce(a,b,0,reduce,term);}
+int*inclusive(P a,P b,int*out,std::plus<>&reduce,const std::negate<>&term){return std::transform_inclusive_scan(a,b,out,reduce,term,0);}
+int*exclusive(P a,P b,int*out,const std::plus<>&reduce,std::negate<>&term){return std::transform_exclusive_scan(a,b,out,0,reduce,term);}
+int main(){int x=3,y=2;W a[]={x,y,x};int out[4]={11,12,13,14};const std::logical_and<>reduce;std::logical_not<>term;
+if(std::transform_reduce(Input{a}.get(),Input{a}.get(),Initial{17}.get(),reduce,term)!=17)return 1;
+if(std::transform_inclusive_scan(Input{a}.get(),Input{a}.get(),Output{out}.get(),reduce,term,Initial{19}.get())!=out)return 1;
+if(std::transform_exclusive_scan(Input{a}.get(),Input{a}.get(),Output{out}.get(),Initial{21}.get(),reduce,term)!=out)return 1;
+if(reads!=11||cleaned!=11||out[0]!=11||out[1]!=12||out[2]!=13||out[3]!=14)return 2;
+std::plus<>plus;std::negate<>negative;if(reduction(a,a+3,plus,negative)!=-8)return 3;
+if(inclusive(a,a+3,out,plus,negative)!=out+3||out[0]!=-3||out[1]!=-5||out[2]!=-8||out[3]!=14)return 4;
+if(exclusive(a,a+3,out,plus,negative)!=out+3||out[0]!=0||out[1]!=-3||out[2]!=-5||out[3]!=14)return 5;
+return x!=3||y!=2||&a[0].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-unary-stored-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-unary-stored-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::equal_to<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::negate<>{});}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::negate<>{});}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::equal_to<> op;return std::transform_inclusive_scan(a,b,o,op,std::negate<>{},0);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_inclusive_scan(a,b,o,op,std::negate<>{},0);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::equal_to<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+}
+namespace case_6{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
+}
+namespace case_7{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::negate<>{});}
+}
+namespace case_8{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_inclusive_scan(a,b,o,op,std::negate<>{},0);}
+}
+namespace case_9{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
+}
+namespace case_10{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+}
+namespace case_11{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*o){std::logical_and<> op;return std::transform_inclusive_scan(a,b,o,op,std::logical_not<>{},9);}
+}
+namespace case_12{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
+}
+namespace case_13{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}
+}
+namespace case_14{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
+}
+namespace case_15{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
+}
+namespace case_16{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+}
+namespace case_17{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*o){std::logical_and<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+}
+namespace case_18{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::bit_not<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
+}
+namespace case_19{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
+}
+namespace case_20{
+
+using W=std::reference_wrapper<int>;using P=W*;using O=int*;
+auto selected(P a,P b,O o){std::bit_xor<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::bit_not<>{});}
+}
+int main(){int x=3,y=2;std::reference_wrapper<int>a[]={x,y,x};int out[3]={91,91,91};bool flags[3]={true,true,true};
+if(case_0::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_1::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_2::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_3::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_4::selected(a,a+3,out)!=0)return 1;
+if(case_5::selected(a,a+3,out)!=0)return 1;
+if(case_6::selected(a,a+3,a,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_7::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_8::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_9::selected(a,a+3,a,out)!=0)return 1;
+if(case_10::selected(a,a+3,out)!=0)return 1;
+if(case_11::selected(a,a+3,flags)!=flags+3||flags[0]!=false||flags[1]!=false||flags[2]!=false)return 2;
+if(case_12::selected(a,a+3,a,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_13::selected(a,a+3,a,out)!=out+3||out[0]!=0||out[1]!=0||out[2]!=0)return 2;
+if(case_14::selected(a,a+3,a,out)!=0)return 1;
+if(case_15::selected(a,a+3,a,out)!=0)return 1;
+if(case_16::selected(a,a+3)!=0)return 1;
+if(case_17::selected(a,a+3,out)!=0)return 1;
+if(case_18::selected(a,a+3)!=-11)return 1;
+if(case_19::selected(a,a+3,a,out)!=0)return 1;
+if(case_20::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=-4||out[2]!=1)return 2;
+return x!=3||y!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-stored-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryStoredOperationsRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"enum-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+enum E{zero,one};
+using W=std::reference_wrapper<E>;using P=W*;
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0,reduce,term);}
+)cpp"},
+      {"extended-accumulator", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0.0L,reduce,term);}
+)cpp"},
+      {"long-double-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;using P=W*;
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0,reduce,term);}
+)cpp"},
+      {"pointer-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0,reduce,term);}
+)cpp"},
+      {"source-reduction", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int,bool>(int&&a,bool&&b)const noexcept(noexcept(std::forward<int>(a)+std::forward<bool>(b)))->decltype(std::forward<int>(a)+std::forward<bool>(b)){return a+b;}}}
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0,reduce,term);}
+)cpp"},
+      {"source-term", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&a)const noexcept(noexcept(!std::forward<W&>(a)))->decltype(!std::forward<W&>(a)){return false;}}}
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0,reduce,term);}
+)cpp"},
+      {"transform_exclusive_scan-reduction-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::plus<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform_exclusive_scan(a,b,out,0,h.op,std::logical_not<>{});}
+)cpp"},
+      {"transform_exclusive_scan-reduction-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::transform_exclusive_scan(a,b,out,0,op,std::logical_not<>{});}
+)cpp"},
+      {"transform_exclusive_scan-term-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},h.op);}
+)cpp"},
+      {"transform_exclusive_scan-term-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<int>op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}
+)cpp"},
+      {"transform_inclusive_scan-reduction-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::plus<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform_inclusive_scan(a,b,out,h.op,std::logical_not<>{},0);}
+)cpp"},
+      {"transform_inclusive_scan-reduction-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},0);}
+)cpp"},
+      {"transform_inclusive_scan-term-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform_inclusive_scan(a,b,out,std::plus<>{},h.op,0);}
+)cpp"},
+      {"transform_inclusive_scan-term-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<int>op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}
+)cpp"},
+      {"transform_reduce-reduction-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::plus<>op;return std::transform_reduce(a,b,0,(++effects,op),std::logical_not<>{});}
+)cpp"},
+      {"transform_reduce-reduction-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::plus<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform_reduce(a,b,0,h.op,std::logical_not<>{});}
+)cpp"},
+      {"transform_reduce-reduction-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::plus<>make(){return {};}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,make(),std::logical_not<>{});}
+)cpp"},
+      {"transform_reduce-reduction-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::transform_reduce(a,b,0,op,std::logical_not<>{});}
+)cpp"},
+      {"transform_reduce-term-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::transform_reduce(a,b,0,std::plus<>{},(++effects,op));}
+)cpp"},
+      {"transform_reduce-term-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform_reduce(a,b,0,std::plus<>{},h.op);}
+)cpp"},
+      {"transform_reduce-term-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::transform_reduce(a,b,0,std::plus<>{},make());}
+)cpp"},
+      {"transform_reduce-term-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<int>op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
+)cpp"},
+      {"volatile-output", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_inclusive_scan(a,b,out,reduce,term,0);}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,int*out){const std::plus<>reduce;std::logical_not<>term;return std::transform_reduce(a,b,0,reduce,term);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-unary-stored-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
     expectNoArtifacts(Output);
   }
 }
@@ -255026,13 +255961,6 @@ auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::min
 using W=std::reference_wrapper<int>;using P=W*;using O=int*;
 namespace std{inline namespace __1{template<>O transform_exclusive_scan<P,O,int,plus<void>,bit_not<void>>(P,P,O o,int,plus<void>,bit_not<void>){return o;}}}
 auto selected(P a,P b,O o){return std::transform_exclusive_scan(a,b,o,0,std::plus<>{},std::bit_not<>{});}
-)cpp"},
-      {"exclusive-stored-reduction", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;using O=int*;
-auto selected(P a,P b,O o){std::bit_xor<> op;return std::transform_exclusive_scan(a,b,o,0,op,std::bit_not<>{});}
 )cpp"},
       {"exclusive-typed-reduction", R"cpp(
 #include <numeric>
