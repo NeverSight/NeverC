@@ -75620,14 +75620,6 @@ using P=std::unique_ptr<int>;using F=P&(*)(P&);int f(P&p){p.get();static_assert(
 using P=std::unique_ptr<int>;using F=P&(*)(P&)noexcept;int mark(){return 1;}int f(P&p){p.get();static_assert(__is_same(decltype((mark(),static_cast<F>(&Reexport::forward<P&>))(p)),P&));return 0;}
 )cpp",
        "TR0201"},
-      {"missing-owner-comparison-body", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(Reexport::forward<P&>(p),q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"missing-null-comparison-body", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p!=nullptr;static_assert(__is_same(decltype(std::operator==(Reexport::forward<P&>(p),nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"unadmitted-owner", R"cpp(
 using P=std::shared_ptr<int>;int f(P&p){static_assert(__is_same(decltype(Reexport::forward<P&>(p)),P&));return 0;}
 )cpp",
@@ -76842,14 +76834,6 @@ using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype
 using Erased=decltype((sizeof(long double),int()));int f(int&p){int&&r=Reexport::forward<Erased>(p);return r;}
 )cpp",
        "TR0201"},
-      {"missing-owner-comparison-body", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(Reexport::move(p),q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"missing-null-comparison-body", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(std::operator!=(Reexport::forward<P>(p),nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -77050,19 +77034,6 @@ void materialize_default_deleters() {
         Diagnostic);
     expectNoArtifacts(Output);
   };
-  const std::pair<std::string, std::string> Operators[] = {
-      {"equal", "=="}, {"not-equal", "!="}, {"less", "<"},
-      {"greater", ">"}, {"less-equal", "<="}, {"greater-equal", ">="}};
-  const std::pair<std::string, std::string> Operands[] = {
-      {"owners", "p,q"}, {"owner-null", "p,nullptr"},
-      {"null-owner", "nullptr,p"}};
-  for (const auto &[OperatorName, Operator] : Operators)
-    for (const auto &[ArgumentName, Arguments] : Operands)
-      Reject("query-only-" + OperatorName + "-" + ArgumentName,
-             "using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();"
-             "static_assert(__is_same(decltype(Reexport::operator" + Operator +
-                 "(" + Arguments + ")),bool));return 0;}",
-             "TR0201");
   const struct {
     const char *Name, *Source, *Code;
   } Cases[] = {
@@ -77362,83 +77333,353 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2UniquePtrComparisonQueriesWithoutRuntimeBodiesExplicitCalls) {
+  const auto Source = tmpFile("unique-comparison-query-explicit-comparisons.cpp");
+  const auto Output = tmpFile("unique-comparison-query-explicit-comparisons.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);
+extern "C" void free(void*);
+int allocations=0,releases=0;
+void*operator new(Size n){++allocations;return malloc(n);}
+void*operator new[](Size n){++allocations;return malloc(n);}
+void operator delete(void*p)noexcept{++releases;free(p);}
+void operator delete(void*p,Size)noexcept{++releases;free(p);}
+void operator delete[](void*p)noexcept{++releases;free(p);}
+void operator delete[](void*p,Size)noexcept{++releases;free(p);}
+namespace Imported {
+using std::operator==,std::operator!=,std::operator<;
+using std::operator>,std::operator<=,std::operator>=;
+using std::move,std::forward;
+}
+namespace Reexport {
+using Imported::operator==,Imported::operator!=,Imported::operator<;
+using Imported::operator>,Imported::operator<=,Imported::operator>=;
+using Imported::move,Imported::forward;
+}
+namespace query_0 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(p,q)),bool));return 0;}
+}
+namespace query_1 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(p,nullptr)),bool));return 0;}
+}
+namespace query_2 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(nullptr,p)),bool));return 0;}
+}
+namespace query_3 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator!=(p,q)),bool));return 0;}
+}
+namespace query_4 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator!=(p,nullptr)),bool));return 0;}
+}
+namespace query_5 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator!=(nullptr,p)),bool));return 0;}
+}
+namespace query_6 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<(p,q)),bool));return 0;}
+}
+namespace query_7 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<(p,nullptr)),bool));return 0;}
+}
+namespace query_8 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<(nullptr,p)),bool));return 0;}
+}
+namespace query_9 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>(p,q)),bool));return 0;}
+}
+namespace query_10 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>(p,nullptr)),bool));return 0;}
+}
+namespace query_11 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>(nullptr,p)),bool));return 0;}
+}
+namespace query_12 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<=(p,q)),bool));return 0;}
+}
+namespace query_13 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<=(p,nullptr)),bool));return 0;}
+}
+namespace query_14 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<=(nullptr,p)),bool));return 0;}
+}
+namespace query_15 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>=(p,q)),bool));return 0;}
+}
+namespace query_16 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>=(p,nullptr)),bool));return 0;}
+}
+namespace query_17 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>=(nullptr,p)),bool));return 0;}
+}
+int main(){
+  {
+    std::unique_ptr<int>p(new int(3)),q(new int(7));
+    int*left=p.get();int*right=q.get();
+    int before_allocations=allocations,before_releases=releases;
+    if(query_0::f(p,q)!=0)return 1;
+    if(query_1::f(p,q)!=0)return 1;
+    if(query_2::f(p,q)!=0)return 1;
+    if(query_3::f(p,q)!=0)return 1;
+    if(query_4::f(p,q)!=0)return 1;
+    if(query_5::f(p,q)!=0)return 1;
+    if(query_6::f(p,q)!=0)return 1;
+    if(query_7::f(p,q)!=0)return 1;
+    if(query_8::f(p,q)!=0)return 1;
+    if(query_9::f(p,q)!=0)return 1;
+    if(query_10::f(p,q)!=0)return 1;
+    if(query_11::f(p,q)!=0)return 1;
+    if(query_12::f(p,q)!=0)return 1;
+    if(query_13::f(p,q)!=0)return 1;
+    if(query_14::f(p,q)!=0)return 1;
+    if(query_15::f(p,q)!=0)return 1;
+    if(query_16::f(p,q)!=0)return 1;
+    if(query_17::f(p,q)!=0)return 1;
+    if(p.get()!=left||q.get()!=right||*p!=3||*q!=7||
+       allocations!=before_allocations||releases!=before_releases)return 2;
+  }
+  return allocations!=releases;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unique-comparison-query-explicit-comparisons" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrComparisonQueriesWithoutRuntimeBodiesImportedCalls) {
+  const auto Source = tmpFile("unique-comparison-query-imported-comparisons.cpp");
+  const auto Output = tmpFile("unique-comparison-query-imported-comparisons.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);
+extern "C" void free(void*);
+int allocations=0,releases=0;
+void*operator new(Size n){++allocations;return malloc(n);}
+void*operator new[](Size n){++allocations;return malloc(n);}
+void operator delete(void*p)noexcept{++releases;free(p);}
+void operator delete(void*p,Size)noexcept{++releases;free(p);}
+void operator delete[](void*p)noexcept{++releases;free(p);}
+void operator delete[](void*p,Size)noexcept{++releases;free(p);}
+namespace Imported {
+using std::operator==,std::operator!=,std::operator<;
+using std::operator>,std::operator<=,std::operator>=;
+using std::move,std::forward;
+}
+namespace Reexport {
+using Imported::operator==,Imported::operator!=,Imported::operator<;
+using Imported::operator>,Imported::operator<=,Imported::operator>=;
+using Imported::move,Imported::forward;
+}
+namespace query_0 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator==(p,q)),bool));return 0;}
+}
+namespace query_1 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator==(p,nullptr)),bool));return 0;}
+}
+namespace query_2 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator==(nullptr,p)),bool));return 0;}
+}
+namespace query_3 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator!=(p,q)),bool));return 0;}
+}
+namespace query_4 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator!=(p,nullptr)),bool));return 0;}
+}
+namespace query_5 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator!=(nullptr,p)),bool));return 0;}
+}
+namespace query_6 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator<(p,q)),bool));return 0;}
+}
+namespace query_7 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator<(p,nullptr)),bool));return 0;}
+}
+namespace query_8 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator<(nullptr,p)),bool));return 0;}
+}
+namespace query_9 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator>(p,q)),bool));return 0;}
+}
+namespace query_10 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator>(p,nullptr)),bool));return 0;}
+}
+namespace query_11 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator>(nullptr,p)),bool));return 0;}
+}
+namespace query_12 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator<=(p,q)),bool));return 0;}
+}
+namespace query_13 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator<=(p,nullptr)),bool));return 0;}
+}
+namespace query_14 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator<=(nullptr,p)),bool));return 0;}
+}
+namespace query_15 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator>=(p,q)),bool));return 0;}
+}
+namespace query_16 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator>=(p,nullptr)),bool));return 0;}
+}
+namespace query_17 {
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(Reexport::operator>=(nullptr,p)),bool));return 0;}
+}
+int main(){
+  {
+    std::unique_ptr<int>p(new int(3)),q(new int(7));
+    int*left=p.get();int*right=q.get();
+    int before_allocations=allocations,before_releases=releases;
+    if(query_0::f(p,q)!=0)return 1;
+    if(query_1::f(p,q)!=0)return 1;
+    if(query_2::f(p,q)!=0)return 1;
+    if(query_3::f(p,q)!=0)return 1;
+    if(query_4::f(p,q)!=0)return 1;
+    if(query_5::f(p,q)!=0)return 1;
+    if(query_6::f(p,q)!=0)return 1;
+    if(query_7::f(p,q)!=0)return 1;
+    if(query_8::f(p,q)!=0)return 1;
+    if(query_9::f(p,q)!=0)return 1;
+    if(query_10::f(p,q)!=0)return 1;
+    if(query_11::f(p,q)!=0)return 1;
+    if(query_12::f(p,q)!=0)return 1;
+    if(query_13::f(p,q)!=0)return 1;
+    if(query_14::f(p,q)!=0)return 1;
+    if(query_15::f(p,q)!=0)return 1;
+    if(query_16::f(p,q)!=0)return 1;
+    if(query_17::f(p,q)!=0)return 1;
+    if(p.get()!=left||q.get()!=right||*p!=3||*q!=7||
+       allocations!=before_allocations||releases!=before_releases)return 2;
+  }
+  return allocations!=releases;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unique-comparison-query-imported-comparisons" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrComparisonQueriesWithoutRuntimeBodiesOwnerAdapters) {
+  const auto Source = tmpFile("unique-comparison-query-adapted-comparisons.cpp");
+  const auto Output = tmpFile("unique-comparison-query-adapted-comparisons.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);
+extern "C" void free(void*);
+int allocations=0,releases=0;
+void*operator new(Size n){++allocations;return malloc(n);}
+void*operator new[](Size n){++allocations;return malloc(n);}
+void operator delete(void*p)noexcept{++releases;free(p);}
+void operator delete(void*p,Size)noexcept{++releases;free(p);}
+void operator delete[](void*p)noexcept{++releases;free(p);}
+void operator delete[](void*p,Size)noexcept{++releases;free(p);}
+namespace Imported {
+using std::operator==,std::operator!=,std::operator<;
+using std::operator>,std::operator<=,std::operator>=;
+using std::move,std::forward;
+}
+namespace Reexport {
+using Imported::operator==,Imported::operator!=,Imported::operator<;
+using Imported::operator>,Imported::operator<=,Imported::operator>=;
+using Imported::move,Imported::forward;
+}
+namespace query_0 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(Reexport::forward<P&>(p),q)),bool));return 0;}
+}
+namespace query_1 {
+
+using P=std::unique_ptr<int>;int f(P&p){p!=nullptr;static_assert(__is_same(decltype(std::operator==(Reexport::forward<P&>(p),nullptr)),bool));return 0;}
+}
+namespace query_2 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(Reexport::move(p),q)),bool));return 0;}
+}
+namespace query_3 {
+
+using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(std::operator!=(Reexport::forward<P>(p),nullptr)),bool));return 0;}
+}
+namespace query_4 {
+
+using P=std::unique_ptr<int>;int f(P&p,P&q){static_assert(__is_same(decltype(std::move(p)==q),bool));return 0;}
+}
+namespace query_5 {
+
+using P=std::unique_ptr<int>;int f(P&p){p!=nullptr;static_assert(__is_same(decltype(std::move(p)==nullptr),bool));return 0;}
+}
+int main(){
+  {
+    std::unique_ptr<int>p(new int(3)),q(new int(7));
+    int*left=p.get();int*right=q.get();
+    int before_allocations=allocations,before_releases=releases;
+    if(query_0::f(p,q)!=0)return 1;
+    if(query_1::f(p)!=0)return 1;
+    if(query_2::f(p,q)!=0)return 1;
+    if(query_3::f(p)!=0)return 1;
+    if(query_4::f(p,q)!=0)return 1;
+    if(query_5::f(p)!=0)return 1;
+    if(p.get()!=left||q.get()!=right||*p!=3||*q!=7||
+       allocations!=before_allocations||releases!=before_releases)return 2;
+  }
+  return allocations!=releases;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unique-comparison-query-adapted-comparisons" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2MemoryUniquePtrExplicitComparisonQueriesRequireExactSource) {
   const struct {
     const char *Name, *Source, *Code;
   } Cases[] = {
-      {"query-only-equal-owners", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(p,q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-equal-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(p,nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-equal-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(nullptr,p)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-not-equal-owners", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator!=(p,q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-not-equal-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator!=(p,nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-not-equal-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator!=(nullptr,p)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-owners", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<(p,q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<(p,nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<(nullptr,p)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-owners", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>(p,q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>(p,nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>(nullptr,p)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-equal-owners", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<=(p,q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-equal-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<=(p,nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-equal-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator<=(nullptr,p)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-equal-owners", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>=(p,q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-equal-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>=(p,nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-equal-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator>=(nullptr,p)),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"left-owner-expression", R"cpp(
 using P=std::unique_ptr<int>;int f(P&p,P&q){std::operator==(p,q);static_assert(__is_same(decltype(std::operator==((sizeof(long double),p),q)),bool));return 0;}
 )cpp",
@@ -77772,14 +78013,6 @@ namespace std{inline namespace __1{template<>unique_ptr<int>&& move<unique_ptr<i
        "TR0201"},
       {"forward-specialization", R"cpp(
 namespace std{inline namespace __1{template<>unique_ptr<int>&& forward<unique_ptr<int>>(unique_ptr<int>&p)noexcept{return static_cast<unique_ptr<int>&&>(p);}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p==q;static_assert(__is_same(decltype(p==std::forward<P>(q)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"missing-owner-comparison-body", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){static_assert(__is_same(decltype(std::move(p)==q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"missing-null-comparison-body", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p!=nullptr;static_assert(__is_same(decltype(std::move(p)==nullptr),bool));return 0;}
 )cpp",
        "TR0201"},
       {"selected-getter-specialization", R"cpp(

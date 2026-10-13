@@ -514,7 +514,7 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 纯所有者之间的 `unique_ptr` 排序查询现可认证固定 SDK 的精确 `<`、`>`、`<=`、`>=` 签名，无需包装函数、getter、比较器或默认删除器函数体。已检查的单对象、数组、带限定的元素、包装器及自定义删除器保留 `bool` 和 C++17 可能抛出的元数据。原始操作数及显式模板类型仍须检查。查询不读取指针，也不执行操作数；实际排序仍要求完整比较器及全序证明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
-纯 `unique_ptr` 与 `nullptr` 比较查询现可认证两种操作数顺序下固定 SDK 的精确签名，无需包装函数、getter、布尔转换、比较器或默认删除器函数体。相等与不等保留 `bool` 和 `noexcept`；`<`、`>`、`<=`、`>=` 保留 `bool` 和 C++17 可能抛出的元数据。已检查的单对象、数组、带限定的元素、包装器及自定义删除器仍保留原始所有者与空值来源。查询不执行操作数，也不选择删除；实际比较仍要求完整证明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+纯 `unique_ptr` 与 `nullptr` 比较查询现可认证两种操作数顺序下固定 SDK 的精确签名，无需包装函数、getter、布尔转换、比较器或默认删除器函数体。相等与不等保留 `bool` 和 `noexcept`；`<`、`>`、`<=`、`>=` 保留 `bool` 和 C++17 可能抛出的元数据。已检查的单对象、数组、带限定的元素、包装器及自定义删除器仍保留原始所有者与空值来源。查询不执行操作数，也不选择删除；实际比较仍要求完整证明。 这六种比较的签名认证也覆盖直接运算符函数调用、已解析的 using 声明和命名空间重导出，以及通过已支持的 `std::move`／`std::forward` 所有者适配器进行的查询。这些查询不会实例化未使用的比较函数体。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 纯 `default_delete` 调用结果查询现可认证固定 SDK 的 `void`、`noexcept` 签名，无需删除函数体。单对象、带限定的元素、数组、多维数组和已检查的包装器元素仍保留空删除器的一字节布局，以及原始接收者、指针和模板来源。查询不读取指针，不选择生命周期或释放操作，也不执行操作数副作用。实际删除仍要求完整函数体和生命周期证明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 

@@ -514,7 +514,7 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 소유자 간 `unique_ptr` 정렬의 순수 질의는 래퍼, getter, 비교기, 기본 삭제기 본문 없이 고정 SDK의 정확한 `<`, `>`, `<=`, `>=` 시그니처를 인증합니다. 검증된 단일 객체, 배열, 한정 요소, 래퍼, 사용자 삭제기는 `bool`과 C++17의 예외 발생 가능한 메타데이터를 보존합니다. 원래 피연산자와 명시적 템플릿 타입을 검사합니다. 포인터를 읽거나 피연산자를 실행하지 않으며 실제 정렬은 완전한 비교기와 전순서 증명을 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
-`unique_ptr`와 `nullptr`의 순수 비교 질의는 두 피연산자 순서 모두에서 래퍼, getter, 불리언 변환, 비교기, 기본 삭제기 본문 없이 정확한 고정 SDK 시그니처를 인증합니다. 같음과 다름은 `bool`과 `noexcept`를, `<`, `>`, `<=`, `>=`는 `bool`과 C++17의 예외 발생 가능한 메타데이터를 보존합니다. 검증된 단일 객체, 배열, 한정 요소, 래퍼, 사용자 삭제기는 원래 소유자와 null 소스를 유지합니다. 피연산자를 실행하거나 삭제를 선택하지 않으며 실제 비교는 완전한 증명을 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+`unique_ptr`와 `nullptr`의 순수 비교 질의는 두 피연산자 순서 모두에서 래퍼, getter, 불리언 변환, 비교기, 기본 삭제기 본문 없이 정확한 고정 SDK 시그니처를 인증합니다. 같음과 다름은 `bool`과 `noexcept`를, `<`, `>`, `<=`, `>=`는 `bool`과 C++17의 예외 발생 가능한 메타데이터를 보존합니다. 검증된 단일 객체, 배열, 한정 요소, 래퍼, 사용자 삭제기는 원래 소유자와 null 소스를 유지합니다. 피연산자를 실행하거나 삭제를 선택하지 않으며 실제 비교는 완전한 증명을 유지합니다. 여섯 비교의 시그니처 검증은 연산자 함수 직접 호출, 해석된 using 선언과 네임스페이스 재내보내기, 허용된 `std::move`/`std::forward` 소유자 어댑터를 통한 질의도 포함합니다. 이 질의는 사용하지 않는 비교 함수 본문을 인스턴스화하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 `default_delete` 호출 결과의 순수 질의는 삭제 본문 없이 고정 SDK의 `void`와 `noexcept` 시그니처를 인증합니다. 단일 객체, 한정 요소, 배열, 다차원 배열, 검증된 래퍼 요소는 빈 삭제기의 1바이트 레이아웃과 원래 수신자, 포인터, 템플릿 소스를 보존합니다. 포인터를 읽거나 수명 및 해제를 선택하지 않고 피연산자 부작용도 실행하지 않습니다. 실제 삭제는 완전한 본문과 수명 증명을 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 

@@ -5192,18 +5192,19 @@ retain the same pointer equality or flat-address ordering semantics. Borrowed
 owners retain their pointer identity; owning temporaries retain full-expression
 destruction. Null equality remains nonthrowing; owner equality and all ordering
 overloads retain their potentially throwing C++17 signatures.
-Result-source queries on these calls consume the corresponding already
-materialized wrapper, getter/Boolean/comparator and delegate proofs above.
-They check each written argument, template argument, original alias/signature,
-exception specification, selected default and temporary/factory lifetime source
-without evaluating arguments, allocating or transferring ownership. Pure
-`noexcept` queries use the signature source without requiring unused comparison
-bodies. `using std::operator==` and the other five comparison names may import
-the pinned overload sets, including source-owned namespace reexports. Imports
-supply lookup metadata only; each selected call or query retains these same
-source proofs. Independent function addresses, casts or compound postfix
-callees and callable values remain outside this direct-call boundary; source
-replacements and missing result-query bodies remain rejected.
+Result-source and `noexcept` queries on these calls authenticate the exact
+pinned comparison signatures described above, without requiring an evaluated
+comparison or instantiating unused wrapper, getter, Boolean-conversion,
+comparator or delegate bodies. Each written argument, template argument,
+original alias/signature, exception specification, selected default and
+temporary/factory lifetime source remains independently checked. Queries do not
+evaluate arguments, allocate or transfer ownership. Evaluated comparisons keep
+their complete wrapper/getter/Boolean/comparator and delegate proofs.
+`using std::operator==` and the other five comparison names may import the
+pinned overload sets, including source-owned namespace reexports. Imports
+supply lookup metadata only; each selected call or query retains its own source
+proof. Independent function addresses, casts or compound postfix callees,
+callable values, source replacements and unsupported signatures remain rejected.
 
 For owner queries on `std::move` and `std::forward`, the exact pinned
 specializations supply their reference-cast source. Resolved using-declarations
@@ -5228,8 +5229,9 @@ independent adapter function addresses and erased nonthrowing signatures remain
 rejected. Lvalue forwarding queries cover mutable and const owners, scalar and
 array owners (including bounded inner arrays), admitted custom deleters,
 parenthesized direct names, namespace/block imports and nested reference casts.
-Member/getter queries and all six comparison queries keep their independently
-selected SDK bodies and source proofs. Written operand effects, selected
+Member/getter queries retain their separate SDK source proofs. All six
+comparison queries authenticate their exact pinned signatures without requiring
+unused comparison bodies. Written operand effects, selected
 defaults and owning temporary/factory arguments are checked without executing
 them, allocating, moving ownership, invoking deleters or changing the borrowed
 owner. Volatile owners, rvalue arguments forwarded as lvalue results and

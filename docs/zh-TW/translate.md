@@ -514,7 +514,7 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 純擁有者之間的 `unique_ptr` 排序查詢現可驗證固定 SDK 的精確 `<`、`>`、`<=`、`>=` 簽章，不需包裝函式、getter、比較器或預設刪除器主體。已檢查的單一物件、陣列、具限定的元素、包裝器及自訂刪除器保留 `bool` 與 C++17 可能拋出的中繼資料。原始運算元及顯式範本型別仍須檢查。查詢不讀取指標，也不執行運算元；實際排序仍需完整比較器及全序證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
-純 `unique_ptr` 與 `nullptr` 比較查詢現可驗證兩種運算元順序下固定 SDK 的精確簽章，不需包裝函式、getter、布林轉換、比較器或預設刪除器主體。相等與不等保留 `bool` 與 `noexcept`；`<`、`>`、`<=`、`>=` 保留 `bool` 與 C++17 可能拋出的中繼資料。已檢查的單一物件、陣列、具限定的元素、包裝器及自訂刪除器仍保留原始擁有者與空值來源。查詢不執行運算元，也不選擇刪除；實際比較仍需完整證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+純 `unique_ptr` 與 `nullptr` 比較查詢現可驗證兩種運算元順序下固定 SDK 的精確簽章，不需包裝函式、getter、布林轉換、比較器或預設刪除器主體。相等與不等保留 `bool` 與 `noexcept`；`<`、`>`、`<=`、`>=` 保留 `bool` 與 C++17 可能拋出的中繼資料。已檢查的單一物件、陣列、具限定的元素、包裝器及自訂刪除器仍保留原始擁有者與空值來源。查詢不執行運算元，也不選擇刪除；實際比較仍需完整證明。 這六種比較的簽章驗證亦涵蓋直接運算子函式呼叫、已解析的 using 宣告與命名空間重新匯出，以及透過已支援的 `std::move`／`std::forward` 擁有者介面進行的查詢。這些查詢不會實例化未使用的比較函式主體。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 純 `default_delete` 呼叫結果查詢現可驗證固定 SDK 的 `void`、`noexcept` 簽章，不需刪除函式主體。單一物件、具限定的元素、陣列、多維陣列及已檢查的包裝器元素保留空刪除器的一位元組配置，以及原始接收者、指標與範本來源。查詢不讀取指標、不選擇生命週期或釋放操作，也不執行運算元副作用。實際刪除仍需完整主體與生命週期證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
