@@ -276627,6 +276627,333 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperAlgorithmResultTypeQueriesReturnedObjectIterator) {
+  const auto Source = tmpFile("wrapper-algorithm-result-query-returned-object-iterator.cpp");
+  const auto Output = tmpFile("wrapper-algorithm-result-query-returned-object-iterator.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+using R=std::reference_wrapper<int>;
+int use(R*p,const R*cp,std::negate<>&neg,const std::bit_not<>&bit,std::logical_not<>&logical){
+ auto result00=std::for_each(p,p+2,neg);
+ static_assert(__is_same(decltype(result00),std::negate<>));
+ static_assert(__is_trivially_copyable(decltype(result00)));
+ if(result00(3)!=-3||sizeof(result00)!=sizeof(std::negate<>))return 1;
+ auto end00=std::for_each_n(p,2,neg);
+ static_assert(__is_same(decltype(end00),decltype(p)));
+ if(end00!=p+2)return 11;
+ auto empty00=std::for_each_n(p,-2,neg);
+ static_assert(__is_same(decltype(empty00),decltype(p)));
+ if(empty00!=p)return 21;
+ auto result01=std::for_each(cp,cp+2,std::negate<>{});
+ static_assert(__is_same(decltype(result01),std::negate<>));
+ static_assert(__is_trivially_copyable(decltype(result01)));
+ if(result01(3)!=-3||sizeof(result01)!=sizeof(std::negate<>))return 2;
+ auto end01=std::for_each_n(cp,2,std::negate<>{});
+ static_assert(__is_same(decltype(end01),decltype(cp)));
+ if(end01!=cp+2)return 12;
+ auto empty01=std::for_each_n(cp,-2,std::negate<>{});
+ static_assert(__is_same(decltype(empty01),decltype(cp)));
+ if(empty01!=cp)return 22;
+ auto result10=std::for_each(p,p+2,bit);
+ static_assert(__is_same(decltype(result10),std::bit_not<>));
+ static_assert(__is_trivially_copyable(decltype(result10)));
+ if(result10(3)!=~3||sizeof(result10)!=sizeof(std::bit_not<>))return 3;
+ auto end10=std::for_each_n(p,2,bit);
+ static_assert(__is_same(decltype(end10),decltype(p)));
+ if(end10!=p+2)return 13;
+ auto empty10=std::for_each_n(p,-2,bit);
+ static_assert(__is_same(decltype(empty10),decltype(p)));
+ if(empty10!=p)return 23;
+ auto result11=std::for_each(cp,cp+2,std::bit_not<>{});
+ static_assert(__is_same(decltype(result11),std::bit_not<>));
+ static_assert(__is_trivially_copyable(decltype(result11)));
+ if(result11(3)!=~3||sizeof(result11)!=sizeof(std::bit_not<>))return 4;
+ auto end11=std::for_each_n(cp,2,std::bit_not<>{});
+ static_assert(__is_same(decltype(end11),decltype(cp)));
+ if(end11!=cp+2)return 14;
+ auto empty11=std::for_each_n(cp,-2,std::bit_not<>{});
+ static_assert(__is_same(decltype(empty11),decltype(cp)));
+ if(empty11!=cp)return 24;
+ auto result20=std::for_each(p,p+2,logical);
+ static_assert(__is_same(decltype(result20),std::logical_not<>));
+ static_assert(__is_trivially_copyable(decltype(result20)));
+ if(result20(3)!=false||sizeof(result20)!=sizeof(std::logical_not<>))return 5;
+ auto end20=std::for_each_n(p,2,logical);
+ static_assert(__is_same(decltype(end20),decltype(p)));
+ if(end20!=p+2)return 15;
+ auto empty20=std::for_each_n(p,-2,logical);
+ static_assert(__is_same(decltype(empty20),decltype(p)));
+ if(empty20!=p)return 25;
+ auto result21=std::for_each(cp,cp+2,std::logical_not<>{});
+ static_assert(__is_same(decltype(result21),std::logical_not<>));
+ static_assert(__is_trivially_copyable(decltype(result21)));
+ if(result21(3)!=false||sizeof(result21)!=sizeof(std::logical_not<>))return 6;
+ auto end21=std::for_each_n(cp,2,std::logical_not<>{});
+ static_assert(__is_same(decltype(end21),decltype(cp)));
+ if(end21!=cp+2)return 16;
+ auto empty21=std::for_each_n(cp,-2,std::logical_not<>{});
+ static_assert(__is_same(decltype(empty21),decltype(cp)));
+ if(empty21!=cp)return 26;
+ return 0;
+}
+int main(){int x=0,y=3;R a[]={x,y};const R ca[]={x,y};std::negate<> neg;const std::bit_not<> bit;std::logical_not<> logical;
+ int result=use(a,ca,neg,bit,logical);return result?result:(x!=0||y!=3);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-algorithm-result-query-returned-object-iterator" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAlgorithmResultTypeQueriesSearchCountBoolean) {
+  const auto Source = tmpFile("wrapper-algorithm-result-query-search-count-boolean.cpp");
+  const auto Output = tmpFile("wrapper-algorithm-result-query-search-count-boolean.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+int integer(){int x=0,y=3,z=-2;
+ using R=std::reference_wrapper<int>;R a[]={x,y,z};const R ca[]={x,y,z};const std::logical_not<> pred;
+ auto find_if00=std::find_if(a,a+0,pred);static_assert(__is_same(decltype(find_if00),decltype(a+0)));if(find_if00!=a)return 1;
+ auto find_if_not00=std::find_if_not(a,a+0,pred);static_assert(__is_same(decltype(find_if_not00),decltype(a+0)));if(find_if_not00!=a+0)return 1;
+ auto count_if00=std::count_if(a,a+0,pred);static_assert(__is_same(decltype(count_if00),std::ptrdiff_t));if(count_if00!=0)return 1;
+ auto all_of00=std::all_of(a,a+0,pred);static_assert(__is_same(decltype(all_of00),bool));if(all_of00!=true)return 1;
+ auto any_of00=std::any_of(a,a+0,pred);static_assert(__is_same(decltype(any_of00),bool));if(any_of00!=false)return 1;
+ auto none_of00=std::none_of(a,a+0,pred);static_assert(__is_same(decltype(none_of00),bool));if(none_of00!=true)return 1;
+ auto find_if01=std::find_if(a,a+1,pred);static_assert(__is_same(decltype(find_if01),decltype(a+0)));if(find_if01!=a)return 2;
+ auto find_if_not01=std::find_if_not(a,a+1,pred);static_assert(__is_same(decltype(find_if_not01),decltype(a+0)));if(find_if_not01!=a+1)return 2;
+ auto count_if01=std::count_if(a,a+1,pred);static_assert(__is_same(decltype(count_if01),std::ptrdiff_t));if(count_if01!=1)return 2;
+ auto all_of01=std::all_of(a,a+1,pred);static_assert(__is_same(decltype(all_of01),bool));if(all_of01!=true)return 2;
+ auto any_of01=std::any_of(a,a+1,pred);static_assert(__is_same(decltype(any_of01),bool));if(any_of01!=true)return 2;
+ auto none_of01=std::none_of(a,a+1,pred);static_assert(__is_same(decltype(none_of01),bool));if(none_of01!=false)return 2;
+ auto find_if03=std::find_if(a,a+3,pred);static_assert(__is_same(decltype(find_if03),decltype(a+0)));if(find_if03!=a)return 4;
+ auto find_if_not03=std::find_if_not(a,a+3,pred);static_assert(__is_same(decltype(find_if_not03),decltype(a+0)));if(find_if_not03!=a+1)return 4;
+ auto count_if03=std::count_if(a,a+3,pred);static_assert(__is_same(decltype(count_if03),std::ptrdiff_t));if(count_if03!=1)return 4;
+ auto all_of03=std::all_of(a,a+3,pred);static_assert(__is_same(decltype(all_of03),bool));if(all_of03!=false)return 4;
+ auto any_of03=std::any_of(a,a+3,pred);static_assert(__is_same(decltype(any_of03),bool));if(any_of03!=true)return 4;
+ auto none_of03=std::none_of(a,a+3,pred);static_assert(__is_same(decltype(none_of03),bool));if(none_of03!=false)return 4;
+ auto find_if10=std::find_if(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(find_if10),decltype(ca+0)));if(find_if10!=ca)return 11;
+ auto find_if_not10=std::find_if_not(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not10),decltype(ca+0)));if(find_if_not10!=ca+0)return 11;
+ auto count_if10=std::count_if(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(count_if10),std::ptrdiff_t));if(count_if10!=0)return 11;
+ auto all_of10=std::all_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(all_of10),bool));if(all_of10!=true)return 11;
+ auto any_of10=std::any_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(any_of10),bool));if(any_of10!=false)return 11;
+ auto none_of10=std::none_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(none_of10),bool));if(none_of10!=true)return 11;
+ auto find_if11=std::find_if(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(find_if11),decltype(ca+0)));if(find_if11!=ca)return 12;
+ auto find_if_not11=std::find_if_not(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not11),decltype(ca+0)));if(find_if_not11!=ca+1)return 12;
+ auto count_if11=std::count_if(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(count_if11),std::ptrdiff_t));if(count_if11!=1)return 12;
+ auto all_of11=std::all_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(all_of11),bool));if(all_of11!=true)return 12;
+ auto any_of11=std::any_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(any_of11),bool));if(any_of11!=true)return 12;
+ auto none_of11=std::none_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(none_of11),bool));if(none_of11!=false)return 12;
+ auto find_if13=std::find_if(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(find_if13),decltype(ca+0)));if(find_if13!=ca)return 14;
+ auto find_if_not13=std::find_if_not(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not13),decltype(ca+0)));if(find_if_not13!=ca+1)return 14;
+ auto count_if13=std::count_if(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(count_if13),std::ptrdiff_t));if(count_if13!=1)return 14;
+ auto all_of13=std::all_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(all_of13),bool));if(all_of13!=false)return 14;
+ auto any_of13=std::any_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(any_of13),bool));if(any_of13!=true)return 14;
+ auto none_of13=std::none_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(none_of13),bool));if(none_of13!=false)return 14;
+return 0;}
+int boolean(){bool x=false,y=true,z=true;
+ using R=std::reference_wrapper<bool>;R a[]={x,y,z};const R ca[]={x,y,z};const std::logical_not<> pred;
+ auto find_if00=std::find_if(a,a+0,pred);static_assert(__is_same(decltype(find_if00),decltype(a+0)));if(find_if00!=a)return 1;
+ auto find_if_not00=std::find_if_not(a,a+0,pred);static_assert(__is_same(decltype(find_if_not00),decltype(a+0)));if(find_if_not00!=a+0)return 1;
+ auto count_if00=std::count_if(a,a+0,pred);static_assert(__is_same(decltype(count_if00),std::ptrdiff_t));if(count_if00!=0)return 1;
+ auto all_of00=std::all_of(a,a+0,pred);static_assert(__is_same(decltype(all_of00),bool));if(all_of00!=true)return 1;
+ auto any_of00=std::any_of(a,a+0,pred);static_assert(__is_same(decltype(any_of00),bool));if(any_of00!=false)return 1;
+ auto none_of00=std::none_of(a,a+0,pred);static_assert(__is_same(decltype(none_of00),bool));if(none_of00!=true)return 1;
+ auto find_if01=std::find_if(a,a+1,pred);static_assert(__is_same(decltype(find_if01),decltype(a+0)));if(find_if01!=a)return 2;
+ auto find_if_not01=std::find_if_not(a,a+1,pred);static_assert(__is_same(decltype(find_if_not01),decltype(a+0)));if(find_if_not01!=a+1)return 2;
+ auto count_if01=std::count_if(a,a+1,pred);static_assert(__is_same(decltype(count_if01),std::ptrdiff_t));if(count_if01!=1)return 2;
+ auto all_of01=std::all_of(a,a+1,pred);static_assert(__is_same(decltype(all_of01),bool));if(all_of01!=true)return 2;
+ auto any_of01=std::any_of(a,a+1,pred);static_assert(__is_same(decltype(any_of01),bool));if(any_of01!=true)return 2;
+ auto none_of01=std::none_of(a,a+1,pred);static_assert(__is_same(decltype(none_of01),bool));if(none_of01!=false)return 2;
+ auto find_if03=std::find_if(a,a+3,pred);static_assert(__is_same(decltype(find_if03),decltype(a+0)));if(find_if03!=a)return 4;
+ auto find_if_not03=std::find_if_not(a,a+3,pred);static_assert(__is_same(decltype(find_if_not03),decltype(a+0)));if(find_if_not03!=a+1)return 4;
+ auto count_if03=std::count_if(a,a+3,pred);static_assert(__is_same(decltype(count_if03),std::ptrdiff_t));if(count_if03!=1)return 4;
+ auto all_of03=std::all_of(a,a+3,pred);static_assert(__is_same(decltype(all_of03),bool));if(all_of03!=false)return 4;
+ auto any_of03=std::any_of(a,a+3,pred);static_assert(__is_same(decltype(any_of03),bool));if(any_of03!=true)return 4;
+ auto none_of03=std::none_of(a,a+3,pred);static_assert(__is_same(decltype(none_of03),bool));if(none_of03!=false)return 4;
+ auto find_if10=std::find_if(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(find_if10),decltype(ca+0)));if(find_if10!=ca)return 11;
+ auto find_if_not10=std::find_if_not(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not10),decltype(ca+0)));if(find_if_not10!=ca+0)return 11;
+)cpp"
+             R"cpp( auto count_if10=std::count_if(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(count_if10),std::ptrdiff_t));if(count_if10!=0)return 11;
+ auto all_of10=std::all_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(all_of10),bool));if(all_of10!=true)return 11;
+ auto any_of10=std::any_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(any_of10),bool));if(any_of10!=false)return 11;
+ auto none_of10=std::none_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(none_of10),bool));if(none_of10!=true)return 11;
+ auto find_if11=std::find_if(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(find_if11),decltype(ca+0)));if(find_if11!=ca)return 12;
+ auto find_if_not11=std::find_if_not(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not11),decltype(ca+0)));if(find_if_not11!=ca+1)return 12;
+ auto count_if11=std::count_if(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(count_if11),std::ptrdiff_t));if(count_if11!=1)return 12;
+ auto all_of11=std::all_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(all_of11),bool));if(all_of11!=true)return 12;
+ auto any_of11=std::any_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(any_of11),bool));if(any_of11!=true)return 12;
+ auto none_of11=std::none_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(none_of11),bool));if(none_of11!=false)return 12;
+ auto find_if13=std::find_if(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(find_if13),decltype(ca+0)));if(find_if13!=ca)return 14;
+ auto find_if_not13=std::find_if_not(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not13),decltype(ca+0)));if(find_if_not13!=ca+1)return 14;
+ auto count_if13=std::count_if(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(count_if13),std::ptrdiff_t));if(count_if13!=1)return 14;
+ auto all_of13=std::all_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(all_of13),bool));if(all_of13!=false)return 14;
+ auto any_of13=std::any_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(any_of13),bool));if(any_of13!=true)return 14;
+ auto none_of13=std::none_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(none_of13),bool));if(none_of13!=false)return 14;
+return 0;}
+int floating(){double x=-0.0,y=0.0001,z=0.0/0.0;
+ using R=std::reference_wrapper<double>;R a[]={x,y,z};const R ca[]={x,y,z};const std::logical_not<> pred;
+ auto find_if00=std::find_if(a,a+0,pred);static_assert(__is_same(decltype(find_if00),decltype(a+0)));if(find_if00!=a)return 1;
+ auto find_if_not00=std::find_if_not(a,a+0,pred);static_assert(__is_same(decltype(find_if_not00),decltype(a+0)));if(find_if_not00!=a+0)return 1;
+ auto count_if00=std::count_if(a,a+0,pred);static_assert(__is_same(decltype(count_if00),std::ptrdiff_t));if(count_if00!=0)return 1;
+ auto all_of00=std::all_of(a,a+0,pred);static_assert(__is_same(decltype(all_of00),bool));if(all_of00!=true)return 1;
+ auto any_of00=std::any_of(a,a+0,pred);static_assert(__is_same(decltype(any_of00),bool));if(any_of00!=false)return 1;
+ auto none_of00=std::none_of(a,a+0,pred);static_assert(__is_same(decltype(none_of00),bool));if(none_of00!=true)return 1;
+ auto find_if01=std::find_if(a,a+1,pred);static_assert(__is_same(decltype(find_if01),decltype(a+0)));if(find_if01!=a)return 2;
+ auto find_if_not01=std::find_if_not(a,a+1,pred);static_assert(__is_same(decltype(find_if_not01),decltype(a+0)));if(find_if_not01!=a+1)return 2;
+ auto count_if01=std::count_if(a,a+1,pred);static_assert(__is_same(decltype(count_if01),std::ptrdiff_t));if(count_if01!=1)return 2;
+ auto all_of01=std::all_of(a,a+1,pred);static_assert(__is_same(decltype(all_of01),bool));if(all_of01!=true)return 2;
+ auto any_of01=std::any_of(a,a+1,pred);static_assert(__is_same(decltype(any_of01),bool));if(any_of01!=true)return 2;
+ auto none_of01=std::none_of(a,a+1,pred);static_assert(__is_same(decltype(none_of01),bool));if(none_of01!=false)return 2;
+ auto find_if03=std::find_if(a,a+3,pred);static_assert(__is_same(decltype(find_if03),decltype(a+0)));if(find_if03!=a)return 4;
+ auto find_if_not03=std::find_if_not(a,a+3,pred);static_assert(__is_same(decltype(find_if_not03),decltype(a+0)));if(find_if_not03!=a+1)return 4;
+ auto count_if03=std::count_if(a,a+3,pred);static_assert(__is_same(decltype(count_if03),std::ptrdiff_t));if(count_if03!=1)return 4;
+ auto all_of03=std::all_of(a,a+3,pred);static_assert(__is_same(decltype(all_of03),bool));if(all_of03!=false)return 4;
+ auto any_of03=std::any_of(a,a+3,pred);static_assert(__is_same(decltype(any_of03),bool));if(any_of03!=true)return 4;
+ auto none_of03=std::none_of(a,a+3,pred);static_assert(__is_same(decltype(none_of03),bool));if(none_of03!=false)return 4;
+ auto find_if10=std::find_if(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(find_if10),decltype(ca+0)));if(find_if10!=ca)return 11;
+ auto find_if_not10=std::find_if_not(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not10),decltype(ca+0)));if(find_if_not10!=ca+0)return 11;
+ auto count_if10=std::count_if(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(count_if10),std::ptrdiff_t));if(count_if10!=0)return 11;
+ auto all_of10=std::all_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(all_of10),bool));if(all_of10!=true)return 11;
+ auto any_of10=std::any_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(any_of10),bool));if(any_of10!=false)return 11;
+ auto none_of10=std::none_of(ca,ca+0,std::logical_not<>{});static_assert(__is_same(decltype(none_of10),bool));if(none_of10!=true)return 11;
+ auto find_if11=std::find_if(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(find_if11),decltype(ca+0)));if(find_if11!=ca)return 12;
+ auto find_if_not11=std::find_if_not(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not11),decltype(ca+0)));if(find_if_not11!=ca+1)return 12;
+ auto count_if11=std::count_if(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(count_if11),std::ptrdiff_t));if(count_if11!=1)return 12;
+ auto all_of11=std::all_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(all_of11),bool));if(all_of11!=true)return 12;
+ auto any_of11=std::any_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(any_of11),bool));if(any_of11!=true)return 12;
+ auto none_of11=std::none_of(ca,ca+1,std::logical_not<>{});static_assert(__is_same(decltype(none_of11),bool));if(none_of11!=false)return 12;
+ auto find_if13=std::find_if(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(find_if13),decltype(ca+0)));if(find_if13!=ca)return 14;
+ auto find_if_not13=std::find_if_not(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(find_if_not13),decltype(ca+0)));if(find_if_not13!=ca+1)return 14;
+ auto count_if13=std::count_if(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(count_if13),std::ptrdiff_t));if(count_if13!=1)return 14;
+ auto all_of13=std::all_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(all_of13),bool));if(all_of13!=false)return 14;
+ auto any_of13=std::any_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(any_of13),bool));if(any_of13!=true)return 14;
+ auto none_of13=std::none_of(ca,ca+3,std::logical_not<>{});static_assert(__is_same(decltype(none_of13),bool));if(none_of13!=false)return 14;
+return 0;}
+int main(){return integer()||boolean()||floating();}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-algorithm-result-query-search-count-boolean" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAlgorithmResultTypeQueriesEvaluationCleanup) {
+  const auto Source = tmpFile("wrapper-algorithm-result-query-evaluation-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-algorithm-result-query-evaluation-cleanup.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+using R=std::reference_wrapper<int>;
+int reads,cleanup,count_reads;
+struct Token{~Token(){++cleanup;}};
+R* pointer(R*p,Token token=Token{}){++reads;return p;}
+int amount(){++count_reads;return 2;}
+int main(){int x=0,y=3;R a[]={x,y};const std::logical_not<> pred;std::negate<> neg;
+ auto count=std::count_if(pointer(a),pointer(a+2),pred);
+ static_assert(__is_same(decltype(count),std::ptrdiff_t));
+ if(count!=1||reads!=2||cleanup!=2)return 1;
+ auto result=std::for_each(pointer(a),pointer(a+2),neg);
+ static_assert(__is_same(decltype(result),std::negate<>));
+ if(result(3)!=-3||reads!=4||cleanup!=4)return 2;
+ auto end=std::for_each_n(pointer(a),amount(),neg);
+ static_assert(__is_same(decltype(end),R*));
+ if(end!=a+2||reads!=5||cleanup!=5||count_reads!=1)return 3;
+ auto empty=std::none_of(pointer(a),pointer(a),pred);
+ static_assert(__is_same(decltype(empty),bool));
+ if(!empty||reads!=7||cleanup!=7||count_reads!=1||x!=0||y!=3)return 4;
+ return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-algorithm-result-query-evaluation-cleanup" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAlgorithmResultTypeQueriesRetainSource) {
+  struct Case {
+    const char *Name, *Source, *Code;
+  };
+  const Case Cases[] = {
+      {"address-after-checked-call", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+int f(std::reference_wrapper<int>*p){auto b=std::all_of(p,p+1,std::logical_not<>{});using Fn=decltype(&std::all_of<std::reference_wrapper<int>*,std::logical_not<>>);static_assert(__is_pointer(Fn));return b;}
+)cpp", "TR0201"},
+      {"explicit-specialization", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+namespace std{template<> bool all_of<reference_wrapper<int>*,logical_not<>>(reference_wrapper<int>*,reference_wrapper<int>*,logical_not<>){return true;}}int f(std::reference_wrapper<int>*p){auto b=std::all_of(p,p+1,std::logical_not<>{});static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+      {"original-count-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+int f(std::reference_wrapper<int>*p){auto end=std::for_each_n(p,(sizeof(long double),1),std::negate<>{});static_assert(__is_same(decltype(end),decltype(p)));return end!=p;}
+)cpp", "TR0201"},
+      {"original-first-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+int f(std::reference_wrapper<int>*p){auto n=std::count_if((sizeof(long double),p),p+1,std::logical_not<>{});static_assert(__is_same(decltype(n),std::ptrdiff_t));return int(n);}
+)cpp", "TR0201"},
+      {"query-source-callback", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+struct P{bool operator()(int n)const{return n>0;}};int f(int*p){auto live=std::all_of(p,p+1,std::logical_not<>{});static_assert(__is_same(decltype(std::all_of(p,p+1,P{})),bool));return live;}
+)cpp", "TR0203"},
+      {"query-source-signature", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+template<int>using Erased=bool;struct P{Erased<sizeof(long double)> operator()(int n)const{return n>0;}};int f(int*p){auto n=std::count_if(p,p+1,P{});static_assert(__is_same(decltype(n),std::ptrdiff_t));return int(n);}
+)cpp", "TR0201"},
+      {"returned-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+std::negate<> make(){return {};}int f(std::reference_wrapper<int>*p){auto result=std::for_each(p,p+1,make());static_assert(__is_same(decltype(result),std::negate<>));return result(3);}
+)cpp", "TR0201"},
+      {"written-template-source", R"cpp(#include <algorithm>
+#include <functional>
+#include <cstddef>
+template<int>using Erased=std::logical_not<>;int f(std::reference_wrapper<int>*p){auto b=std::all_of<std::reference_wrapper<int>*,Erased<sizeof(long double)>>(p,p+1,std::logical_not<>{});static_assert(__is_same(decltype(b),bool));return b;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-algorithm-result-query-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesOperationMatrix) {
   const auto Source = tmpFile("wrapper-query-stored-predicate-operation-matrix.cpp");
   const auto Output = tmpFile("wrapper-query-stored-predicate-operation-matrix.nc");

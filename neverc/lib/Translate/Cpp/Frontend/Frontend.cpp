@@ -15892,11 +15892,42 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Predicate->SDKOperation ? nullptr : Predicate->Method};
     const auto Operation =
         approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
-    if (!Operation || (*Operation != UtilityOperation::AlgorithmMinElement &&
-                       *Operation != UtilityOperation::AlgorithmMaxElement))
+    if (!Operation)
       return std::nullopt;
     const auto *Function = Call->getDirectCallee();
-    if (!Function || Call->getNumArgs() != 3)
+    if (!Function)
+      return std::nullopt;
+    switch (*Operation) {
+    case UtilityOperation::AlgorithmForEach:
+    case UtilityOperation::AlgorithmForEachN:
+    case UtilityOperation::AlgorithmFindIf:
+    case UtilityOperation::AlgorithmFindIfNot:
+    case UtilityOperation::AlgorithmCountIf:
+    case UtilityOperation::AlgorithmAllOf:
+    case UtilityOperation::AlgorithmAnyOf:
+    case UtilityOperation::AlgorithmNoneOf: {
+      // These wrapper algorithms have a separate complete SDK loop proof.
+      // Attach ownership only to this exact admitted call, retaining its
+      // original arguments, written template types and selected constructions.
+      if (Function->getNumParams() != 3)
+        return std::nullopt;
+      const auto Input = Function->getParamDecl(0)->getType();
+      const auto Object = Function->getParamDecl(2)->getType();
+      if (Input->isPointerType() &&
+          approvedFunctionalReferenceRecord(
+              A.S, A.Sources, Input->getPointeeType()->getAsCXXRecordDecl(),
+              A.Context) &&
+          approvedFunctionalObjectRecord(A.S, A.Sources,
+                                         Object->getAsCXXRecordDecl(), A.Context))
+        return AlgorithmCallableSource{Function, nullptr};
+      return std::nullopt;
+    }
+    default:
+      break;
+    }
+    if ((*Operation != UtilityOperation::AlgorithmMinElement &&
+         *Operation != UtilityOperation::AlgorithmMaxElement) ||
+        Call->getNumArgs() != 3)
       return std::nullopt;
     auto Pointer = Function->getParamDecl(0)->getType();
     if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
