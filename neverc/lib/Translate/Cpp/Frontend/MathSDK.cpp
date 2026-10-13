@@ -34618,6 +34618,15 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
       Object ? Context.getRecordType(Object->Record) : QualType();
   const auto *Args =
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *StoredSource =
+      Construction && Construction->getNumArgs() == 1
+          ? dyn_cast_or_null<DeclRefExpr>(
+                functionalInvokeStrippedExpression(Construction->getArg(0)))
+          : nullptr;
+  const bool StoredInitialization =
+      StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+      approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+          FunctionalObjectConstruction::CopyOrMove;
   const bool DirectInitialization =
       (Construction && !Construction->getNumArgs() &&
        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -34629,9 +34638,9 @@ static bool utilityWrapperInclusiveScan(const State &S, const SourceManager &SM,
        !List->getInitializedFieldInUnion() &&
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
-  if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() ||
-      Record->getTemplateArgs().size() != 1 ||
+  if (!Argument || !Argument->isPRValue() ||
+      (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+      !Record->getIdentifier() || Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
       !utilitySwapSDKFunction(S, SM, Function, "inclusive_scan",
@@ -34872,6 +34881,15 @@ static bool utilityWrapperExclusiveScanArithmetic(
       Object ? Context.getRecordType(Object->Record) : QualType();
   const auto *Args =
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *StoredSource =
+      Construction && Construction->getNumArgs() == 1
+          ? dyn_cast_or_null<DeclRefExpr>(
+                functionalInvokeStrippedExpression(Construction->getArg(0)))
+          : nullptr;
+  const bool StoredInitialization =
+      StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+      approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+          FunctionalObjectConstruction::CopyOrMove;
   const bool DirectInitialization =
       (Construction && !Construction->getNumArgs() &&
        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -34883,9 +34901,9 @@ static bool utilityWrapperExclusiveScanArithmetic(
        !List->getInitializedFieldInUnion() &&
        Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
        !Record->getNumBases());
-  if (!Argument || !Argument->isPRValue() || !DirectInitialization || !Object ||
-      !Record || !Record->getIdentifier() ||
-      Record->getTemplateArgs().size() != 1 ||
+  if (!Argument || !Argument->isPRValue() ||
+      (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+      !Record->getIdentifier() || Record->getTemplateArgs().size() != 1 ||
       Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
       !Record->getTemplateArgs().get(0).getAsType()->isVoidType() ||
       !utilitySwapSDKFunction(S, SM, Function, "exclusive_scan",

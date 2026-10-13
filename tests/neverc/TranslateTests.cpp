@@ -229443,13 +229443,6 @@ using std::exclusive_scan;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,
 TEST_F(TranslateTest,
        CoreV2WrapperExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::exclusive_scan(a,b,out,false,op);}
-)cpp"},
       {"volatile-bool-output", R"cpp(
 #include <numeric>
 #include <functional>
@@ -232715,13 +232708,6 @@ int main(){const int x=7;const std::reference_wrapper<const int> a[]={x,x};int o
 TEST_F(TranslateTest,
        CoreV2WrapperInclusiveScanArithmeticRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inclusive_scan(a,b,out,op,false);}
-)cpp"},
       {"returned-bit-xor", R"cpp(
 #include <numeric>
 #include <functional>
@@ -232754,26 +232740,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::bit_and<>{},0);}
 )cpp"},
-      {"stored-divides", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::divides<> op;return std::inclusive_scan(a,b,o,op,0);}
-)cpp"},
       {"typed-minus", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::minus<int>{},0);}
-)cpp"},
-      {"stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,0);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -233079,26 +233051,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)==std::forward<W&>(b)))->decltype(std::forward<int&>(a)==std::forward<W&>(b)){return a==b.get();}}}
 auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::equal_to<>{});}
 )cpp"},
-      {"exclusive_scan-stored-not-equal", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::exclusive_scan(a,b,o,0,op);}
-)cpp"},
       {"exclusive_scan-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::less<int>{});}
-)cpp"},
-      {"exclusive_scan-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::exclusive_scan(a,b,o,0,op);}
 )cpp"},
       {"inclusive_scan-source-equality", R"cpp(
 #include <numeric>
@@ -233108,26 +233066,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)==std::forward<W&>(b)))->decltype(std::forward<int&>(a)==std::forward<W&>(b)){return a==b.get();}}}
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::equal_to<>{},0);}
 )cpp"},
-      {"inclusive_scan-stored-not-equal", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::not_equal_to<> op;return std::inclusive_scan(a,b,o,op,0);}
-)cpp"},
       {"inclusive_scan-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::less<int>{},0);}
-)cpp"},
-      {"inclusive_scan-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,0);}
 )cpp"},
       {"reduce-source-equality", R"cpp(
 #include <numeric>
@@ -236079,13 +236023,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<W&>(b)))->decltype(std::forward<int&>(a)&&std::forward<W&>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::exclusive_scan(a,b,o,0,std::logical_and<>{});}
 )cpp"},
-      {"exclusive_scan-stored-logical", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::exclusive_scan(a,b,o,0,op);}
-)cpp"},
       {"exclusive_scan-typed-logical", R"cpp(
 #include <numeric>
 #include <functional>
@@ -236108,13 +236045,6 @@ auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,op(),0);}
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<W&>(b)))->decltype(std::forward<int&>(a)&&std::forward<W&>(b)){return a||b;}}}
 auto selected(P a,P b,int*o){return std::inclusive_scan(a,b,o,std::logical_and<>{},0);}
-)cpp"},
-      {"inclusive_scan-stored-logical", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,0);}
 )cpp"},
       {"inclusive_scan-typed-logical", R"cpp(
 #include <numeric>
@@ -238784,26 +238714,12 @@ auto selected(P a,P b,long double*o){return std::exclusive_scan(a,b,o,9,std::log
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,volatile bool*o){return std::exclusive_scan(a,b,o,9,std::logical_and<>{});}
 )cpp"},
-      {"inclusive-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inclusive_scan(a,b,out,op,false);}
-)cpp"},
       {"inclusive-long-double-output", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,long double*o){return std::inclusive_scan(a,b,o,std::logical_and<>{},9);}
-)cpp"},
-      {"inclusive-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*o){std::logical_and<> op;return std::inclusive_scan(a,b,o,op,9);}
 )cpp"},
       {"inclusive-volatile-output", R"cpp(
 #include <numeric>
@@ -240840,20 +240756,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr bool&&move<bool&>(bool&v)noexcept{return static_cast<bool&&>(v);}}}
 auto selected(P a,P b,int*out){return std::exclusive_scan(a,b,out,false);}
 )cpp"},
-      {"exclusive-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::exclusive_scan(a,b,out,false,op);}
-)cpp"},
-      {"inclusive-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inclusive_scan(a,b,out,op,false);}
-)cpp"},
       {"inclusive-volatile-output", R"cpp(
 #include <numeric>
 #include <functional>
@@ -241695,6 +241597,638 @@ auto selected(P a,P b){const std::logical_or<>op;return std::reduce(a,b,0,op);}
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperStoredScanBoolAndPromotions) {
+  const auto Source = tmpFile("stored-scan-bool-and-promotions.cpp");
+  const auto Output = tmpFile("stored-scan-bool-and-promotions.nc");
+  writeFile(
+      Source,
+      R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){const int x=2,y=1;const std::reference_wrapper<const int>a[]={x,y,x};
+{ const std::plus<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::plus<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::minus<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::minus<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::multiplies<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::multiplies<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::divides<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::divides<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::modulus<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::modulus<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_and<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_and<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_or<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::bit_or<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::bit_xor<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::bit_xor<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::less<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::less<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1; }
+{ const std::less_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::less_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::greater<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::logical_and<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::logical_and<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::logical_or<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::logical_or<void> op; bool out[4]={true,true,true,true}; auto end=std::inclusive_scan(a,a+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::plus<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::plus<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::minus<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::minus<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::multiplies<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::multiplies<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::divides<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+)cpp"
+      R"cpp({ const std::divides<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::modulus<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::modulus<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_and<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_and<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_or<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::bit_or<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::bit_xor<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::bit_xor<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::not_equal_to<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::less<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::less<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=false||out[3]!=true)return 1; }
+{ const std::less_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::less_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::greater<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::greater_equal<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::logical_and<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=true)return 1; }
+{ const std::logical_and<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::logical_or<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+{ const std::logical_or<void> op; bool out[4]={true,true,true,true}; auto end=std::exclusive_scan(a,a+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=true)return 1; }
+const unsigned long long high=0x8000000000000000ULL,z=0; const std::reference_wrapper<const unsigned long long>w[]={high,z,high};
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(w,w+3,out,op,false); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=true||out[3]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=true||out[3]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=97)return 1; }
+)cpp"
+      R"cpp({ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(w,w+3,out,false,op); if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+signed char neg=-3,pos=2;std::reference_wrapper<signed char> narrow[]={neg,pos,neg};
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(narrow,narrow+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(narrow,narrow+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(narrow,narrow+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(narrow,narrow+3,out,op,true); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(narrow,narrow+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(narrow,narrow+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(narrow,narrow+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(narrow,narrow+3,out,true,op); if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=97)return 1; }
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("stored-scan-bool-and-promotions" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredScanEmptyEffectsParameters) {
+  const auto Source = tmpFile("stored-scan-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("stored-scan-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0,initials=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+int init(){++initials;return 7;}
+int*inclusive(P a,P b,int*out,const std::plus<>&op){return std::inclusive_scan(a,b,out,op,1);}
+int*exclusive(P a,P b,int*out,std::plus<>&op){return std::exclusive_scan(a,b,out,1,op);}
+int main(){int n=3;W a[]={n,n};int out[3]={11,12,13};const std::logical_or<>logic;std::plus<>plus;
+if(std::inclusive_scan(Input{a}.get(),Input{a}.get(),Output{out}.get(),plus,init())!=out)return 1;
+if(std::inclusive_scan(Input{a}.get(),Input{a}.get(),Output{out}.get(),logic,init())!=out)return 1;
+if(std::exclusive_scan(Input{a}.get(),Input{a}.get(),Output{out}.get(),init(),plus)!=out)return 1;
+if(std::exclusive_scan(Input{a}.get(),Input{a}.get(),Output{out}.get(),init(),logic)!=out)return 1;
+if(reads!=12||cleaned!=12||initials!=4||out[0]!=11||out[1]!=12||out[2]!=13)return 2;
+if(inclusive(a,a+2,out,plus)!=out+2||out[0]!=4||out[1]!=7||out[2]!=13)return 3;
+if(exclusive(a,a+2,out,plus)!=out+2||out[0]!=1||out[1]!=4||out[2]!=13)return 4;
+return n!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("stored-scan-empty-effects-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredScanFloatingNanZero) {
+  const auto Source = tmpFile("stored-scan-floating-nan-zero.cpp");
+  const auto Output = tmpFile("stored-scan-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){const double tiny=0x1p-100,zero=0.0,minus=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>a[]={tiny,zero,tiny};const std::reference_wrapper<const double>b[]={nan,minus,zero};
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,0); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(b,b+3,out,op,0); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{const std::plus<>op; bool out[4]={false,false,false,true};auto end=std::inclusive_scan(a,a+3,out,op,0.0);if(end!=out+3||!out[0]||!out[1]||!out[2]||!out[3])return 3;}
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(b,b+3,out,0,op); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{const std::plus<>op; bool out[4]={false,false,false,true};auto end=std::exclusive_scan(a,a+3,out,0.0,op);if(end!=out+3||out[0]||!out[1]||!out[2]||!out[3])return 3;}
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("stored-scan-floating-nan-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredScanLiveAliases) {
+  const auto Source = tmpFile("stored-scan-live-aliases.cpp");
+  const auto Output = tmpFile("stored-scan-live-aliases.nc");
+  writeFile(
+      Source,
+      R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::inclusive_scan(a,a+3,data+0,op,2);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::inclusive_scan(a,a+3,data+1,op,2);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::inclusive_scan(a,a+3,data+0,op,2);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::inclusive_scan(a,a+3,data+1,op,2);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::inclusive_scan(a,a+3,data+0,op,2);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::inclusive_scan(a,a+3,data+1,op,2);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::inclusive_scan(a,a+3,data+0,op,2);if(end!=data+3||data[0]!=false||data[1]!=false||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::inclusive_scan(a,a+3,data+1,op,2);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::inclusive_scan(a,a+3,data+0,op,2);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::inclusive_scan(a,a+3,data+1,op,2);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::inclusive_scan(a,a+3,data+0,op,2);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::inclusive_scan(a,a+3,data+1,op,2);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::exclusive_scan(a,a+3,data+0,2,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::plus<>op; auto end=std::exclusive_scan(a,a+3,data+1,2,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::exclusive_scan(a,a+3,data+0,2,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::minus<>op; auto end=std::exclusive_scan(a,a+3,data+1,2,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::exclusive_scan(a,a+3,data+0,2,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_xor<>op; auto end=std::exclusive_scan(a,a+3,data+1,2,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::exclusive_scan(a,a+3,data+0,2,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::less<>op; auto end=std::exclusive_scan(a,a+3,data+1,2,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::exclusive_scan(a,a+3,data+0,2,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=false||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_and<>op; auto end=std::exclusive_scan(a,a+3,data+1,2,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+)cpp"
+      R"cpp({ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::exclusive_scan(a,a+3,data+0,2,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+{ bool data[]={true,false,true,true,false};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_or<>op; auto end=std::exclusive_scan(a,a+3,data+1,2,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=false)return 1; if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2; }
+return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("stored-scan-live-aliases" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredScanOperationMatrix) {
+  const auto Source = tmpFile("stored-scan-operation-matrix.cpp");
+  const auto Output = tmpFile("stored-scan-operation-matrix.nc");
+  writeFile(
+      Source,
+      R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){int x=2,y=1; const std::reference_wrapper<int>a[]={x,y,x};
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=11||out[1]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=11||out[1]!=12||out[2]!=14||out[3]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=11||out[1]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=11||out[1]!=12||out[2]!=14||out[3]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=7||out[1]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=7||out[1]!=6||out[2]!=4||out[3]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=7||out[1]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=7||out[1]!=6||out[2]!=4||out[3]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=18||out[1]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=18||out[1]!=18||out[2]!=36||out[3]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=18||out[1]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=18||out[1]!=18||out[2]!=36||out[3]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=4||out[1]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=4||out[1]!=4||out[2]!=2||out[3]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=4||out[1]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=4||out[1]!=4||out[2]!=2||out[3]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=11||out[1]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=11||out[1]!=11||out[2]!=11||out[3]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=11||out[1]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=11||out[1]!=11||out[2]!=11||out[3]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=11||out[1]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=11||out[1]!=10||out[2]!=8||out[3]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=11||out[1]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=11||out[1]!=10||out[2]!=8||out[3]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+)cpp"
+      R"cpp({ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=0||out[1]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+0,out,op,9); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+1,out,op,9); if(end!=out+1||out[0]!=1||out[1]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::inclusive_scan(a,a+3,out,op,9); if(end!=out+3||out[0]!=1||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=11||out[2]!=12||out[3]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::plus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=11||out[2]!=12||out[3]!=97)return 1; }
+)cpp"
+      R"cpp({ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=7||out[2]!=6||out[3]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::minus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=7||out[2]!=6||out[3]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=18||out[2]!=18||out[3]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::multiplies<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=18||out[2]!=18||out[3]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=4||out[2]!=4||out[3]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::divides<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=4||out[2]!=4||out[3]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::modulus<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::bit_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=11||out[2]!=11||out[3]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::bit_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=11||out[2]!=11||out[3]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=11||out[2]!=10||out[3]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::bit_xor<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=11||out[2]!=10||out[3]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=0||out[3]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+)cpp"
+      R"cpp({ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::not_equal_to<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::less<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::less_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=0||out[2]!=1||out[3]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::greater<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=0||out[3]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::greater_equal<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::logical_and<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+0,out,9,op); if(end!=out+0||out[0]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+1,out,9,op); if(end!=out+1||out[0]!=9||out[1]!=97)return 1; }
+{ const std::logical_or<void> op; int out[4]={97,97,97,97}; auto end=std::exclusive_scan(a,a+3,out,9,op); if(end!=out+3||out[0]!=9||out[1]!=1||out[2]!=1||out[3]!=97)return 1; }
+return x!=2||y!=1||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("stored-scan-operation-matrix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperStoredScanRetainsClosedAdmission) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"exclusive_scan-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,0,(++effects,op));}
+)cpp"},
+      {"exclusive_scan-long-double-accumulator", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,0.0L,op);}
+)cpp"},
+      {"exclusive_scan-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<> op;};
+auto selected(P a,P b,int*out){Holder h;return std::exclusive_scan(a,b,out,0,h.op);}
+)cpp"},
+      {"exclusive_scan-pointer-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,bool*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,false,op);}
+)cpp"},
+      {"exclusive_scan-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> make(){return {};}
+auto selected(P a,P b,int*out){return std::exclusive_scan(a,b,out,0,make());}
+)cpp"},
+      {"exclusive_scan-source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<int&,W&>(int&v,W&w)const noexcept(noexcept(std::forward<int&>(v)||std::forward<W&>(w)))->decltype(std::forward<int&>(v)||std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,0,op);}
+)cpp"},
+      {"exclusive_scan-source-wrapper-conversion", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,0,op);}
+)cpp"},
+      {"exclusive_scan-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::exclusive_scan(a,b,out,0,op);}
+)cpp"},
+      {"exclusive_scan-volatile-output", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile int*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,0,op);}
+)cpp"},
+      {"exclusive_scan-volatile-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::exclusive_scan(a,b,out,0,op);}
+)cpp"},
+      {"inclusive_scan-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,(++effects,op),0);}
+)cpp"},
+      {"inclusive_scan-long-double-accumulator", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,op,0.0L);}
+)cpp"},
+      {"inclusive_scan-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<> op;};
+auto selected(P a,P b,int*out){Holder h;return std::inclusive_scan(a,b,out,h.op,0);}
+)cpp"},
+      {"inclusive_scan-pointer-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,bool*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,op,false);}
+)cpp"},
+      {"inclusive_scan-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<> make(){return {};}
+auto selected(P a,P b,int*out){return std::inclusive_scan(a,b,out,make(),0);}
+)cpp"},
+      {"inclusive_scan-source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<int&,W&>(int&v,W&w)const noexcept(noexcept(std::forward<int&>(v)||std::forward<W&>(w)))->decltype(std::forward<int&>(v)||std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,op,0);}
+)cpp"},
+      {"inclusive_scan-source-wrapper-conversion", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,op,0);}
+)cpp"},
+      {"inclusive_scan-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<int>op;return std::inclusive_scan(a,b,out,op,0);}
+)cpp"},
+      {"inclusive_scan-volatile-output", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,volatile int*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,op,0);}
+)cpp"},
+      {"inclusive_scan-volatile-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,int*out){const std::logical_or<>op;return std::inclusive_scan(a,b,out,op,0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("stored-scan-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("stored-scan-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(std::filesystem::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInclusiveScanRuntimeAlias) {
   const auto Source = tmpFile("wrapper-inclusive-scan-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-inclusive-scan-runtime-alias.nc");
@@ -242323,13 +242857,6 @@ using std::inclusive_scan;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,
 TEST_F(TranslateTest,
        CoreV2WrapperInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inclusive_scan(a,b,out,op,false);}
-)cpp"},
       {"volatile-bool-output", R"cpp(
 #include <numeric>
 #include <functional>
@@ -242582,12 +243109,6 @@ int out[3];
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::inclusive_scan(a,a+1,out,std::plus<>{},0);}
-)cpp"},
-      {"stored-operation", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){std::plus<> op;return std::inclusive_scan(a,b,out,op,0);}
 )cpp"},
       {"typed-operation", R"cpp(
 #include <numeric>
@@ -242891,13 +243412,6 @@ int main() {
 TEST_F(TranslateTest,
        CoreV2WrapperExclusiveScanArithmeticFamilyRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"family-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::exclusive_scan(a,b,out,false,op);}
-)cpp"},
       {"family-returned-bit-or", R"cpp(
 #include <numeric>
 #include <functional>
@@ -242928,24 +243442,11 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0,std::bit_xor<>{});}
 )cpp"},
-      {"family-stored-multiplies", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){std::multiplies<> op;return std::exclusive_scan(a,b,out,0,op);}
-)cpp"},
       {"family-typed-modulus", R"cpp(
 #include <numeric>
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;int out[3];
 auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,std::modulus<int>{});}
-)cpp"},
-      {"family-stored-logical-and", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*o){std::logical_and<> op;return std::exclusive_scan(a,b,o,0,op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -243937,13 +244438,6 @@ TEST_F(
     TranslateTest,
     CoreV2WrapperExclusiveScanPlusRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::exclusive_scan(a,b,out,false,op);}
-)cpp"},
       {"volatile-bool-output", R"cpp(
 #include <numeric>
 #include <functional>
@@ -244220,12 +244714,6 @@ int out[3];
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0,std::plus<>{});}
-)cpp"},
-      {"stored-operation", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;int out[3];
-auto selected(P a,P b){std::plus<> op;return std::exclusive_scan(a,b,out,0,op);}
 )cpp"},
       {"typed-operation", R"cpp(
 #include <numeric>

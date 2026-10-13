@@ -407,10 +407,11 @@ verified against the selected C++17 implementation. Source replacements, custom,
 operations, enum or nested-wrapper referents, unsupported accumulator types
 and indirect or casted callees remain rejected.
 
-### Transparent operation variables for wrapper reductions
+### Transparent operation variables for wrapper reductions and scans
 
-Explicit four-argument accumulate and reduce accept directly referenced mutable
-or const transparent SDK operation variables, including parameters. All sixteen
+Explicit four-argument accumulate/reduce and initialized five-argument
+inclusive_scan/exclusive_scan accept directly referenced mutable or const
+transparent SDK operation variables, including parameters. All sixteen
 arithmetic/comparison/logical names keep their scalar and valid arithmetic
 constraints. The SDK argument must use an authenticated implicit trivial nothrow
 copy/move constructor from a direct VarDecl reference of the same checked empty
@@ -418,8 +419,10 @@ SDK object type. Full selected signatures, origins, operation bodies, wrapper
 conversion, forwarding, accumulator moves and loops remain proven. Existing
 precision, bool accumulator assignments, logical short circuiting, empty
 argument evaluation and cleanup retain their order. Typed, returned and member
-expressions remain excluded. Initialized scans retain call-site operation
-construction. Other algorithm object interfaces keep their owning proofs.
+expressions remain excluded. Scans complete the operation and accumulator
+conversion before writing the updated inclusive or saved previous exclusive
+value. Output conversion, live aliases and end pointers preserve SDK order.
+Other algorithm object interfaces keep their owning proofs.
 
 Five O0/O2 fixtures cover all 32 algorithm/operation combinations with mutable,
 const and explicit void variables, bool accumulators/referents, parameter copies,
@@ -429,6 +432,16 @@ boundaries. Twenty-two former stored-variable rejection cases now check member
 expressions across ten regression tables (248 cases). The direct variable read
 and authenticated empty trivial SDK copy have no observable effects, so the
 existing lowering preserves the operation argument's behavior.
+
+Five additional O0/O2 scan fixtures cover all sixteen operations with mutable,
+const and parameter variables; empty, single and multi-element ranges; bool
+accumulators and outputs; wide/narrow promotion; NaN/signed zero; repeated and
+shifted live aliases; endpoints; and temporary cleanup. Twenty native-valid
+rejections cover typed, returned, member and effectful comma expressions, source
+replacements and unsupported domains. Twenty-one former stored-variable
+rejections are superseded by these positive fixtures; nine existing regression
+tables retain 181 independent boundaries. Fixture literals are split below
+MSVC's per-token limit without changing their C++ source bytes.
 
 ### Boolean outputs of unary wrapper transforms
 
@@ -843,8 +856,9 @@ and indirect or casted callees remain rejected.
 Direct `std::exclusive_scan` with transparent `std::plus<>` admits a raw-pointer
 input range of checked SDK `std::reference_wrapper<T>` with built-in scalar
 referents, including const inputs and referents, and a writable raw-pointer
-scalar output range. Its five-argument form requires a directly
-default-constructed transparent `std::plus<>` and supported bool, integer
+scalar output range. Its five-argument form accepts a directly initialized
+transparent `std::plus<>` or a direct mutable/const variable reference of that
+SDK type, with supported bool, integer
 (up to 64 bits), float or double accumulator and output types. It reads current
 referents before each output write, computes each next sum with the usual
 arithmetic conversions and converts it back to the accumulator type, then
@@ -853,7 +867,7 @@ writes nothing and returns the original output pointer; otherwise it returns
 the output end. Outputs may alias referents. Wrapper bindings, single operand
 evaluation and cleanup are preserved. The selected SDK loop, plus construction
 and operation, scalar moves, forwarding and wrapper conversion are verified.
-Source replacements, custom, typed, stored or dynamically produced operations,
+Source replacements, custom, typed or dynamically produced operations,
 enum or nested-wrapper referents, unsupported scalar types and indirect or
 casted callees remain rejected.
 
