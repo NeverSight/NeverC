@@ -277175,6 +277175,495 @@ auto selected(P a,P b,P out){std::logical_not<int>op;return std::replace_if(a,b,
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueStoredPredicatesOperationMatrix) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-stored-predicate-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-stored-predicate-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=2,y=2,z=1,k=3,d=9;using W=std::reference_wrapper<int>;const W a[]={x,y,z,k};for(int variant=0;variant!=3;++variant){int n=variant==2?4:variant;
+{std::equal_to<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:0))return 1;}
+{const std::equal_to<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:0))return 1;}
+{std::not_equal_to<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:1))return 1;}
+{const std::not_equal_to<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:1))return 1;}
+{std::less<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:2))return 1;}
+{const std::less<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:2))return 1;}
+{std::greater<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:1))return 1;}
+{const std::greater<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:1))return 1;}
+{std::less_equal<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:0))return 1;}
+{const std::less_equal<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:0))return 1;}
+{std::greater_equal<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:0))return 1;}
+{const std::greater_equal<>op;auto p=std::adjacent_find(a,a+n,op);if(p!=a+(n<2?n:0))return 1;}
+{W u[]={x,y,z,k};std::equal_to<>op;auto p=std::unique(u,u+n,op);if(p!=u+(n<2?n:3)||&u[0].get()!=&x||(n==4&&(&u[1].get()!=&z||&u[2].get()!=&k)))return 2;}
+{W out[]={d,d,d,d};std::equal_to<>op;auto p=std::unique_copy(a,a+n,out,op);if(p!=out+(n<2?n:3)||&out[3].get()!=&d||(n==0&&&out[0].get()!=&d)||(n>0&&&out[0].get()!=&x)||(n==4&&(&out[1].get()!=&z||&out[2].get()!=&k)))return 3;}
+{W u[]={x,y,z,k};const std::equal_to<>op;auto p=std::unique(u,u+n,op);if(p!=u+(n<2?n:3)||&u[0].get()!=&x||(n==4&&(&u[1].get()!=&z||&u[2].get()!=&k)))return 2;}
+{W out[]={d,d,d,d};const std::equal_to<>op;auto p=std::unique_copy(a,a+n,out,op);if(p!=out+(n<2?n:3)||&out[3].get()!=&d||(n==0&&&out[0].get()!=&d)||(n>0&&&out[0].get()!=&x)||(n==4&&(&out[1].get()!=&z||&out[2].get()!=&k)))return 3;}
+}return x!=2||y!=2||z!=1||k!=3||d!=9||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&k;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-stored-predicate-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueStoredPredicatesLiveBindings) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-stored-predicate-live-bindings.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-stored-predicate-live-bindings.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=2,y=2,z=1,k=3,d=9;using W=std::reference_wrapper<int>;W a[]={x,y,z,k};W out[]={d,d,d,d};const std::equal_to<>op;
+if(std::adjacent_find(a,a+4,op)!=a)return 1;
+y=4;if(std::adjacent_find(a,a+4,op)!=a+4)return 2;
+a[2]=std::ref(y);if(std::adjacent_find(a,a+4,op)!=a+1)return 3;
+if(std::unique_copy(a,a+4,out,op)!=out+3||&out[0].get()!=&x||&out[1].get()!=&y||&out[2].get()!=&k||&out[3].get()!=&d)return 4;
+out[1].get()=5;if(y!=5||a[1].get()!=5||a[2].get()!=5)return 5;
+if(std::unique(a,a+4,op)!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&k)return 6;
+return x!=2||y!=5||z!=1||k!=3||d!=9||&out[1].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-stored-predicate-live-bindings" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueStoredPredicatesBoolFloating) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-stored-predicate-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-stored-predicate-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool f=false,t=true;const double zero=-0.0,positive=0.0,nan=0.0/0.0,tiny=0x1p-100;using B=std::reference_wrapper<const bool>;using D=std::reference_wrapper<const double>;const B a[]={f,f,t,t};const D b[]={zero,positive,nan,tiny};
+{const std::equal_to<>op;if(std::adjacent_find(a,a+4,op)!=a+0||std::adjacent_find(b,b+4,op)!=b+0)return 1;}
+{const std::not_equal_to<>op;if(std::adjacent_find(a,a+4,op)!=a+1||std::adjacent_find(b,b+4,op)!=b+1)return 1;}
+{const std::less<>op;if(std::adjacent_find(a,a+4,op)!=a+1||std::adjacent_find(b,b+4,op)!=b+4)return 1;}
+{const std::greater<>op;if(std::adjacent_find(a,a+4,op)!=a+4||std::adjacent_find(b,b+4,op)!=b+4)return 1;}
+{const std::less_equal<>op;if(std::adjacent_find(a,a+4,op)!=a+0||std::adjacent_find(b,b+4,op)!=b+0)return 1;}
+{const std::greater_equal<>op;if(std::adjacent_find(a,a+4,op)!=a+0||std::adjacent_find(b,b+4,op)!=b+0)return 1;}
+const std::equal_to<>op;B u[]={f,f,t,t};B out[]={t,t,t,t};D v[]={zero,positive,nan,tiny};D dest[]={tiny,tiny,tiny,tiny};
+if(std::unique(u,u+4,op)!=u+2||&u[0].get()!=&f||&u[1].get()!=&t)return 2;
+if(std::unique_copy(a,a+4,out,op)!=out+2||&out[0].get()!=&f||&out[1].get()!=&t||&out[2].get()!=&t)return 3;
+if(std::unique(v,v+4,op)!=v+3||&v[0].get()!=&zero||&v[1].get()!=&nan||&v[2].get()!=&tiny)return 4;
+if(std::unique_copy(b,b+4,dest,op)!=dest+3||&dest[0].get()!=&zero||&dest[1].get()!=&nan||&dest[2].get()!=&tiny||&dest[3].get()!=&tiny)return 5;
+return f||!t||&b[0].get()!=&zero||&b[1].get()!=&positive||&b[2].get()!=&nan||!(tiny>0.0);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-stored-predicate-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueStoredPredicatesEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-stored-predicate-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-stored-predicate-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads,cleaned;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto adjacent_equal_to(P a,P b,const std::equal_to<>&op){return std::adjacent_find(a,b,op);}
+auto adjacent_not_equal_to(P a,P b,const std::not_equal_to<>&op){return std::adjacent_find(a,b,op);}
+auto adjacent_less(P a,P b,const std::less<>&op){return std::adjacent_find(a,b,op);}
+auto adjacent_greater(P a,P b,const std::greater<>&op){return std::adjacent_find(a,b,op);}
+auto adjacent_less_equal(P a,P b,const std::less_equal<>&op){return std::adjacent_find(a,b,op);}
+auto adjacent_greater_equal(P a,P b,const std::greater_equal<>&op){return std::adjacent_find(a,b,op);}
+auto unique(P a,P b,const std::equal_to<>&op){return std::unique(a,b,op);}
+auto copy(P a,P b,P out,const std::equal_to<>&op){return std::unique_copy(a,b,out,op);}
+int main(){int x=2,y=2,z=1,k=3,d=9;W a[]={x,y,z,k};W out[]={d,d,d,d};
+const std::equal_to<>op_equal_to;if(std::adjacent_find(Input{a}.get(),Input{a}.get(),op_equal_to)!=a)return 1;
+const std::not_equal_to<>op_not_equal_to;if(std::adjacent_find(Input{a}.get(),Input{a}.get(),op_not_equal_to)!=a)return 1;
+const std::less<>op_less;if(std::adjacent_find(Input{a}.get(),Input{a}.get(),op_less)!=a)return 1;
+const std::greater<>op_greater;if(std::adjacent_find(Input{a}.get(),Input{a}.get(),op_greater)!=a)return 1;
+const std::less_equal<>op_less_equal;if(std::adjacent_find(Input{a}.get(),Input{a}.get(),op_less_equal)!=a)return 1;
+const std::greater_equal<>op_greater_equal;if(std::adjacent_find(Input{a}.get(),Input{a}.get(),op_greater_equal)!=a)return 1;
+if(std::unique(Input{a}.get(),Input{a}.get(),op_equal_to)!=a)return 2;
+auto empty=std::unique_copy(Input{a}.get(),Input{a}.get(),Input{out}.get(),op_equal_to);
+if(empty!=out||reads!=17||cleaned!=17||&out[0].get()!=&d)return 3;
+if(adjacent_equal_to(a,a+4,op_equal_to)!=a+0)return 4;
+if(adjacent_not_equal_to(a,a+4,op_not_equal_to)!=a+1)return 4;
+if(adjacent_less(a,a+4,op_less)!=a+2)return 4;
+if(adjacent_greater(a,a+4,op_greater)!=a+1)return 4;
+if(adjacent_less_equal(a,a+4,op_less_equal)!=a+0)return 4;
+if(adjacent_greater_equal(a,a+4,op_greater_equal)!=a+0)return 4;
+if(copy(a,a+4,out,op_equal_to)!=out+3||&out[1].get()!=&z)return 5;
+if(unique(a,a+4,op_equal_to)!=a+3||&a[1].get()!=&z||&a[2].get()!=&k)return 6;
+return reads!=17||cleaned!=17||x!=2||y!=2||z!=1||k!=3||d!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-stored-predicate-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueStoredPredicatesFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-adjacent-unique-stored-predicate-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-unique-stored-predicate-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::adjacent_find(a,b,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::not_equal_to<> op;return std::adjacent_find(a,b,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::unique(a,b,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::equal_to<> op;return std::unique_copy(a,b,out,op);}
+}
+int main(){int x=2,y=2,z=1,k=3,d=9;using W=std::reference_wrapper<int>;W a[]={x,y,z,k};W out[]={d,d,d,d};
+if(case_0::selected(a,a+4,out)!=a||case_1::selected(a,a+4,out)!=a+1)return 1;
+if(case_3::selected(a,a+4,out)!=out+3||&out[0].get()!=&x||&out[1].get()!=&z||&out[2].get()!=&k||&out[3].get()!=&d)return 2;
+if(case_2::selected(a,a+4,out)!=a+3||&a[0].get()!=&x||&a[1].get()!=&z||&a[2].get()!=&k)return 3;
+return x!=2||y!=2||z!=1||k!=3||d!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-adjacent-unique-stored-predicate-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentUniqueStoredPredicatesRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"adjacent-equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::equal_to<>op;return std::adjacent_find(a,b,(++effects,op));}
+)cpp"},
+      {"adjacent-equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P out){Holder h;return std::adjacent_find(a,b,h.op);}
+)cpp"},
+      {"adjacent-equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P out){return std::adjacent_find(a,b,make());}
+)cpp"},
+      {"adjacent-equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::equal_to<>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::equal_to<int>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-greater-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::greater<>op;return std::adjacent_find(a,b,(++effects,op));}
+)cpp"},
+      {"adjacent-greater-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::greater<>op;};
+auto selected(P a,P b,P out){Holder h;return std::adjacent_find(a,b,h.op);}
+)cpp"},
+      {"adjacent-greater-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::greater<>make(){return {};}
+auto selected(P a,P b,P out){return std::adjacent_find(a,b,make());}
+)cpp"},
+      {"adjacent-greater-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>std::forward<W&>(b)))->decltype(std::forward<W&>(a)>std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::greater<>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-greater-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::greater<int>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-greater_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::greater_equal<>op;return std::adjacent_find(a,b,(++effects,op));}
+)cpp"},
+      {"adjacent-greater_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::greater_equal<>op;};
+auto selected(P a,P b,P out){Holder h;return std::adjacent_find(a,b,h.op);}
+)cpp"},
+      {"adjacent-greater_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::greater_equal<>make(){return {};}
+auto selected(P a,P b,P out){return std::adjacent_find(a,b,make());}
+)cpp"},
+      {"adjacent-greater_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto greater_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)>=std::forward<W&>(b)))->decltype(std::forward<W&>(a)>=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::greater_equal<>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-greater_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::greater_equal<int>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-less-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::less<>op;return std::adjacent_find(a,b,(++effects,op));}
+)cpp"},
+      {"adjacent-less-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less<>op;};
+auto selected(P a,P b,P out){Holder h;return std::adjacent_find(a,b,h.op);}
+)cpp"},
+      {"adjacent-less-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less<>make(){return {};}
+auto selected(P a,P b,P out){return std::adjacent_find(a,b,make());}
+)cpp"},
+      {"adjacent-less-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<std::forward<W&>(b)))->decltype(std::forward<W&>(a)<std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::less<>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-less-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::less<int>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-less_equal-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::less_equal<>op;return std::adjacent_find(a,b,(++effects,op));}
+)cpp"},
+      {"adjacent-less_equal-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::less_equal<>op;};
+auto selected(P a,P b,P out){Holder h;return std::adjacent_find(a,b,h.op);}
+)cpp"},
+      {"adjacent-less_equal-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::less_equal<>make(){return {};}
+auto selected(P a,P b,P out){return std::adjacent_find(a,b,make());}
+)cpp"},
+      {"adjacent-less_equal-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto less_equal<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)<=std::forward<W&>(b)))->decltype(std::forward<W&>(a)<=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::less_equal<>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-less_equal-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::less_equal<int>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-not_equal_to-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::not_equal_to<>op;return std::adjacent_find(a,b,(++effects,op));}
+)cpp"},
+      {"adjacent-not_equal_to-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::not_equal_to<>op;};
+auto selected(P a,P b,P out){Holder h;return std::adjacent_find(a,b,h.op);}
+)cpp"},
+      {"adjacent-not_equal_to-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::not_equal_to<>make(){return {};}
+auto selected(P a,P b,P out){return std::adjacent_find(a,b,make());}
+)cpp"},
+      {"adjacent-not_equal_to-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto not_equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)!=std::forward<W&>(b)))->decltype(std::forward<W&>(a)!=std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::not_equal_to<>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"adjacent-not_equal_to-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::not_equal_to<int>op;return std::adjacent_find(a,b,op);}
+)cpp"},
+      {"unique-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::equal_to<>op;return std::unique(a,b,(++effects,op));}
+)cpp"},
+      {"unique-copy-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects;
+auto selected(P a,P b,P out){std::equal_to<>op;return std::unique_copy(a,b,out,(++effects,op));}
+)cpp"},
+      {"unique-copy-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P out){Holder h;return std::unique_copy(a,b,out,h.op);}
+)cpp"},
+      {"unique-copy-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P out){return std::unique_copy(a,b,out,make());}
+)cpp"},
+      {"unique-copy-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::equal_to<>op;return std::unique_copy(a,b,out,op);}
+)cpp"},
+      {"unique-copy-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::equal_to<int>op;return std::unique_copy(a,b,out,op);}
+)cpp"},
+      {"unique-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::equal_to<>op;};
+auto selected(P a,P b,P out){Holder h;return std::unique(a,b,h.op);}
+)cpp"},
+      {"unique-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::equal_to<>make(){return {};}
+auto selected(P a,P b,P out){return std::unique(a,b,make());}
+)cpp"},
+      {"unique-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P out){std::equal_to<>op;return std::unique(a,b,op);}
+)cpp"},
+      {"unique-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P out){std::equal_to<int>op;return std::unique(a,b,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-adjacent-unique-stored-predicate-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperFilterResultQueriesFilterBindings) {
   const auto Source = tmpFile("wrapper-algorithm-result-query-filter-bindings.cpp");
   const auto Output = tmpFile("wrapper-algorithm-result-query-filter-bindings.nc");
@@ -300557,12 +301046,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::adjacent_find(a,a+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::adjacent_find(a,b,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -301510,12 +301993,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::adjacent_find(a,a+1,std::not_equal_to<>{});}
 )cpp"},
-      {"stored-not-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::not_equal_to<> op;return std::adjacent_find(a,b,op);}
-)cpp"},
       {"typed-not-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -302430,12 +302907,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::unique(a,a+1,std::equal_to<>{});}
 )cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::unique(a,b,op);}
-)cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -303327,12 +303798,6 @@ auto selected(W*a,W*b,W*out){return std::unique_copy(a,a+1,out,std::equal_to<>{}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,W*out){return std::unique_copy(a,a+1,out,std::equal_to<>{});}
-)cpp"},
-      {"stored-equal-to", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,W*out){std::equal_to<> op;return std::unique_copy(a,b,out,op);}
 )cpp"},
       {"typed-equal-to", R"cpp(
 #include <algorithm>
