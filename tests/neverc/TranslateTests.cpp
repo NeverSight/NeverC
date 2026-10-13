@@ -243595,13 +243595,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto bit_not<void>::operator()<W&>(W&v)const noexcept(noexcept(~std::forward<W&>(v)))->decltype(~std::forward<W&>(v)){return 0;}}}
 auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::bit_not<>{});}
 )cpp"},
-      {"bit_not-stored", R"cpp(
-#include <algorithm>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*out){std::bit_not<>op;return std::transform(a,b,out,op);}
-)cpp"},
       {"bit_not-typed", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -243653,13 +243646,6 @@ auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&v)const noexcept(noexcept(-std::forward<W&>(v)))->decltype(-std::forward<W&>(v)){return 0;}}}
 auto selected(P a,P b,bool*out){return std::transform(a,b,out,std::negate<>{});}
-)cpp"},
-      {"negate-stored", R"cpp(
-#include <algorithm>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,bool*out){std::negate<>op;return std::transform(a,b,out,op);}
 )cpp"},
       {"negate-typed", R"cpp(
 #include <algorithm>
@@ -258208,6 +258194,329 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformStoredOperationsOperationMatrix) {
+  const auto Source = tmpFile("wrapper-unary-transform-stored-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-unary-transform-stored-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=-3,y=0,z=2;const std::reference_wrapper<int>a[]={x,y,z};
+{std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+0,out,op);if(end!=out+0||out[0]!=91)return 1;}
+{std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+1,out,op);if(end!=out+1||out[0]!=3||out[1]!=91)return 1;}
+{std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=3||out[1]!=0||out[2]!=-2||out[3]!=91)return 1;}
+{const std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+0,out,op);if(end!=out+0||out[0]!=91)return 1;}
+{const std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+1,out,op);if(end!=out+1||out[0]!=3||out[1]!=91)return 1;}
+{const std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=3||out[1]!=0||out[2]!=-2||out[3]!=91)return 1;}
+{std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+0,out,op);if(end!=out+0||out[0]!=91)return 1;}
+{std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+1,out,op);if(end!=out+1||out[0]!=2||out[1]!=91)return 1;}
+{std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=2||out[1]!=-1||out[2]!=-3||out[3]!=91)return 1;}
+{const std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+0,out,op);if(end!=out+0||out[0]!=91)return 1;}
+{const std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+1,out,op);if(end!=out+1||out[0]!=2||out[1]!=91)return 1;}
+{const std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=2||out[1]!=-1||out[2]!=-3||out[3]!=91)return 1;}
+{std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+0,out,op);if(end!=out+0||out[0]!=91)return 1;}
+{std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+1,out,op);if(end!=out+1||out[0]!=false||out[1]!=91)return 1;}
+{std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=91)return 1;}
+{const std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+0,out,op);if(end!=out+0||out[0]!=91)return 1;}
+{const std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+1,out,op);if(end!=out+1||out[0]!=false||out[1]!=91)return 1;}
+{const std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=91)return 1;}
+signed char small=-3,positive=2;std::reference_wrapper<signed char>b[]={small,positive,small};
+{const std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(b,b+3,out,op);if(end!=out+3||out[0]!=3||out[1]!=-2||out[2]!=3||out[3]!=91)return 1;}
+{const std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(b,b+3,out,op);if(end!=out+3||out[0]!=2||out[1]!=-3||out[2]!=2||out[3]!=91)return 1;}
+{const std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(b,b+3,out,op);if(end!=out+3||out[0]!=false||out[1]!=false||out[2]!=false||out[3]!=91)return 1;}
+return x!=-3||y!=0||z!=2||&a[0].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-transform-stored-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformStoredOperationsBoolFloating) {
+  const auto Source = tmpFile("wrapper-unary-transform-stored-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-unary-transform-stored-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool t=true,f=false;const std::reference_wrapper<const bool>a[]={t,f,t};
+{const std::negate<void>op;bool out[4]={false,false,false,false};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=false)return 1;}
+{const std::negate<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=-1||out[1]!=0||out[2]!=-1||out[3]!=91)return 1;}
+{const std::bit_not<void>op;bool out[4]={false,false,false,false};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=true||out[1]!=true||out[2]!=true||out[3]!=false)return 1;}
+{const std::bit_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=-2||out[1]!=-1||out[2]!=-2||out[3]!=91)return 1;}
+{const std::logical_not<void>op;bool out[4]={false,false,false,false};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=false)return 1;}
+{const std::logical_not<void>op;int out[4]={91,91,91,91};auto end=std::transform(a,a+3,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=91)return 1;}
+const double tiny=0x1p-100,zero=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>b[]={tiny,zero,nan};
+{const std::negate<void>op;bool out[4]={true,true,true,true};auto end=std::transform(b,b+3,out,op);if(end!=out+3||out[0]!=true||out[1]!=false||out[2]!=true||out[3]!=true)return 1;}
+{const std::logical_not<void>op;bool out[4]={true,true,true,true};auto end=std::transform(b,b+3,out,op);if(end!=out+3||out[0]!=false||out[1]!=true||out[2]!=false||out[3]!=true)return 1;}
+{const std::negate<>op;double out[4]={1.0,1.0,1.0,91.0};auto end=std::transform(b,b+3,out,op);if(end!=out+3||out[0]!=-tiny||out[1]!=0.0||1.0/out[1]<0.0||out[2]==out[2]||out[3]!=91.0)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-transform-stored-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformStoredOperationsLiveAliases) {
+  const auto Source = tmpFile("wrapper-unary-transform-stored-live-aliases.cpp");
+  const auto Output = tmpFile("wrapper-unary-transform-stored-live-aliases.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){
+{int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::negate<>op;auto end=std::transform(a,a+3,data+0,op);if(end!=data+3||data[0]!=-3||data[1]!=-2||data[2]!=3||data[3]!=7||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::negate<>op;auto end=std::transform(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=-3||data[2]!=3||data[3]!=-3||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_not<>op;auto end=std::transform(a,a+3,data+0,op);if(end!=data+3||data[0]!=-4||data[1]!=-3||data[2]!=3||data[3]!=7||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::bit_not<>op;auto end=std::transform(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=-4||data[2]!=3||data[3]!=-4||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_not<>op;auto end=std::transform(a,a+3,data+0,op);if(end!=data+3||data[0]!=0||data[1]!=0||data[2]!=1||data[3]!=7||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{int data[]={3,2,5,7,11};std::reference_wrapper<int>a[]={data[0],data[1],data[0]};const std::logical_not<>op;auto end=std::transform(a,a+3,data+1,op);if(end!=data+4||data[0]!=3||data[1]!=0||data[2]!=1||data[3]!=0||data[4]!=11)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{bool data[]={true,false,true,false,true};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::negate<>op;auto end=std::transform(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{bool data[]={true,false,true,false,true};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::negate<>op;auto end=std::transform(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{bool data[]={true,false,true,false,true};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_not<>op;auto end=std::transform(a,a+3,data+0,op);if(end!=data+3||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{bool data[]={true,false,true,false,true};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::bit_not<>op;auto end=std::transform(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=true||data[2]!=true||data[3]!=true||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{bool data[]={true,false,true,false,true};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_not<>op;auto end=std::transform(a,a+3,data+0,op);if(end!=data+3||data[0]!=false||data[1]!=true||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+{bool data[]={true,false,true,false,true};std::reference_wrapper<bool>a[]={data[0],data[1],data[0]};const std::logical_not<>op;auto end=std::transform(a,a+3,data+1,op);if(end!=data+4||data[0]!=true||data[1]!=false||data[2]!=true||data[3]!=false||data[4]!=true)return 1;if(&a[0].get()!=data||&a[1].get()!=data+1||&a[2].get()!=data)return 2;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-transform-stored-live-aliases" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformStoredOperationsEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-unary-transform-stored-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-unary-transform-stored-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Output{int*p;~Output(){++cleaned;}int*get(){++reads;return p;}};
+int*negative(P a,P b,int*out,const std::negate<>&op){return std::transform(a,b,out,op);}
+int*complement(P a,P b,int*out,std::bit_not<>&op){return std::transform(a,b,out,op);}
+int*logical(P a,P b,int*out,const std::logical_not<>&op){return std::transform(a,b,out,op);}
+int main(){int x=3,y=0;W a[]={x,y,x};int out[4]={11,12,13,14};std::negate<>neg;std::bit_not<>bits;const std::logical_not<>not_value;
+if(std::transform(Input{a}.get(),Input{a}.get(),Output{out}.get(),neg)!=out)return 1;
+if(std::transform(Input{a}.get(),Input{a}.get(),Output{out}.get(),bits)!=out)return 1;
+if(std::transform(Input{a}.get(),Input{a}.get(),Output{out}.get(),not_value)!=out)return 1;
+if(reads!=9||cleaned!=9||out[0]!=11||out[1]!=12||out[2]!=13||out[3]!=14)return 2;
+if(negative(a,a+3,out,neg)!=out+3||out[0]!=-3||out[1]!=0||out[2]!=-3)return 3;
+if(complement(a,a+3,out,bits)!=out+3||out[0]!=-4||out[1]!=-1||out[2]!=-4)return 4;
+if(logical(a,a+3,out,not_value)!=out+3||out[0]!=0||out[1]!=1||out[2]!=0||out[3]!=14)return 5;return x!=3||y!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-transform-stored-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformStoredOperationsFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-unary-transform-stored-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-unary-transform-stored-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){std::bit_not<>op;return std::transform(a,b,out,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,bool*out){std::negate<>op;return std::transform(a,b,out,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<> op;return std::transform(a,b,out,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_not<> op;return std::transform(a,b,out,op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::transform(a,b,out,op);}
+}
+int main(){int x=3,y=0;std::reference_wrapper<int>a[]={x,y,x};int out[3]={91,91,91};bool flags[3]={false,false,false};
+if(case_0::selected(a,a+3,flags)!=flags+3||flags[0]!=true||flags[1]!=true||flags[2]!=true)return 1;
+if(case_1::selected(a,a+3,flags)!=flags+3||flags[0]!=true||flags[1]!=false||flags[2]!=true)return 1;
+if(case_2::selected(a,a+3,out)!=out+3||out[0]!=-3||out[1]!=0||out[2]!=-3)return 1;
+if(case_3::selected(a,a+3,out)!=out+3||out[0]!=-4||out[1]!=-1||out[2]!=-4)return 1;
+if(case_4::selected(a,a+3,out)!=out+3||out[0]!=0||out[1]!=1||out[2]!=0)return 2;
+return x!=3||y!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-unary-transform-stored-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUnaryTransformStoredOperationsRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"bit_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::bit_not<>op;return std::transform(a,b,out,(++effects,op));}
+)cpp"},
+      {"bit_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::bit_not<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,out,h.op);}
+)cpp"},
+      {"bit_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::bit_not<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,out,make());}
+)cpp"},
+      {"bit_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto bit_not<void>::operator()<W&>(W&w)const noexcept(noexcept(~std::forward<W&>(w)))->decltype(~std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b,int*out){std::bit_not<>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"bit_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::bit_not<int>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"logical_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::logical_not<>op;return std::transform(a,b,out,(++effects,op));}
+)cpp"},
+      {"logical_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,out,h.op);}
+)cpp"},
+      {"logical_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,out,make());}
+)cpp"},
+      {"logical_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b,int*out){std::logical_not<>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"logical_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<int>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"negate-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,int*out){std::negate<>op;return std::transform(a,b,out,(++effects,op));}
+)cpp"},
+      {"negate-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::negate<>op;};
+auto selected(P a,P b,int*out){Holder h;return std::transform(a,b,out,h.op);}
+)cpp"},
+      {"negate-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::negate<>make(){return {};}
+auto selected(P a,P b,int*out){return std::transform(a,b,out,make());}
+)cpp"},
+      {"negate-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto negate<void>::operator()<W&>(W&w)const noexcept(noexcept(-std::forward<W&>(w)))->decltype(-std::forward<W&>(w)){return 0;}}}
+auto selected(P a,P b,int*out){std::negate<>op;return std::transform(a,b,out,op);}
+)cpp"},
+      {"negate-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<int>op;return std::transform(a,b,out,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-unary-transform-stored-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperTransformNegateRuntimeAlias) {
   const auto Source = tmpFile("wrapper-transform-negate-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-transform-negate-runtime-alias.nc");
@@ -259040,12 +259349,6 @@ auto selected(W*a,W*b,int*out){return std::transform(a,a+1,out,std::negate<>{});
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,out,std::negate<>{});}
-)cpp"},
-      {"stored-negate", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::negate<> op;return std::transform(a,b,out,op);}
 )cpp"},
       {"typed-negate", R"cpp(
 #include <algorithm>
@@ -259935,12 +260238,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,out,std::bit_not<>{});}
 )cpp"},
-      {"stored-bit-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::bit_not<> op;return std::transform(a,b,out,op);}
-)cpp"},
       {"typed-bit-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -260821,12 +261118,6 @@ auto selected(W*a,W*b,int*out){return std::transform(a,a+1,out,std::logical_not<
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::transform(a,a+1,out,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::transform(a,b,out,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
