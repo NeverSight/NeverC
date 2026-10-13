@@ -228575,6 +228575,1563 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsInnerProductMatrix) {
+  const auto Source = tmpFile("wrapper-binary-stored-inner-product-matrix.cpp");
+  const auto Output = tmpFile("wrapper-binary-stored-inner-product-matrix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=21)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=-3)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=576)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=13)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=13)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::plus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={5,7,9};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=24)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=-6)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1080)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=14)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::minus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=19)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=-1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=324)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=13)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::not_equal_to<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::multiplies<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=16)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=2)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=81)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::divides<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={5,7,9};const int y[]={2,4,5};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=17)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=108)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::modulus<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,7,3};const int y[]={2,3,2};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=16)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=2)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::multiplies<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=108)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=10)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::bit_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=17)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=162)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::bit_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,1,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=16)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=2)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=108)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=10)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::greater<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::bit_xor<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={1,2,3};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={2,3,4};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::not_equal_to<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={1,2,3};const int y[]={2,3,4};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::bit_and<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::less<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={1,2,3};const int y[]={2,3,4};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::less_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={2,3,4};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::logical_or<>reduce;std::greater<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={2,3,4};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::greater_equal<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::logical_and<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({std::bit_xor<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::logical_or<>term; if(std::inner_product(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-stored-inner-product-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsTransformReduceMatrix) {
+  const auto Source = tmpFile("wrapper-binary-stored-transform-reduce-matrix.cpp");
+  const auto Output = tmpFile("wrapper-binary-stored-transform-reduce-matrix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=21)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=-3)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=576)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=13)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=13)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::plus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={5,7,9};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=24)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=-6)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1080)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=14)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::minus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=19)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=-1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=324)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=13)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::not_equal_to<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::multiplies<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=16)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=2)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=81)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::divides<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={5,7,9};const int y[]={2,4,5};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=17)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=108)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=15)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::modulus<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=5||x[1]!=7||x[2]!=9||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,7,3};const int y[]={2,3,2};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=16)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=2)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::multiplies<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=108)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=10)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::bit_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=7||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=17)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=162)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::bit_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,1,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=16)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=2)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=108)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=11)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=10)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::greater<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::bit_xor<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={1,2,3};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={2,3,4};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::not_equal_to<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={1,2,3};const int y[]={2,3,4};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({std::modulus<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::less<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={1,2,3};const int y[]={2,3,4};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::less_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=1||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={2,3,4};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({const std::greater_equal<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::greater<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={2,3,4};const int y[]={1,2,3};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_and<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::greater_equal<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=2||x[1]!=3||x[2]!=4||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{std::plus<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::minus<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::multiplies<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::divides<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::modulus<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_and<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_or<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_xor<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::equal_to<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::not_equal_to<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less_equal<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater_equal<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_and<>reduce;const std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_or<>reduce;std::logical_and<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+{int x[]={3,2,3};const int y[]={1,2,1};const std::reference_wrapper<int>a[]={x[0],x[1],x[2]};std::reference_wrapper<const int>b[]={y[0],y[1],y[2]};
+{const std::plus<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=12)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::minus<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=6)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::multiplies<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::divides<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::modulus<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+)cpp"
+             R"cpp({std::bit_and<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::bit_or<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=9)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::bit_xor<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=8)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::equal_to<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::not_equal_to<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::less<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::less_equal<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::greater<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=0)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::greater_equal<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{const std::logical_and<>reduce;std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+{std::logical_or<>reduce;const std::logical_or<>term; if(std::transform_reduce(a,a+3,b,9,reduce,term)!=1)return 1;if(x[0]!=3||x[1]!=2||x[2]!=3||&a[0].get()!=x||&b[2].get()!=y+2)return 2;}
+}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-stored-transform-reduce-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsBoolAndPromotions) {
+  const auto Source = tmpFile("wrapper-binary-stored-bool-promotions-floating.cpp");
+  const auto Output = tmpFile("wrapper-binary-stored-bool-promotions-floating.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::plus<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::minus<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::multiplies<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::divides<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::modulus<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_and<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_or<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_xor<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::equal_to<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::not_equal_to<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less_equal<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater_equal<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_and<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::minus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::multiplies<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::divides<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={2,4,5};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::modulus<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,7,3},y[]={2,3,2};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_and<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_or<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,1,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_xor<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::equal_to<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::not_equal_to<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less_equal<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater_equal<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_and<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_or<>term;if(std::inner_product(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::plus<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::minus<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+)cpp"
+             R"cpp({const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::multiplies<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::divides<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::modulus<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_and<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_or<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_xor<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::equal_to<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::not_equal_to<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less_equal<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater_equal<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_and<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::minus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::multiplies<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::divides<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={2,4,5};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::modulus<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,7,3},y[]={2,3,2};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_and<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_or<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,1,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_xor<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::equal_to<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::not_equal_to<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less_equal<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater_equal<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_and<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_or<>term;if(std::inner_product(a,a+3,b,true,reduce,term)!=true)return 1;}
+{signed char x[]={-3,2,-3};unsigned char y[]={2,1,2};std::reference_wrapper<signed char>a[]={x[0],x[1],x[2]};std::reference_wrapper<unsigned char>b[]={y[0],y[1],y[2]};std::plus<>reduce;const std::minus<>term;if(std::inner_product(a,a+3,b,3,reduce,term)!=-6)return 2;}
+{signed char x[]={-3,2,-3};unsigned char y[]={2,1,2};std::reference_wrapper<signed char>a[]={x[0],x[1],x[2]};std::reference_wrapper<unsigned char>b[]={y[0],y[1],y[2]};std::plus<>reduce;const std::multiplies<>term;if(std::inner_product(a,a+3,b,3,reduce,term)!=-7)return 2;}
+{signed char x[]={-3,2,-3};unsigned char y[]={2,1,2};std::reference_wrapper<signed char>a[]={x[0],x[1],x[2]};std::reference_wrapper<unsigned char>b[]={y[0],y[1],y[2]};std::bit_xor<>reduce;const std::bit_or<>term;if(std::inner_product(a,a+3,b,3,reduce,term)!=0)return 2;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::equal_to<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=1)return 3;}
+)cpp"
+             R"cpp({const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::not_equal_to<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=2)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::less<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::less_equal<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=2)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::greater<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::greater_equal<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=2)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::logical_and<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::logical_or<>term;if(std::inner_product(a,a+3,b,0,reduce,term)!=3)return 3;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::plus<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::minus<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::multiplies<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::divides<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::modulus<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_and<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_or<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_xor<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::equal_to<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::not_equal_to<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less_equal<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater_equal<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_and<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::minus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::multiplies<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::divides<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={2,4,5};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::modulus<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,7,3},y[]={2,3,2};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_and<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_or<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,1,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_xor<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::equal_to<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+)cpp"
+             R"cpp({const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less_equal<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_and<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_or<>term;if(std::transform_reduce(a,a+3,b,false,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::plus<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::minus<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::multiplies<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::divides<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::modulus<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_and<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_or<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::bit_xor<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::equal_to<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::not_equal_to<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::less_equal<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::greater_equal<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=false)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_and<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::plus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::minus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::multiplies<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::divides<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={5,7,9},y[]={2,4,5};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::modulus<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,7,3},y[]={2,3,2};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_and<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_or<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,1,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::bit_xor<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::equal_to<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={1,2,3},y[]={2,3,4};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::less_equal<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+)cpp"
+             R"cpp({const int x[]={2,3,4},y[]={1,2,3};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_and<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{const int x[]={3,2,3},y[]={1,2,1};const std::reference_wrapper<const int>a[]={x[0],x[1],x[2]},b[]={y[0],y[1],y[2]};const std::logical_or<>reduce;std::logical_or<>term;if(std::transform_reduce(a,a+3,b,true,reduce,term)!=true)return 1;}
+{signed char x[]={-3,2,-3};unsigned char y[]={2,1,2};std::reference_wrapper<signed char>a[]={x[0],x[1],x[2]};std::reference_wrapper<unsigned char>b[]={y[0],y[1],y[2]};std::plus<>reduce;const std::minus<>term;if(std::transform_reduce(a,a+3,b,3,reduce,term)!=-6)return 2;}
+{signed char x[]={-3,2,-3};unsigned char y[]={2,1,2};std::reference_wrapper<signed char>a[]={x[0],x[1],x[2]};std::reference_wrapper<unsigned char>b[]={y[0],y[1],y[2]};std::plus<>reduce;const std::multiplies<>term;if(std::transform_reduce(a,a+3,b,3,reduce,term)!=-7)return 2;}
+{signed char x[]={-3,2,-3};unsigned char y[]={2,1,2};std::reference_wrapper<signed char>a[]={x[0],x[1],x[2]};std::reference_wrapper<unsigned char>b[]={y[0],y[1],y[2]};std::bit_xor<>reduce;const std::bit_or<>term;if(std::transform_reduce(a,a+3,b,3,reduce,term)!=0)return 2;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::equal_to<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=2)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::less<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::less_equal<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=2)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::greater<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=2)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::logical_and<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=1)return 3;}
+{const unsigned long long x=0x8000000000000000ULL,z=0;const std::reference_wrapper<const unsigned long long>a[]={x,z,x},b[]={z,x,x};const std::plus<>reduce;std::logical_or<>term;if(std::transform_reduce(a,a+3,b,0,reduce,term)!=3)return 3;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-stored-bool-promotions-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsFloatingNanZero) {
+  const auto Source = tmpFile("wrapper-binary-stored-floating-nan-zero.cpp");
+  const auto Output = tmpFile("wrapper-binary-stored-floating-nan-zero.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+int main(){const double tiny=0x1p-100,zero=0.0,minus=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>a[]={tiny,nan,minus},b[]={zero,zero,zero};
+{std::plus<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::plus<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=4)return 1;}
+{std::plus<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::plus<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::plus<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::plus<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=4)return 1;}
+{std::plus<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::plus<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=4)return 1;}
+{std::minus<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::minus<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::minus<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::minus<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::minus<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::minus<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::minus<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::minus<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_or<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_or<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_or<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::equal_to<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::equal_to<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::equal_to<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::equal_to<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+)cpp"
+             R"cpp({std::less<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less_equal<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less_equal<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less_equal<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater_equal<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_and<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_or<>reduce;const std::equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::not_equal_to<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::less<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::less_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::greater<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::greater_equal<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::logical_and<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::logical_or<>term;if(std::inner_product(a,a+3,b,2,reduce,term)!=1)return 1;}
+{const double x=0x1p-100,z=0.0;std::reference_wrapper<const double>a[]={x,x},b[]={z,z};const std::equal_to<>reduce;std::plus<>term;if(std::inner_product(a,a+2,b,0,reduce,term)!=0)return 2;}
+{double z=-0.0;std::reference_wrapper<double>a[]={z,z};const std::plus<>reduce;std::plus<>term;double result=std::inner_product(a,a+2,a,-0.0,reduce,term);if(result!=0.0||1.0/result>0.0)return 3;}
+{std::plus<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::plus<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=4)return 1;}
+{std::plus<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::plus<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::plus<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::plus<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=4)return 1;}
+{std::plus<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::plus<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=4)return 1;}
+{std::minus<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::minus<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::minus<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::minus<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::minus<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::minus<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::minus<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::minus<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::multiplies<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+)cpp"
+             R"cpp({std::bit_and<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_and<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::bit_or<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_or<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_or<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_or<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=3)return 1;}
+{std::bit_xor<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::bit_xor<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=2)return 1;}
+{std::equal_to<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::equal_to<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::equal_to<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::equal_to<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::equal_to<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::not_equal_to<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::not_equal_to<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less_equal<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less_equal<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::less_equal<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::less_equal<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::greater_equal<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::greater_equal<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_and<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+)cpp"
+             R"cpp({std::logical_and<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_and<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=0)return 1;}
+{std::logical_or<>reduce;const std::equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::not_equal_to<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::less<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::less_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::greater<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::greater_equal<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::logical_and<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{std::logical_or<>reduce;const std::logical_or<>term;if(std::transform_reduce(a,a+3,b,2,reduce,term)!=1)return 1;}
+{const double x=0x1p-100,z=0.0;std::reference_wrapper<const double>a[]={x,x},b[]={z,z};const std::equal_to<>reduce;std::plus<>term;if(std::transform_reduce(a,a+2,b,0,reduce,term)!=0)return 2;}
+{double z=-0.0;std::reference_wrapper<double>a[]={z,z};const std::plus<>reduce;std::plus<>term;double result=std::transform_reduce(a,a+2,a,-0.0,reduce,term);if(result!=0.0||1.0/result>0.0)return 3;}
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-stored-floating-nan-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-binary-stored-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-binary-stored-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int reads=0,cleaned=0;
+struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+struct Initial{int value;~Initial(){++cleaned;}int get(){++reads;return value;}};
+int inner(P a,P b,P c,const std::plus<>&reduce,std::multiplies<>&term){return std::inner_product(a,b,c,0,reduce,term);}
+int transform(P a,P b,P c,std::plus<>&reduce,const std::multiplies<>&term){return std::transform_reduce(a,b,c,0,reduce,term);}
+int main(){int x=3,y=2;W a[]={x,y,x},b[]={y,x,y};const std::logical_and<>reduce;std::logical_or<>term;
+if(std::inner_product(Input{a}.get(),Input{a}.get(),Input{b}.get(),Initial{17}.get(),reduce,term)!=17)return 1;
+if(std::transform_reduce(Input{a}.get(),Input{a}.get(),Input{b}.get(),Initial{19}.get(),reduce,term)!=19)return 1;
+if(reads!=8||cleaned!=8)return 2;
+std::plus<>plus;std::multiplies<>multiply;
+if(inner(a,a+3,b,plus,multiply)!=18||transform(a,a+3,b,plus,multiply)!=18)return 3;
+if(std::inner_product(a,a+1,b,1,plus,multiply)!=7||std::transform_reduce(a,a+1,b,1,plus,multiply)!=7)return 4;
+if(&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&x||x!=3||y!=2)return 5;
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-stored-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-binary-stored-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-binary-stored-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+namespace case_0{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_1{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_2{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_3{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_4{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_5{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_6{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_7{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_8{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_9{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_10{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_11{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_12{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_13{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_14{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_15{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_16{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_17{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_18{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_19{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_20{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_21{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_22{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_23{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_24{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_25{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_26{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_27{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::modulus<> op;return std::inner_product(a,b,a,0,std::plus<>{},op);}
+}
+namespace case_28{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_29{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_30{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_31{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::inner_product(a,b,a,0,std::plus<>{},op);}
+}
+namespace case_32{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::plus<> op;return std::inner_product(a,b,a,0,op,std::multiplies<>{});}
+}
+namespace case_33{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_34{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::modulus<> op;return std::transform_reduce(a,b,a,0,std::plus<>{},op);}
+}
+namespace case_35{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+}
+namespace case_36{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+}
+namespace case_37{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
+}
+namespace case_38{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::multiplies<> op;return std::transform_reduce(a,b,a,0,std::plus<>{},op);}
+}
+namespace case_39{
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,a,0,op,std::multiplies<>{});}
+}
+int main(){int x=3,y=2,z=1;std::reference_wrapper<int>a[]={x,y,x},b[]={z,y,z};int out[3]={11,12,13};
+if(case_0::selected(a,a+3,b,out)!=0)return 1;
+if(case_1::selected(a,a+3,b,out)!=0)return 2;
+if(case_2::selected(a,a+3,b)!=1)return 3;
+if(case_3::selected(a,a+3,b)!=0)return 4;
+if(case_4::selected(a,a+3,b)!=0)return 5;
+if(case_5::selected(a,a+3,b)!=1)return 6;
+if(case_6::selected(a,a+3,b)!=0)return 7;
+if(case_7::selected(a,a+3,b)!=0)return 8;
+if(case_8::selected(a,a+3,b,out)!=0)return 9;
+if(case_9::selected(a,a+3,b)!=1)return 10;
+if(case_10::selected(a,a+3,b)!=3)return 11;
+if(case_11::selected(a,a+3,b,out)!=0)return 12;
+if(case_12::selected(a,a+3,b)!=1)return 13;
+if(case_13::selected(a,a+3,b)!=3)return 14;
+if(case_14::selected(a,a+3,b,out)!=0)return 15;
+if(case_15::selected(a,a+3,b)!=0)return 16;
+)cpp"
+             R"cpp(if(case_16::selected(a,a+3,b)!=3)return 17;
+if(case_17::selected(a,a+3,b,out)!=0)return 18;
+if(case_18::selected(a,a+3,b)!=0)return 19;
+if(case_19::selected(a,a+3,b)!=3)return 20;
+if(case_20::selected(a,a+3,b,out)!=0)return 21;
+if(case_21::selected(a,a+3,b)!=3)return 22;
+if(case_22::selected(a,a+3,b,out)!=0)return 23;
+if(case_23::selected(a,a+3,b)!=3)return 24;
+if(case_24::selected(a,a+3,b,out)!=0)return 25;
+if(case_25::selected(a,a+3,b,out)!=0)return 26;
+if(case_26::selected(a,a+3,b,out)!=0)return 27;
+if(case_27::selected(a,a+3)!=0)return 28;
+if(case_28::selected(a,a+3,b)!=0)return 29;
+if(case_29::selected(a,a+3,b)!=3)return 30;
+if(case_30::selected(a,a+3,b,out)!=0)return 31;
+if(case_31::selected(a,a+3)!=22)return 32;
+if(case_32::selected(a,a+3)!=22)return 33;
+if(case_33::selected(a,a+3,b,out)!=0)return 34;
+if(case_34::selected(a,a+3)!=0)return 35;
+if(case_35::selected(a,a+3,b)!=0)return 36;
+if(case_36::selected(a,a+3,b)!=3)return 37;
+if(case_37::selected(a,a+3,b,out)!=0)return 38;
+if(case_38::selected(a,a+3)!=22)return 39;
+if(case_39::selected(a,a+3)!=22)return 40;
+return x!=3||y!=2||z!=1||out[0]!=11||out[1]!=12||out[2]!=13;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-binary-stored-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinaryStoredOperationsRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"inner_product-enum-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+enum E{zero,one};
+using W=std::reference_wrapper<E>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::inner_product(a,b,c,false,reduce,term);}
+)cpp"},
+      {"inner_product-long-double-accumulator", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::inner_product(a,b,c,0.0L,reduce,term);}
+)cpp"},
+      {"inner_product-long-double-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::inner_product(a,b,c,false,reduce,term);}
+)cpp"},
+      {"inner_product-pointer-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::inner_product(a,b,c,false,reduce,term);}
+)cpp"},
+      {"inner_product-reduction-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,P c){std::logical_or<>op;return std::inner_product(a,b,c,0,(++effects,op),std::plus<>{});}
+)cpp"},
+      {"inner_product-reduction-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b,P c){Holder h;return std::inner_product(a,b,c,0,h.op,std::plus<>{});}
+)cpp"},
+      {"inner_product-reduction-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {};}
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,make(),std::plus<>{});}
+)cpp"},
+      {"inner_product-reduction-source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)||std::forward<int>(b)))->decltype(std::forward<int&>(a)||std::forward<int>(b)){return false;}}}
+auto selected(P a,P b,P c){std::logical_or<>op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+)cpp"},
+      {"inner_product-reduction-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_or<int>op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
+)cpp"},
+      {"inner_product-source-wrapper-conversion", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::inner_product(a,b,c,false,reduce,term);}
+)cpp"},
+      {"inner_product-term-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,P c){std::logical_or<>op;return std::inner_product(a,b,c,0,std::plus<>{},(++effects,op));}
+)cpp"},
+      {"inner_product-term-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b,P c){Holder h;return std::inner_product(a,b,c,0,std::plus<>{},h.op);}
+)cpp"},
+      {"inner_product-term-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {};}
+auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::plus<>{},make());}
+)cpp"},
+      {"inner_product-term-source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)||std::forward<W&>(b)))->decltype(std::forward<W&>(a)||std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c){std::logical_or<>op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+)cpp"},
+      {"inner_product-term-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_or<int>op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
+)cpp"},
+      {"inner_product-volatile-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::inner_product(a,b,c,false,reduce,term);}
+)cpp"},
+      {"transform_reduce-enum-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+enum E{zero,one};
+using W=std::reference_wrapper<E>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::transform_reduce(a,b,c,false,reduce,term);}
+)cpp"},
+      {"transform_reduce-long-double-accumulator", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::transform_reduce(a,b,c,0.0L,reduce,term);}
+)cpp"},
+      {"transform_reduce-long-double-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<long double>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::transform_reduce(a,b,c,false,reduce,term);}
+)cpp"},
+      {"transform_reduce-pointer-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int*>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::transform_reduce(a,b,c,false,reduce,term);}
+)cpp"},
+      {"transform_reduce-reduction-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,P c){std::logical_or<>op;return std::transform_reduce(a,b,c,0,(++effects,op),std::plus<>{});}
+)cpp"},
+      {"transform_reduce-reduction-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b,P c){Holder h;return std::transform_reduce(a,b,c,0,h.op,std::plus<>{});}
+)cpp"},
+      {"transform_reduce-reduction-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {};}
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,make(),std::plus<>{});}
+)cpp"},
+      {"transform_reduce-reduction-source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)||std::forward<int>(b)))->decltype(std::forward<int>(a)||std::forward<int>(b)){return false;}}}
+auto selected(P a,P b,P c){std::logical_or<>op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+)cpp"},
+      {"transform_reduce-reduction-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_or<int>op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
+)cpp"},
+      {"transform_reduce-source-wrapper-conversion", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::transform_reduce(a,b,c,false,reduce,term);}
+)cpp"},
+      {"transform_reduce-term-comma", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b,P c){std::logical_or<>op;return std::transform_reduce(a,b,c,0,std::plus<>{},(++effects,op));}
+)cpp"},
+      {"transform_reduce-term-member", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_or<>op;};
+auto selected(P a,P b,P c){Holder h;return std::transform_reduce(a,b,c,0,std::plus<>{},h.op);}
+)cpp"},
+      {"transform_reduce-term-returned", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_or<>make(){return {};}
+auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::plus<>{},make());}
+)cpp"},
+      {"transform_reduce-term-source-operation", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_or<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)||std::forward<W&>(b)))->decltype(std::forward<W&>(a)||std::forward<W&>(b)){return false;}}}
+auto selected(P a,P b,P c){std::logical_or<>op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+)cpp"},
+      {"transform_reduce-term-typed", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c){std::logical_or<int>op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
+)cpp"},
+      {"transform_reduce-volatile-referent", R"cpp(#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using P=W*;
+auto selected(P a,P b,P c){const std::logical_and<>reduce;std::logical_or<>term;return std::transform_reduce(a,b,c,false,reduce,term);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-binary-stored-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperInnerProductRuntimeAlias) {
   const auto Source = tmpFile("wrapper-inner-product-runtime-alias");
   const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
@@ -229177,13 +230734,6 @@ using std::inner_product;int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z};S 
 TEST_F(TranslateTest,
        CoreV2WrapperInnerProductRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
 #include <numeric>
@@ -233146,13 +234696,6 @@ using std::transform_reduce;int main(){int x=3,y=1,z=2,u=2,v=4,q=1;R a[]={x,y,z}
 TEST_F(TranslateTest,
        CoreV2WrapperTransformReduceRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
 #include <numeric>
@@ -234967,13 +236510,6 @@ int main(){const bool t=true;const std::reference_wrapper<const bool>a[]={t,t},b
 TEST_F(TranslateTest,
        CoreV2WrapperBinaryNumericComparisonsRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"inner_product-stored-comparison-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
-)cpp"},
       {"inner_product-returned-comparison", R"cpp(
 #include <numeric>
 #include <functional>
@@ -234998,13 +236534,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)+std::forward<W&>(b)))->decltype(std::forward<W&>(a)+std::forward<W&>(b)){return a.get()+b.get();}}}
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::equal_to<>{},std::plus<>{});}
 )cpp"},
-      {"inner_product-stored-equality", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
-)cpp"},
       {"inner_product-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
@@ -235018,20 +236547,6 @@ auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::less<int>{},st
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::equal_to<>{},std::plus<int>{});}
-)cpp"},
-      {"inner_product-stored-logical-reduction", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
-)cpp"},
-      {"transform_reduce-stored-comparison-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
 )cpp"},
       {"transform_reduce-returned-comparison", R"cpp(
 #include <numeric>
@@ -235057,13 +236572,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)+std::forward<W&>(b)))->decltype(std::forward<W&>(a)+std::forward<W&>(b)){return a.get()+b.get();}}}
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::equal_to<>{},std::plus<>{});}
 )cpp"},
-      {"transform_reduce-stored-equality", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
-)cpp"},
       {"transform_reduce-typed-less", R"cpp(
 #include <numeric>
 #include <functional>
@@ -235077,13 +236585,6 @@ auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::less<int>{}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::equal_to<>{},std::plus<int>{});}
-)cpp"},
-      {"transform_reduce-stored-logical-reduction", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -235668,13 +237169,6 @@ int main(){
 TEST_F(TranslateTest,
        CoreV2WrapperBinaryComparisonTermsRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"inner_product-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"inner_product-pointer-term", R"cpp(
 #include <numeric>
 #include <functional>
@@ -235706,33 +237200,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return a.get()==b.get();}}}
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::plus<>{},std::equal_to<>{});}
 )cpp"},
-      {"inner_product-stored-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
-)cpp"},
       {"inner_product-typed-term", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::plus<>{},std::less<int>{});}
-)cpp"},
-      {"inner_product-stored-logical-term-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
-)cpp"},
-      {"transform_reduce-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
 )cpp"},
       {"transform_reduce-pointer-term", R"cpp(
 #include <numeric>
@@ -235765,26 +237238,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto equal_to<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)==std::forward<W&>(b)))->decltype(std::forward<W&>(a)==std::forward<W&>(b)){return a.get()==b.get();}}}
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::plus<>{},std::equal_to<>{});}
 )cpp"},
-      {"transform_reduce-stored-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
-)cpp"},
       {"transform_reduce-typed-term", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::plus<>{},std::less<int>{});}
-)cpp"},
-      {"transform_reduce-stored-logical-term-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -237708,13 +239167,6 @@ return 0;}
 TEST_F(TranslateTest,
        CoreV2WrapperBinaryLogicalReductionsRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"inner_product-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"inner_product-pointer-referent", R"cpp(
 #include <numeric>
 #include <functional>
@@ -237746,33 +239198,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int&,int>(int&a,int&&b)const noexcept(noexcept(std::forward<int&>(a)&&std::forward<int>(b)))->decltype(std::forward<int&>(a)&&std::forward<int>(b)){return a||b;}}}
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<>{},std::plus<>{});}
 )cpp"},
-      {"inner_product-stored", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
-)cpp"},
       {"inner_product-typed", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::logical_and<int>{},std::plus<>{});}
-)cpp"},
-      {"inner_product-stored-logical-term-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
-)cpp"},
-      {"transform_reduce-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
 )cpp"},
       {"transform_reduce-pointer-referent", R"cpp(
 #include <numeric>
@@ -237805,26 +239236,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto logical_and<void>::operator()<int,int>(int&&a,int&&b)const noexcept(noexcept(std::forward<int>(a)&&std::forward<int>(b)))->decltype(std::forward<int>(a)&&std::forward<int>(b)){return a||b;}}}
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<>{},std::plus<>{});}
 )cpp"},
-      {"transform_reduce-stored", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
-)cpp"},
       {"transform_reduce-typed", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::logical_and<int>{},std::plus<>{});}
-)cpp"},
-      {"transform_reduce-stored-logical-term-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -238159,13 +239576,6 @@ return 0;}
 
 TEST_F(TranslateTest, CoreV2WrapperBinaryLogicalTermsRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"inner_product-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"inner_product-pointer-referent", R"cpp(
 #include <numeric>
 #include <functional>
@@ -238205,26 +239615,12 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::plus<>{},std::logical_and<>{});}
 )cpp"},
-      {"inner_product-stored", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
-)cpp"},
       {"inner_product-typed", R"cpp(
 #include <numeric>
 #include <functional>
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c){return std::inner_product(a,b,c,0,std::plus<>{},std::logical_and<int>{});}
-)cpp"},
-      {"transform_reduce-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
 )cpp"},
       {"transform_reduce-pointer-referent", R"cpp(
 #include <numeric>
@@ -238264,13 +239660,6 @@ auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::plus<>{},st
 using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{return get();}}}
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,0,std::plus<>{},std::logical_and<>{});}
-)cpp"},
-      {"transform_reduce-stored", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
 )cpp"},
       {"transform_reduce-typed", R"cpp(
 #include <numeric>
@@ -241673,13 +243062,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr bool&&forward<bool>(bool&v)noexcept{return static_cast<bool&&>(v);}}}
 auto selected(P a,P b,P c){return std::transform_reduce(a,b,c,false,std::logical_and<>{},std::logical_or<>{});}
 )cpp"},
-      {"binary-reduce-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"exclusive-default-source-bool-move", R"cpp(
 #include <numeric>
 #include <functional>
@@ -241694,13 +243076,6 @@ auto selected(P a,P b,int*out){return std::exclusive_scan(a,b,out,false);}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,volatile bool*out){return std::inclusive_scan(a,b,out,std::logical_and<>{},false);}
-)cpp"},
-      {"inner-stored-object", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
 )cpp"},
       {"reduce-member-object", R"cpp(
 #include <numeric>
@@ -249132,13 +250507,6 @@ int main(){
 TEST_F(TranslateTest,
        CoreV2WrapperInnerProductArithmeticFamilyRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"family-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"family-returned-reduction-bit-or", R"cpp(
 #include <numeric>
 #include <functional>
@@ -249165,12 +250533,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)/std::forward<W&>(b)))->decltype(std::forward<W&>(a)/std::forward<W&>(b)){return a.get()*b.get();}}}
 auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::divides<>{});}
 )cpp"},
-      {"family-stored-term-modulus", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::modulus<> op;return std::inner_product(a,b,a,0,std::plus<>{},op);}
-)cpp"},
       {"family-typed-reduction-bit-and", R"cpp(
 #include <numeric>
 #include <functional>
@@ -249182,20 +250544,6 @@ auto selected(P a,P b){return std::inner_product(a,b,a,0,std::bit_and<int>{},std
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::inner_product(a,b,a,0,std::plus<>{},std::modulus<int>{});}
-)cpp"},
-      {"family-stored-comparison-reduction", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::inner_product(a,b,c,0,op,std::plus<>{});}
-)cpp"},
-      {"family-stored-term-logical-or-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::inner_product(a,b,c,0,std::plus<>{},op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -249887,13 +251235,6 @@ TEST_F(
     TranslateTest,
     CoreV2WrapperInnerProductOperationsRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::inner_product(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
 #include <numeric>
@@ -250190,18 +251531,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::inner_product(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
 )cpp"},
-      {"stored-multiply", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::multiplies<> op;return std::inner_product(a,b,a,0,std::plus<>{},op);}
-)cpp"},
-      {"stored-plus", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::plus<> op;return std::inner_product(a,b,a,0,op,std::multiplies<>{});}
-)cpp"},
       {"typed-multiply", R"cpp(
 #include <numeric>
 #include <functional>
@@ -250492,13 +251821,6 @@ int main(){
 TEST_F(TranslateTest,
        CoreV2WrapperTransformReduceArithmeticFamilyRetainsClosedAdmission) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"family-stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"family-returned-reduction-bit-or", R"cpp(
 #include <numeric>
 #include <functional>
@@ -250525,12 +251847,6 @@ using W=std::reference_wrapper<int>;using P=W*;
 namespace std{inline namespace __1{template<>constexpr auto divides<void>::operator()<W&,W&>(W&a,W&b)const noexcept(noexcept(std::forward<W&>(a)/std::forward<W&>(b)))->decltype(std::forward<W&>(a)/std::forward<W&>(b)){return a.get()*b.get();}}}
 auto selected(P a,P b){return std::transform_reduce(a,b,a,0,std::plus<>{},std::divides<>{});}
 )cpp"},
-      {"family-stored-term-modulus", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::modulus<> op;return std::transform_reduce(a,b,a,0,std::plus<>{},op);}
-)cpp"},
       {"family-typed-reduction-bit-and", R"cpp(
 #include <numeric>
 #include <functional>
@@ -250542,20 +251858,6 @@ auto selected(P a,P b){return std::transform_reduce(a,b,a,0,std::bit_and<int>{},
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){return std::transform_reduce(a,b,a,0,std::plus<>{},std::modulus<int>{});}
-)cpp"},
-      {"family-stored-comparison-reduction", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::equal_to<> op;return std::transform_reduce(a,b,c,0,op,std::plus<>{});}
-)cpp"},
-      {"family-stored-term-logical-or-term", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c){std::logical_and<> op;return std::transform_reduce(a,b,c,0,std::plus<>{},op);}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -251253,13 +252555,6 @@ TEST_F(
     TranslateTest,
     CoreV2WrapperTransformReduceOperationsRuntimeRetainsSourceAndLifetimeBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"stored-object-bool-accumulator", R"cpp(
-#include <numeric>
-#include <functional>
-#include <utility>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,c,false,op,std::logical_or<>{});}
-)cpp"},
       {"casted-callee", R"cpp(
 #include <functional>
 #include <numeric>
@@ -251562,18 +252857,6 @@ namespace std{inline namespace __1{template<>reference_wrapper<short>::operator 
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b){return std::transform_reduce(a,a+1,a,0,std::plus<>{},std::multiplies<>{});}
-)cpp"},
-      {"stored-multiply", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::multiplies<> op;return std::transform_reduce(a,b,a,0,std::plus<>{},op);}
-)cpp"},
-      {"stored-plus", R"cpp(
-#include <numeric>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,a,0,op,std::multiplies<>{});}
 )cpp"},
       {"typed-multiply", R"cpp(
 #include <numeric>

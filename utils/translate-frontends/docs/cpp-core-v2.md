@@ -469,9 +469,8 @@ retain their bytes.
 Fourteen authenticated interfaces accept bool accumulators: default/explicit
 accumulate, reduce, inner_product and binary transform_reduce; explicit unary
 transform_reduce and initialized inclusive_scan, transform_inclusive_scan and
-transform_exclusive_scan; default/explicit exclusive_scan. Existing directly
-constructed transparent operations, referent domains and valid arithmetic
-remain required. Output bool support stays independent.
+transform_exclusive_scan; default/explicit exclusive_scan. Each algorithm's stated operation construction rules, referent domains and
+valid arithmetic remain required. Output bool support stays independent.
 
 Every SDK accumulator assignment converts the complete operation result back
 to bool before the next element. Arithmetic operands retain usual promotions
@@ -552,17 +551,15 @@ Runtime fixtures cover all sixteen stored operation types, mutable and const obj
 
 Direct six-argument `std::inner_product` and binary `std::transform_reduce` accept two independently authenticated raw-pointer reference-wrapper ranges and an explicit supported integer (through 64 bits), float or double accumulator. Both term and reduction positions admit directly initialized transparent SDK objects from the eight arithmetic names and six comparisons: `std::equal_to<>`, `std::not_equal_to<>`, `std::less<>`, `std::less_equal<>`, `std::greater<>`, `std::greater_equal<>`. The reduction position additionally admits `std::logical_and<>` and `std::logical_or<>`. The term position additionally admits `std::logical_and<>` and `std::logical_or<>`. All 256 operation pairs per algorithm are admitted when the selected operand types and arithmetic domains permit them. Explicit `<void>`, empty aggregate initialization and authenticated default construction retain their behavior. Const wrappers/referents, bool, supported integers through 64 bits, float and double retain existing access. Pointer referents remain excluded even for equality terms.
 
+Both operation positions of six-argument `std::inner_product` and binary `std::transform_reduce` also accept mutable or const variables and reference parameters for all sixteen transparent operations. Each argument must directly name its variable and select an authenticated implicit, trivial, nonthrowing copy of the same empty SDK type. Term and reduction arguments are checked independently. Numeric conversions, accumulator forwarding, wrapper bindings, empty argument evaluation and cleanup retain their existing rules.
+
 The term always takes the first range on the left and second on the right. Its input operands use their usual arithmetic common type. Arithmetic terms retain that result type and full precision; comparison and logical terms return bool. Logical terms independently convert the left referent to bool, then read/convert the right referent only on the required short-circuit branch. No arithmetic common-type conversion precedes these truth tests. Reduction computes a separate common operand type from the accumulator and the actual term result, producing its arithmetic common result or a comparison bool result. Logical reductions always compute the full binary term before testing the accumulator, then short-circuit the computed term’s bool conversion. The two truth tests use independent scalar conversions, with no arithmetic common-type conversion. Both signed zeros test false; NaN and nonzero values test true. Each result converts back to the accumulator before the next element. Remainder/bit requirements are independently checked on term input common type and reduction common type. A bool comparison term from floating inputs therefore permits integer remainder/bit reductions with an integer accumulator. Valid overflow/division/remainder domains remain required. Signed/unsigned widths, bool/small integer promotion, float precision, NaN and signed-zero comparisons follow the authenticated SDK.
 
-Inner_product retains lvalue accumulator arguments, transform_reduce its exact move/rvalue forwarding. Term result forwarding now also authenticates bool scalars. Full selected SDK signatures, origins, constructions, opcodes, independent input/term/reduction types, forwarding, wrapper conversions and complete loops remain proven. Empty ranges preserve the initial value and operand evaluation/cleanup without reads. Bindings and referents remain unchanged by the algorithms. Scalar/record callback behavior retains its established path. Binary wrapper logical reductions share the authenticated scalar reduction map and the transformed-term branch; plain-wrapper reductions still defer their referent loads, while unary transforms remain eager. Typed/stored/returned/custom objects, unknown operations, source replacements, pointer/enum/volatile/extended/nested or unsupported referents, unsupported accumulators and indirect/casted callees remain excluded.
-
-Five runtime fixtures cover the 168 additional algorithm/reduction/comparison-term pairs, every strict/weak comparison truth value, floating inputs with integer reductions, narrow conversion, mixed signed/unsigned 64-bit values, NaN/zero, empty/live arguments and cleanup. Related tests preserve the previous 96 comparison-reduction combinations and both original 64-pair arithmetic matrices. Sixteen new native-valid rejections and 121 existing selected boundaries retain source/lifetime checks. The two obsolete direct-comparison-term rejection cases now reject stored comparison terms with byte-identical native-preflight sources.
-
-Five further O0/O2 fixtures cover all 56 algorithm/logical-reduction/term combinations over varied truth states and lengths, exact term precision, bool promotion, unsigned 64-bit values, NaN and signed zeros, empty inputs, effects and cleanup. Sixteen further native-valid rejections and 137 selected existing boundaries preserve source/lifetime checks. Two former unknown-logical-reduction rejections become stored-logical-reduction boundaries backed by the new native sources.
+Inner_product retains lvalue accumulator arguments, transform_reduce its exact move/rvalue forwarding. Term result forwarding now also authenticates bool scalars. Full selected SDK signatures, origins, constructions, opcodes, independent input/term/reduction types, forwarding, wrapper conversions and complete loops remain proven. Empty ranges preserve the initial value and operand evaluation/cleanup without reads. Bindings and referents remain unchanged by the algorithms. Scalar/record callback behavior retains its established path. Binary wrapper logical reductions share the authenticated scalar reduction map and the transformed-term branch; plain-wrapper reductions still defer their referent loads, while unary transforms remain eager. Typed, member, returned, effectful or custom operation expressions, unknown operations, source replacements, pointer/enum/volatile/extended/nested or unsupported referents, unsupported accumulators and indirect/casted callees remain excluded.
 
 The existing scalar binary logical term path now also preserves short-circuit referent reads. For typed scalar functors, differing input/parameter types require argument conversions and temporary materialization before the operator call; matching types bind references and retain delayed right reads. A term is fully computed before the outer reduction. This fixes previously eager bitwise normalization in the admitted scalar path without changing scalar operation admission.
 
-Five further O0/O2 fixtures cover all 64 new algorithm/reduction/logical-term combinations, all boolean truth states, float/NaN/signed-zero inputs, typed scalar argument conversions, empty inputs and cleanup. Sixteen native-valid rejections and 157 selected existing boundaries retain source/lifetime checks. Six former unknown-logical-term rejections become stored-logical-term cases backed by the new native sources. The native preflight reuses five successful runtime fixtures and five successful guard checks, then verifies the eleven remaining guards after fixing two non-constexpr C++17 conversion declarations.
+Six O0/O2 fixtures cover all 256 stored operation pairs for each algorithm, mutable and const objects, reference parameters, bool accumulators, narrow/wide values, NaN, signed zero, live bindings, empty arguments and cleanup. They also retain all forty former stored-variable rejection sources as linked positive cases. Thirty-two native-valid rejections cover both argument positions, typed/member/returned/effectful expressions, source replacements and unsupported types. Eleven existing suites retain 240 independent boundaries. Earlier direct-operation matrices and logical short-circuit tests keep their established coverage.
 
 ### Unary transforms with arithmetic, comparison and logical reductions
 
@@ -783,15 +780,15 @@ Direct `std::transform_reduce` with transparent `std::plus<>` and `std::multipli
 two raw-pointer input ranges of checked SDK `std::reference_wrapper<T>` with
 built-in scalar referents, including const inputs and referents, and an
 independent supported bool, integer (up to 64 bits), float or double
-accumulator. Its six-argument form requires both operations to be directly
-initialized transparent SDK objects. The selected C++17 loop uses a moved
+accumulator. Its six-argument form accepts directly initialized transparent SDK objects or
+direct variable references under the authenticated implicit-copy rule above. The selected C++17 loop uses a moved
 accumulator, reads current referents for every product, applies the usual
 arithmetic conversions independently to multiplication and addition, and
 converts each sum back to the accumulator type. Empty input returns the
 initial value. Bindings and referents, single operand evaluation and cleanup
 are preserved. Both initializations and operations, scalar and wrapper
 forwarding, conversions and the complete SDK loop are verified. Source
-replacements, custom, typed, stored or dynamically produced operations,
+replacements, custom, typed, member, returned or effectful operations,
 enum or nested-wrapper referents, unsupported accumulator types and indirect
 or casted callees remain rejected.
 
@@ -799,15 +796,15 @@ Direct `std::inner_product` with transparent `std::plus<>` and `std::multiplies<
 two raw-pointer input ranges of checked SDK `std::reference_wrapper<T>` with
 built-in scalar referents, including const inputs and referents, and an
 independent supported bool, integer (up to 64 bits), float or double
-accumulator. Its six-argument form requires both operations to be directly
-initialized transparent SDK objects. The selected C++17 loop uses an lvalue
+accumulator. Its six-argument form accepts directly initialized transparent SDK objects or
+direct variable references under the authenticated implicit-copy rule above. The selected C++17 loop uses an lvalue
 accumulator, reads current referents for every product, applies the usual
 arithmetic conversions independently to multiplication and addition, and
 converts each sum back to the accumulator type. Empty input returns the
 initial value. Bindings and referents, single operand evaluation and cleanup
 are preserved. Both initializations and operations, scalar and wrapper
 forwarding, conversions and the complete SDK loop are verified. Source
-replacements, custom, typed, stored or dynamically produced operations,
+replacements, custom, typed, member, returned or effectful operations,
 enum or nested-wrapper referents, unsupported accumulator types and indirect
 or casted callees remain rejected.
 

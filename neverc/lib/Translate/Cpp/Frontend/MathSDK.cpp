@@ -36022,6 +36022,15 @@ static bool utilityWrapperInnerProductOperations(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -36033,8 +36042,9 @@ static bool utilityWrapperInnerProductOperations(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         (I == 4 ? !utilityWrapperScalarReductionOpcode(Record->getName())
                 : !ArithmeticOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
@@ -36354,6 +36364,15 @@ static bool utilityWrapperTransformReduceOperations(
     const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
     const auto ObjectType =
         Object ? Context.getRecordType(Object->Record) : QualType();
+    const auto *StoredSource =
+        Construction && Construction->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Construction->getArg(0)))
+            : nullptr;
+    const bool StoredInitialization =
+        StoredSource && isa<VarDecl>(StoredSource->getDecl()) &&
+        approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
+            FunctionalObjectConstruction::CopyOrMove;
     const bool DirectInitialization =
         (Construction && !Construction->getNumArgs() &&
          approvedFunctionalObjectConstruction(S, SM, Construction, Context) ==
@@ -36365,8 +36384,9 @@ static bool utilityWrapperTransformReduceOperations(
          !List->getInitializedFieldInUnion() &&
          Same(List->getType(), ObjectType) && Record && Record->isAggregate() &&
          !Record->getNumBases());
-    if (!Argument || !Argument->isPRValue() || !DirectInitialization ||
-        !Object || !Record || !Record->getIdentifier() ||
+    if (!Argument || !Argument->isPRValue() ||
+        (!DirectInitialization && !StoredInitialization) || !Object || !Record ||
+        !Record->getIdentifier() ||
         (I == 4 ? !utilityWrapperScalarReductionOpcode(Record->getName())
                 : !ArithmeticOpcode(Record->getName())) ||
         Record->getTemplateArgs().size() != 1 ||
