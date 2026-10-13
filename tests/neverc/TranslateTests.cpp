@@ -276627,6 +276627,445 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesOperationMatrix) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-operation-matrix.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-operation-matrix.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=-3,y=0,z=2;const std::reference_wrapper<int>a[]={x,y,z,y};for(int variant=0;variant!=3;++variant){int n=variant==2?4:variant;
+{std::logical_not<void>op;auto result=std::find_if(a,a+n,op);if(result!=a+(n==0?0:n==1?1:1))return 1;}
+{const std::logical_not<void>op;auto result=std::find_if(a,a+n,op);if(result!=a+(n==0?0:n==1?1:1))return 1;}
+{std::logical_not<void>op;auto result=std::find_if_not(a,a+n,op);if(result!=a+(n==0?0:n==1?0:0))return 1;}
+{const std::logical_not<void>op;auto result=std::find_if_not(a,a+n,op);if(result!=a+(n==0?0:n==1?0:0))return 1;}
+{std::logical_not<void>op;auto result=std::count_if(a,a+n,op);if(result!=(n==0?0:n==1?0:2))return 1;}
+{const std::logical_not<void>op;auto result=std::count_if(a,a+n,op);if(result!=(n==0?0:n==1?0:2))return 1;}
+{std::logical_not<void>op;auto result=std::all_of(a,a+n,op);if(result!=(n==0?true:n==1?false:false))return 1;}
+{const std::logical_not<void>op;auto result=std::all_of(a,a+n,op);if(result!=(n==0?true:n==1?false:false))return 1;}
+{std::logical_not<void>op;auto result=std::any_of(a,a+n,op);if(result!=(n==0?false:n==1?false:true))return 1;}
+{const std::logical_not<void>op;auto result=std::any_of(a,a+n,op);if(result!=(n==0?false:n==1?false:true))return 1;}
+{std::logical_not<void>op;auto result=std::none_of(a,a+n,op);if(result!=(n==0?true:n==1?true:false))return 1;}
+{const std::logical_not<void>op;auto result=std::none_of(a,a+n,op);if(result!=(n==0?true:n==1?true:false))return 1;}
+}return x!=-3||y!=0||z!=2||&a[0].get()!=&x||&a[1].get()!=&y||&a[3].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-operation-matrix" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesBoolFloating) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-bool-floating.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-bool-floating.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){const bool x=false,y=true;const std::reference_wrapper<const bool>a[]={x,y,x};const double tiny=0x1p-100,zero=-0.0,nan=0.0/0.0;const std::reference_wrapper<const double>b[]={tiny,zero,nan};
+{const std::logical_not<void>op;auto result=std::find_if(a,a+3,op);if(result!=a+0)return 1;}
+{std::logical_not<void>op;auto result=std::find_if(b,b+3,op);if(result!=b+1)return 1;}
+{const std::logical_not<void>op;auto result=std::find_if_not(a,a+3,op);if(result!=a+1)return 1;}
+{std::logical_not<void>op;auto result=std::find_if_not(b,b+3,op);if(result!=b+0)return 1;}
+{const std::logical_not<void>op;auto result=std::count_if(a,a+3,op);if(result!=2)return 1;}
+{std::logical_not<void>op;auto result=std::count_if(b,b+3,op);if(result!=1)return 1;}
+{const std::logical_not<void>op;auto result=std::all_of(a,a+3,op);if(result!=false)return 1;}
+{std::logical_not<void>op;auto result=std::all_of(b,b+3,op);if(result!=false)return 1;}
+{const std::logical_not<void>op;auto result=std::any_of(a,a+3,op);if(result!=true)return 1;}
+{std::logical_not<void>op;auto result=std::any_of(b,b+3,op);if(result!=true)return 1;}
+{const std::logical_not<void>op;auto result=std::none_of(a,a+3,op);if(result!=false)return 1;}
+{std::logical_not<void>op;auto result=std::none_of(b,b+3,op);if(result!=false)return 1;}
+return x||!y||&a[0].get()!=&x||&b[1].get()!=&zero;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-bool-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesLiveBindings) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-live-bindings.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-live-bindings.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int x=-3,y=0,z=2;std::reference_wrapper<int>a[]={x,y,z,y};
+{const std::logical_not<void>op;auto result=std::find_if(a,a+4,op);if(result!=a+1)return 1;}
+{const std::logical_not<void>op;auto result=std::find_if_not(a,a+4,op);if(result!=a+0)return 1;}
+{const std::logical_not<void>op;auto result=std::count_if(a,a+4,op);if(result!=2)return 1;}
+{const std::logical_not<void>op;auto result=std::all_of(a,a+4,op);if(result!=false)return 1;}
+{const std::logical_not<void>op;auto result=std::any_of(a,a+4,op);if(result!=true)return 1;}
+{const std::logical_not<void>op;auto result=std::none_of(a,a+4,op);if(result!=false)return 1;}
+y=9;
+{std::logical_not<void>op;auto result=std::find_if(a,a+4,op);if(result!=a+4)return 1;}
+{std::logical_not<void>op;auto result=std::find_if_not(a,a+4,op);if(result!=a+0)return 1;}
+{std::logical_not<void>op;auto result=std::count_if(a,a+4,op);if(result!=0)return 1;}
+{std::logical_not<void>op;auto result=std::all_of(a,a+4,op);if(result!=false)return 1;}
+{std::logical_not<void>op;auto result=std::any_of(a,a+4,op);if(result!=false)return 1;}
+{std::logical_not<void>op;auto result=std::none_of(a,a+4,op);if(result!=true)return 1;}
+y=0;a[0]=std::ref(y);
+{const std::logical_not<void>op;auto result=std::find_if(a,a+4,op);if(result!=a+0)return 1;}
+{const std::logical_not<void>op;auto result=std::find_if_not(a,a+4,op);if(result!=a+2)return 1;}
+{const std::logical_not<void>op;auto result=std::count_if(a,a+4,op);if(result!=3)return 1;}
+{const std::logical_not<void>op;auto result=std::all_of(a,a+4,op);if(result!=false)return 1;}
+{const std::logical_not<void>op;auto result=std::any_of(a,a+4,op);if(result!=true)return 1;}
+{const std::logical_not<void>op;auto result=std::none_of(a,a+4,op);if(result!=false)return 1;}
+return x!=-3||y!=0||z!=2||&a[0].get()!=&y||&a[1].get()!=&y||&a[2].get()!=&z||&a[3].get()!=&y;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-live-bindings" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesEmptyEffectsParameters) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-empty-effects-parameters.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-empty-effects-parameters.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;int reads=0,cleaned=0;struct Input{P p;~Input(){++cleaned;}P get(){++reads;return p;}};
+auto parameter_find_if(P a,P b,const std::logical_not<>&op){return std::find_if(a,b,op);}
+auto parameter_find_if_not(P a,P b,const std::logical_not<>&op){return std::find_if_not(a,b,op);}
+auto parameter_count_if(P a,P b,const std::logical_not<>&op){return std::count_if(a,b,op);}
+auto parameter_all_of(P a,P b,const std::logical_not<>&op){return std::all_of(a,b,op);}
+auto parameter_any_of(P a,P b,const std::logical_not<>&op){return std::any_of(a,b,op);}
+auto parameter_none_of(P a,P b,const std::logical_not<>&op){return std::none_of(a,b,op);}
+int main(){int x=-3,y=0;W a[]={x,y,x};const std::logical_not<>op;
+if(std::find_if(Input{a}.get(),Input{a}.get(),op)!=a)return 1;
+if(std::find_if_not(Input{a}.get(),Input{a}.get(),op)!=a)return 1;
+if(std::count_if(Input{a}.get(),Input{a}.get(),op)!=0)return 1;
+if(std::all_of(Input{a}.get(),Input{a}.get(),op)!=true)return 1;
+if(std::any_of(Input{a}.get(),Input{a}.get(),op)!=false)return 1;
+if(std::none_of(Input{a}.get(),Input{a}.get(),op)!=true)return 1;
+if(reads!=12||cleaned!=12)return 2;
+if(parameter_find_if(a,a+3,op)!=a+1)return 3;
+if(parameter_find_if_not(a,a+3,op)!=a+0)return 3;
+if(parameter_count_if(a,a+3,op)!=1)return 3;
+if(parameter_all_of(a,a+3,op)!=false)return 3;
+if(parameter_any_of(a,a+3,op)!=true)return 3;
+if(parameter_none_of(a,a+3,op)!=false)return 3;
+return x!=-3||y!=0||&a[0].get()!=&x||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-empty-effects-parameters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesFormerVariableRejections) {
+  const auto Source = tmpFile("wrapper-query-stored-predicate-legacy-accepted.cpp");
+  const auto Output = tmpFile("wrapper-query-stored-predicate-legacy-accepted.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+namespace case_0{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::count_if(a,b,op);}
+}
+namespace case_1{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::find_if(a,b,op);}
+}
+namespace case_2{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::find_if_not(a,b,op);}
+}
+namespace case_3{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::all_of(a,b,op);}
+}
+namespace case_4{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::any_of(a,b,op);}
+}
+namespace case_5{
+
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::none_of(a,b,op);}
+}
+int main(){int x=0,y=2,out[1]={91};std::reference_wrapper<int>a[]={x,y,x};
+if(case_0::selected(a,a+3,out)!=2)return 1;
+if(case_1::selected(a,a+3,out)!=a+0)return 1;
+if(case_2::selected(a,a+3,out)!=a+1)return 1;
+if(case_3::selected(a,a+3,out)!=false)return 1;
+if(case_4::selected(a,a+3,out)!=true)return 1;
+if(case_5::selected(a,a+3,out)!=false)return 1;
+return x!=0||y!=2||out[0]!=91||&a[2].get()!=&x;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-query-stored-predicate-legacy-accepted" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperQueryStoredPredicatesRetainClosedAdmission) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"all_of-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::all_of(a,b,(++effects,op));}
+)cpp"},
+      {"all_of-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::all_of(a,b,h.op);}
+)cpp"},
+      {"all_of-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::all_of(a,b,make());}
+)cpp"},
+      {"all_of-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::all_of(a,b,op);}
+)cpp"},
+      {"all_of-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::all_of(a,b,op);}
+)cpp"},
+      {"any_of-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::any_of(a,b,(++effects,op));}
+)cpp"},
+      {"any_of-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::any_of(a,b,h.op);}
+)cpp"},
+      {"any_of-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::any_of(a,b,make());}
+)cpp"},
+      {"any_of-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::any_of(a,b,op);}
+)cpp"},
+      {"any_of-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::any_of(a,b,op);}
+)cpp"},
+      {"count_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::count_if(a,b,(++effects,op));}
+)cpp"},
+      {"count_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::count_if(a,b,h.op);}
+)cpp"},
+      {"count_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::count_if(a,b,make());}
+)cpp"},
+      {"count_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::count_if(a,b,op);}
+)cpp"},
+      {"count_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::count_if(a,b,op);}
+)cpp"},
+      {"find_if-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::find_if(a,b,(++effects,op));}
+)cpp"},
+      {"find_if-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::find_if(a,b,h.op);}
+)cpp"},
+      {"find_if-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::find_if(a,b,make());}
+)cpp"},
+      {"find_if-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::find_if(a,b,op);}
+)cpp"},
+      {"find_if-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::find_if(a,b,op);}
+)cpp"},
+      {"find_if_not-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::find_if_not(a,b,(++effects,op));}
+)cpp"},
+      {"find_if_not-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::find_if_not(a,b,h.op);}
+)cpp"},
+      {"find_if_not-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::find_if_not(a,b,make());}
+)cpp"},
+      {"find_if_not-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::find_if_not(a,b,op);}
+)cpp"},
+      {"find_if_not-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::find_if_not(a,b,op);}
+)cpp"},
+      {"none_of-comma", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+int effects=0;
+auto selected(P a,P b){std::logical_not<>op;return std::none_of(a,b,(++effects,op));}
+)cpp"},
+      {"none_of-member", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Holder{std::logical_not<>op;};
+auto selected(P a,P b){Holder h;return std::none_of(a,b,h.op);}
+)cpp"},
+      {"none_of-returned", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+std::logical_not<>make(){return {};}
+auto selected(P a,P b){return std::none_of(a,b,make());}
+)cpp"},
+      {"none_of-source-operation", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr auto logical_not<void>::operator()<W&>(W&w)const noexcept(noexcept(!std::forward<W&>(w)))->decltype(!std::forward<W&>(w)){return false;}}}
+auto selected(P a,P b){std::logical_not<>op;return std::none_of(a,b,op);}
+)cpp"},
+      {"none_of-typed", R"cpp(#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::logical_not<int>op;return std::none_of(a,b,op);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Stem = std::string("wrapper-query-stored-predicate-reject-") + Case.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperCountIfLogicalNotRuntimeAlias) {
   const auto Source = tmpFile("wrapper-count-if-logical-not-runtime-alias.cpp");
   const auto Output = tmpFile("wrapper-count-if-logical-not-runtime-alias.nc");
@@ -277418,12 +277857,6 @@ auto selected(W*a,W*b,int*out){return std::count_if(a,a+1,std::logical_not<>{});
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::count_if(a,a+1,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::count_if(a,b,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -278249,12 +278682,6 @@ auto selected(W*a,W*b,int*out){return std::find_if(a,a+1,std::logical_not<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::find_if(a,a+1,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::find_if(a,b,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -279108,12 +279535,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::find_if_not(a,a+1,std::logical_not<>{});}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::find_if_not(a,b,op);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -279936,12 +280357,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::all_of(a,a+1,std::logical_not<>{});}
 )cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::all_of(a,b,op);}
-)cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
@@ -280763,12 +281178,6 @@ auto selected(W*a,W*b,int*out){return std::any_of(a,a+1,std::logical_not<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::any_of(a,a+1,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::any_of(a,b,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
@@ -281594,12 +282003,6 @@ auto selected(W*a,W*b,int*out){return std::none_of(a,a+1,std::logical_not<>{});}
 namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
 using W=std::reference_wrapper<int>;
 auto selected(W*a,W*b,int*out){return std::none_of(a,a+1,std::logical_not<>{});}
-)cpp"},
-      {"stored-logical-not", R"cpp(
-#include <algorithm>
-#include <functional>
-using W=std::reference_wrapper<int>;using P=W*;
-auto selected(P a,P b,int*out){std::logical_not<> op;return std::none_of(a,b,op);}
 )cpp"},
       {"typed-logical-not", R"cpp(
 #include <algorithm>
