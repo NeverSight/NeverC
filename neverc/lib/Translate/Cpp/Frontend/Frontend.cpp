@@ -15948,6 +15948,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                    ? WrapperCall(4, {})
                    : WrapperCall(4, {3});
       return WrapperCall(5, {4});
+    case UtilityOperation::AlgorithmFindFirstOf:
+    case UtilityOperation::AlgorithmSearch:
+    case UtilityOperation::AlgorithmFindEnd:
+    case UtilityOperation::AlgorithmSearchN:
+      return Function->getNumParams() == 4 ? WrapperCall(4, {})
+                                          : WrapperCall(5, {4});
     case UtilityOperation::AlgorithmCopyIf:
     case UtilityOperation::AlgorithmRemoveCopyIf:
       return WrapperCall(4, {3});
