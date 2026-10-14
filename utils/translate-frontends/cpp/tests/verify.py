@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15",
-        "catalog_sha256": "8b5eabd4aec279e2d56abe567682b1b7fdce84bfbde558fcce02535816cb142a",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16",
+        "catalog_sha256": "41023876f28201d666d92c378271ef2ab7ab97c54f55909348895e066b269e44",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -11488,7 +11488,7 @@ extern "C" int algorithm_header() { return 0; }
 """
     algorithm_header = check("v2-algorithm-header", algorithm_header_source,
                              profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_header["sdk_dependencies"]) == 354, algorithm_header
+    assert len(algorithm_header["sdk_dependencies"]) == 369, algorithm_header
     assert any(dependency["root"] == "libcxx" and
                dependency["path"] == "algorithm"
                for dependency in algorithm_header["sdk_dependencies"]), algorithm_header
@@ -11529,7 +11529,7 @@ extern "C" int algorithm_default_enums() {
     algorithm_default_enums = check(
         "v2-algorithm-default-enums", algorithm_default_enums_source,
         profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_default_enums["sdk_dependencies"]) == 354, algorithm_default_enums
+    assert len(algorithm_default_enums["sdk_dependencies"]) == 369, algorithm_default_enums
     assert not [node for node in walk(algorithm_default_enums["functions"])
                 if node.get("op") in ("call", "mapped_call", "indirect_call")], algorithm_default_enums
     for target in sdk_targets:
@@ -11566,7 +11566,7 @@ extern "C" int algorithm_default_object_pointers() {
         "v2-algorithm-default-object-pointers",
         algorithm_default_object_pointers_source,
         profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_default_object_pointers["sdk_dependencies"]) == 354, algorithm_default_object_pointers
+    assert len(algorithm_default_object_pointers["sdk_dependencies"]) == 369, algorithm_default_object_pointers
     assert not [node for node in walk(algorithm_default_object_pointers["functions"])
                 if node.get("op") in ("call", "mapped_call", "indirect_call")], algorithm_default_object_pointers
     for target in sdk_targets:
@@ -11587,7 +11587,7 @@ extern "C" int algorithm_read_only(int *values, long *other, short value) {
     algorithm_read_only = check("v2-algorithm-read-only",
                                 algorithm_read_only_source,
                                 profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_read_only["sdk_dependencies"]) == 354, algorithm_read_only
+    assert len(algorithm_read_only["sdk_dependencies"]) == 369, algorithm_read_only
     assert not [node for node in walk(algorithm_read_only["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_read_only
     for target in sdk_targets:
@@ -11615,7 +11615,7 @@ extern "C" int algorithm_transfer(const int *source, double *destination) {
     algorithm_transfer = check("v2-algorithm-transfer",
                                algorithm_transfer_source,
                                profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_transfer["sdk_dependencies"]) == 354, algorithm_transfer
+    assert len(algorithm_transfer["sdk_dependencies"]) == 369, algorithm_transfer
     assert not [node for node in walk(algorithm_transfer["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_transfer
     for target in sdk_targets:
@@ -11649,7 +11649,7 @@ extern "C" int algorithm_mutation(int *first, int *second, long *output) {
     algorithm_mutation = check("v2-algorithm-mutation",
                                algorithm_mutation_source,
                                profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_mutation["sdk_dependencies"]) == 354, algorithm_mutation
+    assert len(algorithm_mutation["sdk_dependencies"]) == 369, algorithm_mutation
     assert not [node for node in walk(algorithm_mutation["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_mutation
     for target in sdk_targets:
@@ -11676,7 +11676,7 @@ extern "C" int algorithm_order(const int *first, const int *last, short value) {
 """
     algorithm_order = check("v2-algorithm-order", algorithm_order_source,
                             profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_order["sdk_dependencies"]) == 354, algorithm_order
+    assert len(algorithm_order["sdk_dependencies"]) == 369, algorithm_order
     assert not [node for node in walk(algorithm_order["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_order
     for target in sdk_targets:
@@ -11711,7 +11711,7 @@ extern "C" long long algorithm_comparator_queries(
 """
 
     def assert_comparator_queries(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -11783,7 +11783,7 @@ extern "C" int algorithm_equality_mutation(int *first, int *last,
     algorithm_equality_mutation = check(
         "v2-algorithm-equality-mutation", algorithm_equality_mutation_source,
         profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_equality_mutation["sdk_dependencies"]) == 354, algorithm_equality_mutation
+    assert len(algorithm_equality_mutation["sdk_dependencies"]) == 369, algorithm_equality_mutation
     assert not [node for node in walk(algorithm_equality_mutation["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_equality_mutation
     for target in sdk_targets:
@@ -11805,7 +11805,7 @@ extern "C" int algorithm_predicate_unique(
 """
 
     def assert_predicate_unique(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -11844,7 +11844,7 @@ extern "C" int algorithm_subrange(const int *first, const int *last,
     algorithm_subrange = check("v2-algorithm-subrange",
                                algorithm_subrange_source,
                                profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_subrange["sdk_dependencies"]) == 354, algorithm_subrange
+    assert len(algorithm_subrange["sdk_dependencies"]) == 369, algorithm_subrange
     assert not [node for node in walk(algorithm_subrange["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_subrange
     for target in sdk_targets:
@@ -11870,7 +11870,7 @@ extern "C" long long algorithm_predicate_subrange(
 """
 
     def assert_predicate_subrange(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -11908,7 +11908,7 @@ extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
     algorithm_rearrangement = check("v2-algorithm-rearrangement",
                                     algorithm_rearrangement_source,
                                     profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_rearrangement["sdk_dependencies"]) == 354, algorithm_rearrangement
+    assert len(algorithm_rearrangement["sdk_dependencies"]) == 369, algorithm_rearrangement
     assert not [node for node in walk(algorithm_rearrangement["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_rearrangement
     for target in sdk_targets:
@@ -11943,7 +11943,7 @@ extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
     algorithm_ordered_ranges = check("v2-algorithm-ordered-ranges",
                                      algorithm_ordered_ranges_source,
                                      profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_ordered_ranges["sdk_dependencies"]) == 354, algorithm_ordered_ranges
+    assert len(algorithm_ordered_ranges["sdk_dependencies"]) == 369, algorithm_ordered_ranges
     assert not [node for node in walk(algorithm_ordered_ranges["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_ordered_ranges
     for target in sdk_targets:
@@ -11975,7 +11975,7 @@ extern "C" int algorithm_comparator_ordered_ranges(
 """
 
     def assert_comparator_ordered_ranges(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12064,7 +12064,7 @@ extern "C" int algorithm_extrema(const int *first, const int *last,
     algorithm_extrema = check("v2-algorithm-extrema",
                               algorithm_extrema_source,
                               profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_extrema["sdk_dependencies"]) == 354, algorithm_extrema
+    assert len(algorithm_extrema["sdk_dependencies"]) == 369, algorithm_extrema
     assert not [node for node in walk(algorithm_extrema["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_extrema
     for target in sdk_targets:
@@ -12179,7 +12179,7 @@ extern "C" long long algorithm_comparator_extrema(
 """
 
     def assert_comparator_extrema(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12251,7 +12251,7 @@ extern "C" int algorithm_heap(int *first, int *last) {
 """
     algorithm_heap = check("v2-algorithm-heap", algorithm_heap_source,
                            profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_heap["sdk_dependencies"]) == 354, algorithm_heap
+    assert len(algorithm_heap["sdk_dependencies"]) == 369, algorithm_heap
     assert not [node for node in walk(algorithm_heap["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_heap
     for target in sdk_targets:
@@ -12276,7 +12276,7 @@ extern "C" int algorithm_comparator_heap(
 """
 
     def assert_comparator_heap(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12351,7 +12351,7 @@ extern "C" int algorithm_ordering(int *first, int *middle, int *last,
     algorithm_ordering = check("v2-algorithm-ordering",
                                algorithm_ordering_source,
                                profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_ordering["sdk_dependencies"]) == 354, algorithm_ordering
+    assert len(algorithm_ordering["sdk_dependencies"]) == 369, algorithm_ordering
     assert not [node for node in walk(algorithm_ordering["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_ordering
     for target in sdk_targets:
@@ -12376,7 +12376,7 @@ extern "C" int algorithm_comparator_ordering(
 """
 
     def assert_comparator_ordering(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12437,7 +12437,7 @@ extern "C" void algorithm_stable_sort(
 """
 
     def assert_stable_sort(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12473,7 +12473,7 @@ extern "C" void algorithm_inplace_merge(
 """
 
     def assert_inplace_merge(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12572,7 +12572,7 @@ extern "C" int algorithm_permutation(int *first, int *last,
     algorithm_permutation = check("v2-algorithm-permutation",
                                   algorithm_permutation_source,
                                   profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_permutation["sdk_dependencies"]) == 354, algorithm_permutation
+    assert len(algorithm_permutation["sdk_dependencies"]) == 369, algorithm_permutation
     assert not [node for node in walk(algorithm_permutation["functions"])
                 if node.get("op") in ("call", "mapped_call")], algorithm_permutation
     for target in sdk_targets:
@@ -12593,7 +12593,7 @@ extern "C" int algorithm_comparator_permutation(
 """
 
     def assert_comparator_permutation(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -12646,7 +12646,7 @@ extern "C" long algorithm_binary_predicates(
 """
 
     def assert_binary_predicates(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -15329,7 +15329,7 @@ extern "C" int algorithm_predicate_queries(const int *first,
     algorithm_predicate_queries = check(
         "v2-algorithm-predicate-queries", algorithm_predicate_queries_source,
         profile="cpp-core-v2", sdk=True)
-    assert len(algorithm_predicate_queries["sdk_dependencies"]) == 354, algorithm_predicate_queries
+    assert len(algorithm_predicate_queries["sdk_dependencies"]) == 369, algorithm_predicate_queries
     predicate_query_nodes = list(walk(algorithm_predicate_queries["functions"]))
     assert not [node for node in predicate_query_nodes
                 if node.get("op") in ("call", "mapped_call")], algorithm_predicate_queries
@@ -15368,7 +15368,7 @@ extern "C" int algorithm_predicate_mutation(
 """
 
     def assert_predicate_mutation(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -15406,7 +15406,7 @@ extern "C" int algorithm_partition(
 """
 
     def assert_partition_algorithms(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -15435,7 +15435,7 @@ extern "C" int *algorithm_stable_partition(
 """
 
     def assert_stable_partition(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data
@@ -15476,7 +15476,7 @@ extern "C" long algorithm_callback_traversal(
 """
 
     def assert_callback_traversal(data):
-        assert len(data["sdk_dependencies"]) == 354, data
+        assert len(data["sdk_dependencies"]) == 369, data
         nodes = list(walk(data["functions"]))
         assert not [node for node in nodes
                     if node.get("op") in ("call", "mapped_call")], data

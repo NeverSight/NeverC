@@ -15885,6 +15885,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   std::optional<AlgorithmCallableSource>
   algorithmCallableSource(const CallExpr *Call) {
+    if (auto Random = approvedUtilityAlgorithmRandomCall(A.S, A.Sources, Call,
+                                                         A.Context)) {
+      for (const auto *Bound : {Random->Minimum, Random->Maximum}) {
+        collectOperationFunctionTypeSource(Bound);
+        const auto *Body = cast<CompoundStmt>(Bound->getDefinition()->getBody());
+        operationExpressionDependency(
+            cast<ReturnStmt>(*Body->body_begin())->getRetValue());
+      }
+      return AlgorithmCallableSource{Call->getDirectCallee(), Random->Method};
+    }
     if (auto Predicate = approvedUtilityAlgorithmPredicateCall(A.S, A.Sources,
                                                                Call, A.Context))
       return AlgorithmCallableSource{
@@ -26169,11 +26179,6 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                "-D_LIBCPP___ITERATOR_ISTREAMBUF_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_OSTREAM_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_OSTREAMBUF_ITERATOR_H",
-                               // Randomized algorithms still require an
-                               // unpinned random-distribution header closure
-                               // and direct operation lowering.
-                               "-D_LIBCPP___ALGORITHM_SHUFFLE_H",
-                               "-D_LIBCPP___ALGORITHM_SAMPLE_H",
                                "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
                                "-fno-fast-math", "-ffp-contract=off"});
     }

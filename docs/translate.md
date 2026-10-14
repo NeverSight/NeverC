@@ -4,6 +4,8 @@
 
 # Translate C++ to NeverC
 
+Core v2 now lowers direct `std::shuffle` and C++17 `std::sample` on admitted raw-pointer scalar ranges. The generator is a source-owned standard-layout, trivially copyable record with a trivial destructor, a directly declared unsigned `result_type` other than bool (at most 64 bits), a matching zero-argument source call operator, and static constexpr `min()`/`max()` with single constant returns and `min() < max()`. It binds by reference, preserving state, exact libc++ rejection draws and independent-bit assembly. Sample uses a nonnegative built-in integral count of at most 64 bits, preserves input order and returns the final writable output pointer. Empty/singleton shuffle and zero/empty sample make no generator call. Selected SDK replacements are rejected; `<random>` engines, wrapped/custom iterators and record elements remain outside this subset. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+
 Core v2 now accepts the pinned embedded `<type_traits>` header for compile-time
 type aliases and integral/enum constants. `std::remove_cv_t`, `std::is_same_v`,
 supported construction/destruction traits and `std::integral_constant::value`

@@ -2,14 +2,19 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15`. It contains the 624 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16`. It contains the 627 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 526 libc++ headers, 14 Clang
+`clang20.1.8-libcxx200100-macos15.5` catalog: 529 libc++ headers, 14 Clang
 resource headers, three NeverC resource headers, and 81 Darwin platform headers.
 Copyright and license notices are preserved. Upstream-source bytes are retained
 except for the documented search-count correction below; the NeverC-authored C declaration shims are identified
 separately below. This is a fixed input set for the supported translation
 profiles, not a complete Apple SDK.
+
+The r16 distribution adds the three original libc++ random-distribution headers
+needed by `shuffle` and `sample`: `__random/is_valid.h`, `__random/log2.h` and
+`__random/uniform_int_distribution.h`. Their LLVM license notices and source
+provenance are retained.
 
 The r15 distribution corrects the pinned random-access `search_n` helper. It
 returns the first iterator for non-positive counts and compares the nonnegative
@@ -192,7 +197,7 @@ pointer, array-range and raw-pointer reverse-iterator operations while retaining
 the exact upstream iterator headers. Four stream-iterator declarations stay
 disabled while their I/O header closure and runtime operations remain outside
 core v2.
-The `<algorithm>` surface has a 354-file libc++/resource closure on every
+The `<algorithm>` surface has a 369-file libc++/resource closure on every
 core-v2 target. Its upstream declarations and the NeverC C string declaration
 shim are available without platform headers. Scalar-pointer `copy`,
 `copy_n`, `move`, `copy_backward`, `move_backward`, `fill`, `fill_n`,
@@ -243,8 +248,11 @@ Predicate mutation algorithms require writable destinations; ordered output
 algorithms accept directly convertible writable scalar destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.
-`shuffle` and `sample` stay disabled while their random-distribution header
-closure and direct lowering remain unfinished.
+Direct `shuffle` and `sample` now lower admitted scalar-pointer ranges with a
+checked source-owned generator. The three pinned random-distribution headers
+retain libc++ rejection sampling and generator state; their selected declaration
+closure rejects source replacements. `<random>` engines and other iterator or
+element forms remain outside this subset.
 The `<numeric>` surface has a 126-file libc++/resource closure on every
 core-v2 target. The exact default `iota`, `accumulate`, `inner_product`,
 `partial_sum`, `adjacent_difference`, `reduce`, two-range `transform_reduce`,

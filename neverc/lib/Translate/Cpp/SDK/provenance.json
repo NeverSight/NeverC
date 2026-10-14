@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "624 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "627 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -3827,6 +3827,42 @@
     },
     {
       "root": "libcxx",
+      "path": "__random/is_valid.h",
+      "sha256": "0dbf38b3f8c04360407d16f3c032f30ed6488d6e102ffc2fce3969a2c39666c0",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__random/is_valid.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__random/is_valid.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/log2.h",
+      "sha256": "0e4c8f954379b838194f71a868ffefc68d00f20bc01b91122ea50725672dccab",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__random/log2.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__random/log2.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/uniform_int_distribution.h",
+      "sha256": "90d1c832a1a402cb7e4b7e7d10d5e2ae4428a3bc1baa3bde08c19c20d452c84b",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__random/uniform_int_distribution.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__random/uniform_int_distribution.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__ranges/access.h",
       "sha256": "0cd04406f79034adefc2f6389bf24f7d7acfa7752f2710da7199d0f7604c0723",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -7514,7 +7550,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16",
   "metadata": [
     {
       "root": "platform",

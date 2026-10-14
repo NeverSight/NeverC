@@ -147,13 +147,13 @@ if(APPLE)
 endif()
 set(_builtin_sdk "${NEVERC_CPP_REPOSITORY_ROOT}/neverc/lib/Translate/Cpp/SDK")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp Frontend.h
+  Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp Frontend.h
   SetupGuidSymbols.py RewriteSetupCoffSymbols.py IsolateMathCoffSymbols.py BundleArchive.cmake
   MsvcRuntimeSymbols.py
   AuditArchive.py CoffWeakAliases.py HostCoffSymbols.py VerifyArchiveMembers.py
   "${_builtin_sdk}/catalog.json" "${_builtin_sdk}/embed.py")
 set(_identity "builtin:llvm20.1.8:6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d")
-foreach(_input Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp Frontend.h
+foreach(_input Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp Frontend.h
     CMakeLists.txt IsolateSymbols.py NoCrashReporter.h BuildID.h.in
     SetupGuidSymbols.py RewriteSetupCoffSymbols.py IsolateMathCoffSymbols.py BundleArchive.cmake
     MsvcRuntimeSymbols.py
@@ -177,7 +177,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/BuiltinCppSdkData.h"
     "${_builtin_sdk}/embed.py"
   VERBATIM)
 add_library(nevercCppFrontendBridge STATIC
-  Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp
+  Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/BuiltinCppSdkData.h")
 set_target_properties(nevercCppFrontendBridge PROPERTIES
   CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)

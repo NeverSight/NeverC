@@ -408,7 +408,7 @@ direct `advance`, `distance`, `next` and `prev` navigation.
 Algorithm directly lowers scalar-pointer `copy`, `move`, `copy_backward`,
 `move_backward`, `copy_n`, `fill`, `fill_n`, `iter_swap`, `swap_ranges`,
 `reverse`, `reverse_copy`, `rotate` and `rotate_copy` calls from its
-platform-free 354-file closure; copy and move outputs accept checked direct
+platform-free 369-file closure; copy and move outputs accept checked direct
 scalar conversions. The copy-producing equality and predicate algorithms below
 accept the same conversions for their writable outputs. Built-in equality elements admit
 `find`, `count`, three- or four-iterator `equal`, `adjacent_find`, `remove`,
@@ -658,9 +658,10 @@ and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.
 `mismatch`, `equal_range` and `minmax_element` directly construct authenticated
 scalar-pointer pair results; `minmax` uses its exact authenticated pair of two
-const references. `shuffle` and `sample` remain disabled at this stage because
-their libc++ implementation reaches the same target C runtime character-state
-ABI through `uniform_int_distribution`.
+const references. Direct `shuffle` and `sample` also lower admitted scalar-pointer
+ranges with a checked source-owned generator by reference. The selected
+`uniform_int_distribution` closure is pinned, preserving rejection draws,
+generator state and sample order without a libc++ runtime call.
 Numeric contributes an exact, platform-free 126-file C++17 header closure.
 Matching non-promoted integer, `float` and `double` pointer ranges admit the
 default `iota`, `accumulate`, `inner_product`, `partial_sum` and
@@ -788,6 +789,17 @@ closure before emitting output. Standard-library objects and operations beyond
 these documented surfaces, other standard headers and full C++/STL remain
 unfinished.
 
+Direct `std::shuffle` and C++17 `std::sample` also accept admitted scalar-pointer
+ranges with a checked source-owned unsigned generator bound by reference.
+Their direct lowering preserves libc++'s rejection sampling, independent-bit
+assembly, generator state and stable sample order. Sample uses a nonnegative
+built-in integral count of at most 64 bits and returns the final output pointer.
+The selected SDK declaration closure rejects source replacements. The exact
+generator and range boundary is documented in the
+[algorithm contract](../docs/cpp-core-v2.md#algorithm-header-from-algorithm);
+`<random>` engines, wrapped/custom iterators and record elements remain outside
+this subset.
+
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
 bool and trivial aggregate operations, free functions, resolved namespaces and
@@ -907,9 +919,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-624 approved header files and separate SDK metadata. The original header bytes
+627 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.

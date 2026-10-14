@@ -4,6 +4,8 @@
 
 # C++ を NeverC に変換する
 
+Core v2 は、対応するスカラーの生ポインター範囲で `std::shuffle` と C++17 の `std::sample` を直接変換します。生成器はソース所有の標準レイアウトで、コピーとデストラクターが trivial なレコードです。bool 以外の最大 64 ビットの符号なし `result_type` を直接宣言し、同じ型を返す引数なしの呼び出し演算子と、単一の定数 return を持ち `min() < max()` を満たす static constexpr `min()`/`max()` を定義します。生成器を参照で渡し、状態、libc++ の棄却による再抽選回数と独立ビットの組み立てを保ちます。Sample は最大 64 ビットの非負の組み込み整数を個数として受け取り、入力順序を保ち、書き込み可能な出力の終端ポインターを返します。空または単一要素の shuffle と、個数ゼロまたは空入力の sample は生成器を呼びません。選択された SDK のソース置換は拒否され、`<random>` エンジン、ラップされた／独自のイテレーター、レコード要素はこの範囲外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+
 Core v2 は、コンパイル時の型エイリアスと整数・列挙定数向けに、組み込みの固定版 `<type_traits>` をサポートします。`std::remove_cv_t`、`std::is_same_v`、対応する構築・破棄 traits、`std::integral_constant::value` は既存のコア型とリテラルへ変換されます。ドライバーは、対応する macOS、Linux、Windows ターゲットで消費される 101 個の libc++／resource ヘッダーのハッシュを検証して記録します。実行時 trait のサポートは、下記の検証済み関数ポインター `integral_constant` 形式に限られます。その他の trait オブジェクトと trait のストレージ識別は未対応です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
 
 Core v2 は組み込みの固定版 `<cstdint>` もサポートします。固定幅、least、fast、ポインター幅、最大幅の型エイリアスと、標準の上限・定数マクロは、選択したターゲットの C++17 型と値を保持します。ドライバーは単独利用時の 9 ファイルの閉包を記録し、引用形式と C ヘッダー形式を拒否します。`<cstdint>` と `<type_traits>` はどちらの順序でも組み合わせられます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).

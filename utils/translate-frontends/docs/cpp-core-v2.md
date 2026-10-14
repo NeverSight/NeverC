@@ -6537,7 +6537,7 @@ rejected by the normal source and semantic checks.
 ## Algorithm header from `<algorithm>`
 
 Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded
-VFS. The authenticated closure contains 354 libc++/resource files on every
+VFS. The authenticated closure contains 369 libc++/resource files on every
 supported target, has the same dependency set on all eight targets, and contains
 no platform headers. The upstream public header and consumed components retain
 their LLVM 20.1.8 source bytes except for the documented r15 count-bound
@@ -8197,9 +8197,36 @@ metadata without requiring user traversal of its internal pointer-subtraction
 expression. Query-only calls do not manufacture a missing instantiated body,
 and taking an algorithm's address does not inherit a checked call's proof.
 
-The `shuffle` and `sample` component headers are authenticated but their
-declarations stay disabled until the random-distribution header closure and
-direct lowering are implemented. Quoted includes, user shadow headers and
+Direct `std::shuffle(first, last, generator)` and C++17
+`std::sample(first, last, output, count, generator)` now accept admitted
+raw-pointer scalar ranges. Shuffle requires writable elements of the same type.
+Sample accepts const or mutable input, writable scalar output with a checked
+conversion, and a nonnegative built-in integral count of at most 64 bits. It
+preserves input order and returns the output position after `min(count, length)`
+elements. Ordinary valid-range, output-capacity and generator requirements apply.
+
+The generator is a source-owned standard-layout, trivially copyable record with
+a trivial destructor. Its directly declared `result_type` is an unsigned integer
+other than `bool`, of at most 64 bits. The exact selected source-defined,
+non-template, zero-argument call operator returns that type. Its static constexpr
+`min()` and `max()` each contain a single integer-constant return of that type,
+with `min() < max()`. The named generator inside the SDK is an lvalue, including
+when the caller supplies a temporary; source ref qualifiers retain that selection.
+The generator parameter binds by reference, so deleted copy constructors are
+allowed and state changes remain visible through the original object. Every
+caller operand is captured once.
+
+Lowering retains LLVM 20.1.8 libc++'s distribution bit widths, independent-bit
+chunk assembly and both rejection loops, including nonzero generator minima.
+This preserves the pinned permutation/sample results and exact generator draw
+counts. Empty or singleton shuffle ranges and zero-count or empty-input samples
+make no generator call. Sampling the whole input still makes the SDK's draws.
+The selected algorithm, distribution, helper, trait, alias and redeclaration
+closure is authenticated; source SDK replacements and owned macro expansions do
+not inherit this lowering. The compiler's intrinsic common-type and leading-zero
+metadata are used only within that checked closure. Independent distribution
+calls, `<random>` engines, wrapped/custom iterators and record elements remain
+outside this random-algorithm subset. Quoted includes, user shadow headers and
 forged declarations remain rejected.
 
 ## Standard template parsing across targets

@@ -84442,7 +84442,7 @@ int main() { return 0; }
   ASSERT_NE(SDK, nullptr);
   const auto *Dependencies = SDK->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   bool FoundAlgorithm = false;
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
@@ -84515,7 +84515,7 @@ int main() {
   ASSERT_NE(SDK, nullptr);
   const auto *Dependencies = SDK->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -84796,7 +84796,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -85637,7 +85637,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -85739,7 +85739,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -85900,7 +85900,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -86117,7 +86117,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -86224,7 +86224,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -86351,7 +86351,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -86461,7 +86461,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -86606,7 +86606,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -86740,7 +86740,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -87143,7 +87143,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -87394,7 +87394,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -87944,7 +87944,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -88474,7 +88474,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -88616,7 +88616,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -88870,7 +88870,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -89031,7 +89031,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -89265,7 +89265,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -89414,7 +89414,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -89636,7 +89636,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90001,7 +90001,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90230,7 +90230,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90358,7 +90358,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90493,7 +90493,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90646,7 +90646,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90770,7 +90770,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -90930,7 +90930,7 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 354u);
+  EXPECT_EQ(Dependencies->size(), 369u);
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
@@ -279460,6 +279460,60 @@ TEST_F(TranslateTest, CoreV2WrapperSearchNEnumCountsRetainSDKTraits) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsMatchFullWidthGenerators) {
+  for (const std::string &Name : {"full32", "full64"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-algorithms-" + Name + ".cpp");
+    const auto Output = tmpFile("random-algorithms-" + Name + ".nc");
+    const auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsRetainNarrowGeneratorRejections) {
+  for (const std::string &Name : {"offset8", "offset16", "full8"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-algorithms-" + Name + ".cpp");
+    const auto Output = tmpFile("random-algorithms-" + Name + ".nc");
+    const auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsPreserveReferencesAndEvaluations) {
+  const auto Source = fixture("random-algorithms-boundaries.cpp");
+  const auto Output = tmpFile("random-algorithms-boundaries.nc");
+  const auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("random-boundaries" + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperWindowsPaddedBaseUsesIntegerCarrier) {
   const auto Source = tmpFile("wrapper-windows-padded-base.cpp");
   writeFile(Source, R"cpp(#include <functional>
@@ -358103,6 +358157,118 @@ using std::minmax;using F=std::pair<W,W>(*)(std::initializer_list<W>);F f=&minma
     EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsRetainSelectedSDKDeclarations) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"public-shuffle", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> void shuffle<int*,G&>(int*,int*,G&) {}}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);}
+)cpp"},
+      {"shuffle-helper", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> int* __shuffle<_ClassicAlgPolicy,int*,int*,G&>(int* a,int*,G&) {return a;}}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);}
+)cpp"},
+      {"public-sample", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> int* sample<int*,int*,int,G&>(int*,int*,int* out,int,G&) {return out;}}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"independent-bits", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> class __independent_bits_engine<G,make_unsigned_t<ptrdiff_t>> {public: __independent_bits_engine(G&,size_t) {} make_unsigned_t<ptrdiff_t> operator()(){return 0;}};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"urng-trait", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> struct __libcpp_random_is_valid_urng<G>:true_type{};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"log2-trait", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> struct __log2<make_unsigned_t<ptrdiff_t>,4294967296ULL> {static constexpr size_t value=32;};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"common-type", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> struct common_type<int,ptrdiff_t> {using type=ptrdiff_t;};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"iterator-traits", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> struct iterator_traits<int*> {using difference_type=ptrdiff_t;using value_type=int;using pointer=int*;using reference=int&;using iterator_category=random_access_iterator_tag;};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"countl-zero", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> constexpr int __countl_zero<make_unsigned_t<ptrdiff_t>>(make_unsigned_t<ptrdiff_t>) noexcept {return 0;}}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"numeric-limits", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned char;unsigned state,calls;static constexpr result_type min(){return 5;}static constexpr result_type max(){return 11;}result_type operator()(){++calls;state=(state+5)%7;return static_cast<result_type>(state+5);}};
+namespace std {template<> class numeric_limits<unsigned char>:public numeric_limits<unsigned>{public:static constexpr int digits=8;};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::shuffle(a,a+3,g);std::sample(a,a+3,b,2,g);}
+)cpp"},
+      {"uniform-distribution", R"cpp(#include <algorithm>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> class uniform_int_distribution<unsigned long long> {public:using result_type=unsigned long long;struct param_type{param_type(result_type,result_type){}};uniform_int_distribution(result_type=0,result_type=~0ULL){}template<class E>result_type operator()(E&){return 0;}template<class E>result_type operator()(E&,const param_type&){return 0;}};}
+int main(){int a[3]{1,2,3},b[3]{};G g{17,0};std::sample(a,a+3,b,~0ULL,g);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("random-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("random-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsRetainGeneratorBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"signed-result", R"cpp(#include <algorithm>
+struct G{using result_type=int;static constexpr int min(){return 0;}static constexpr int max(){return 31;}int operator()(){return 3;}};
+int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
+)cpp", "TR0202"},
+      {"bool-result", R"cpp(#include <algorithm>
+struct G{using result_type=bool;static constexpr bool min(){return false;}static constexpr bool max(){return true;}bool operator()(){return false;}};
+int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
+)cpp", "TR0203"},
+      {"extended-result", R"cpp(#include <algorithm>
+struct G{using result_type=unsigned __int128;static constexpr result_type min(){return 0;}static constexpr result_type max(){return ~result_type(0);}result_type operator()(){return 3;}};
+int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
+)cpp", "TR0201"},
+      {"virtual-generator", R"cpp(#include <algorithm>
+struct G{using result_type=unsigned;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return 31;}virtual unsigned operator()(){return 3;}};
+int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
+)cpp", "TR0201"},
+      {"inherited-generator", R"cpp(#include <algorithm>
+struct B{using result_type=unsigned;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return 31;}};struct G:B{unsigned operator()(){return 3;}};
+int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
+)cpp", "TR0203"},
+      {"degenerate-bounds", R"cpp(#include <algorithm>
+struct G{using result_type=unsigned;static constexpr unsigned min(){return 3;}static constexpr unsigned max(){return 3;}unsigned operator()(){return 3;}};
+int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("generator-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("generator-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
     expectNoArtifacts(Output);
   }
 }

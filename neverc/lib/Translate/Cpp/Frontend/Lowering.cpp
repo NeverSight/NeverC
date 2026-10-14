@@ -924,6 +924,148 @@ class FunctionLowering {
                                 {"loc", A.loc(L)}});
     return Result;
   }
+  // uniform_int_distribution<Distance>(0, Upper), using the selected libc++
+  // independent-bits engine. Keep rejection draws and chunk boundaries exact:
+  // they determine both the distribution and the caller's generator state.
+  Expression emitAlgorithmRandom(const CapturedAlgorithmPredicate &Generator,
+                                 const UtilityAlgorithmRandomCall &Info,
+                                 Expression Upper, SourceLocation L) {
+    const auto Unsigned = A.Context.getTypeSize(Info.DistanceType) <= 32
+                              ? A.Context.UnsignedIntTy
+                              : A.Context.getCorrespondingUnsignedType(
+                                    Info.DistanceType);
+    const auto Working = A.Context.getTypeSize(Info.ResultType) <=
+                                 A.Context.getTypeSize(Unsigned)
+                             ? Unsigned : Info.ResultType;
+    const unsigned Digits = A.Context.getTypeSize(Unsigned);
+    const unsigned WorkingDigits = A.Context.getTypeSize(Working);
+    const unsigned EngineDigits = A.Context.getTypeSize(Info.ResultType);
+    const auto U = type(Unsigned, L), W = type(Working, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Range = llvm::APInt(WorkingDigits, Info.MaximumValue) -
+                       llvm::APInt(WorkingDigits, Info.MinimumValue) + 1;
+    const unsigned Chunk = Range.isZero() ? WorkingDigits : Range.logBase2();
+    auto UQ = [&](uint64_t N) { return quantity(N, U, L); };
+    auto WQ = [&](uint64_t N) { return quantity(N, W, L); };
+    auto SQ = [&](uint64_t N) { return quantity(N, Size, L); };
+    auto Select = [&](Expression Condition, Expression Yes, Expression No) {
+      auto Value = temporary(*Yes.getString("type"), L);
+      const auto True = labelName(), False = labelName(), End = labelName();
+      branch(std::move(Condition), True, False, L);
+      label(True, L);
+      assign(Value, std::move(Yes), L);
+      jump(End, L);
+      label(False, L);
+      assign(Value, std::move(No), L);
+      jump(End, L);
+      label(End, L);
+      return Value;
+    };
+    auto Result = temporary(U, L);
+    auto Population = snapshot(binary("+", cast(std::move(Upper), U, L),
+                                      UQ(1), U, L), L);
+    const auto Draw = labelName(), Finish = labelName();
+    assign(Result, UQ(0), L);
+    branch(binary("==", Population, UQ(1), "bool", L), Finish, Draw, L);
+    label(Draw, L);
+
+    // ceil(log2(Population)); unsigned wrap also gives Digits when it is zero.
+    auto Width = snapshot(SQ(0), L);
+    auto Remaining = snapshot(binary("-", Population, UQ(1), U, L), L);
+    const auto BitsCheck = labelName(), BitsStep = labelName(), BitsEnd = labelName();
+    jump(BitsCheck, L);
+    label(BitsCheck, L);
+    branch(binary("!=", Remaining, UQ(0), "bool", L), BitsStep, BitsEnd, L);
+    label(BitsStep, L);
+    assign(Width, binary("+", Width, SQ(1), Size, L), L);
+    assign(Remaining, binary(">>", Remaining, UQ(1), U, L), L);
+    jump(BitsCheck, L);
+    label(BitsEnd, L);
+
+    auto N = snapshot(binary("+", binary("/", Width, SQ(Chunk), Size, L),
+        cast(binary("!=", binary("%", Width, SQ(Chunk), Size, L), SQ(0),
+                    "bool", L), Size, L), Size, L), L);
+    auto W0 = snapshot(binary("/", Width, N, Size, L), L);
+    auto Y0Value = [&]() {
+      if (Range.isZero())
+        return WQ(0);
+      return Select(binary("<", W0, SQ(WorkingDigits), "bool", L),
+                    binary("<<", binary(">>", WQ(Range.getZExtValue()), W0, W, L),
+                           W0, W, L), WQ(0));
+    };
+    auto Y0 = snapshot(Y0Value(), L);
+    const auto Adjust = labelName(), AdjustEnd = labelName();
+    branch(binary(">", binary("-", WQ(Range.getZExtValue()), Y0, W, L),
+                  binary("/", Y0, cast(N, W, L), W, L), "bool", L),
+           Adjust, AdjustEnd, L);
+    label(Adjust, L);
+    assign(N, binary("+", N, SQ(1), Size, L), L);
+    assign(W0, binary("/", Width, N, Size, L), L);
+    assign(Y0, Y0Value(), L);
+    jump(AdjustEnd, L);
+    label(AdjustEnd, L);
+    auto N0 = snapshot(binary("-", N, binary("%", Width, N, Size, L), Size, L), L);
+    auto W1 = snapshot(binary("+", W0, SQ(1), Size, L), L);
+    auto Y1 = Select(binary("<", W0, SQ(WorkingDigits - 1), "bool", L),
+                     binary("<<", binary(">>", WQ(Range.getZExtValue()), W1, W, L),
+                            W1, W, L), WQ(0));
+    const auto EngineMaximum =
+        llvm::APInt::getAllOnes(EngineDigits).getZExtValue();
+    auto Mask0 = Select(binary(">", W0, SQ(0), "bool", L),
+                        binary(">>", WQ(EngineMaximum),
+                               binary("-", SQ(EngineDigits), W0, Size, L), W, L),
+                        WQ(0));
+    auto Mask1 = Select(binary("<", W0, SQ(EngineDigits - 1), "bool", L),
+                        binary(">>", WQ(EngineMaximum),
+                               binary("-", SQ(EngineDigits), W1, Size, L), W, L),
+                        WQ(EngineMaximum));
+    const auto Retry = labelName(), Accept = labelName();
+    jump(Retry, L);
+    label(Retry, L);
+    auto Sample = temporary(U, L);
+    if (Range.isZero()) {
+      auto Value = emitNullaryCallable(Generator, L);
+      assign(Sample, cast(binary("&", cast(std::move(Value), W, L), Mask0, W, L),
+                          U, L), L);
+    } else {
+      assign(Sample, UQ(0), L);
+      auto K = snapshot(SQ(0), L);
+      auto Part = [&](Expression Limit, Expression Threshold,
+                      Expression Mask, Expression PartWidth) {
+        const auto Check = labelName(), DrawPart = labelName();
+        const auto Append = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", K, std::move(Limit), "bool", L), DrawPart, End, L);
+        label(DrawPart, L);
+        auto Value = emitNullaryCallable(Generator, L);
+        auto Bits = snapshot(binary("-", cast(std::move(Value), W, L),
+                                     WQ(Info.MinimumValue), W, L), L);
+        branch(binary(">=", Bits, std::move(Threshold), "bool", L),
+               DrawPart, Append, L);
+        label(Append, L);
+        auto Shifted = Select(binary("<", PartWidth, SQ(Digits), "bool", L),
+                              binary("<<", Sample, PartWidth, U, L), UQ(0));
+        assign(Sample, binary("+", std::move(Shifted),
+                              cast(binary("&", Bits, std::move(Mask), W, L),
+                                   U, L), U, L), L);
+        assign(K, binary("+", K, SQ(1), Size, L), L);
+        jump(Check, L);
+        label(End, L);
+      };
+      Part(N0, Y0, Mask0, W0);
+      Part(N, Y1, Mask1, W1);
+    }
+    const auto Bounded = labelName();
+    branch(binary("==", Population, UQ(0), "bool", L), Accept, Bounded, L);
+    label(Bounded, L);
+    branch(binary("<", Sample, Population, "bool", L), Accept, Retry, L);
+    label(Accept, L);
+    assign(Result, std::move(Sample), L);
+    jump(Finish, L);
+    label(Finish, L);
+    return cast(std::move(Result), type(Info.DistanceType, L), L);
+  }
   void emitUnaryOperation(const CapturedAlgorithmPredicate &Operation,
                           Expression Argument, SourceLocation L) {
     (void)emitUnaryCallable(Operation, std::move(Argument), L);
@@ -13415,6 +13557,79 @@ class FunctionLowering {
       jump(Check, L);
       label(End, L);
       return AlgorithmIteratorResult(std::move(Output), OutputIndex);
+    }
+    case UtilityOperation::AlgorithmShuffle:
+    case UtilityOperation::AlgorithmSample: {
+      const auto Info = approvedUtilityAlgorithmRandomCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Info || Info->Operation != Operation)
+        reject(L, "random algorithm", "A checked SDK random algorithm is required.");
+      const bool Sample = Operation == UtilityOperation::AlgorithmSample;
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      std::optional<Expression> Output, Remaining;
+      QualType OutputPointer;
+      const auto Distance = type(Info->DistanceType, L);
+      const auto Difference = type(A.Context.getPointerDiffType(), L);
+      const auto Pointer = type(FirstRange.second, L);
+      if (Sample) {
+        auto OutputRange = AlgorithmRangeValue(2);
+        Output = std::move(OutputRange.first);
+        OutputPointer = OutputRange.second;
+        Remaining = snapshot(cast(expression(Call->getArg(3)), Distance, L), L);
+      }
+      CapturedAlgorithmPredicate Generator{
+          argument(Call->getArg(Info->ParameterIndex), Info->ObjectType),
+          Info->ObjectType, Info->Method, std::nullopt};
+      auto Size = snapshot(cast(binary("-", Last, First, Difference, L),
+                                Distance, L), L);
+      const auto Check = labelName(), Draw = labelName(), End = labelName();
+      if (Sample) {
+        const auto Clamp = labelName(), Clamped = labelName();
+        branch(binary(">", *Remaining, Size, "bool", L), Clamp, Clamped, L);
+        label(Clamp, L);
+        assign(*Remaining, Size, L);
+        jump(Clamped, L);
+        label(Clamped, L);
+      }
+      jump(Check, L);
+      label(Check, L);
+      branch(Sample ? binary("!=", *Remaining, quantity(0, Distance, L), "bool", L)
+                    : binary(">", Size, quantity(1, Distance, L), "bool", L),
+             Draw, End, L);
+      label(Draw, L);
+      assign(Size, binary("-", Size, quantity(1, Distance, L), Distance, L), L);
+      auto Selected = emitAlgorithmRandom(Generator, *Info, Size, L);
+      const auto Transfer = labelName(), Advance = labelName();
+      branch(Sample ? binary("<", Selected, *Remaining, "bool", L)
+                    : binary("!=", Selected, quantity(0, Distance, L), "bool", L),
+             Transfer, Advance, L);
+      label(Transfer, L);
+      if (Sample) {
+        assign(dereference(*Output, L),
+               cast(dereference(First, L),
+                    type(OutputPointer->getPointeeType(), L), L), L);
+        assign(*Output,
+               binary("+", *Output, quantity(1, Difference, L),
+                      type(OutputPointer, L), L), L);
+        assign(*Remaining,
+               binary("-", *Remaining, quantity(1, Distance, L), Distance, L), L);
+      } else {
+        auto Other = snapshot(binary("+", First, cast(Selected, Difference, L),
+                                      Pointer, L), L);
+        auto Value = snapshot(dereference(First, L), L);
+        assign(dereference(First, L), dereference(Other, L), L);
+        assign(dereference(std::move(Other), L), std::move(Value), L);
+      }
+      jump(Advance, L);
+      label(Advance, L);
+      assign(First, binary("+", First, quantity(1, Difference, L), Pointer, L), L);
+      jump(Check, L);
+      label(End, L);
+      if (Sample)
+        return AlgorithmIteratorResult(std::move(*Output), 2);
+      return Expression{};
     }
     case UtilityOperation::AlgorithmGenerate:
     case UtilityOperation::AlgorithmGenerateN: {

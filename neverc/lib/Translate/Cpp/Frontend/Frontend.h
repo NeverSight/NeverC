@@ -960,6 +960,8 @@ enum class UtilityOperation {
   AlgorithmTransformBinary,
   AlgorithmGenerate,
   AlgorithmGenerateN,
+  AlgorithmShuffle,
+  AlgorithmSample,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1179,6 +1181,18 @@ struct UtilityAlgorithmPredicateCall {
 };
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityAlgorithmRandomCall {
+  UtilityOperation Operation;
+  const clang::CXXMethodDecl *Method;
+  const clang::CXXMethodDecl *Minimum, *Maximum;
+  clang::QualType ObjectType, ResultType, DistanceType;
+  uint64_t MinimumValue, MaximumValue;
+  unsigned ParameterIndex;
+};
+std::optional<UtilityAlgorithmRandomCall>
+approvedUtilityAlgorithmRandomCall(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityPairRecord {

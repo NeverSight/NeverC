@@ -74534,6 +74534,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                ? UtilityOperation::ArrayMemberSwap : UtilityOperation::ArraySwap;
   if (auto CString = approvedCStringOperation(S, SM, Call, Context))
     return CString;
+  if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
+    return Random->Operation;
   if (auto Predicate =
           approvedUtilityAlgorithmPredicateCall(S, SM, Call, Context))
     return Predicate->Operation;
