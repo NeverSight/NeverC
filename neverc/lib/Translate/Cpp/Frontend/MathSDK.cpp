@@ -19811,6 +19811,23 @@ static bool utilityAlgorithmReference(const Expr *E, const ValueDecl *Value,
   return Reference && Reference->isLValue() && Reference->getDecl() == Value;
 }
 
+static bool utilityAlgorithmIntegralComparisonReference(
+    const Expr *E, const ValueDecl *Value, QualType Common,
+    const ASTContext &Context) {
+  if (!E || !Value || Common.isNull() || !Common->isIntegerType() ||
+      !Value->getType()->isIntegerType() ||
+      !Context.hasSameType(E->getType(), Common))
+    return false;
+  if (!Context.hasSameType(Value->getType(), Common)) {
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
+    if (!Cast || Cast->getCastKind() != CK_IntegralCast ||
+        !Context.hasSameType(Cast->getSubExpr()->getType(), Value->getType()))
+      return false;
+    E = Cast->getSubExpr();
+  }
+  return utilityAlgorithmReference(E, Value, Context);
+}
+
 static bool
 utilityAlgorithmCallbackArgumentConversion(const ASTContext &Context,
                                            QualType From, QualType To) {
@@ -30619,12 +30636,11 @@ static bool utilityWrapperSearchN(const State &S, const SourceManager &SM,
     const auto *C = R ? PairProof.proveMakePair(R->getRetValue()) : nullptr;
     return C && Reference(C->getArg(0), V) && Reference(C->getArg(1), V);
   };
-  auto CastCount = [&](const Expr *E, bool Functional) -> const Expr * {
+  auto CastCount = [&](const Expr *E) -> const Expr * {
     const auto *C = dyn_cast_or_null<ExplicitCastExpr>(Strip(E));
     if (!C || C->getCastKind() != CK_NoOp || !Same(C->getType(), Difference) ||
         !Same(C->getTypeAsWritten(), Difference) ||
-        (Functional ? !isa<CXXFunctionalCastExpr>(C)
-                    : !isa<CXXStaticCastExpr>(C)))
+        !isa<CXXFunctionalCastExpr>(C))
       return nullptr;
     const auto *Operand = C->getSubExpr();
     if (!Same(Integral, Difference)) {
@@ -30652,24 +30668,28 @@ static bool utilityWrapperSearchN(const State &S, const SourceManager &SM,
            EndPair(Body->body_begin()[1], RD->getParamDecl(0));
   };
   const auto *Empty = dyn_cast<IfStmt>(RB->body_begin()[1]);
-  const auto *EmptyCond = Empty ? Binary(Empty->getCond(), BO_EQ) : nullptr;
+  const auto *EmptyCond = Empty ? Binary(Empty->getCond(), BO_LE) : nullptr;
   const auto *Short = dyn_cast<IfStmt>(RB->body_begin()[2]);
   const auto *ShortCond = Short ? Binary(Short->getCond(), BO_LT) : nullptr;
-  const auto *ShortCount =
-      ShortCond ? CastCount(ShortCond->getRHS(), false) : nullptr;
+  const auto CommonCount =
+      utilityScalarComparisonType(Context, Difference, Integral, false);
+  const auto *ShortCount = ShortCond ? ShortCond->getRHS() : nullptr;
   if (!Branch(Empty) || !EmptyCond ||
       !Reference(EmptyCond->getLHS(), RD->getParamDecl(2)) ||
       !Integer(EmptyCond->getRHS(), 0) ||
       !EndPair(Empty->getThen(), RD->getParamDecl(0)) || !ShortCond ||
-      !Reference(ShortCond->getLHS(), RD->getParamDecl(6)) ||
-      !Reference(ShortCount, RD->getParamDecl(2)) ||
+      !CommonCount ||
+      !utilityAlgorithmIntegralComparisonReference(
+          ShortCond->getLHS(), RD->getParamDecl(6), *CommonCount, Context) ||
+      !utilityAlgorithmIntegralComparisonReference(
+          ShortCount, RD->getParamDecl(2), *CommonCount, Context) ||
       !EndBranch(Short, ShortCond->getLHS(), ShortCount))
     return false;
   const auto *Stop = Local(RB->body_begin()[3], RD);
   const auto *Subtract = Stop ? Binary(Stop->getInit(), BO_Sub) : nullptr;
   const auto *Start = Subtract ? Binary(Subtract->getLHS(), BO_Add) : nullptr;
   const auto *MinusOne =
-      Subtract ? Binary(CastCount(Subtract->getRHS(), true), BO_Sub) : nullptr;
+      Subtract ? Binary(CastCount(Subtract->getRHS()), BO_Sub) : nullptr;
   if (!Stop || !Same(Stop->getType(), First.withConst()) || !Subtract ||
       !Same(Subtract->getType(), First) || !Start ||
       !Same(Start->getType(), First) ||
@@ -30747,7 +30767,7 @@ static bool utilityWrapperSearchN(const State &S, const SourceManager &SM,
       MatchReturn ? PairProof.proveMakePair(MatchReturn->getRetValue())
                   : nullptr;
   const auto *End = MatchPair ? Binary(MatchPair->getArg(1), BO_Add) : nullptr;
-  const auto *EndCount = End ? CastCount(End->getRHS(), true) : nullptr;
+  const auto *EndCount = End ? CastCount(End->getRHS()) : nullptr;
   const auto *Mismatch =
       MB && MB->size() == 3 ? dyn_cast<IfStmt>(MB->body_begin()[2]) : nullptr;
   const auto *Not =
@@ -55419,12 +55439,11 @@ static bool utilityWrapperSearchNComparison(const State &S,
     const auto *C = R ? PairProof.proveMakePair(R->getRetValue()) : nullptr;
     return C && Reference(C->getArg(0), V) && Reference(C->getArg(1), V);
   };
-  auto CastCount = [&](const Expr *E, bool Functional) -> const Expr * {
+  auto CastCount = [&](const Expr *E) -> const Expr * {
     const auto *C = dyn_cast_or_null<ExplicitCastExpr>(Strip(E));
     if (!C || C->getCastKind() != CK_NoOp || !Same(C->getType(), Difference) ||
         !Same(C->getTypeAsWritten(), Difference) ||
-        (Functional ? !isa<CXXFunctionalCastExpr>(C)
-                    : !isa<CXXStaticCastExpr>(C)))
+        !isa<CXXFunctionalCastExpr>(C))
       return nullptr;
     const auto *Operand = C->getSubExpr();
     if (!Same(Integral, Difference)) {
@@ -55452,24 +55471,28 @@ static bool utilityWrapperSearchNComparison(const State &S,
            EndPair(Body->body_begin()[1], RD->getParamDecl(0));
   };
   const auto *Empty = dyn_cast<IfStmt>(RB->body_begin()[1]);
-  const auto *EmptyCond = Empty ? Binary(Empty->getCond(), BO_EQ) : nullptr;
+  const auto *EmptyCond = Empty ? Binary(Empty->getCond(), BO_LE) : nullptr;
   const auto *Short = dyn_cast<IfStmt>(RB->body_begin()[2]);
   const auto *ShortCond = Short ? Binary(Short->getCond(), BO_LT) : nullptr;
-  const auto *ShortCount =
-      ShortCond ? CastCount(ShortCond->getRHS(), false) : nullptr;
+  const auto CommonCount =
+      utilityScalarComparisonType(Context, Difference, Integral, false);
+  const auto *ShortCount = ShortCond ? ShortCond->getRHS() : nullptr;
   if (!Branch(Empty) || !EmptyCond ||
       !Reference(EmptyCond->getLHS(), RD->getParamDecl(2)) ||
       !Integer(EmptyCond->getRHS(), 0) ||
       !EndPair(Empty->getThen(), RD->getParamDecl(0)) || !ShortCond ||
-      !Reference(ShortCond->getLHS(), RD->getParamDecl(6)) ||
-      !Reference(ShortCount, RD->getParamDecl(2)) ||
+      !CommonCount ||
+      !utilityAlgorithmIntegralComparisonReference(
+          ShortCond->getLHS(), RD->getParamDecl(6), *CommonCount, Context) ||
+      !utilityAlgorithmIntegralComparisonReference(
+          ShortCount, RD->getParamDecl(2), *CommonCount, Context) ||
       !EndBranch(Short, ShortCond->getLHS(), ShortCount))
     return false;
   const auto *Stop = Local(RB->body_begin()[3], RD);
   const auto *Subtract = Stop ? Binary(Stop->getInit(), BO_Sub) : nullptr;
   const auto *Start = Subtract ? Binary(Subtract->getLHS(), BO_Add) : nullptr;
   const auto *MinusOne =
-      Subtract ? Binary(CastCount(Subtract->getRHS(), true), BO_Sub) : nullptr;
+      Subtract ? Binary(CastCount(Subtract->getRHS()), BO_Sub) : nullptr;
   if (!Stop || !Same(Stop->getType(), First.withConst()) || !Subtract ||
       !Same(Subtract->getType(), First) || !Start ||
       !Same(Start->getType(), First) ||
@@ -55547,7 +55570,7 @@ static bool utilityWrapperSearchNComparison(const State &S,
       MatchReturn ? PairProof.proveMakePair(MatchReturn->getRetValue())
                   : nullptr;
   const auto *End = MatchPair ? Binary(MatchPair->getArg(1), BO_Add) : nullptr;
-  const auto *EndCount = End ? CastCount(End->getRHS(), true) : nullptr;
+  const auto *EndCount = End ? CastCount(End->getRHS()) : nullptr;
   const auto *Mismatch =
       MB && MB->size() == 3 ? dyn_cast<IfStmt>(MB->body_begin()[2]) : nullptr;
   const auto *Not =
@@ -56046,12 +56069,11 @@ static bool utilityWrapperSearchNComparisonInputs(
     const auto *C = R ? PairProof.proveMakePair(R->getRetValue()) : nullptr;
     return C && Reference(C->getArg(0), V) && Reference(C->getArg(1), V);
   };
-  auto CastCount = [&](const Expr *E, bool Functional) -> const Expr * {
+  auto CastCount = [&](const Expr *E) -> const Expr * {
     const auto *C = dyn_cast_or_null<ExplicitCastExpr>(Strip(E));
     if (!C || C->getCastKind() != CK_NoOp || !Same(C->getType(), Difference) ||
         !Same(C->getTypeAsWritten(), Difference) ||
-        (Functional ? !isa<CXXFunctionalCastExpr>(C)
-                    : !isa<CXXStaticCastExpr>(C)))
+        !isa<CXXFunctionalCastExpr>(C))
       return nullptr;
     const auto *Operand = C->getSubExpr();
     if (!Same(Integral, Difference)) {
@@ -56079,24 +56101,28 @@ static bool utilityWrapperSearchNComparisonInputs(
            EndPair(Body->body_begin()[1], RD->getParamDecl(0));
   };
   const auto *Empty = dyn_cast<IfStmt>(RB->body_begin()[1]);
-  const auto *EmptyCond = Empty ? Binary(Empty->getCond(), BO_EQ) : nullptr;
+  const auto *EmptyCond = Empty ? Binary(Empty->getCond(), BO_LE) : nullptr;
   const auto *Short = dyn_cast<IfStmt>(RB->body_begin()[2]);
   const auto *ShortCond = Short ? Binary(Short->getCond(), BO_LT) : nullptr;
-  const auto *ShortCount =
-      ShortCond ? CastCount(ShortCond->getRHS(), false) : nullptr;
+  const auto CommonCount =
+      utilityScalarComparisonType(Context, Difference, Integral, false);
+  const auto *ShortCount = ShortCond ? ShortCond->getRHS() : nullptr;
   if (!Branch(Empty) || !EmptyCond ||
       !Reference(EmptyCond->getLHS(), RD->getParamDecl(2)) ||
       !Integer(EmptyCond->getRHS(), 0) ||
       !EndPair(Empty->getThen(), RD->getParamDecl(0)) || !ShortCond ||
-      !Reference(ShortCond->getLHS(), RD->getParamDecl(6)) ||
-      !Reference(ShortCount, RD->getParamDecl(2)) ||
+      !CommonCount ||
+      !utilityAlgorithmIntegralComparisonReference(
+          ShortCond->getLHS(), RD->getParamDecl(6), *CommonCount, Context) ||
+      !utilityAlgorithmIntegralComparisonReference(
+          ShortCount, RD->getParamDecl(2), *CommonCount, Context) ||
       !EndBranch(Short, ShortCond->getLHS(), ShortCount))
     return false;
   const auto *Stop = Local(RB->body_begin()[3], RD);
   const auto *Subtract = Stop ? Binary(Stop->getInit(), BO_Sub) : nullptr;
   const auto *Start = Subtract ? Binary(Subtract->getLHS(), BO_Add) : nullptr;
   const auto *MinusOne =
-      Subtract ? Binary(CastCount(Subtract->getRHS(), true), BO_Sub) : nullptr;
+      Subtract ? Binary(CastCount(Subtract->getRHS()), BO_Sub) : nullptr;
   if (!Stop || !Same(Stop->getType(), First.withConst()) || !Subtract ||
       !Same(Subtract->getType(), First) || !Start ||
       !Same(Start->getType(), First) ||
@@ -56175,7 +56201,7 @@ static bool utilityWrapperSearchNComparisonInputs(
       MatchReturn ? PairProof.proveMakePair(MatchReturn->getRetValue())
                   : nullptr;
   const auto *End = MatchPair ? Binary(MatchPair->getArg(1), BO_Add) : nullptr;
-  const auto *EndCount = End ? CastCount(End->getRHS(), true) : nullptr;
+  const auto *EndCount = End ? CastCount(End->getRHS()) : nullptr;
   const auto *Mismatch =
       MB && MB->size() == 3 ? dyn_cast<IfStmt>(MB->body_begin()[2]) : nullptr;
   const auto *Not =

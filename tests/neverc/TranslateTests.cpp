@@ -279400,6 +279400,76 @@ auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::search_n(a,b,2
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperWindowsPaddedBaseUsesIntegerCarrier) {
+  const auto Source = tmpFile("wrapper-windows-padded-base.cpp");
+  writeFile(Source, R"cpp(#include <functional>
+int add_one(int value) { return value + 1; }
+int main() {
+  int x = 5, y = 9;
+  std::reference_wrapper<int> first(x);
+  const std::reference_wrapper<int> second(y);
+  std::reference_wrapper<int> values[] = {first, second};
+  auto selected = values[1];
+  selected.get() = 11;
+  first = selected;
+  std::reference_wrapper<const int> read_only(x);
+  auto callback = std::ref(add_one);
+  static_assert(sizeof(first) == 2 * sizeof(void *));
+  static_assert(alignof(decltype(first)) == alignof(void *));
+  static_assert(sizeof(read_only) == sizeof(first));
+  return x != 5 || y != 11 || &values[0].get() != &x ||
+         &first.get() != &y || &selected.get() != &y ||
+         &read_only.get() != &x || callback(4) != 5;
+}
+)cpp");
+  for (const std::string &Target : {"x86_64-pc-windows-msvc",
+                                    "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(Target);
+    const auto Output = tmpFile("wrapper-padded-base-" + Target + ".nc");
+    const auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "--target", Target,
+                 "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_NE(readFile(Output).find("nct_reference_wrapper_base_storage"),
+              std::string::npos);
+    expectJSONObject(fs::path(Output.string() + ".manifest.json"));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SearchNWrapperCountBoundsAtBothOptimizations) {
+  const auto Source = fixture("search-n-wrapper-count-bounds.cpp");
+  const auto Output = tmpFile("search-n-wrapper-count-bounds.nc");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("search-n-wrapper-count-bounds" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SearchNScalarCountBoundsAtBothOptimizations) {
+  const auto Source = fixture("search-n-scalar-count-bounds.cpp");
+  const auto Output = tmpFile("search-n-scalar-count-bounds.nc");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("search-n-scalar-count-bounds" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperSearchResultQueriesComparisonsDefaults) {
   const auto Source = tmpFile("wrapper-search-result-query-comparisons-defaults.cpp");
   const auto Output = tmpFile("wrapper-search-result-query-comparisons-defaults.nc");

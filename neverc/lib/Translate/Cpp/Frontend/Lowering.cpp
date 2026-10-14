@@ -7637,8 +7637,23 @@ class FunctionLowering {
       const auto Compare = labelName(), Advance = labelName();
       const auto Mismatch = labelName(), NotFound = labelName();
       const auto End = labelName();
+      const auto Nonempty = labelName(), CountFits = labelName();
       branch(binary(">", Count, quantity(0, CountTypeName, L), "bool", L),
-             Outer, End, L);
+             Nonempty, End, L);
+      label(Nonempty, L);
+      branch(binary("!=", First, Last, "bool", L), CountFits, NotFound, L);
+      label(CountFits, L);
+      // Compare in the usual arithmetic type before converting the count to
+      // ptrdiff_t. A nonempty valid range has a nonnegative representable size.
+      const auto CountComparison = utilityScalarComparisonType(
+          A.Context, A.Context.getPointerDiffType(), CountType, false);
+      if (!CountComparison)
+        reject(L, "algorithm search_n", "The count has no integral comparison type.");
+      const auto ComparisonType = type(*CountComparison, L);
+      auto Size = snapshot(binary("-", Last, First, DifferenceType, L), L);
+      branch(binary("<", cast(Size, ComparisonType, L),
+                    cast(Count, ComparisonType, L), "bool", L),
+             NotFound, Outer, L);
       label(Outer, L);
       branch(binary("!=", Candidate, Last, "bool", L), Start, NotFound, L);
       label(Start, L);

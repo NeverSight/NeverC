@@ -24669,7 +24669,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       if (FunctionalReference->PaddedBase)
         Fields.push_back(json::Object{
             {"name", "nct_reference_wrapper_base_storage"},
-            {"type", "usize"}});
+            {"type", type(Context.getSizeType(), R->getLocation())}});
       Fields.push_back(json::Object{
           {"name", "nct_reference_wrapper_pointer"},
           {"type", type(FunctionalReference->PointerType,

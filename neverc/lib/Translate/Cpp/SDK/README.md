@@ -2,14 +2,23 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14`. It contains the 624 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15`. It contains the 624 header
 files admitted by the current
 `clang20.1.8-libcxx200100-macos15.5` catalog: 526 libc++ headers, 14 Clang
 resource headers, three NeverC resource headers, and 81 Darwin platform headers.
-The upstream-source bytes, including copyright and license notices, are
-preserved; the NeverC-authored C declaration shims are identified
+Copyright and license notices are preserved. Upstream-source bytes are retained
+except for the documented search-count correction below; the NeverC-authored C declaration shims are identified
 separately below. This is a fixed input set for the supported translation
 profiles, not a complete Apple SDK.
+
+The r15 distribution corrects the pinned random-access `search_n` helper. It
+returns the first iterator for non-positive counts and compares the nonnegative
+range length with the original integral count before narrowing to the iterator
+difference type. This prevents negative offsets and oversized unsigned counts
+from reaching the search loop. The original upstream hash and the two local
+edits are recorded in [provenance.json](provenance.json); the corrected bytes are
+pinned in [catalog.json](catalog.json). The header inventory and licenses are
+unchanged.
 
 The `<string_view>` parsing closure adds the pinned libc++ public header,
 `char_traits`, forwarding declarations and C stdio wrappers. NeverC's resource

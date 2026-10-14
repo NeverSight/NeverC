@@ -726,6 +726,10 @@ Admitted wrapper `std::equal` and `std::mismatch` also support type queries on e
 Admitted wrapper `std::find_first_of`, `std::search`, `std::find_end` and `std::search_n` also support type queries on evaluated results for default overloads and checked transparent SDK predicates, including supported predicate variables and reference parameters. Queries preserve the exact mutable or const wrapper-pointer result type. Complete algorithm admission and original argument, template, construction and source-operator checks remain required. Queries add no argument evaluation, copying, binding replacement or cleanup.
 
 Four algorithm entries classify the completely authenticated four-parameter default and five-parameter explicit-predicate calls, retaining the exact SDK wrapper pointer result. Twelve native-valid default/temporary/stored value/query pairs previously translated as value0/query1. Three native and translated O0/O2 fixtures cover all six comparisons, default and stored predicates, independent input qualification, exact const/mutable iterator types, first/last/no-match and empty-pattern results, zero/oversize counts, bool/signed-zero/NaN referents, eight const reference-parameter helpers and twenty-eight operand evaluations and cleanups. Unevaluated queries add no effects. Ten native-valid call/source guards, including floating counts and an admitted call followed by an unapproved member-argument call to the same specialization, preserve the original admission boundary. SDK proof, lowering and generated-code implementation bytes remain unchanged.
+The embedded r15 SDK and generated `std::search_n` code check the count before computing search offsets. Zero and negative counts return the input begin; counts larger than the range return its end without calling a predicate, including unsigned values beyond `ptrdiff_t`. Count comparisons preserve integer promotions and width. Argument evaluation, cleanup, wrapper bindings and the original iterator type remain unchanged.
+
+Windows MSVC x64 and ARM64 wrapper records use an integer carrier of the target's width for base padding. Construction, copying, rebinding and `get()` preserve the SDK layout and live referents, and generated object validation checks the same layout.
+
 
 Two algorithm entries classify the checked three/four-iterator default and explicit-predicate signatures; the four-parameter form distinguishes its pointer end parameter from its SDK predicate record. Twelve native-valid default/temporary/stored value/query pairs previously translated as value0/query1. Three native and translated O0/O2 fixtures cover all six comparisons and four range signatures, bool results and exact iterator pairs, independent input qualification, bool/signed-zero/NaN referents, eight const reference-parameter helpers and twenty-eight operand evaluations and cleanups. Unevaluated queries add no effects. Nine native-valid guards, including admitted and unapproved calls to the same specialization, preserve original call/source checks. SDK proof, lowering and generated-code implementation bytes remain unchanged.
 
@@ -6533,8 +6537,10 @@ rejected by the normal source and semantic checks.
 Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded
 VFS. The authenticated closure contains 354 libc++/resource files on every
 supported target, has the same dependency set on all eight targets, and contains
-no platform headers. The upstream public header and every consumed component
-retain their original bytes.
+no platform headers. The upstream public header and consumed components retain
+their LLVM 20.1.8 source bytes except for the documented r15 count-bound
+correction in `__algorithm/search_n.h`; the SDK catalog and provenance inventory
+record that modified header.
 
 The exact public `std::copy`, `std::copy_n`, `std::move`,
 `std::copy_backward`, `std::move_backward`, `std::fill`, `std::fill_n`,

@@ -72,9 +72,9 @@ template <class _AlgPolicy, class _Pred, class _Iter, class _Sent, class _SizeT,
 _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 std::pair<_Iter, _Iter> __search_n_random_access_impl(
     _Iter __first, _Sent __last, _SizeT __count, const _Type& __value, _Pred& __pred, _Proj& __proj, _DiffT __size1) {
   using difference_type = typename iterator_traits<_Iter>::difference_type;
-  if (__count == 0)
+  if (__count <= 0)
     return std::make_pair(__first, __first);
-  if (__size1 < static_cast<_DiffT>(__count)) {
+  if (__size1 < __count) {
     _IterOps<_AlgPolicy>::__advance_to(__first, __last);
     return std::make_pair(__first, __first);
   }

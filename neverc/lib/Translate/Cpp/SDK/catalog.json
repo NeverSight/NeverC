@@ -1,7 +1,7 @@
 {
   "schema": "neverc.cpp.sdk.catalog",
   "version": 1,
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15",
   "clang_version": "20.1.8",
   "libcxx_version": 200100,
   "platform_sdk_version": "15.5",
@@ -443,7 +443,7 @@
     {
       "root": "libcxx",
       "path": "__algorithm/search_n.h",
-      "sha256": "c84f7c990dbe47788704b10ee1aa4b21a2036c343608e9b5b4d862403b8cff59"
+      "sha256": "37e3d4dca3b8f431f15c0d6f4833d144e0a9bffa6caee6bbd5cb7d7ce8806fa3"
     },
     {
       "root": "libcxx",

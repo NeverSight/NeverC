@@ -1039,14 +1039,19 @@
     {
       "root": "libcxx",
       "path": "__algorithm/search_n.h",
-      "sha256": "c84f7c990dbe47788704b10ee1aa4b21a2036c343608e9b5b4d862403b8cff59",
+      "sha256": "37e3d4dca3b8f431f15c0d6f4833d144e0a9bffa6caee6bbd5cb7d7ce8806fa3",
       "license": "Apache-2.0 WITH LLVM-exception",
       "license_basis": "file-notice",
       "upstream_repository": "https://github.com/llvm/llvm-project",
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__algorithm/search_n.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__algorithm/search_n.h",
-      "upstream_relationship": "source-reference"
+      "upstream_relationship": "modified-source",
+      "upstream_sha256": "c84f7c990dbe47788704b10ee1aa4b21a2036c343608e9b5b4d862403b8cff59",
+      "local_modifications": [
+        "Return the input begin for non-positive random-access counts before computing pointer offsets.",
+        "Compare the nonnegative range size with the original integral count before conversion to difference_type."
+      ]
     },
     {
       "root": "libcxx",
@@ -7509,7 +7514,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r15",
   "metadata": [
     {
       "root": "platform",
