@@ -12,6 +12,8 @@ Core v2 は認証済みの `std::linear_congruential_engine` と `std::mersenne_
 
 `uniform_int_distribution<T>` と `param_type` は固定 SDK が受け入れる最大 64 ビットの整数型に対応し、符号付き・符号なし 8/16 ビット型も含みます。構築、デフォルト境界、コピー、代入、`a`/`b`、`min`/`max`、パラメーターの取得と設定、等価比較、`reset` は SDK の配置と意味を保ちます。両呼び出し形式は認証済みエンジンまたは shuffle/sample と同じソース定義の生成器を使用できます。負の区間、全ビット幅の範囲、棄却抽出、単一点範囲は正確な生成器状態を維持します。明示的パラメーターでの呼び出しは保存済みパラメーターを変更しません。
 
+`uniform_real_distribution<float/double>` と `param_type` は同じ構築、パラメーター、属性、コピーと代入、reset、等価比較のインターフェイスに対応します。`generate_canonical<float/double, Bits>` は認証済みエンジンまたは対応済みソース生成器を受け入れ、SDK の抽出順序、ビット数制限、浮動小数点式を維持します。Bits がゼロでも一度抽出し、実数の単一点区間でも canonical 抽出を行います。既存の Core v2 IEEE 最近丸め契約に従い、fast math と FMA 縮約を無効にします。ネイティブ比較にも同じ設定を使います。long double、その他の分布、直列化、`random_device` は未対応です。
+
 両アルゴリズムは、対応する vector と string のイテレーターを含む、検証済みの `std::__wrap_iter<T*>` 範囲も受け入れます。Sample の入力と出力には生ポインターまたはラップイテレーターを個別に使用でき、const 入力、検証済みのスカラー変換、元の出力イテレーター型を保ちます。選択された SDK イテレーター操作も認証します。
 
 Core v2 は、コンパイル時の型エイリアスと整数・列挙定数向けに、組み込みの固定版 `<type_traits>` をサポートします。`std::remove_cv_t`、`std::is_same_v`、対応する構築・破棄 traits、`std::integral_constant::value` は既存のコア型とリテラルへ変換されます。ドライバーは、対応する macOS、Linux、Windows ターゲットで消費される 101 個の libc++／resource ヘッダーのハッシュを検証して記録します。実行時 trait のサポートは、下記の検証済み関数ポインター `integral_constant` 形式に限られます。その他の trait オブジェクトと trait のストレージ識別は未対応です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).

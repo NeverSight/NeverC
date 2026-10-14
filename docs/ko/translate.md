@@ -12,6 +12,8 @@ Core v2는 인증된 `std::linear_congruential_engine`과 `std::mersenne_twister
 
 `uniform_int_distribution<T>`와 `param_type`은 고정 SDK가 허용하는 최대 64비트 정수 타입을 지원하며 부호 있는 및 없는 8/16비트 타입도 포함합니다. 생성, 기본 경계, 복사, 대입, `a`/`b`, `min`/`max`, 매개변수 조회와 설정, 동등 비교 및 `reset`은 SDK의 레이아웃과 의미를 유지합니다. 두 호출 형식은 인증된 엔진이나 shuffle/sample과 같은 소스 정의 생성기를 사용합니다. 음수 구간, 전체 비트 범위, 거부 샘플링과 단일 값 범위는 정확한 생성기 상태를 유지합니다. 명시적 매개변수 호출은 저장된 매개변수를 변경하지 않습니다.
 
+`uniform_real_distribution<float/double>`과 `param_type`은 같은 생성, 매개변수, 속성, 복사와 대입, reset 및 동등 비교 인터페이스를 지원합니다. `generate_canonical<float/double, Bits>`는 인증된 엔진이나 지원되는 소스 생성기를 받아 SDK의 추출 순서, 비트 수 제한과 부동소수점 공식을 유지합니다. Bits가 0이어도 한 번 추출하며 실수 단일 값 구간도 canonical 추출을 수행합니다. 기존 Core v2 IEEE 최근접 반올림 계약에 따라 fast math와 FMA 결합을 끕니다. 네이티브 비교에도 같은 옵션을 사용합니다. long double, 다른 분포, 직렬화와 `random_device`는 추가 지원이 필요합니다.
+
 두 알고리즘은 지원하는 vector와 string 반복자를 포함한 검증된 `std::__wrap_iter<T*>` 범위도 허용합니다. Sample의 입력과 출력은 각각 원시 포인터 또는 래핑 반복자를 사용할 수 있으며, const 입력과 검증된 스칼라 변환을 유지하고 원래 출력 반복자 타입을 반환합니다. 선택된 SDK 반복자 연산도 계속 인증합니다.
 
 Core v2는 컴파일 시간 형식 별칭과 정수·열거형 상수를 위해 내장된 고정 버전 `<type_traits>`를 지원합니다. `std::remove_cv_t`, `std::is_same_v`, 지원되는 생성·소멸 traits와 `std::integral_constant::value`는 기존 코어 형식과 리터럴로 변환됩니다. 드라이버는 지원되는 macOS, Linux, Windows 대상에서 사용된 libc++／resource 헤더 101개의 해시를 검증하고 기록합니다. 런타임 trait 지원은 아래에 설명된 검증된 함수 포인터 `integral_constant` 형태로 제한됩니다. 다른 trait 객체와 trait 저장소 식별은 아직 지원되지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).

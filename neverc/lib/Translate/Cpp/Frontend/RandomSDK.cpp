@@ -929,8 +929,8 @@ approvedRandomEngineOperation(const State &S, const SourceManager &SM,
   return Operation;
 }
 
-std::optional<UniformIntRecord>
-approvedUniformIntRecord(const State &S, const SourceManager &SM,
+std::optional<UniformDistributionRecord>
+approvedUniformDistributionRecord(const State &S, const SourceManager &SM,
                          const CXXRecordDecl *Record, const ASTContext &Context) {
   const auto *R = Record ? Record->getDefinition() : nullptr;
   const auto *Outer = R && R->getName() == "param_type"
@@ -938,9 +938,10 @@ approvedUniformIntRecord(const State &S, const SourceManager &SM,
       : dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
   const auto *Template = Outer ? Outer->getSpecializedTemplate() : nullptr;
   const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  const bool Real = Template && Template->getName() == "uniform_real_distribution";
   if (!S.coreV2() || !R || !Outer || !Template || !File || File->Root != "libcxx" ||
-      File->Path != "__random/uniform_int_distribution.h" ||
-      Template->getName() != "uniform_int_distribution" ||
+      File->Path != (Real ? "__random/uniform_real_distribution.h" : "__random/uniform_int_distribution.h") ||
+      (!Real && Template->getName() != "uniform_int_distribution") ||
       Outer->getSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !R->isStandardLayout() || !R->isTriviallyCopyable() ||
@@ -949,8 +950,10 @@ approvedUniformIntRecord(const State &S, const SourceManager &SM,
       Outer->getTemplateArgs().get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto Result = Outer->getTemplateArgs().get(0).getAsType();
-  if (Result.hasLocalQualifiers() || !Result->isIntegerType() || Result->isBooleanType() ||
-      Context.getTypeSize(Result) > 64)
+  if (Result.hasLocalQualifiers() ||
+      (Real ? !Result->isSpecificBuiltinType(BuiltinType::Float) &&
+                  !Result->isSpecificBuiltinType(BuiltinType::Double)
+            : !Result->isIntegerType() || Result->isBooleanType() || Context.getTypeSize(Result) > 64))
     return std::nullopt;
   const CXXRecordDecl *Parameter = nullptr;
   const FieldDecl *Storage = nullptr, *Lower = nullptr, *Upper = nullptr;
@@ -983,15 +986,15 @@ approvedUniformIntRecord(const State &S, const SourceManager &SM,
   RandomSelection Selection(S, SM, Context, Outer, Result, Result);
   if (!Storage || !Lower || !Upper || !Selection.retain(Outer) || !Selection.retain(Parameter))
     return std::nullopt;
-  return UniformIntRecord{R, Outer, Parameter, Result, Storage, Lower, Upper};
+  return UniformDistributionRecord{R, Outer, Parameter, Result, Storage, Lower, Upper, Real};
 }
 
-std::optional<UniformIntConstruction>
-approvedUniformIntConstruction(const State &S, const SourceManager &SM,
+std::optional<UniformDistributionConstruction>
+approvedUniformDistributionConstruction(const State &S, const SourceManager &SM,
                                const CXXConstructExpr *Construction,
                                const ASTContext &Context) {
   const auto *C = Construction ? Construction->getConstructor() : nullptr;
-  const auto Info = C ? approvedUniformIntRecord(S, SM, C->getParent(), Context)
+  const auto Info = C ? approvedUniformDistributionRecord(S, SM, C->getParent(), Context)
                       : std::nullopt;
   if (!Info || C->isVariadic() || C->getPrimaryTemplate() ||
       !approvedStandardSDKDeclaration(S, SM, C) ||
@@ -999,70 +1002,63 @@ approvedUniformIntConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (C->isCopyOrMoveConstructor()) {
     if (C->isImplicit() && C->isTrivial())
-      return UniformIntConstruction::CopyOrMove;
+      return UniformDistributionConstruction::CopyOrMove;
     return std::nullopt;
   }
-  std::optional<UniformIntConstruction> Kind;
+  std::optional<UniformDistributionConstruction> Kind;
   if (!C->getNumParams() && Info->Record == Info->Distribution)
-    Kind = UniformIntConstruction::Default;
+    Kind = UniformDistributionConstruction::Default;
   else if (C->getNumParams() == 2 &&
            Context.hasSameType(C->getParamDecl(0)->getType(), Info->ResultType) &&
            Context.hasSameType(C->getParamDecl(1)->getType(), Info->ResultType))
-    Kind = UniformIntConstruction::Bounds;
+    Kind = UniformDistributionConstruction::Bounds;
   else if (C->getNumParams() == 1 && Info->Record == Info->Distribution &&
            Context.hasSameType(C->getParamDecl(0)->getType(),
                Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
-    Kind = UniformIntConstruction::Parameter;
+    Kind = UniformDistributionConstruction::Parameter;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
 }
 
-bool approvedUniformIntDefaultArgument(const State &S, const SourceManager &SM,
+bool approvedUniformDistributionDefaultArgument(const State &S, const SourceManager &SM,
                                       const CXXDefaultArgExpr *Default,
                                       const FunctionDecl *Function, unsigned Index,
                                       const ASTContext &Context) {
   const auto *C = dyn_cast_or_null<CXXConstructorDecl>(Function);
-  const auto Info = C ? approvedUniformIntRecord(S, SM, C->getParent(), Context)
+  const auto Info = C ? approvedUniformDistributionRecord(S, SM, C->getParent(), Context)
                       : std::nullopt;
   if (!Info || !Default || Index >= C->getNumParams() || C->getNumParams() != 2 ||
       Default->getParam() != C->getParamDecl(Index) ||
       !Context.hasSameType(C->getParamDecl(Index)->getType(), Info->ResultType))
     return false;
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
+  if (!Selection.retain(C) || !Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr())))
+    return false;
+  if (Info->Real) {
+    Expr::EvalResult Value;
+    return Default->getExpr()->EvaluateAsRValue(Value, Context) && Value.Val.isFloat() &&
+           Value.Val.getFloat().isExactlyValue(Index ? 1.0 : 0.0);
+  }
   const auto Value = Default->getExpr()->getIntegerConstantExpr(Context);
   const unsigned Bits = Context.getTypeSize(Info->ResultType);
   const auto Expected = Index ? (Info->ResultType->isUnsignedIntegerType()
       ? llvm::APInt::getAllOnes(Bits) : llvm::APInt::getSignedMaxValue(Bits))
                              : llvm::APInt(Bits, 0);
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
-  return Value && Value->zextOrTrunc(Bits) == Expected && Selection.retain(C) &&
-         Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr()));
+  return Value && Value->zextOrTrunc(Bits) == Expected;
 }
 
-std::optional<UtilityAlgorithmRandomCall>
-approvedUniformIntRandomCall(const State &S, const SourceManager &SM,
-                            const CallExpr *Call, const ASTContext &Context) {
-  const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
-  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  const auto Info = M ? approvedUniformIntRecord(S, SM, M->getParent(), Context) : std::nullopt;
-  if (!Info || Info->Record != Info->Distribution || M->isStatic() || M->isConst() ||
-      M->isVolatile() || M->isVariadic() || M->getOverloadedOperator() != OO_Call ||
-      M->getNumParams() < 1 || M->getNumParams() > 2 ||
-      !approvedStandardSDKDeclaration(S, SM, M) ||
-      !Context.hasSameType(M->getReturnType(), Info->ResultType) ||
-      Call->getNumArgs() != M->getNumParams() + (Operator ? 1u : 0u) ||
-      !(Operator || isa<CXXMemberCallExpr>(Call)) ||
-      Call->isTypeDependent() || Call->isValueDependent() || Call->isInstantiationDependent())
-    return std::nullopt;
-  const auto Object = M->getParamDecl(0)->getType();
+namespace {
+std::optional<UtilityAlgorithmRandomCall> selectedRandomGenerator(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    QualType Object, QualType Distance, UtilityOperation Operation, unsigned Index,
+    const ASTContext &Context) {
   const auto *Generator = Object.getNonReferenceType()->getAsCXXRecordDecl();
   Generator = Generator ? Generator->getDefinition() : nullptr;
   const auto Engine = approvedRandomEngineRecord(S, SM, Generator, Context);
   if (!Object->isLValueReferenceType() || Object.getNonReferenceType().hasLocalQualifiers() ||
       !Generator || Generator->isLambda() || Generator->isUnion() || Generator->getNumBases() ||
       !Generator->isStandardLayout() || !Generator->isTriviallyCopyable() ||
-      !Generator->hasTrivialDestructor() || (!Engine && !S.owns(SM, Generator->getLocation())) ||
-      (M->getNumParams() == 2 && !Context.hasSameType(M->getParamDecl(1)->getType(),
-          Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))))
+      !Generator->hasTrivialDestructor() || (!Engine && !S.owns(SM, Generator->getLocation())))
     return std::nullopt;
   QualType Result;
   for (const auto *D : Generator->decls())
@@ -1077,49 +1073,102 @@ approvedUniformIntRandomCall(const State &S, const SourceManager &SM,
   if (Result.isNull() || Result.hasLocalQualifiers() || !Result->isUnsignedIntegerType() ||
       Result->isBooleanType() || Context.getTypeSize(Result) > 64)
     return std::nullopt;
-  RandomSelection Selection(S, SM, Context, Generator, Result, Info->ResultType);
-  if (!Selection.retain(M) || !Selection.Method || !Selection.Minimum || !Selection.Maximum ||
+  RandomSelection Selection(S, SM, Context, Generator, Result, Distance);
+  if (!Selection.retain(Function) || !Selection.Method || !Selection.Minimum || !Selection.Maximum ||
       Selection.MinimumValue >= Selection.MaximumValue ||
       (Engine && (Selection.MinimumValue != Engine->Minimum || Selection.MaximumValue != Engine->Maximum)))
     return std::nullopt;
-  return UtilityAlgorithmRandomCall{UtilityOperation::UniformIntGenerate,
+  return UtilityAlgorithmRandomCall{Operation,
       Selection.Method, Selection.Minimum, Selection.Maximum, Object, Result,
-      Info->ResultType, Selection.MinimumValue, Selection.MaximumValue, Operator ? 1u : 0u};
+      Distance, Selection.MinimumValue, Selection.MaximumValue, Index};
+}
+}
+
+std::optional<UtilityAlgorithmRandomCall>
+approvedUniformDistributionRandomCall(const State &S, const SourceManager &SM,
+                            const CallExpr *Call, const ASTContext &Context) {
+  const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto Info = M ? approvedUniformDistributionRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  if (!Info || Info->Record != Info->Distribution || M->isStatic() || M->isConst() ||
+      M->isVolatile() || M->isVariadic() || M->getOverloadedOperator() != OO_Call ||
+      M->getNumParams() < 1 || M->getNumParams() > 2 ||
+      !approvedStandardSDKDeclaration(S, SM, M) ||
+      !Context.hasSameType(M->getReturnType(), Info->ResultType) ||
+      Call->getNumArgs() != M->getNumParams() + (Operator ? 1u : 0u) ||
+      !(Operator || isa<CXXMemberCallExpr>(Call)) ||
+      Call->isTypeDependent() || Call->isValueDependent() || Call->isInstantiationDependent())
+    return std::nullopt;
+  if (M->getNumParams() == 2 && !Context.hasSameType(M->getParamDecl(1)->getType(),
+      Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
+    return std::nullopt;
+  return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Info->ResultType,
+      UtilityOperation::UniformGenerate, Operator ? 1u : 0u, Context);
+}
+
+std::optional<CanonicalRandomCall>
+approvedCanonicalRandomCall(const State &S, const SourceManager &SM,
+                            const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
+  const auto File = F ? S.sdkFile(SM, F->getLocation()) : std::nullopt;
+  if (!S.coreV2() || !F || !F->getIdentifier() || F->getName() != "generate_canonical" ||
+      isa<CXXMethodDecl>(F) || F->isVariadic() || !F->getPrimaryTemplate() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      F->getNumParams() != 1 || Call->getNumArgs() != 1 || !Args || Args->size() != 3 ||
+      !File || File->Root != "libcxx" || File->Path != "__random/generate_canonical.h" ||
+      !approvedStandardSDKDeclaration(S, SM, F) ||
+      Args->get(0).getKind() != TemplateArgument::Type ||
+      Args->get(1).getKind() != TemplateArgument::Integral ||
+      Args->get(2).getKind() != TemplateArgument::Type ||
+      Args->get(1).getAsIntegral().isNegative() || Args->get(1).getAsIntegral().getBitWidth() > 64)
+    return std::nullopt;
+  const auto Real = Args->get(0).getAsType();
+  if (Real.hasLocalQualifiers() ||
+      (!Real->isSpecificBuiltinType(BuiltinType::Float) && !Real->isSpecificBuiltinType(BuiltinType::Double)) ||
+      !Context.hasSameType(F->getReturnType(), Real) || !Context.hasSameType(Call->getType(), Real) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Args->get(2).getAsType())))
+    return std::nullopt;
+  const auto Random = selectedRandomGenerator(S, SM, F, F->getParamDecl(0)->getType(), Real,
+      UtilityOperation::GenerateCanonical, 0, Context);
+  if (!Random)
+    return std::nullopt;
+  return CanonicalRandomCall{*Random, Args->get(1).getAsIntegral().getZExtValue()};
 }
 
 std::optional<UtilityOperation>
-approvedUniformIntOperation(const State &S, const SourceManager &SM,
+approvedUniformDistributionOperation(const State &S, const SourceManager &SM,
                             const CallExpr *Call, const ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *R = M ? M->getParent() : F && F->getNumParams() == 2
       ? F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
-  const auto Info = approvedUniformIntRecord(S, SM, R, Context);
+  const auto Info = approvedUniformDistributionRecord(S, SM, R, Context);
   if (!Info || !F || F->isVariadic() || !approvedStandardSDKDeclaration(S, SM, F) ||
       Call->getNumArgs() != F->getNumParams() + (Operator && M ? 1u : 0u))
     return std::nullopt;
   std::optional<UtilityOperation> Operation;
   if (M && !M->isStatic() && !M->isVolatile()) {
-    if (approvedUniformIntRandomCall(S, SM, Call, Context))
-      return UtilityOperation::UniformIntGenerate;
+    if (approvedUniformDistributionRandomCall(S, SM, Call, Context))
+      return UtilityOperation::UniformGenerate;
     if (M->isConst() && !M->getNumParams() &&
         Context.hasSameType(M->getReturnType(), Info->ResultType) && M->getIdentifier()) {
       if (M->getName() == "a" || M->getName() == "min")
-        Operation = UtilityOperation::UniformIntLower;
+        Operation = UtilityOperation::UniformLower;
       else if (M->getName() == "b" || M->getName() == "max")
-        Operation = UtilityOperation::UniformIntUpper;
+        Operation = UtilityOperation::UniformUpper;
     } else if (Info->Record == Info->Distribution && M->getIdentifier()) {
       if (M->getName() == "reset" && !M->isConst() && !M->getNumParams() && M->getReturnType()->isVoidType())
-        Operation = UtilityOperation::UniformIntReset;
+        Operation = UtilityOperation::UniformReset;
       else if (M->getName() == "param" && M->isConst() && !M->getNumParams() &&
                Context.hasSameType(M->getReturnType(), Context.getRecordType(Info->Parameter)))
-        Operation = UtilityOperation::UniformIntParamGet;
+        Operation = UtilityOperation::UniformParamGet;
       else if (M->getName() == "param" && !M->isConst() && M->getNumParams() == 1 &&
                M->getReturnType()->isVoidType() &&
                Context.hasSameType(M->getParamDecl(0)->getType(),
                    Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
-        Operation = UtilityOperation::UniformIntParamSet;
+        Operation = UtilityOperation::UniformParamSet;
     }
     if (M->getOverloadedOperator() == OO_Equal && M->isImplicit() && M->isTrivial() &&
         M->getNumParams() == 1 && M->getReturnType()->isLValueReferenceType() &&
@@ -1127,7 +1176,7 @@ approvedUniformIntOperation(const State &S, const SourceManager &SM,
         M->getParamDecl(0)->getType()->isReferenceType() &&
         Context.hasSameUnqualifiedType(M->getParamDecl(0)->getType().getNonReferenceType(),
                                        Context.getRecordType(Info->Record)))
-      return UtilityOperation::UniformIntAssign;
+      return UtilityOperation::UniformAssign;
   } else if (!M && F->getReturnType()->isBooleanType() && F->getNumParams() == 2 &&
              (F->getOverloadedOperator() == OO_EqualEqual || F->getOverloadedOperator() == OO_ExclaimEqual)) {
     for (const auto *P : F->parameters())
@@ -1135,7 +1184,7 @@ approvedUniformIntOperation(const State &S, const SourceManager &SM,
           Context.getLValueReferenceType(Context.getRecordType(Info->Record).withConst())))
         return std::nullopt;
     Operation = F->getOverloadedOperator() == OO_EqualEqual
-        ? UtilityOperation::UniformIntEqual : UtilityOperation::UniformIntNotEqual;
+        ? UtilityOperation::UniformEqual : UtilityOperation::UniformNotEqual;
   }
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Operation && Selection.retain(F) ? Operation : std::nullopt;

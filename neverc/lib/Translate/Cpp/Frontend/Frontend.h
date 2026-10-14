@@ -975,15 +975,16 @@ enum class UtilityOperation {
   SeedSequenceGenerate,
   SeedSequenceSize,
   SeedSequenceParam,
-  UniformIntGenerate,
-  UniformIntLower,
-  UniformIntUpper,
-  UniformIntParamGet,
-  UniformIntParamSet,
-  UniformIntReset,
-  UniformIntEqual,
-  UniformIntNotEqual,
-  UniformIntAssign,
+  UniformGenerate,
+  UniformLower,
+  UniformUpper,
+  UniformParamGet,
+  UniformParamSet,
+  UniformReset,
+  UniformEqual,
+  UniformNotEqual,
+  UniformAssign,
+  GenerateCanonical,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1257,25 +1258,33 @@ std::optional<SeedSequenceConstruction> approvedSeedSequenceConstruction(
 std::optional<UtilityOperation> approvedSeedSequenceOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-struct UniformIntRecord {
+struct UniformDistributionRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   clang::QualType ResultType;
   const clang::FieldDecl *Storage, *Lower, *Upper;
+  bool Real = false;
 };
-std::optional<UniformIntRecord> approvedUniformIntRecord(
+std::optional<UniformDistributionRecord> approvedUniformDistributionRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
-enum class UniformIntConstruction { Default, Bounds, Parameter, CopyOrMove };
-std::optional<UniformIntConstruction> approvedUniformIntConstruction(
+enum class UniformDistributionConstruction { Default, Bounds, Parameter, CopyOrMove };
+std::optional<UniformDistributionConstruction> approvedUniformDistributionConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
-std::optional<UtilityOperation> approvedUniformIntOperation(
+std::optional<UtilityOperation> approvedUniformDistributionOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-std::optional<UtilityAlgorithmRandomCall> approvedUniformIntRandomCall(
+std::optional<UtilityAlgorithmRandomCall> approvedUniformDistributionRandomCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-bool approvedUniformIntDefaultArgument(
+struct CanonicalRandomCall {
+  UtilityAlgorithmRandomCall Random;
+  uint64_t Bits;
+};
+std::optional<CanonicalRandomCall> approvedCanonicalRandomCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+bool approvedUniformDistributionDefaultArgument(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXDefaultArgExpr *Default, const clang::FunctionDecl *Function,
     unsigned Index, const clang::ASTContext &Context);
@@ -2038,7 +2047,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
-  std::set<const clang::CXXRecordDecl *> RequiredUniformIntRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;

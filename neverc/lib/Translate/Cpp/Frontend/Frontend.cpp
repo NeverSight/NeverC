@@ -11329,8 +11329,8 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
               return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
-      } else if (const auto Uniform = approvedUniformIntRecord(S, Sources, D, Context)) {
-        if (RequiredUniformIntRecords.insert(D->getCanonicalDecl()).second) {
+      } else if (const auto Uniform = approvedUniformDistributionRecord(S, Sources, D, Context)) {
+        if (RequiredUniformDistributionRecords.insert(D->getCanonicalDecl()).second) {
           for (const auto *Field : D->fields())
             if (type(Field->getType(), L, false, Depth + 1).empty())
               return {};
@@ -15320,7 +15320,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
-        (approvedUniformIntConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
          approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
          approvedRandomEngineConstruction(A.S, A.Sources, C, A.Context) ||
          approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
@@ -15917,7 +15917,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   algorithmCallableSource(const CallExpr *Call) {
     auto Random = approvedUtilityAlgorithmRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
-      Random = approvedUniformIntRandomCall(A.S, A.Sources, Call, A.Context);
+      Random = approvedUniformDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+    if (!Random)
+      if (const auto Canonical = approvedCanonicalRandomCall(A.S, A.Sources, Call, A.Context))
+        Random = Canonical->Random;
     if (Random) {
       if (approvedRandomEngineRecord(A.S, A.Sources,
                                     Random->ObjectType.getNonReferenceType()
@@ -18828,7 +18831,7 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedUniformIntConstruction(A.S, A.Sources, Construction, A.Context) ||
+          (approvedUniformDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedRandomEngineConstruction(A.S, A.Sources, Construction,
                                             A.Context) ||
@@ -24268,7 +24271,7 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedUniformIntConstruction(A.S, A.Sources, C, A.Context) ||
+        } else if (approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedRandomEngineConstruction(A.S, A.Sources, C,
                                                     A.Context) ||

@@ -8323,8 +8323,34 @@ satisfy the distribution's `a <= b` precondition.
 Selected distribution/parameter constructors and methods, nested helpers,
 traits, generator methods/bounds and redeclarations remain authenticated.
 Source SDK replacements are rejected without partial artifacts. Other
-distributions, real-number generation, stream serialization and `random_device`
-need their own admission; this contract does not authorize their runtime calls.
+distributions, stream serialization and `random_device` need their own admission;
+this contract does not authorize their runtime calls.
+
+## Uniform real distributions and canonical generation
+
+`std::uniform_real_distribution<float/double>` and `param_type` share the checked
+uniform-distribution field layout, constructors/defaults, bounds, parameters,
+copy/assignment, equality and reset operations. Both generator call forms accept
+the checked SDK engines/adaptors or the existing source-generator contract.
+Explicit parameter calls leave stored parameters unchanged.
+
+`std::generate_canonical<float/double, Bits>` uses the selected SDK draw order:
+clamp Bits to 24/53 mantissa bits, choose at least one draw from the generator's
+logarithmic range, accumulate in the result type and divide by its floating
+base. Bits zero still draws once. Real distribution generation evaluates the
+selected canonical formula and interval arithmetic; a singleton real interval
+still consumes canonical draws. The SDK's result rounding is preserved without
+substituting a different endpoint correction.
+
+All floating operations follow the existing core-v2 execution contract: IEEE
+binary32/binary64, nearest rounding, masked traps and gradual underflow, with
+fast math and implicit FMA contraction disabled. Native LLVM 20.1.8 references
+use `-fno-fast-math -ffp-contract=off` too. Generated floating assertions and
+pragmas remain intact. Bit-pattern digests and generator states are compared
+at O0/O2. Long double, other distributions, stream serialization and
+`random_device` retain their separate admission requirements. Selected
+constructors/methods, canonical specializations, traits and generator bounds
+remain source-authenticated; replacements cannot acquire these lowerings.
 
 ## Standard template parsing across targets
 

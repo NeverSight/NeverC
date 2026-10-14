@@ -358677,3 +358677,64 @@ int main(){std::uniform_int_distribution<int> d(0,9);std::mt19937 e;return d(e)=
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2RealUniformAndCanonicalPreserveBitPatternsAndState) {
+  for (const std::string &Name : {"uniform-real", "canonical"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-" + Name + ".cpp");
+    const auto Output = tmpFile("random-" + Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RealUniformAndCanonicalRetainSelectedSDK) {
+  struct Case {const char *Name;const char *Source;};
+  const Case Cases[] = {
+      {"real-constructor",R"cpp(#include <random>
+namespace std {template<> uniform_real_distribution<double>::uniform_real_distribution(double,double):__p_(3.,3.){}}
+int main(){std::uniform_real_distribution<double> d(0.,1.);return d.a()==3.?0:1;}
+)cpp"},
+      {"real-parameter",R"cpp(#include <random>
+namespace std {template<> double uniform_real_distribution<double>::param_type::a()const{return 3.;}}
+int main(){std::uniform_real_distribution<double> d(0.,1.);return d.a()==3.?0:1;}
+)cpp"},
+      {"real-call",R"cpp(#include <random>
+namespace std {template<> template<> double uniform_real_distribution<double>::operator()<mt19937>(mt19937&,const param_type&){return .25;}}
+int main(){std::uniform_real_distribution<double> d;std::mt19937 e;return d(e)==.25?0:1;}
+)cpp"},
+      {"canonical",R"cpp(#include <random>
+namespace std {template<> double generate_canonical<double,53,mt19937>(mt19937&){return .25;}}
+int main(){std::mt19937 e;return std::generate_canonical<double,53>(e)==.25?0:1;}
+)cpp"},
+      {"real-canonical-helper",R"cpp(#include <random>
+namespace std {template<> double generate_canonical<double,53,mt19937>(mt19937&){return .25;}}
+int main(){std::mt19937 e;std::uniform_real_distribution<double> d;return d(e)==.25?0:1;}
+)cpp"},
+      {"canonical-engine-bound",R"cpp(#include <random>
+namespace std {template<> constexpr unsigned mt19937::max(){return 99;}}
+int main(){std::mt19937 e;return std::generate_canonical<double,53>(e)==.25?0:1;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("real-random-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("real-random-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

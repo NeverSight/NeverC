@@ -824,6 +824,13 @@ and the source-generator contract above preserve negative/narrow/full-width
 range arithmetic, rejection draws and generator state. See the
 [integer distribution contract](../docs/cpp-core-v2.md#uniform-integer-distributions-from-random).
 
+Float/double `uniform_real_distribution` and `generate_canonical` also preserve
+selected SDK formulas, draw order, bounds/parameters and source guards. The
+existing core-v2 IEEE execution contract disables fast math and FMA contraction;
+native references use the same flags. Bits zero and real singleton intervals
+still consume generator draws. See the
+[real distribution contract](../docs/cpp-core-v2.md#uniform-real-distributions-and-canonical-generation).
+
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
 bool and trivial aggregate operations, free functions, resolved namespaces and
