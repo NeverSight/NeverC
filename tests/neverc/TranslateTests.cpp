@@ -358403,7 +358403,9 @@ int main(){
 }
 
 TEST_F(TranslateTest, CoreV2StandardRandomEngineSequencesAndState) {
-  for (const std::string &Name : {"lcg", "mt", "wide-modulus", "boundaries"}) {
+  for (const std::string &Name : {"lcg", "mt", "wide-modulus", "boundaries",
+                                  "swc", "adaptors", "independent", "shuffle",
+                                  "adaptor-boundaries"}) {
     SCOPED_TRACE(Name);
     const auto Source = fixture("random-engines-" + Name + ".cpp");
     const auto Output = tmpFile("random-engines-" + Name + ".nc");
@@ -358461,6 +358463,150 @@ int main(){std::mt19937 a,b;return a==b;}
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("random-engine-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("random-engine-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SeedSequencesAndEngineSeeding) {
+  for (const std::string &Name : {"sequence", "engines", "boundaries"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-seed-" + Name + ".cpp");
+    const auto Output = tmpFile("random-seed-" + Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-seed-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RandomAdaptorsAndSeedSequencesRetainSelectedSDK) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"swc-call", R"cpp(#include <random>
+namespace std {template<> unsigned ranlux24_base::operator()(){return 7;}}
+int main(){std::ranlux24_base e;return e()==7?0:1;}
+)cpp"},
+      {"swc-seed", R"cpp(#include <random>
+namespace std {template<> void ranlux24_base::seed(result_type){__i_=0;__c_=0;for(auto &x:__x_)x=5;}}
+int main(){std::ranlux24_base e(17);return e()==0;}
+)cpp"},
+      {"discard-call", R"cpp(#include <random>
+namespace std {template<> unsigned ranlux24::operator()(){return 7;}}
+int main(){std::ranlux24 e;return e()==7?0:1;}
+)cpp"},
+      {"discard-underlying", R"cpp(#include <random>
+namespace std {template<> unsigned minstd_rand::operator()(){return 7;}}
+int main(){std::discard_block_engine<std::minstd_rand,5,3> e;return e()==7?0:1;}
+)cpp"},
+      {"independent-helper", R"cpp(#include <random>
+using E=std::independent_bits_engine<std::minstd_rand,32,unsigned>;
+namespace std {template<> unsigned E::__eval(true_type){return 7;}}
+int main(){E e;return e()==7?0:1;}
+)cpp"},
+      {"shuffle-initialize", R"cpp(#include <random>
+namespace std {template<> void knuth_b::__init(){for(auto &x:__v_)x=5;__y_=5;}}
+int main(){std::knuth_b e;return e()==0;}
+)cpp"},
+      {"shuffle-floating-helper", R"cpp(#include <random>
+using E=std::shuffle_order_engine<std::mt19937_64,17>;
+namespace std {template<> template<> unsigned long long E::__evalf<17,0>(){return 7;}}
+int main(){E e;return e()==7?0:1;}
+)cpp"},
+      {"seed-generate", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[65536]; };
+Arena arena{}; Size offset; unsigned frees;
+void *operator new(Size n) { auto p = arena.bytes + offset; offset += (n+15)/16*16; return p; }
+void operator delete(void *) noexcept {++frees;}
+#include <random>
+namespace std {template<> void seed_seq::generate<unsigned*>(unsigned *a,unsigned *b){for(;a!=b;++a)*a=7;}}
+int main(){std::seed_seq q{1,2};unsigned a[3]{};q.generate(a,a+3);return a[0]==7?0:1;}
+)cpp"},
+      {"seed-engine-generate", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[65536]; };
+Arena arena{}; Size offset; unsigned frees;
+void *operator new(Size n) { auto p = arena.bytes + offset; offset += (n+15)/16*16; return p; }
+void operator delete(void *) noexcept {++frees;}
+#include <random>
+namespace std {template<> void seed_seq::generate<unsigned*>(unsigned *a,unsigned *b){for(;a!=b;++a)*a=7;}}
+int main(){std::seed_seq q{1,2};std::mt19937 e(q);return e()==0;}
+)cpp"},
+      {"seed-initialize", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[65536]; };
+Arena arena{}; Size offset; unsigned frees;
+void *operator new(Size n) { auto p = arena.bytes + offset; offset += (n+15)/16*16; return p; }
+void operator delete(void *) noexcept {++frees;}
+#include <random>
+namespace std {template<> void seed_seq::__init<const int*>(const int*,const int*){__v_.push_back(7);}}
+int main(){std::seed_seq q{1,2};return q.size()==1?0:1;}
+)cpp"},
+      {"seed-vector-push", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[65536]; };
+Arena arena{}; Size offset; unsigned frees;
+void *operator new(Size n) { auto p = arena.bytes + offset; offset += (n+15)/16*16; return p; }
+void operator delete(void *) noexcept {++frees;}
+#include <random>
+namespace std {template<> void vector<unsigned>::push_back(value_type&&){}}
+int main(){std::seed_seq q{1,2};return q.size()==0?0:1;}
+)cpp"},
+      {"seed-iterator-traits", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[65536]; };
+Arena arena{}; Size offset; unsigned frees;
+void *operator new(Size n) { auto p = arena.bytes + offset; offset += (n+15)/16*16; return p; }
+void operator delete(void *) noexcept {++frees;}
+#include <random>
+namespace std {template<> struct iterator_traits<unsigned*>{using value_type=unsigned;using difference_type=ptrdiff_t;using pointer=unsigned*;using reference=unsigned&;using iterator_category=random_access_iterator_tag;};}
+int main(){std::seed_seq q{1,2};unsigned a[3]{};q.generate(a,a+3);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("random-adaptor-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("random-adaptor-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SeedSequencesRetainRuntimeBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"zero-modulus", R"cpp(using Size=decltype(sizeof(0));
+unsigned long long storage[128];
+void *operator new(Size){return storage;}
+void operator delete(void*)noexcept{}
+#include <random>
+int main(){std::seed_seq q{1,2};std::linear_congruential_engine<unsigned,1664525,1013904223,0> e(q);return e()==0;}
+)cpp"},
+      {"source-sequence", R"cpp(#include <random>
+struct Seq {template<class P> void generate(P first,P last){for(;first!=last;++first)*first=7;}};
+int main(){Seq q;std::mt19937 e(q);return e()==0;}
+)cpp"},
+      {"missing-allocation-body", R"cpp(#include <random>
+int main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("seed-runtime-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("seed-runtime-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source,
         {"--profile", "cpp-core-v2", "-o", Output.string()});

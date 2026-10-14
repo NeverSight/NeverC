@@ -65,10 +65,53 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   bool engineIntrinsic(const FunctionDecl *F) const {
     if (!SDKGenerator || !F || !F->isImplicit())
       return false;
-    // The pinned MT equality body uses libc++'s scalar-array equality path.
+    // Equality and seed-sequence storage use these selected SDK helpers.
     // These compiler intrinsics are proof dependencies, never emitted calls.
     return F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated ||
-           F->getBuiltinID() == Builtin::BI__builtin_memcmp;
+           F->getBuiltinID() == Builtin::BI__builtin_constant_p ||
+           F->getBuiltinID() == Builtin::BI__builtin_memcmp ||
+           F->getBuiltinID() == Builtin::BI__builtin_memcpy ||
+           F->getBuiltinID() == Builtin::BI__builtin_memmove ||
+           F->getBuiltinID() == Builtin::BI__builtin_addressof ||
+           F->getBuiltinID() == Builtin::BI__builtin_assume_aligned ||
+           F->getBuiltinID() == Builtin::BI__builtin_operator_new ||
+           F->getBuiltinID() == Builtin::BI__builtin_operator_delete;
+  }
+  bool alignmentType(QualType T) const {
+    const auto *E = T->getAs<EnumType>();
+    const auto *D = E ? E->getDecl() : nullptr;
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return D && D->getName() == "align_val_t" && File &&
+           File->Root == "libcxx" && File->Path == "__new/align_val_t.h" &&
+           approvedStandardSDKDeclaration(S, SM, D);
+  }
+  bool allocatorHook(const FunctionDecl *F) const {
+    if (!SDKGenerator || !F || isa<CXXMethodDecl>(F) || F->isVariadic() ||
+        F->getPrimaryTemplate() ||
+        !F->getDeclContext()->getRedeclContext()->isTranslationUnit())
+      return false;
+    const bool Allocate = F->getOverloadedOperator() == OO_New;
+    if ((!Allocate && F->getOverloadedOperator() != OO_Delete) ||
+        F->getNumParams() < 1 || F->getNumParams() > (Allocate ? 2u : 3u) ||
+        !Context.hasSameType(F->getReturnType(), Allocate ? Context.VoidPtrTy : Context.VoidTy) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(),
+                             Allocate ? Context.getSizeType() : Context.VoidPtrTy) ||
+        (F->getNumParams() >= 2 &&
+         !alignmentType(F->getParamDecl(1)->getType()) &&
+         (Allocate || !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getSizeType()))) ||
+        (F->getNumParams() == 3 && !alignmentType(F->getParamDecl(2)->getType())))
+      return false;
+    for (const auto *D : F->redecls()) {
+      if (S.owns(SM, D->getLocation()) ||
+          (D->isImplicit() && D->getLocation().isInvalid()))
+        continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || File->Root != "libcxx" || File->Path != "__new/global_new_delete.h")
+        return false;
+    }
+    // The allocation boundary separately selects and checks the source-owned
+    // global new/delete implementation. Do not traverse that user's body as SDK.
+    return true;
   }
   bool sourceMethod(const CXXMethodDecl *M, const CallExpr *Call) {
     const auto *Definition = M->getDefinition();
@@ -270,7 +313,7 @@ public:
   }
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *F = dyn_cast<FunctionDecl>(E->getDecl());
-    if (countLeadingZeros(F) || engineIntrinsic(F))
+    if (countLeadingZeros(F) || engineIntrinsic(F) || allocatorHook(F))
       return true;
     // Calls retain source methods with their actual selected receiver below.
     if (F && S.owns(SM, F->getLocation()))
@@ -286,16 +329,69 @@ public:
   }
   bool VisitCallExpr(CallExpr *E) {
     const auto *F = E->getDirectCallee();
-    if (!F)
+    if (!F) {
+      const auto *Destructor = dyn_cast<CXXPseudoDestructorExpr>(
+          E->getCallee()->IgnoreParenImpCasts());
+      const auto File = S.sdkFile(SM, E->getExprLoc());
+      if (SDKGenerator && Destructor && File && File->Root == "libcxx" &&
+          File->Path == "__memory/allocator.h" && !E->getNumArgs() &&
+          E->getType()->isVoidType() && Destructor->isArrow() &&
+          Destructor->getBase()->getType()->isPointerType() &&
+          Destructor->getDestroyedType()->isUnsignedIntegerType() &&
+          Context.getTypeSize(Destructor->getDestroyedType()) == 32 &&
+          Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
+              Destructor->getBase()->getType()->getPointeeType()))
+        return true;
       return false;
+    }
+    if (allocatorHook(F))
+      return E->getNumArgs() == F->getNumParams();
     if (countLeadingZeros(F))
       return E->getType()->isSpecificBuiltinType(BuiltinType::Int) &&
              E->getNumArgs() >= 1 && E->getNumArgs() <= 2;
-    if (engineIntrinsic(F))
-      return F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated
-                 ? E->getNumArgs() == 0 && E->getType()->isBooleanType()
-                 : E->getNumArgs() == 3 &&
-                       E->getType()->isSpecificBuiltinType(BuiltinType::Int);
+    if (engineIntrinsic(F)) {
+      switch (F->getBuiltinID()) {
+      case Builtin::BI__builtin_is_constant_evaluated:
+        return E->getNumArgs() == 0 && E->getType()->isBooleanType();
+      case Builtin::BI__builtin_constant_p:
+        return E->getNumArgs() == 1 &&
+               E->getType()->isSpecificBuiltinType(BuiltinType::Int);
+      case Builtin::BI__builtin_memcmp:
+        return E->getNumArgs() == 3 &&
+               E->getType()->isSpecificBuiltinType(BuiltinType::Int);
+      case Builtin::BI__builtin_memcpy:
+      case Builtin::BI__builtin_memmove:
+        return E->getNumArgs() == 3 &&
+               Context.hasSameType(E->getType(), Context.VoidPtrTy) &&
+               Context.hasSameType(E->getArg(0)->getType(), Context.VoidPtrTy) &&
+               E->getArg(1)->getType()->isObjectPointerType() &&
+               Context.hasSameType(E->getArg(2)->getType(), Context.getSizeType());
+      case Builtin::BI__builtin_addressof:
+        return E->getNumArgs() == 1 && E->getType()->isPointerType() &&
+               Context.hasSameType(E->getType()->getPointeeType(), E->getArg(0)->getType());
+      case Builtin::BI__builtin_assume_aligned:
+        return E->getNumArgs() >= 2 && E->getNumArgs() <= 3 &&
+               E->getType()->isPointerType() &&
+               E->getArg(0)->getType()->isPointerType() &&
+               E->getArg(1)->getType()->isIntegerType() &&
+               (E->getNumArgs() == 2 || E->getArg(2)->getType()->isIntegerType());
+      case Builtin::BI__builtin_operator_new:
+        return E->getNumArgs() >= 1 && E->getNumArgs() <= 2 &&
+               Context.hasSameType(E->getType(), Context.VoidPtrTy) &&
+               Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType()) &&
+               (E->getNumArgs() == 1 || alignmentType(E->getArg(1)->getType()));
+      case Builtin::BI__builtin_operator_delete:
+        return E->getNumArgs() >= 1 && E->getNumArgs() <= 3 &&
+               E->getType()->isVoidType() &&
+               E->getArg(0)->getType()->isObjectPointerType() &&
+               (E->getNumArgs() == 1 ||
+                Context.hasSameType(E->getArg(1)->getType(), Context.getSizeType()) ||
+                alignmentType(E->getArg(1)->getType())) &&
+               (E->getNumArgs() != 3 || alignmentType(E->getArg(2)->getType()));
+      default:
+        return false;
+      }
+    }
     if (S.owns(SM, F->getLocation())) {
       const auto *M = dyn_cast<CXXMethodDecl>(F);
       return M && sourceMethod(M, E);
@@ -376,20 +472,58 @@ approvedRandomEngineRecord(const State &S, const SourceManager &SM,
       R->getSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedStandardSDKDeclaration(S, SM, Template))
     return std::nullopt;
-  const bool Linear = Template->getName() == "linear_congruential_engine" &&
-                      File->Path == "__random/linear_congruential_engine.h";
-  const bool Twister = Template->getName() == "mersenne_twister_engine" &&
-                       File->Path == "__random/mersenne_twister_engine.h";
-  const auto &Arguments = R->getTemplateArgs();
-  if ((!Linear && !Twister) || Arguments.size() != (Linear ? 4u : 14u) ||
-      Arguments.get(0).getKind() != TemplateArgument::Type)
+  RandomEngineKind Kind;
+  unsigned ArgumentCount, TypeIndex = 0;
+  if (Template->getName() == "linear_congruential_engine" &&
+      File->Path == "__random/linear_congruential_engine.h") {
+    Kind = RandomEngineKind::LinearCongruential;
+    ArgumentCount = 4;
+  } else if (Template->getName() == "mersenne_twister_engine" &&
+             File->Path == "__random/mersenne_twister_engine.h") {
+    Kind = RandomEngineKind::MersenneTwister;
+    ArgumentCount = 14;
+  } else if (Template->getName() == "subtract_with_carry_engine" &&
+             File->Path == "__random/subtract_with_carry_engine.h") {
+    Kind = RandomEngineKind::SubtractWithCarry;
+    ArgumentCount = 4;
+  } else if (Template->getName() == "discard_block_engine" &&
+             File->Path == "__random/discard_block_engine.h") {
+    Kind = RandomEngineKind::DiscardBlock;
+    ArgumentCount = 3;
+  } else if (Template->getName() == "independent_bits_engine" &&
+             File->Path == "__random/independent_bits_engine.h") {
+    Kind = RandomEngineKind::IndependentBits;
+    ArgumentCount = 3;
+    TypeIndex = 2;
+  } else if (Template->getName() == "shuffle_order_engine" &&
+             File->Path == "__random/shuffle_order_engine.h") {
+    Kind = RandomEngineKind::ShuffleOrder;
+    ArgumentCount = 2;
+  } else {
     return std::nullopt;
-  const auto Result = Arguments.get(0).getAsType();
+  }
+  const bool Adaptor = Kind == RandomEngineKind::DiscardBlock ||
+                       Kind == RandomEngineKind::IndependentBits ||
+                       Kind == RandomEngineKind::ShuffleOrder;
+  const auto &Arguments = R->getTemplateArgs();
+  if (Arguments.size() != ArgumentCount ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(TypeIndex).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Base = Adaptor ? approvedRandomEngineRecord(
+      S, SM, Arguments.get(0).getAsType()->getAsCXXRecordDecl(), Context)
+                           : std::nullopt;
+  if (Adaptor && !Base)
+    return std::nullopt;
+  const auto Result = Adaptor && Kind != RandomEngineKind::IndependentBits
+                          ? Base->ResultType : Arguments.get(TypeIndex).getAsType();
   if (Result.hasLocalQualifiers() || !Result->isUnsignedIntegerType() ||
       Result->isBooleanType() || Context.getTypeSize(Result) > 64)
     return std::nullopt;
   std::vector<uint64_t> Parameters;
   for (unsigned I = 1; I < Arguments.size(); ++I) {
+    if (I == TypeIndex)
+      continue;
     const auto &Argument = Arguments.get(I);
     if (Argument.getKind() != TemplateArgument::Integral ||
         Argument.getAsIntegral().isNegative() ||
@@ -398,58 +532,240 @@ approvedRandomEngineRecord(const State &S, const SourceManager &SM,
     Parameters.push_back(Argument.getAsIntegral().getZExtValue());
   }
   const unsigned Bits = Context.getTypeSize(Result);
-  uint64_t Minimum, Maximum;
-  if (Linear) {
+  uint64_t Minimum = 0, Maximum = 0, DefaultSeed = 0, ArraySize = 0;
+  unsigned ExpectedFields = 0;
+  switch (Kind) {
+  case RandomEngineKind::LinearCongruential: {
     const auto Modulus = Parameters[2];
     if (Modulus && (Parameters[0] >= Modulus || Parameters[1] >= Modulus))
       return std::nullopt;
     Minimum = Parameters[1] == 0 ? 1 : 0;
     Maximum = (llvm::APInt(Bits, Modulus) - 1).getZExtValue();
-  } else {
+    DefaultSeed = 1;
+    ExpectedFields = 1;
+    break;
+  }
+  case RandomEngineKind::MersenneTwister: {
     const auto Width = Parameters[0], Size = Parameters[1];
     if (Width < 2 || Width > Bits || !Size || Size > 65536 ||
         Parameters[2] > Size || Parameters[3] > Width ||
         Parameters[5] > Width || Parameters[7] > Width ||
         Parameters[9] > Width || Parameters[11] > Width)
       return std::nullopt;
-    Minimum = 0;
     Maximum = llvm::APInt::getLowBitsSet(Bits, Width).getZExtValue();
+    DefaultSeed = 5489;
+    ArraySize = Size;
+    ExpectedFields = 2;
+    break;
+  }
+  case RandomEngineKind::SubtractWithCarry:
+    if (!Parameters[0] || Parameters[0] > Bits || !Parameters[1] ||
+        Parameters[1] >= Parameters[2] || Parameters[2] > 65536)
+      return std::nullopt;
+    Maximum = llvm::APInt::getLowBitsSet(Bits, Parameters[0]).getZExtValue();
+    DefaultSeed = llvm::APInt(Bits, 19780503).getZExtValue();
+    ArraySize = Parameters[2];
+    ExpectedFields = 3;
+    break;
+  case RandomEngineKind::DiscardBlock:
+    if (!Parameters[1] || Parameters[1] > Parameters[0] ||
+        Parameters[1] > uint64_t(llvm::APInt::getSignedMaxValue(
+                                  Context.getTypeSize(Context.IntTy)).getZExtValue()))
+      return std::nullopt;
+    Minimum = Base->Minimum;
+    Maximum = Base->Maximum;
+    DefaultSeed = Base->DefaultSeed;
+    ExpectedFields = 2;
+    break;
+  case RandomEngineKind::IndependentBits:
+    if (!Parameters[0] || Parameters[0] > Bits)
+      return std::nullopt;
+    Maximum = llvm::APInt::getLowBitsSet(Bits, Parameters[0]).getZExtValue();
+    DefaultSeed = Base->DefaultSeed;
+    ExpectedFields = 1;
+    break;
+  case RandomEngineKind::ShuffleOrder:
+    if (!Parameters[0] || Parameters[0] > 65536)
+      return std::nullopt;
+    Minimum = Base->Minimum;
+    Maximum = Base->Maximum;
+    DefaultSeed = Base->DefaultSeed;
+    ArraySize = Parameters[0];
+    ExpectedFields = 3;
+    break;
   }
   if (Minimum >= Maximum)
     return std::nullopt;
-  const FieldDecl *State = nullptr, *Index = nullptr;
+  RandomEngineRecord Engine{Kind, R, Result, nullptr, nullptr,
+                            std::move(Parameters), Minimum, Maximum, DefaultSeed};
   unsigned Fields = 0;
   for (const auto *F : R->fields()) {
     ++Fields;
     if (!approvedStandardSDKDeclaration(S, SM, F) || F->isBitField() ||
         F->isMutable())
       return std::nullopt;
-    if (F->getName() == "__x_") {
-      if (Linear ? !Context.hasSameType(F->getType(), Result)
-                 : !Context.getAsConstantArrayType(F->getType()) ||
-                       Context.getAsConstantArrayType(F->getType())->getSize() !=
-                           Parameters[1] ||
-                       !Context.hasSameType(
-                           Context.getAsConstantArrayType(F->getType())->getElementType(),
-                           Result))
+    if (F->getName() == "__x_" ||
+        (Kind == RandomEngineKind::ShuffleOrder && F->getName() == "__v_")) {
+      const auto *Array = Context.getAsConstantArrayType(F->getType());
+      if (ArraySize ? !Array || Array->getSize() != ArraySize ||
+                         !Context.hasSameType(Array->getElementType(), Result)
+                    : !Context.hasSameType(F->getType(), Result))
         return std::nullopt;
-      State = F;
-    } else if (Twister && F->getName() == "__i_" &&
-               Context.hasSameType(F->getType(), Context.getSizeType())) {
-      Index = F;
+      Engine.State = F;
+    } else if ((F->getName() == "__i_" &&
+                (Kind == RandomEngineKind::MersenneTwister ||
+                 Kind == RandomEngineKind::SubtractWithCarry) &&
+                Context.hasSameType(F->getType(), Context.getSizeType())) ||
+               (F->getName() == "__n_" && Kind == RandomEngineKind::DiscardBlock &&
+                Context.hasSameType(F->getType(), Context.IntTy))) {
+      Engine.Index = F;
+    } else if (F->getName() == "__c_" && Kind == RandomEngineKind::SubtractWithCarry &&
+               Context.hasSameType(F->getType(), Result)) {
+      Engine.Carry = F;
+    } else if (F->getName() == "__e_" && Adaptor &&
+               Context.hasSameType(F->getType(), Context.getRecordType(Base->Record))) {
+      Engine.Base = F;
+    } else if (F->getName() == "__y_" && Kind == RandomEngineKind::ShuffleOrder &&
+               Context.hasSameType(F->getType(), Result)) {
+      Engine.Value = F;
     } else {
       return std::nullopt;
     }
   }
   RandomSelection Selection(S, SM, Context, R, Result, Result);
-  if (!State || Fields != (Linear ? 1u : 2u) || (Twister && !Index) ||
+  if (Fields != ExpectedFields || (!Adaptor && !Engine.State) ||
+      (Adaptor && !Engine.Base) || (ArraySize && !Engine.State) ||
       !Selection.retain(R))
     return std::nullopt;
-  return RandomEngineRecord{
-      Linear ? RandomEngineKind::LinearCongruential
-             : RandomEngineKind::MersenneTwister,
-      R, Result, State, Index, std::move(Parameters), Minimum, Maximum,
-      Linear ? 1u : 5489u};
+  return Engine;
+}
+
+std::optional<SeedSequenceRecord>
+approvedSeedSequenceRecord(const State &S, const SourceManager &SM,
+                           const CXXRecordDecl *Record, const ASTContext &Context) {
+  const auto *R = Record ? Record->getDefinition() : nullptr;
+  const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  if (!S.coreV2() || !R || !File || File->Root != "libcxx" ||
+      File->Path != "__random/seed_seq.h" || R->getName() != "seed_seq" ||
+      !approvedStandardSDKDeclaration(S, SM, R) || R->getNumBases() ||
+      R->isUnion() || !R->isStandardLayout())
+    return std::nullopt;
+  const FieldDecl *Storage = nullptr;
+  QualType Result;
+  for (const auto *F : R->fields()) {
+    const auto Vector = approvedUtilityVectorRecord(
+        S, SM, F->getType()->getAsCXXRecordDecl(), Context);
+    if (Storage || !approvedStandardSDKDeclaration(S, SM, F) ||
+        F->getName() != "__v_" || F->isBitField() || F->isMutable() || !Vector ||
+        !Vector->ElementType->isUnsignedIntegerType() ||
+        Context.getTypeSize(Vector->ElementType) != 32)
+      return std::nullopt;
+    Storage = F;
+    Result = Vector->ElementType;
+  }
+  RandomSelection Selection(S, SM, Context, R, Result, Result);
+  if (!Storage || !Selection.retain(R))
+    return std::nullopt;
+  return SeedSequenceRecord{R, Storage, Result};
+}
+
+namespace {
+QualType seedSequencePointer(const State &S, const SourceManager &SM,
+                             QualType Iterator, const ASTContext &Context) {
+  if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Iterator->getAsCXXRecordDecl(), Context))
+    return Wrapped->IteratorType;
+  return Iterator->isPointerType() ? Iterator : QualType();
+}
+bool supportedSeedSequence(const State &S, const SourceManager &SM,
+                           const RandomEngineRecord &Engine, QualType Parameter,
+                           const ASTContext &Context) {
+  if (!Parameter->isLValueReferenceType() ||
+      Parameter.getNonReferenceType().hasLocalQualifiers() ||
+      !approvedSeedSequenceRecord(S, SM,
+          Parameter.getNonReferenceType()->getAsCXXRecordDecl(), Context))
+    return false;
+  if (Engine.Base) {
+    const auto Base = approvedRandomEngineRecord(
+        S, SM, Engine.Base->getType()->getAsCXXRecordDecl(), Context);
+    return Base && supportedSeedSequence(S, SM, *Base, Parameter, Context);
+  }
+  // This pinned libc++ release takes a remainder by __m in its seed-sequence
+  // LCG body. With a zero modulus that selected implementation is undefined.
+  return Engine.Kind != RandomEngineKind::LinearCongruential || Engine.Parameters[2];
+}
+}
+
+std::optional<SeedSequenceConstruction>
+approvedSeedSequenceConstruction(const State &S, const SourceManager &SM,
+                                 const CXXConstructExpr *Construction,
+                                 const ASTContext &Context) {
+  const auto *C = Construction ? Construction->getConstructor() : nullptr;
+  const auto Seq = C ? approvedSeedSequenceRecord(S, SM, C->getParent(), Context)
+                     : std::nullopt;
+  if (!Seq || C->isVariadic() || !C->hasBody() || C->isCopyOrMoveConstructor() ||
+      !approvedStandardSDKDeclaration(S, SM, C) ||
+      Construction->getNumArgs() != C->getNumParams())
+    return std::nullopt;
+  auto Kind = SeedSequenceConstruction::Default;
+  if (C->getNumParams() == 1) {
+    const auto List = approvedUtilityInitializerListRecord(S, SM,
+        C->getParamDecl(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto *Argument = dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
+    if (!List || !List->ElementType->isIntegerType() ||
+        Context.getTypeSize(List->ElementType) > 64 ||
+        (Argument && !approvedUtilityInitializerListExpression(S, SM, Argument, Context)))
+      return std::nullopt;
+    Kind = SeedSequenceConstruction::InitializerList;
+  } else if (C->getNumParams() == 2) {
+    const auto Pointer = seedSequencePointer(S, SM, C->getParamDecl(0)->getType(), Context);
+    if (Pointer.isNull() || !Pointer->getPointeeType()->isIntegerType() ||
+        Pointer->getPointeeType().isVolatileQualified() ||
+        Context.getTypeSize(Pointer->getPointeeType()) > 64 ||
+        !Context.hasSameType(C->getParamDecl(0)->getType(), C->getParamDecl(1)->getType()))
+      return std::nullopt;
+    Kind = SeedSequenceConstruction::Range;
+  } else if (C->getNumParams()) {
+    return std::nullopt;
+  }
+  RandomSelection Selection(S, SM, Context, Seq->Record, Seq->ResultType, Seq->ResultType);
+  return Selection.retain(C) ? std::optional<SeedSequenceConstruction>(Kind)
+                            : std::nullopt;
+}
+
+std::optional<UtilityOperation>
+approvedSeedSequenceOperation(const State &S, const SourceManager &SM,
+                              const CallExpr *Call, const ASTContext &Context) {
+  const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto Seq = M ? approvedSeedSequenceRecord(S, SM, M->getParent(), Context)
+                     : std::nullopt;
+  if (!Seq || !isa<CXXMemberCallExpr>(Call) || M->isStatic() || M->isVolatile() ||
+      M->isVariadic() || !M->getIdentifier() ||
+      !approvedStandardSDKDeclaration(S, SM, M) ||
+      Call->getNumArgs() != M->getNumParams())
+    return std::nullopt;
+  std::optional<UtilityOperation> Operation;
+  if (M->getName() == "size" && M->isConst() && !M->getNumParams() &&
+      Context.hasSameType(M->getReturnType(), Context.getSizeType())) {
+    Operation = UtilityOperation::SeedSequenceSize;
+  } else if (M->getName() == "param" && M->isConst() && M->getNumParams() == 1 &&
+             M->getReturnType()->isVoidType()) {
+    const auto Pointer = seedSequencePointer(S, SM, M->getParamDecl(0)->getType(), Context);
+    if (!Pointer.isNull() && !Pointer->getPointeeType().hasLocalQualifiers() &&
+        scalarElement(Pointer->getPointeeType(), Context))
+      Operation = UtilityOperation::SeedSequenceParam;
+  } else if (M->getName() == "generate" && !M->isConst() && M->getNumParams() == 2 &&
+             M->getReturnType()->isVoidType() &&
+             Context.hasSameType(M->getParamDecl(0)->getType(), M->getParamDecl(1)->getType())) {
+    const auto Pointer = seedSequencePointer(S, SM, M->getParamDecl(0)->getType(), Context);
+    if (!Pointer.isNull() && !Pointer->getPointeeType().hasLocalQualifiers() &&
+        Pointer->getPointeeType()->isUnsignedIntegerType() &&
+        Context.getTypeSize(Pointer->getPointeeType()) >= 32 &&
+        Context.getTypeSize(Pointer->getPointeeType()) <= 64)
+      Operation = UtilityOperation::SeedSequenceGenerate;
+  }
+  RandomSelection Selection(S, SM, Context, Seq->Record, Seq->ResultType, Seq->ResultType);
+  return Operation && Selection.retain(M) ? Operation : std::nullopt;
 }
 
 std::optional<RandomEngineConstruction>
@@ -459,7 +775,7 @@ approvedRandomEngineConstruction(const State &S, const SourceManager &SM,
   const auto *C = Construction ? Construction->getConstructor() : nullptr;
   const auto Engine = C ? approvedRandomEngineRecord(S, SM, C->getParent(), Context)
                         : std::nullopt;
-  if (!Engine || C->isVariadic() || C->getPrimaryTemplate() ||
+  if (!Engine || C->isVariadic() ||
       !approvedStandardSDKDeclaration(S, SM, C) ||
       Construction->getNumArgs() != C->getNumParams())
     return std::nullopt;
@@ -473,16 +789,26 @@ approvedRandomEngineConstruction(const State &S, const SourceManager &SM,
       return RandomEngineConstruction::CopyOrMove;
     return std::nullopt;
   }
-  if (!C->hasBody() || C->getNumParams() > 1 ||
-      (C->getNumParams() &&
-       !Context.hasSameType(C->getParamDecl(0)->getType(), Engine->ResultType)))
+  if (!C->hasBody() || C->getNumParams() > 1)
     return std::nullopt;
+  auto Kind = C->getNumParams() ? RandomEngineConstruction::Seed
+                                : RandomEngineConstruction::Default;
+  if (C->getNumParams()) {
+    const auto Parameter = C->getParamDecl(0)->getType();
+    if (Engine->Base && Parameter->isReferenceType() &&
+        Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(),
+                                       Engine->Base->getType()))
+      Kind = RandomEngineConstruction::FromBase;
+    else if (supportedSeedSequence(S, SM, *Engine, Parameter, Context))
+      Kind = RandomEngineConstruction::SeedSequence;
+    else if (!Context.hasSameType(Parameter, Engine->ResultType))
+      return std::nullopt;
+  }
   RandomSelection Selection(S, SM, Context, Engine->Record, Engine->ResultType,
                             Engine->ResultType);
   if (!Selection.retain(C))
     return std::nullopt;
-  return C->getNumParams() ? RandomEngineConstruction::Seed
-                           : RandomEngineConstruction::Default;
+  return Kind;
 }
 
 bool approvedRandomEngineDefaultArgument(const State &S, const SourceManager &SM,
@@ -539,15 +865,25 @@ approvedRandomEngineOperation(const State &S, const SourceManager &SM,
                        : isa<CXXMemberCallExpr>(Call)))
       Operation = UtilityOperation::RandomEngineGenerate;
     else if (M->getIdentifier() && !M->isStatic() && !M->isConst() &&
-             !M->isVolatile() && M->getNumParams() == 1 &&
+             !M->isVolatile() && M->getNumParams() <= 1 &&
              M->getReturnType()->isVoidType()) {
       if (M->getName() == "seed" &&
-          Context.hasSameType(M->getParamDecl(0)->getType(), Engine->ResultType))
+          ((!M->getNumParams() && Engine->Base) || (M->getNumParams() == 1 &&
+          Context.hasSameType(M->getParamDecl(0)->getType(), Engine->ResultType))))
         Operation = UtilityOperation::RandomEngineSeed;
-      else if (M->getName() == "discard" &&
+      else if (M->getName() == "seed" && M->getNumParams() == 1 &&
+               supportedSeedSequence(S, SM, *Engine, M->getParamDecl(0)->getType(), Context))
+        Operation = UtilityOperation::RandomEngineSeedSequence;
+      else if (M->getName() == "discard" && M->getNumParams() == 1 &&
                Context.hasSameType(M->getParamDecl(0)->getType(),
                                    Context.UnsignedLongLongTy))
         Operation = UtilityOperation::RandomEngineDiscard;
+    } else if (Engine->Base && M->getIdentifier() && M->getName() == "base" &&
+               !M->isStatic() && M->isConst() && !M->isVolatile() &&
+               !M->getNumParams() && M->getReturnType()->isLValueReferenceType() &&
+               Context.hasSameType(M->getReturnType().getNonReferenceType(),
+                                   Engine->Base->getType().withConst())) {
+      Operation = UtilityOperation::RandomEngineBase;
     } else if (M->getOverloadedOperator() == OO_Equal && M->isImplicit() &&
                M->isTrivial() && M->getNumParams() == 1 &&
                (Operator ? Operator->getNumArgs() == 2

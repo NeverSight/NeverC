@@ -9560,6 +9560,13 @@ public:
     }
     // Storage release belongs to each pinned SDK destructor. Nested vectors
     // and source-owned records must close their actual element destruction.
+    if (const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, Record, A.Context)) {
+      const auto *Destructor = Record->getDestructor();
+      if (!Destructor || !Destructor->isImplicit() ||
+          !approvedStandardSDKDeclaration(A.S, A.Sources, Destructor))
+        return false;
+      return destruction(Seq->Storage->getType()->getAsCXXRecordDecl(), Depth + 1);
+    }
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
         return destruction(Element, Depth + 1);
@@ -11320,6 +11327,12 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
           for (const auto *Field : D->fields())
             if (type(Field->getType(), L, false, Depth + 1).empty())
               return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
+      } else if (const auto Seq = approvedSeedSequenceRecord(S, Sources, D, Context)) {
+        if (RequiredSeedSequences.insert(D->getCanonicalDecl()).second) {
+          if (type(Seq->Storage->getType(), L, false, Depth + 1).empty())
+            return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
       } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
@@ -15300,7 +15313,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
-        (approvedRandomEngineConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedRandomEngineConstruction(A.S, A.Sources, C, A.Context) ||
          approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
          approvedFunctionalReferenceConstruction(A.S, A.Sources, C,
                                                  A.Context) ||
@@ -16641,7 +16655,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                      Destructor->getParent()) ||
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
-             utilityVectorDestructionSource(A, Destructor->getParent())))
+             utilityVectorDestructionSource(A, Destructor->getParent()) ||
+             approvedSeedSequenceRecord(A.S, A.Sources, Destructor->getParent(), A.Context)))
           return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
         // Its selected source operator retains ordinary signature and exception
@@ -16814,6 +16829,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               *UniqueConstruction !=
                   UtilityUniquePtrConstruction::PointerDeleter));
         bool SDKConstruction =
+            approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
             (functionalObjectStorageSource(
                  A, Construction->getType()->getAsCXXRecordDecl()) &&
              approvedFunctionalObjectConstruction(A.S, A.Sources, Construction,
@@ -18802,7 +18818,8 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedRandomEngineConstruction(A.S, A.Sources, Construction,
+          (approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedRandomEngineConstruction(A.S, A.Sources, Construction,
                                             A.Context) ||
            approvedFunctionalReferenceConstruction(A.S, A.Sources, Construction,
                                                    A.Context) ||
@@ -24240,7 +24257,8 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedRandomEngineConstruction(A.S, A.Sources, C,
+        } else if (approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedRandomEngineConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
                    approvedFunctionalObjectConstruction(A.S, A.Sources, C,
                                                         A.Context) ||

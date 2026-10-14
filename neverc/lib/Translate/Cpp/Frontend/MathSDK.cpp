@@ -74539,6 +74539,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return CString;
   if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
     return Random->Operation;
+  if (auto Sequence = approvedSeedSequenceOperation(S, SM, Call, Context))
+    return Sequence;
   if (auto Engine = approvedRandomEngineOperation(S, SM, Call, Context))
     return Engine;
   if (auto Predicate =

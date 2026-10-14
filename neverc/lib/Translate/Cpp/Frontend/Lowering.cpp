@@ -917,10 +917,345 @@ class FunctionLowering {
                        PointerType, L),
                  std::move(Position), type(Engine.ResultType, L), L);
   }
+  Expression seedSequenceIterator(const Expr *E, SourceLocation L) {
+    if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, E->getType()->getAsCXXRecordDecl(), A.Context)) {
+      auto Value = snapshot(expression(E), L);
+      return snapshot(fieldStorage(std::move(Value), Wrapped->Current, L), L);
+    }
+    return snapshot(expression(E), L);
+  }
+  Expression seedSequenceMember(Expression Place, const SeedSequenceRecord &Seq,
+                                const char *Name, SourceLocation L) {
+    const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+        Seq.Storage->getType()->getAsCXXRecordDecl(), A.Context);
+    return Expression{{"kind", "member"}, {"type", type(Vector->PointerType, L)},
+                      {"name", Name},
+                      {"args", json::Array{fieldStorage(std::move(Place), Seq.Storage, L)}},
+                      {"loc", A.loc(L)}};
+  }
+  void appendSeedSequence(Expression Place, const SeedSequenceRecord &Seq,
+                          Expression Value, Expression Count, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Pointer = type(A.Context.getPointerType(Seq.ResultType), L);
+    const auto Result = type(Seq.ResultType, L);
+    auto Member = [&](const char *Name) { return seedSequenceMember(Place, Seq, Name, L); };
+    auto Begin = snapshot(Member("nct_vector_begin"), L);
+    auto End = snapshot(Member("nct_vector_end"), L);
+    auto Capacity = snapshot(Member("nct_vector_capacity"), L);
+    auto Captured = snapshot(cast(std::move(Value), Result, L), L);
+    const auto Grow = labelName(), Append = labelName(), Done = labelName();
+    branch(binary("!=", End, Capacity, "bool", L), Append, Grow, L);
+    label(Append, L);
+    assign(dereference(End, L), Captured, L);
+    assign(Member("nct_vector_end"), binary("+", End, quantity(1, Size, L), Pointer, L), L);
+    jump(Done, L);
+    label(Grow, L);
+    auto NewCapacity = snapshot(quantity(1, Size, L), L);
+    const auto Double = labelName(), Allocate = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Double, Allocate, L);
+    label(Double, L);
+    assign(NewCapacity, binary("*", Count, quantity(2, Size, L), Size, L), L);
+    jump(Allocate, L);
+    label(Allocate, L);
+    const auto *Heap = A.allocatorHeapFunction(true, Seq.ResultType, L);
+    json::Array Args;
+    Args.push_back(binary("*", NewCapacity, quantity(4, Size, L), Size, L));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(Heap->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Heap)},
+        {"args", std::move(Args)}, {"target", json::Object(Allocation)}, {"loc", A.loc(L)}});
+    auto NewBegin = snapshot(cast(Allocation, Pointer, L), L);
+    assign(index(NewBegin, Count, Result, L), Captured, L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Copy = labelName(), Copied = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", I, Count, "bool", L), Copy, Copied, L);
+    label(Copy, L);
+    assign(index(NewBegin, I, Result, L), index(Begin, I, Result, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Copied, L);
+    assign(Member("nct_vector_begin"), NewBegin, L);
+    assign(Member("nct_vector_end"), binary("+", NewBegin,
+           binary("+", Count, quantity(1, Size, L), Size, L), Pointer, L), L);
+    assign(Member("nct_vector_capacity"), binary("+", NewBegin, NewCapacity, Pointer, L), L);
+    const auto Release = labelName();
+    branch(cast(Begin, "bool", L), Release, Done, L);
+    label(Release, L);
+    const auto *Delete = A.allocatorHeapFunction(false, Seq.ResultType, L);
+    json::Array DeleteArgs;
+    DeleteArgs.push_back(cast(Begin, type(Delete->getParamDecl(0)->getType(), L), L));
+    if (Delete->getNumParams() == 2)
+      DeleteArgs.push_back(cast(binary("*", Count, quantity(4, Size, L), Size, L),
+                               type(Delete->getParamDecl(1)->getType(), L), L));
+    chargeCall(DeleteArgs, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Delete)},
+        {"args", std::move(DeleteArgs)}, {"loc", A.loc(L)}});
+    jump(Done, L);
+    label(Done, L);
+  }
+  Expression seedSequenceSize(Expression Place, const SeedSequenceRecord &Seq,
+                              SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Begin = snapshot(seedSequenceMember(Place, Seq, "nct_vector_begin", L), L);
+    auto End = snapshot(seedSequenceMember(std::move(Place), Seq, "nct_vector_end", L), L);
+    auto Count = snapshot(quantity(0, Size, L), L);
+    const auto Measure = labelName(), Done = labelName();
+    branch(binary("!=", Begin, End, "bool", L), Measure, Done, L);
+    label(Measure, L);
+    assign(Count, cast(binary("-", End, Begin, type(A.Context.getPointerDiffType(), L), L), Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Count;
+  }
+  void generateSeedSequence(Expression Place, const SeedSequenceRecord &Seq,
+                            Expression First, Expression Last, QualType Element,
+                            SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Output = type(Element, L), Result = type(Seq.ResultType, L);
+    const auto Begin = snapshot(std::move(First), L), End = snapshot(std::move(Last), L);
+    const auto NonEmpty = labelName(), Done = labelName();
+    branch(binary("!=", Begin, End, "bool", L), NonEmpty, Done, L);
+    label(NonEmpty, L);
+    auto N = snapshot(cast(binary("-", End, Begin, Difference, L), Size, L), L);
+    auto SeedCount = seedSequenceSize(Place, Seq, L);
+    auto Seeds = snapshot(seedSequenceMember(Place, Seq, "nct_vector_begin", L), L);
+    auto At = [&](Expression Position) { return index(Begin, std::move(Position), Output, L); };
+    auto SQ = [&](uint64_t V) { return quantity(V, Size, L); };
+    auto RQ = [&](uint64_t V) { return quantity(V, Result, L); };
+    auto K = snapshot(SQ(0), L);
+    const auto Fill = labelName(), FillStep = labelName(), Filled = labelName();
+    jump(Fill, L);
+    label(Fill, L);
+    branch(binary("<", K, N, "bool", L), FillStep, Filled, L);
+    label(FillStep, L);
+    assign(At(K), quantity(0x8b8b8b8b, Output, L), L);
+    assign(K, binary("+", K, SQ(1), Size, L), L);
+    jump(Fill, L);
+    label(Filled, L);
+    auto T = snapshot(binary("/", binary("-", N, SQ(1), Size, L), SQ(2), Size, L), L);
+    for (const auto [Threshold, Value] : {std::pair<uint64_t,uint64_t>{7,3}, {39,5}, {68,7}, {623,11}}) {
+      const auto Set = labelName(), Next = labelName();
+      branch(binary(">=", N, SQ(Threshold), "bool", L), Set, Next, L);
+      label(Set, L);
+      assign(T, SQ(Value), L);
+      jump(Next, L);
+      label(Next, L);
+    }
+    auto P = snapshot(binary("/", binary("-", N, T, Size, L), SQ(2), Size, L), L);
+    auto Q = snapshot(binary("+", P, T, Size, L), L);
+    auto M = snapshot(binary("+", SeedCount, SQ(1), Size, L), L);
+    const auto UseN = labelName(), HaveM = labelName();
+    branch(binary("<", M, N, "bool", L), UseN, HaveM, L);
+    label(UseN, L);
+    assign(M, N, L);
+    jump(HaveM, L);
+    label(HaveM, L);
+    auto Mix = [&](Expression Value, uint64_t Multiplier) {
+      auto V = snapshot(cast(std::move(Value), Result, L), L);
+      return snapshot(binary("*", RQ(Multiplier), binary("^", V,
+          binary(">>", V, RQ(27), Result, L), Result, L), Result, L), L);
+    };
+    auto Add = [&](Expression Position, Expression Value) {
+      auto Target = At(std::move(Position));
+      assign(Target, binary("+", Target, cast(std::move(Value), Output, L), Output, L), L);
+    };
+    auto R = Mix(binary("^", binary("^", At(SQ(0)), At(P), Output, L),
+                        At(binary("-", N, SQ(1), Size, L)), Output, L), 1664525);
+    Add(P, R);
+    assign(R, cast(binary("+", cast(R, Size, L), SeedCount, Size, L), Result, L), L);
+    Add(Q, R);
+    assign(At(SQ(0)), cast(R, Output, L), L);
+    const auto Check = labelName(), Step = labelName(), PhaseTwo = labelName();
+    assign(K, SQ(1), L);
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", K, M, "bool", L), Step, PhaseTwo, L);
+    label(Step, L);
+    auto Mod = snapshot(binary("%", K, N, Size, L), L);
+    auto Previous = snapshot(binary("%", binary("-", K, SQ(1), Size, L), N, Size, L), L);
+    auto KP = snapshot(binary("%", binary("+", K, P, Size, L), N, Size, L), L);
+    auto KQ = snapshot(binary("%", binary("+", K, Q, Size, L), N, Size, L), L);
+    auto Next = Mix(binary("^", binary("^", At(Mod), At(KP), Output, L), At(Previous), Output, L), 1664525);
+    Add(KP, Next);
+    assign(Next, cast(binary("+", cast(Next, Size, L), Mod, Size, L), Result, L), L);
+    const auto WithSeed = labelName(), Save = labelName();
+    branch(binary("<=", K, SeedCount, "bool", L), WithSeed, Save, L);
+    label(WithSeed, L);
+    auto Seed = index(Seeds, binary("-", K, SQ(1), Size, L), Result, L);
+    assign(Next, binary("+", Next, std::move(Seed), Result, L), L);
+    jump(Save, L);
+    label(Save, L);
+    Add(KQ, Next);
+    assign(At(Mod), cast(Next, Output, L), L);
+    assign(K, binary("+", K, SQ(1), Size, L), L);
+    jump(Check, L);
+    label(PhaseTwo, L);
+    const auto FinalCheck = labelName(), FinalStep = labelName();
+    auto Limit = snapshot(binary("+", M, N, Size, L), L);
+    jump(FinalCheck, L);
+    label(FinalCheck, L);
+    branch(binary("<", K, Limit, "bool", L), FinalStep, Done, L);
+    label(FinalStep, L);
+    auto FinalMod = snapshot(binary("%", K, N, Size, L), L);
+    auto FinalPrevious = snapshot(binary("%", binary("-", K, SQ(1), Size, L), N, Size, L), L);
+    auto FinalP = snapshot(binary("%", binary("+", K, P, Size, L), N, Size, L), L);
+    auto FinalQ = snapshot(binary("%", binary("+", K, Q, Size, L), N, Size, L), L);
+    auto FinalR = Mix(binary("+", binary("+", At(FinalMod), At(FinalP), Output, L), At(FinalPrevious), Output, L), 1566083941);
+    auto Xor = [&](Expression Position, Expression Value) {
+      auto Target = At(std::move(Position));
+      assign(Target, binary("^", Target, cast(std::move(Value), Output, L), Output, L), L);
+    };
+    Xor(FinalP, FinalR);
+    assign(FinalR, cast(binary("-", cast(FinalR, Size, L), FinalMod, Size, L), Result, L), L);
+    Xor(FinalQ, FinalR);
+    assign(At(FinalMod), cast(FinalR, Output, L), L);
+    assign(K, binary("+", K, SQ(1), Size, L), L);
+    jump(FinalCheck, L);
+    label(Done, L);
+  }
+  void seedRandomEngineSequence(Expression Place, const RandomEngineRecord &Engine,
+                                Expression Sequence, const SeedSequenceRecord &Seq,
+                                SourceLocation L) {
+    if (Engine.Base) {
+      seedRandomEngineSequence(fieldStorage(Place, Engine.Base, L), randomEngineBase(Engine),
+                               std::move(Sequence), Seq, L);
+      initializeRandomAdaptor(std::move(Place), Engine, L);
+      return;
+    }
+    const auto &P = Engine.Parameters;
+    const bool Linear = Engine.Kind == RandomEngineKind::LinearCongruential;
+    const bool Carry = Engine.Kind == RandomEngineKind::SubtractWithCarry;
+    const uint64_t Words = Linear ? (P[2] > 0x100000000ULL ? 2 : 1)
+                                  : (P[0] > 32 ? 2 : 1);
+    const uint64_t Count = Linear ? Words + 3 : Words * (Carry ? P[2] : P[1]);
+    const auto BufferType = A.Context.getConstantArrayType(Seq.ResultType, llvm::APInt(64, Count),
+        nullptr, ArraySizeModifier::Normal, 0);
+    auto Buffer = temporary(type(BufferType, L), L);
+    const auto Pointer = type(A.Context.getPointerType(Seq.ResultType), L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Working = type(A.Context.UnsignedLongLongTy, L);
+    const auto Result = type(Engine.ResultType, L);
+    auto First = snapshot(decay(Buffer, Pointer, L), L);
+    generateSeedSequence(std::move(Sequence), Seq, First,
+                         binary("+", First, quantity(Count, Size, L), Pointer, L), Seq.ResultType, L);
+    auto Word = [&](Expression Position) {
+      return cast(index(First, std::move(Position), type(Seq.ResultType, L), L), Working, L);
+    };
+    auto Value = [&](Expression I) {
+      auto Position = snapshot(binary("*", std::move(I), quantity(Words, Size, L), Size, L), L);
+      Expression V = Word(Position);
+      if (Words == 2)
+        V = binary("+", std::move(V), binary("<<", Word(binary("+", Position, quantity(1, Size, L), Size, L)),
+                          quantity(32, Working, L), Working, L), Working, L);
+      return V;
+    };
+    if (Linear) {
+      auto V = Word(quantity(3, Size, L));
+      if (Words == 2)
+        V = binary("+", std::move(V), binary("<<", Word(quantity(4, Size, L)), quantity(32, Working, L), Working, L), Working, L);
+      V = binary("%", std::move(V), quantity(P[2], Working, L), Working, L);
+      seedRandomEngine(std::move(Place), Engine, cast(std::move(V), Result, L), L);
+      return;
+    }
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Store = labelName(), End = labelName();
+    const auto States = Carry ? P[2] : P[1];
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", I, quantity(States, Size, L), "bool", L), Store, End, L);
+    label(Store, L);
+    assign(randomEngineElement(Place, Engine, I, L),
+           cast(binary("&", Value(I), quantity(Engine.Maximum, Working, L), Working, L), Result, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(End, L);
+    assign(fieldStorage(Place, Engine.Index, L), quantity(0, Size, L), L);
+    if (Carry) {
+      assign(fieldStorage(Place, Engine.Carry, L), cast(binary("==",
+          randomEngineElement(Place, Engine, quantity(States - 1, Size, L), L), quantity(0, Result, L), "bool", L), Result, L), L);
+    } else {
+      const auto Mask = llvm::APInt::getLowBitsSet(64, P[3]).getZExtValue();
+      const auto Scan = labelName(), ScanCheck = labelName(), ScanStep = labelName();
+      const auto Replace = labelName(), Done = labelName();
+      branch(binary("==", binary("&", cast(randomEngineElement(Place, Engine, quantity(0, Size, L), L), Working, L),
+                       quantity(~Mask, Working, L), Working, L), quantity(0, Working, L), "bool", L), Scan, Done, L);
+      label(Scan, L);
+      assign(I, quantity(1, Size, L), L);
+      jump(ScanCheck, L);
+      label(ScanCheck, L);
+      branch(binary("<", I, quantity(States, Size, L), "bool", L), ScanStep, Replace, L);
+      label(ScanStep, L);
+      const auto Advance = labelName();
+      branch(binary("!=", randomEngineElement(Place, Engine, I, L), quantity(0, Result, L), "bool", L), Done, Advance, L);
+      label(Advance, L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(ScanCheck, L);
+      label(Replace, L);
+      assign(randomEngineElement(Place, Engine, quantity(0, Size, L), L),
+             quantity(uint64_t(1) << (P[0] - 1), Result, L), L);
+      jump(Done, L);
+      label(Done, L);
+    }
+  }
+  RandomEngineRecord randomEngineBase(const RandomEngineRecord &Engine) {
+    return *approvedRandomEngineRecord(A.S, A.Sources,
+        Engine.Base->getType()->getAsCXXRecordDecl(), A.Context);
+  }
+  void discardRandomEngine(Expression Place, const RandomEngineRecord &Engine,
+                           Expression Count, SourceLocation L) {
+    const auto Working = type(A.Context.UnsignedLongLongTy, L);
+    auto Remaining = snapshot(cast(std::move(Count), Working, L), L);
+    const auto Check = labelName(), Draw = labelName(), End = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Remaining, quantity(0, Working, L), "bool", L), Draw, End, L);
+    label(Draw, L);
+    generateRandomEngine(Place, Engine, L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Working, L), Working, L), L);
+    jump(Check, L);
+    label(End, L);
+  }
+  void initializeRandomAdaptor(Expression Place, const RandomEngineRecord &Engine,
+                               SourceLocation L) {
+    if (Engine.Kind == RandomEngineKind::DiscardBlock) {
+      assign(fieldStorage(std::move(Place), Engine.Index, L),
+             quantity(0, type(A.Context.IntTy, L), L), L);
+    } else if (Engine.Kind == RandomEngineKind::ShuffleOrder) {
+      const auto Base = randomEngineBase(Engine);
+      const auto Size = type(A.Context.getSizeType(), L);
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto Check = labelName(), Draw = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", I, quantity(Engine.Parameters[0], Size, L), "bool", L), Draw, End, L);
+      label(Draw, L);
+      auto Value = generateRandomEngine(fieldStorage(Place, Engine.Base, L), Base, L);
+      assign(randomEngineElement(Place, Engine, I, L), std::move(Value), L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(End, L);
+      auto InitialValue = generateRandomEngine(fieldStorage(Place, Engine.Base, L), Base, L);
+      assign(fieldStorage(std::move(Place), Engine.Value, L), std::move(InitialValue), L);
+    }
+  }
   void seedRandomEngine(Expression Place, const RandomEngineRecord &Engine,
-                        Expression Seed, SourceLocation L) {
+                        Expression Seed, SourceLocation L, bool Default = false) {
     const auto Result = type(Engine.ResultType, L);
     const auto Working = type(A.Context.UnsignedLongLongTy, L);
+    if (Engine.Base) {
+      const auto Base = randomEngineBase(Engine);
+      auto BaseSeed = Default ? quantity(Base.DefaultSeed, type(Base.ResultType, L), L)
+                              : cast(cast(std::move(Seed), Result, L),
+                                     type(Base.ResultType, L), L);
+      seedRandomEngine(fieldStorage(Place, Engine.Base, L), Base,
+                       std::move(BaseSeed), L, Default);
+      initializeRandomAdaptor(std::move(Place), Engine, L);
+      return;
+    }
     auto Value = snapshot(cast(std::move(Seed), Result, L), L);
     if (Engine.Kind == RandomEngineKind::LinearCongruential) {
       if (Engine.Parameters[2])
@@ -937,6 +1272,51 @@ class FunctionLowering {
         label(Keep, L);
       }
       assign(fieldStorage(std::move(Place), Engine.State, L), std::move(Value), L);
+      return;
+    }
+    if (Engine.Kind == RandomEngineKind::SubtractWithCarry) {
+      // The selected scalar seed body uses the 40014 / 2147483563 LCG.
+      auto State = snapshot(cast(Value, Working, L), L);
+      const auto Keep = labelName(), Replace = labelName();
+      branch(binary("==", State, quantity(0, Working, L), "bool", L), Replace, Keep, L);
+      label(Replace, L);
+      assign(State, quantity(Engine.DefaultSeed, Working, L), L);
+      jump(Keep, L);
+      label(Keep, L);
+      assign(State, binary("%", State, quantity(2147483563, Working, L), Working, L), L);
+      const auto Normalized = labelName(), Nonzero = labelName();
+      branch(binary("==", State, quantity(0, Working, L), "bool", L), Nonzero, Normalized, L);
+      label(Nonzero, L);
+      assign(State, quantity(1, Working, L), L);
+      jump(Normalized, L);
+      label(Normalized, L);
+      auto Draw = [&]() {
+        assign(State, binary("%", binary("*", State, quantity(40014, Working, L), Working, L),
+                             quantity(2147483563, Working, L), Working, L), L);
+        return snapshot(State, L);
+      };
+      const auto Size = type(A.Context.getSizeType(), L);
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto Check = labelName(), Advance = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", I, quantity(Engine.Parameters[2], Size, L), "bool", L), Advance, End, L);
+      label(Advance, L);
+      auto Next = Draw();
+      if (Engine.Parameters[0] > 32) {
+        auto High = Draw();
+        Next = binary("+", std::move(Next),
+                      binary("<<", std::move(High), quantity(32, Working, L), Working, L), Working, L);
+      }
+      assign(randomEngineElement(Place, Engine, I, L),
+             cast(binary("&", std::move(Next), quantity(Engine.Maximum, Working, L), Working, L), Result, L), L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(End, L);
+      assign(fieldStorage(Place, Engine.Carry, L),
+             cast(binary("==", randomEngineElement(Place, Engine,
+                  quantity(Engine.Parameters[2] - 1, Size, L), L), quantity(0, Result, L), "bool", L), Result, L), L);
+      assign(fieldStorage(std::move(Place), Engine.Index, L), quantity(0, Size, L), L);
       return;
     }
     const auto &P = Engine.Parameters;
@@ -1031,6 +1411,143 @@ class FunctionLowering {
       assign(std::move(State), Value, L);
       return Value;
     }
+    if (Engine.Base) {
+      const auto Base = randomEngineBase(Engine);
+      auto BasePlace = fieldStorage(Place, Engine.Base, L);
+      if (Engine.Kind == RandomEngineKind::DiscardBlock) {
+        const auto Int = type(A.Context.IntTy, L);
+        auto Count = fieldStorage(Place, Engine.Index, L);
+        const auto Skip = labelName(), Draw = labelName();
+        branch(binary(">=", Count, quantity(P[1], Int, L), "bool", L), Skip, Draw, L);
+        label(Skip, L);
+        discardRandomEngine(BasePlace, Base, quantity(P[0] - P[1], Working, L), L);
+        assign(Count, quantity(0, Int, L), L);
+        jump(Draw, L);
+        label(Draw, L);
+        assign(Count, binary("+", Count, quantity(1, Int, L), Int, L), L);
+        return generateRandomEngine(std::move(BasePlace), Base, L);
+      }
+      if (Engine.Kind == RandomEngineKind::IndependentBits) {
+        const unsigned ResultBits = A.Context.getTypeSize(Engine.ResultType);
+        const unsigned BaseBits = A.Context.getTypeSize(Base.ResultType);
+        const unsigned WorkingBits = std::max(ResultBits, BaseBits);
+        const auto Range = llvm::APInt(WorkingBits, Base.Maximum) -
+                           llvm::APInt(WorkingBits, Base.Minimum) + 1;
+        const unsigned Chunk = Range.isZero() ? WorkingBits : Range.logBase2();
+        uint64_t N = P[0] / Chunk + (P[0] % Chunk != 0), W0 = P[0] / N;
+        auto Threshold = [&](uint64_t Width) {
+          return Width >= WorkingBits ? uint64_t(0)
+              : Range.lshr(Width).shl(Width).getZExtValue();
+        };
+        if ((Range - llvm::APInt(WorkingBits, Threshold(W0))).getZExtValue() >
+            Threshold(W0) / N) {
+          ++N;
+          W0 = P[0] / N;
+        }
+        const auto Mask = [&](uint64_t Width) {
+          return llvm::APInt::getLowBitsSet(BaseBits, std::min<uint64_t>(Width, BaseBits)).getZExtValue();
+        };
+        if (Range.isZero()) {
+          auto Value = generateRandomEngine(std::move(BasePlace), Base, L);
+          return snapshot(cast(binary("&", cast(std::move(Value), Working, L),
+                                      quantity(Mask(W0), Working, L), Working, L), Result, L), L);
+        }
+        const auto Size = type(A.Context.getSizeType(), L);
+        auto Accumulator = snapshot(quantity(0, Result, L), L);
+        auto K = snapshot(quantity(0, Size, L), L);
+        auto Part = [&](uint64_t Limit, uint64_t Width) {
+          const auto Check = labelName(), Draw = labelName(), Append = labelName(), End = labelName();
+          jump(Check, L);
+          label(Check, L);
+          branch(binary("<", K, quantity(Limit, Size, L), "bool", L), Draw, End, L);
+          label(Draw, L);
+          auto Value = generateRandomEngine(BasePlace, Base, L);
+          auto Bits = snapshot(cast(binary("-", cast(std::move(Value), Working, L),
+                  quantity(Base.Minimum, Working, L), Working, L), type(Base.ResultType, L), L), L);
+          branch(binary(">=", cast(Bits, Working, L), quantity(Threshold(Width), Working, L), "bool", L), Draw, Append, L);
+          label(Append, L);
+          auto Shifted = Width >= ResultBits ? quantity(0, Working, L)
+              : binary("<<", cast(Accumulator, Working, L), quantity(Width, Working, L), Working, L);
+          assign(Accumulator, cast(binary("+", std::move(Shifted),
+              binary("&", cast(Bits, Working, L), quantity(Mask(Width), Working, L), Working, L), Working, L), Result, L), L);
+          assign(K, binary("+", K, quantity(1, Size, L), Size, L), L);
+          jump(Check, L);
+          label(End, L);
+        };
+        Part(N - P[0] % N, W0);
+        Part(N, W0 + 1);
+        return Accumulator;
+      }
+      // Match libc++'s reduced integer ratio and its double fallback exactly.
+      const uint64_t Range = Engine.Maximum - Engine.Minimum + uint64_t(1);
+      uint64_t Numerator = P[0], Denominator = Range;
+      if (!Range && !(P[0] & 1)) {
+        Numerator /= 2;
+        Denominator = uint64_t(1) << 63;
+      }
+      if (Denominator) {
+        uint64_t A = Numerator, B = Denominator;
+        while (B) {
+          const auto Remainder = A % B;
+          A = B;
+          B = Remainder;
+        }
+        Numerator /= A;
+        Denominator /= A;
+      }
+      auto Y = fieldStorage(Place, Engine.Value, L);
+      auto Offset = binary("-", cast(Y, Working, L), quantity(Engine.Minimum, Working, L), Working, L);
+      Expression Position;
+      if (Denominator && Numerator <= std::numeric_limits<uint64_t>::max() /
+                                          (Engine.Maximum - Engine.Minimum)) {
+        Position = binary("/", binary("*", quantity(Numerator, Working, L),
+                            std::move(Offset), Working, L), quantity(Denominator, Working, L), Working, L);
+      } else {
+        const double Ratio = double(Numerator) /
+            (Denominator ? double(Denominator) : 2. * double(uint64_t(1) << 63));
+        Position = binary("*", A.floatingLiteral(llvm::APFloat(Ratio), L),
+                           cast(std::move(Offset), "double", L), "double", L);
+      }
+      const auto Size = type(A.Context.getSizeType(), L);
+      auto J = snapshot(cast(std::move(Position), Size, L), L);
+      assign(Y, snapshot(randomEngineElement(Place, Engine, J, L), L), L);
+      auto Next = generateRandomEngine(std::move(BasePlace), Base, L);
+      assign(randomEngineElement(std::move(Place), Engine, J, L), std::move(Next), L);
+      return snapshot(Y, L);
+    }
+    if (Engine.Kind == RandomEngineKind::SubtractWithCarry) {
+      const auto Size = type(A.Context.getSizeType(), L);
+      auto Cursor = fieldStorage(Place, Engine.Index, L);
+      auto I = snapshot(Cursor, L);
+      auto J = snapshot(binary("%", binary("+", I, quantity(P[2] - P[1], Size, L), Size, L),
+                               quantity(P[2], Size, L), Size, L), L);
+      auto Xs = snapshot(cast(randomEngineElement(Place, Engine, J, L), Working, L), L);
+      auto Xr = snapshot(cast(randomEngineElement(Place, Engine, I, L), Working, L), L);
+      auto Carry = fieldStorage(Place, Engine.Carry, L);
+      auto OldCarry = snapshot(cast(Carry, Working, L), L);
+      auto NewCarry = temporary(Result, L);
+      const auto WithoutCarry = labelName(), WithCarry = labelName(), Zero = labelName();
+      const auto Compare = labelName(), Update = labelName();
+      branch(binary("==", OldCarry, quantity(0, Working, L), "bool", L), WithoutCarry, WithCarry, L);
+      label(WithoutCarry, L);
+      assign(NewCarry, cast(binary("<", Xs, Xr, "bool", L), Result, L), L);
+      jump(Update, L);
+      label(WithCarry, L);
+      branch(binary("!=", Xs, quantity(0, Working, L), "bool", L), Compare, Zero, L);
+      label(Compare, L);
+      assign(NewCarry, cast(binary("<=", Xs, Xr, "bool", L), Result, L), L);
+      jump(Update, L);
+      label(Zero, L);
+      assign(NewCarry, quantity(1, Result, L), L);
+      jump(Update, L);
+      label(Update, L);
+      auto Next = snapshot(cast(binary("&", binary("-", binary("-", Xs, Xr, Working, L),
+                      OldCarry, Working, L), quantity(Engine.Maximum, Working, L), Working, L), Result, L), L);
+      assign(randomEngineElement(std::move(Place), Engine, I, L), Next, L);
+      assign(Carry, NewCarry, L);
+      assign(Cursor, binary("%", binary("+", I, quantity(1, Size, L), Size, L), quantity(P[2], Size, L), Size, L), L);
+      return Next;
+    }
     const auto Size = type(A.Context.getSizeType(), L);
     auto Cursor = fieldStorage(json::Object(Place), Engine.Index, L);
     auto I = snapshot(Cursor, L);
@@ -1082,6 +1599,67 @@ class FunctionLowering {
                                    quantity(P[10], Working, L), Working, L),
                      Working, L), L);
     return snapshot(cast(binary("^", Z, Right(Z, P[11]), Working, L), Result, L), L);
+  }
+  Expression equalRandomEngines(Expression Left, Expression Right,
+                                const RandomEngineRecord &Engine,
+                                SourceLocation L) {
+    auto Equal = snapshot(quantity(1, "bool", L), L);
+    auto Require = [&](Expression Condition) {
+      const auto Same = labelName(), Different = labelName();
+      branch(std::move(Condition), Same, Different, L);
+      label(Different, L);
+      assign(Equal, quantity(0, "bool", L), L);
+      jump(Same, L);
+      label(Same, L);
+    };
+    if (Engine.Base) {
+      Require(equalRandomEngines(fieldStorage(Left, Engine.Base, L),
+                                 fieldStorage(Right, Engine.Base, L),
+                                 randomEngineBase(Engine), L));
+      if (Engine.Kind == RandomEngineKind::DiscardBlock)
+        Require(binary("==", fieldStorage(Left, Engine.Index, L),
+                       fieldStorage(Right, Engine.Index, L), "bool", L));
+      if (Engine.Kind != RandomEngineKind::ShuffleOrder)
+        return Equal;
+      Require(binary("==", fieldStorage(Left, Engine.Value, L),
+                     fieldStorage(Right, Engine.Value, L), "bool", L));
+    } else if (Engine.Kind == RandomEngineKind::LinearCongruential) {
+      return binary("==", fieldStorage(std::move(Left), Engine.State, L),
+                    fieldStorage(std::move(Right), Engine.State, L), "bool", L);
+    } else if (Engine.Carry) {
+      Require(binary("==", fieldStorage(Left, Engine.Carry, L),
+                     fieldStorage(Right, Engine.Carry, L), "bool", L));
+    }
+    const auto Size = type(A.Context.getSizeType(), L);
+    const uint64_t Count = Engine.Kind == RandomEngineKind::ShuffleOrder
+                              ? Engine.Parameters[0]
+                              : Engine.Kind == RandomEngineKind::SubtractWithCarry
+                                    ? Engine.Parameters[2] : Engine.Parameters[1];
+    auto LeftIndex = Engine.Index ? snapshot(fieldStorage(Left, Engine.Index, L), L)
+                                 : quantity(0, Size, L);
+    auto RightIndex = Engine.Index ? snapshot(fieldStorage(Right, Engine.Index, L), L)
+                                  : quantity(0, Size, L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Compare = labelName(), Advance = labelName();
+    const auto Different = labelName(), End = labelName();
+    branch(Equal, Check, End, L);
+    label(Check, L);
+    branch(binary("<", I, quantity(Count, Size, L), "bool", L), Compare, End, L);
+    label(Compare, L);
+    auto At = [&](Expression Place, Expression Start) {
+      return randomEngineElement(std::move(Place), Engine,
+          binary("%", binary("+", std::move(Start), I, Size, L),
+                 quantity(Count, Size, L), Size, L), L, true);
+    };
+    branch(binary("==", At(Left, LeftIndex), At(Right, RightIndex), "bool", L), Advance, Different, L);
+    label(Different, L);
+    assign(Equal, quantity(0, "bool", L), L);
+    jump(End, L);
+    label(Advance, L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(End, L);
+    return Equal;
   }
   Expression emitNullaryCallable(const CapturedAlgorithmPredicate &Operation,
                                  SourceLocation L) {
@@ -2251,7 +2829,7 @@ class FunctionLowering {
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
     if (Operation >= UtilityOperation::RandomEngineGenerate &&
-        Operation <= UtilityOperation::RandomEngineAssign) {
+        Operation <= UtilityOperation::RandomEngineSeedSequence) {
       const auto *F = Call->getDirectCallee();
       const auto *M = dyn_cast<CXXMethodDecl>(F);
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
@@ -2274,43 +2852,8 @@ class FunctionLowering {
           Operation == UtilityOperation::RandomEngineNotEqual) {
         auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
         auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        Expression Equal;
-        if (Engine->Kind == RandomEngineKind::LinearCongruential) {
-          Equal = binary("==", fieldStorage(dereference(Left, L), Engine->State, L),
-                         fieldStorage(dereference(Right, L), Engine->State, L),
-                         "bool", L);
-        } else {
-          const auto Size = type(A.Context.getSizeType(), L);
-          const auto Count = Engine->Parameters[1];
-          auto LeftIndex = snapshot(fieldStorage(dereference(Left, L),
-                                                  Engine->Index, L), L);
-          auto RightIndex = snapshot(fieldStorage(dereference(Right, L),
-                                                   Engine->Index, L), L);
-          Equal = temporary("bool", L);
-          assign(Equal, quantity(1, "bool", L), L);
-          auto I = temporary(Size, L);
-          assign(I, quantity(0, Size, L), L);
-          const auto Check = labelName(), Compare = labelName(), Advance = labelName();
-          const auto Different = labelName(), End = labelName();
-          jump(Check, L);
-          label(Check, L);
-          branch(binary("<", I, quantity(Count, Size, L), "bool", L), Compare, End, L);
-          label(Compare, L);
-          auto At = [&](Expression Address, Expression Start) {
-            return randomEngineElement(dereference(std::move(Address), L), *Engine,
-                binary("%", binary("+", std::move(Start), I, Size, L),
-                       quantity(Count, Size, L), Size, L), L, true);
-          };
-          branch(binary("==", At(Left, LeftIndex), At(Right, RightIndex), "bool", L),
-                 Advance, Different, L);
-          label(Different, L);
-          assign(Equal, quantity(0, "bool", L), L);
-          jump(End, L);
-          label(Advance, L);
-          assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
-          jump(Check, L);
-          label(End, L);
-        }
+        auto Equal = equalRandomEngines(dereference(Left, L),
+                                        dereference(Right, L), *Engine, L);
         return snapshot(Operation == UtilityOperation::RandomEngineNotEqual
                             ? binary("==", std::move(Equal), quantity(0, "bool", L),
                                      "bool", L)
@@ -2331,21 +2874,62 @@ class FunctionLowering {
         assign(Place, snapshot(dereference(std::move(Source), L), L), L);
         return Place;
       }
-      auto Argument = snapshot(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
-      if (Operation == UtilityOperation::RandomEngineSeed) {
-        seedRandomEngine(std::move(Place), *Engine, std::move(Argument), L);
+      if (Operation == UtilityOperation::RandomEngineBase)
+        return fieldStorage(std::move(Place), Engine->Base, L);
+      if (Operation == UtilityOperation::RandomEngineSeedSequence) {
+        const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources,
+            F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl(), A.Context);
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        seedRandomEngineSequence(std::move(Place), *Engine, dereference(std::move(Source), L), *Seq, L);
         return {};
       }
-      const auto CountType = type(A.Context.UnsignedLongLongTy, L);
-      const auto Check = labelName(), Draw = labelName(), End = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("!=", Argument, quantity(0, CountType, L), "bool", L), Draw, End, L);
-      label(Draw, L);
-      generateRandomEngine(Place, *Engine, L);
-      assign(Argument, binary("-", Argument, quantity(1, CountType, L), CountType, L), L);
-      jump(Check, L);
-      label(End, L);
+      if (Operation == UtilityOperation::RandomEngineSeed) {
+        auto Seed = Call->getNumArgs()
+            ? argument(Call->getArg(0), F->getParamDecl(0)->getType())
+            : quantity(Engine->DefaultSeed, type(A.Context.UnsignedLongLongTy, L), L);
+        seedRandomEngine(std::move(Place), *Engine, std::move(Seed), L,
+                         !Call->getNumArgs());
+        return {};
+      }
+      auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+      discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
+      return {};
+    }
+    if (Operation >= UtilityOperation::SeedSequenceGenerate &&
+        Operation <= UtilityOperation::SeedSequenceParam) {
+      const auto *M = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+      const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, M->getParent(), A.Context);
+      const auto *Object = llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::SeedSequenceSize)
+        return seedSequenceSize(std::move(Place), *Seq, L);
+      auto First = seedSequenceIterator(Call->getArg(0), L);
+      auto Element = Call->getArg(0)->getType();
+      if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
+        Element = Wrapped->IteratorType;
+      Element = Element->getPointeeType();
+      if (Operation == UtilityOperation::SeedSequenceGenerate) {
+        auto Last = seedSequenceIterator(Call->getArg(1), L);
+        generateSeedSequence(std::move(Place), *Seq, std::move(First), std::move(Last), Element, L);
+      } else {
+        auto Count = seedSequenceSize(Place, *Seq, L);
+        auto Seeds = snapshot(seedSequenceMember(std::move(Place), *Seq, "nct_vector_begin", L), L);
+        const auto Size = type(A.Context.getSizeType(), L);
+        auto I = snapshot(quantity(0, Size, L), L);
+        const auto Check = labelName(), Copy = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", I, Count, "bool", L), Copy, Done, L);
+        label(Copy, L);
+        assign(index(First, I, type(Element, L), L),
+               cast(index(Seeds, I, type(Seq->ResultType, L), L), type(Element, L), L), L);
+        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+        jump(Check, L);
+        label(Done, L);
+      }
       return {};
     }
     auto ArrayFor = [&](QualType Type) {
@@ -27263,6 +27847,48 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Kind = approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      for (const auto *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
+        assign(seedSequenceMember(Place, *Seq, Name, L), A.zero(A.Context.getPointerType(Seq->ResultType), L), L);
+      if (*Kind == SeedSequenceConstruction::Default)
+        return;
+      const auto Size = type(A.Context.getSizeType(), L);
+      Expression Input, Count;
+      QualType InputElement;
+      if (*Kind == SeedSequenceConstruction::InitializerList) {
+        const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+            Constructor->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        auto ListValue = snapshot(expression(C->getArg(0)), L);
+        Input = snapshot(fieldStorage(ListValue, List->Begin, L), L);
+        InputElement = List->ElementType.withConst();
+        Count = snapshot(fieldStorage(std::move(ListValue), List->Size, L), L);
+      } else {
+        Input = seedSequenceIterator(C->getArg(0), L);
+        auto Last = seedSequenceIterator(C->getArg(1), L);
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(A.S, A.Sources,
+            C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        InputElement = (Wrapped ? Wrapped->IteratorType : C->getArg(0)->getType())->getPointeeType();
+        Count = snapshot(quantity(0, Size, L), L);
+        const auto Measure = labelName(), Measured = labelName();
+        branch(binary("!=", Input, Last, "bool", L), Measure, Measured, L);
+        label(Measure, L);
+        assign(Count, cast(binary("-", Last, Input, type(A.Context.getPointerDiffType(), L), L), Size, L), L);
+        jump(Measured, L);
+        label(Measured, L);
+      }
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto Check = labelName(), Copy = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", I, Count, "bool", L), Copy, Done, L);
+      label(Copy, L);
+      appendSeedSequence(Place, *Seq, index(Input, I, type(InputElement, L), L), I, L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(Done, L);
+      return;
+    }
     if (const auto Kind = approvedRandomEngineConstruction(A.S, A.Sources, C,
                                                            A.Context)) {
       const auto Engine = approvedRandomEngineRecord(A.S, A.Sources,
@@ -27272,11 +27898,21 @@ class FunctionLowering {
       if (*Kind == RandomEngineConstruction::CopyOrMove) {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
         assign(std::move(Place), snapshot(dereference(std::move(Source), L), L), L);
+      } else if (*Kind == RandomEngineConstruction::SeedSequence) {
+        const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources,
+            Constructor->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl(), A.Context);
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        seedRandomEngineSequence(std::move(Place), *Engine, dereference(std::move(Source), L), *Seq, L);
+      } else if (*Kind == RandomEngineConstruction::FromBase) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(fieldStorage(Place, Engine->Base, L), snapshot(dereference(std::move(Source), L), L), L);
+        initializeRandomAdaptor(std::move(Place), *Engine, L);
       } else {
         auto Seed = *Kind == RandomEngineConstruction::Default
-                        ? quantity(Engine->DefaultSeed, type(Engine->ResultType, L), L)
+                        ? quantity(Engine->DefaultSeed, type(A.Context.UnsignedLongLongTy, L), L)
                         : argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
-        seedRandomEngine(std::move(Place), *Engine, std::move(Seed), L);
+        seedRandomEngine(std::move(Place), *Engine, std::move(Seed), L,
+                         *Kind == RandomEngineConstruction::Default);
       }
       return;
     }
@@ -29662,12 +30298,19 @@ public:
         jump(Done, L);
         label(Done, L);
       } else if (auto Vector = approvedUtilityVectorRecord(
-                     A.S, A.Sources, DestroyedRecord, A.Context)) {
+                     A.S, A.Sources,
+                     approvedSeedSequenceRecord(A.S, A.Sources, DestroyedRecord, A.Context)
+                         ? approvedSeedSequenceRecord(A.S, A.Sources, DestroyedRecord, A.Context)
+                               ->Storage->getType()->getAsCXXRecordDecl()
+                         : DestroyedRecord, A.Context)) {
+        auto VectorPlace = dereference(*ThisPointer, L);
+        if (const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, DestroyedRecord, A.Context))
+          VectorPlace = fieldStorage(std::move(VectorPlace), Seq->Storage, L);
         auto Member = [&](const char *Name) {
           return Expression{{"kind", "member"},
                             {"type", type(Vector->PointerType, L)},
                             {"name", Name},
-                            {"args", json::Array{dereference(*ThisPointer, L)}},
+                            {"args", json::Array{json::Object(VectorPlace)}},
                             {"loc", A.loc(L)}};
         };
         auto Begin = snapshot(Member("nct_vector_begin"), L);

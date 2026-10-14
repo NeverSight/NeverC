@@ -810,7 +810,12 @@ instances are also admitted, including `minstd_rand0`, `minstd_rand`,
 construction, copies, assignment, `seed`, generation, `discard`, `min`/`max`,
 equality and use with the admitted random algorithms retain the pinned SDK
 state and target layout. The [engine contract](../docs/cpp-core-v2.md#standard-random-engines-from-random)
-records the checked bounds and remaining random-library interfaces.
+records the checked bounds and remaining random-library interfaces. The other
+deterministic engines/adaptors and `seed_seq` are admitted under that contract,
+including nested bases, `base()`, integral list/raw/wrapped seed construction,
+32/64-bit unsigned generation and engine seeding. Selected vector growth,
+allocation and cleanup remain observable; the pinned zero-modulus LCG
+seed-sequence division-by-zero path is rejected.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,

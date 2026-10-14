@@ -6,7 +6,9 @@
 
 Core v2 现可直接降低原始指针或经认证的包装迭代器标量范围上的 `std::shuffle` 和 C++17 `std::sample`。生成器须为源码自有、标准布局、可平凡复制且析构平凡的记录，直接声明最多 64 位的非 bool 无符号 `result_type`、返回相同类型的零参数调用运算符，以及各含一个常量返回语句且满足 `min() < max()` 的静态 constexpr `min()`/`max()`。生成器按引用绑定，保留状态、libc++ 的精确拒绝重抽次数及独立位拼接。Sample 接受最多 64 位的非负内置整数数量，保留输入顺序并返回可写输出的结束指针。空／单元素 shuffle 和零数量／空输入 sample 不调用生成器。所选 SDK 的源码替换仍被拒绝；其他 `<random>` 功能、自定义迭代器及记录元素尚不在此支持范围内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
-Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersenne_twister_engine` 实例，无符号结果类型最多 64 位，包含 `minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64`。默认及标量种子构造、复制、赋值、`seed`、`operator()`、`discard`、`min`/`max` 和相等比较保留固定 SDK 的状态语义与目标布局；这些引擎可直接用于 `shuffle`/`sample`，包括包装迭代器范围。所选 SDK 的源码替换仍被拒绝。种子序列、引擎适配器、分布、流序列化及 `random_device` 仍待支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
+Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersenne_twister_engine` 实例，无符号结果类型最多 64 位，包含 `minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64`。默认及标量种子构造、复制、赋值、`seed`、`operator()`、`discard`、`min`/`max` 和相等比较保留固定 SDK 的状态语义与目标布局；这些引擎可直接用于 `shuffle`/`sample`，包括包装迭代器范围。所选 SDK 的源码替换仍被拒绝。分布、流序列化及 `random_device` 仍待支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
+
+其余确定性系列 `subtract_with_carry_engine`、`discard_block_engine`、`independent_bits_engine` 和 `shuffle_order_engine` 也已支持，包括 `ranlux24_base`、`ranlux48_base`、`ranlux24`、`ranlux48`、`knuth_b`。适配器支持嵌套已认证引擎、基础引擎构造及 `base()`。`seed_seq` 支持默认、整数初始化列表、原始指针或包装迭代器整数范围构造，以及 `size`、`param`、32/64 位无符号范围生成和已认证引擎播种；内部 vector 的扩容、分配与析构次数保留可观察语义。固定 SDK 用种子序列播种零模数 LCG 时会除以零，该路径明确拒绝。源码定义的种子序列类仍不在此子集中。
 
 两个算法也接纳经校验的 `std::__wrap_iter<T*>` 范围，包括已支持的 vector 和 string 迭代器。Sample 的输入和输出可分别使用原始指针或包装迭代器，保留 const 输入及经校验的标量转换，并返回原输出迭代器类型。所选 SDK 迭代器操作仍须通过认证。
 

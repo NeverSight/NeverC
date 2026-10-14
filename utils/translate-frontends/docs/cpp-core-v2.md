@@ -8261,10 +8261,41 @@ memory-comparison intrinsics only as dependencies of the selected SDK body.
 
 The new SDK resource `math.h` and `stdlib.h` supply declarations needed to parse
 the complete public header in core v2. They do not admit C runtime calls and
-forward to the platform SDK in the existing math profile. Seed sequences,
-other engine families and adaptors, distributions, stream serialization and
-`std::random_device` still require their own runtime support. Parsing those
+forward to the platform SDK in the existing math profile. Distributions,
+stream serialization and `std::random_device` still require their own runtime
+support. Parsing those
 declarations does not authorize their execution.
+
+`subtract_with_carry_engine` and the `discard_block_engine`,
+`independent_bits_engine` and `shuffle_order_engine` adaptors also retain their
+actual field layout and selected SDK bodies. The standard `ranlux24_base`,
+`ranlux48_base`, `ranlux24`, `ranlux48` and `knuth_b` aliases are included.
+Supported adaptors can nest other checked engines and accept a copied or moved
+base engine; `base()` returns a reference to that same subobject. Scalar and
+no-argument reseeding reset the adaptor state, including discard-block counters
+and shuffle tables. Independent-bit rejection draws and the shuffle-order
+integer ratio/double fallback match LLVM 20.1.8. Array states and shuffle tables
+retain the 65,536-element storage limit.
+
+`std::seed_seq` owns the checked `vector<uint32_t>` field. Default construction,
+integral initializer lists (including a named list), and raw or wrapped integral
+pointer ranges through 64 bits are admitted. Input values normalize to 32 bits;
+`size()` and `param()` preserve the stored sequence. `generate()` accepts raw or
+wrapped writable unsigned 32/64-bit ranges, including empty/null ranges, and
+retains the selected output value type's arithmetic. Repeated generation leaves
+the seed sequence unchanged. Internal vector growth and source-owned global
+new/delete calls preserve the pinned allocation and destruction behavior.
+Matching source-owned global allocation and deallocation bodies are required
+under the existing vector allocation boundary.
+
+These seed sequences can construct or reseed every checked engine/adaptor whose
+selected SDK path is defined. LCG construction selects four or five generated
+words, MT/SWC select one or two words per state element, and MT retains the
+all-zero-state correction. This libc++ release computes a remainder by zero
+for zero-modulus LCG seed-sequence seeding; those calls are rejected rather than
+lowered to a different algorithm. Source-defined seed-sequence classes need a
+separate source-body admission. Selected seed-sequence methods, iterator traits,
+vector helpers and nested base-engine replacements remain rejected.
 
 ## Standard template parsing across targets
 
