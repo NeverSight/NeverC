@@ -4,7 +4,9 @@
 
 # 將 C++ 轉譯為 NeverC
 
-Core v2 現可直接降低原始指標純量範圍上的 `std::shuffle` 和 C++17 `std::sample`。產生器須為原始碼自有、標準配置、可平凡複製且解構平凡的記錄，直接宣告最多 64 位元的非 bool 無號 `result_type`、傳回相同型別的零參數呼叫運算子，以及各含一個常數傳回敘述且滿足 `min() < max()` 的靜態 constexpr `min()`/`max()`。產生器以參考繫結，保留狀態、libc++ 的精確拒絕重抽次數及獨立位元組合。Sample 接受最多 64 位元的非負內建整數數量，保留輸入順序並傳回可寫輸出的結束指標。空／單元素 shuffle 和零數量／空輸入 sample 不呼叫產生器。所選 SDK 的原始碼替換仍遭拒絕；`<random>` 引擎、包裝／自訂迭代器及記錄元素尚不在此支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+Core v2 現可直接降低原始指標或經認證的包裝迭代器純量範圍上的 `std::shuffle` 和 C++17 `std::sample`。產生器須為原始碼自有、標準配置、可平凡複製且解構平凡的記錄，直接宣告最多 64 位元的非 bool 無號 `result_type`、傳回相同型別的零參數呼叫運算子，以及各含一個常數傳回敘述且滿足 `min() < max()` 的靜態 constexpr `min()`/`max()`。產生器以參考繫結，保留狀態、libc++ 的精確拒絕重抽次數及獨立位元組合。Sample 接受最多 64 位元的非負內建整數數量，保留輸入順序並傳回可寫輸出的結束指標。空／單元素 shuffle 和零數量／空輸入 sample 不呼叫產生器。所選 SDK 的原始碼替換仍遭拒絕；`<random>` 引擎、自訂迭代器及記錄元素尚不在此支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+
+兩個演算法也接納經校驗的 `std::__wrap_iter<T*>` 範圍，包括已支援的 vector 和 string 迭代器。Sample 的輸入和輸出可分別使用原始指標或包裝迭代器，保留 const 輸入及經校驗的純量轉換，並傳回原輸出迭代器型別。所選 SDK 迭代器操作仍須通過認證。
 
 Core v2 現支援內建且固定版本的 `<type_traits>`，用於編譯期型別別名以及整數／列舉常數。`std::remove_cv_t`、`std::is_same_v`、已支援的建構／解構 traits 與 `std::integral_constant::value` 會降為現有核心型別及常值。驅動程式會驗證並記錄 101 個 libc++／resource 標頭雜湊，涵蓋支援的 macOS、Linux 與 Windows 目標。執行期 trait 支援僅限下文列出的、經過驗證的函式指標 `integral_constant` 形式；其他 trait 物件與 trait 儲存身分仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
 

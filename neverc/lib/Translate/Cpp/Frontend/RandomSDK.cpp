@@ -346,8 +346,16 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
   if (!Reference || Reference->getDecl() != F || !Reference->getQualifier())
     return std::nullopt;
-  const auto Input = F->getParamDecl(0)->getType();
-  const auto Output = F->getParamDecl(Sample ? 2 : 0)->getType();
+  const auto InputIterator = F->getParamDecl(0)->getType();
+  const auto OutputIterator = F->getParamDecl(Sample ? 2 : 0)->getType();
+  auto RangePointer = [&](QualType Iterator) {
+    if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            S, SM, Iterator->getAsCXXRecordDecl(), Context))
+      return Wrapped->IteratorType;
+    return Iterator;
+  };
+  const auto Input = RangePointer(InputIterator);
+  const auto Output = RangePointer(OutputIterator);
   const auto Object = F->getParamDecl(Index)->getType();
   const auto *Generator =
       Object.getNonReferenceType()->getAsCXXRecordDecl();
@@ -356,7 +364,7 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       !scalarElement(Input->getPointeeType(), Context) ||
       !scalarElement(Output->getPointeeType(), Context) ||
       Output->getPointeeType().isConstQualified() ||
-      !Context.hasSameType(F->getParamDecl(1)->getType(), Input) ||
+      !Context.hasSameType(F->getParamDecl(1)->getType(), InputIterator) ||
       !Object->isReferenceType() ||
       Object.getNonReferenceType().isVolatileQualified() || !Generator ||
       Generator->isLambda() || Generator->isUnion() ||
@@ -364,7 +372,7 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       !Generator->hasTrivialDestructor() ||
       !S.owns(SM, Generator->getLocation()) ||
       !Context.hasSameType(Call->getType(), F->getReturnType()) ||
-      (Sample ? !Context.hasSameType(F->getReturnType(), Output)
+      (Sample ? !Context.hasSameType(F->getReturnType(), OutputIterator)
               : !F->getReturnType()->isVoidType()))
     return std::nullopt;
   for (unsigned I = 0; I != Parameters; ++I)

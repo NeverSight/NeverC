@@ -8199,7 +8199,11 @@ and taking an algorithm's address does not inherit a checked call's proof.
 
 Direct `std::shuffle(first, last, generator)` and C++17
 `std::sample(first, last, output, count, generator)` now accept admitted
-raw-pointer scalar ranges. Shuffle requires writable elements of the same type.
+raw-pointer or authenticated `std::__wrap_iter<T*>` scalar ranges. This includes
+admitted vector and string iterators. Shuffle requires writable elements of the
+same type. Sample input and output independently admit raw or wrapped iterators,
+retain const input and checked scalar conversion, and return the original output
+iterator type. The selected SDK iterator operations are authenticated.
 Sample accepts const or mutable input, writable scalar output with a checked
 conversion, and a nonnegative built-in integral count of at most 64 bits. It
 preserves input order and returns the output position after `min(count, length)`
@@ -8225,7 +8229,7 @@ The selected algorithm, distribution, helper, trait, alias and redeclaration
 closure is authenticated; source SDK replacements and owned macro expansions do
 not inherit this lowering. The compiler's intrinsic common-type and leading-zero
 metadata are used only within that checked closure. Independent distribution
-calls, `<random>` engines, wrapped/custom iterators and record elements remain
+calls, `<random>` engines, custom iterators and record elements remain
 outside this random-algorithm subset. Quoted includes, user shadow headers and
 forged declarations remain rejected.
 

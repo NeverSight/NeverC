@@ -248,10 +248,11 @@ Predicate mutation algorithms require writable destinations; ordered output
 algorithms accept directly convertible writable scalar destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.
-Direct `shuffle` and `sample` now lower admitted scalar-pointer ranges with a
+Direct `shuffle` and `sample` now lower admitted raw-pointer or authenticated
+wrapped scalar ranges with a
 checked source-owned generator. The three pinned random-distribution headers
 retain libc++ rejection sampling and generator state; their selected declaration
-closure rejects source replacements. `<random>` engines and other iterator or
+closure rejects source replacements. `<random>` engines and custom iterator or
 element forms remain outside this subset.
 The `<numeric>` surface has a 126-file libc++/resource closure on every
 core-v2 target. The exact default `iota`, `accumulate`, `inner_product`,

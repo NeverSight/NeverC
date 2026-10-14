@@ -4,7 +4,9 @@
 
 # C++를 NeverC로 변환
 
-Core v2는 지원하는 원시 포인터 스칼라 범위에서 `std::shuffle`과 C++17 `std::sample`을 직접 낮춥니다. 생성기는 소스 소유의 표준 레이아웃 레코드이며, 복사와 소멸이 trivial해야 합니다. bool을 제외한 최대 64비트 부호 없는 `result_type`을 직접 선언하고, 같은 타입을 반환하는 무인자 호출 연산자와 단일 상수 return으로 `min() < max()`를 만족하는 static constexpr `min()`/`max()`를 정의해야 합니다. 생성기를 참조로 전달하여 상태, libc++의 정확한 거부 재추출 횟수와 독립 비트 조합을 유지합니다. Sample은 최대 64비트의 음이 아닌 내장 정수 개수를 받아 입력 순서를 유지하고 쓰기 가능한 출력의 끝 포인터를 반환합니다. 빈 범위나 단일 요소 shuffle, 개수가 0이거나 입력이 빈 sample은 생성기를 호출하지 않습니다. 선택된 SDK의 소스 대체는 거부하며, `<random>` 엔진, 래핑된/사용자 정의 반복자와 레코드 요소는 이 지원 범위 밖입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+Core v2는 지원하는 원시 포인터 또는 인증된 래핑 반복자의 스칼라 범위에서 `std::shuffle`과 C++17 `std::sample`을 직접 낮춥니다. 생성기는 소스 소유의 표준 레이아웃 레코드이며, 복사와 소멸이 trivial해야 합니다. bool을 제외한 최대 64비트 부호 없는 `result_type`을 직접 선언하고, 같은 타입을 반환하는 무인자 호출 연산자와 단일 상수 return으로 `min() < max()`를 만족하는 static constexpr `min()`/`max()`를 정의해야 합니다. 생성기를 참조로 전달하여 상태, libc++의 정확한 거부 재추출 횟수와 독립 비트 조합을 유지합니다. Sample은 최대 64비트의 음이 아닌 내장 정수 개수를 받아 입력 순서를 유지하고 쓰기 가능한 출력의 끝 포인터를 반환합니다. 빈 범위나 단일 요소 shuffle, 개수가 0이거나 입력이 빈 sample은 생성기를 호출하지 않습니다. 선택된 SDK의 소스 대체는 거부하며, `<random>` 엔진, 사용자 정의 반복자와 레코드 요소는 이 지원 범위 밖입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+
+두 알고리즘은 지원하는 vector와 string 반복자를 포함한 검증된 `std::__wrap_iter<T*>` 범위도 허용합니다. Sample의 입력과 출력은 각각 원시 포인터 또는 래핑 반복자를 사용할 수 있으며, const 입력과 검증된 스칼라 변환을 유지하고 원래 출력 반복자 타입을 반환합니다. 선택된 SDK 반복자 연산도 계속 인증합니다.
 
 Core v2는 컴파일 시간 형식 별칭과 정수·열거형 상수를 위해 내장된 고정 버전 `<type_traits>`를 지원합니다. `std::remove_cv_t`, `std::is_same_v`, 지원되는 생성·소멸 traits와 `std::integral_constant::value`는 기존 코어 형식과 리터럴로 변환됩니다. 드라이버는 지원되는 macOS, Linux, Windows 대상에서 사용된 libc++／resource 헤더 101개의 해시를 검증하고 기록합니다. 런타임 trait 지원은 아래에 설명된 검증된 함수 포인터 `integral_constant` 형태로 제한됩니다. 다른 trait 객체와 trait 저장소 식별은 아직 지원되지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
 

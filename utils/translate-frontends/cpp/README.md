@@ -658,8 +658,9 @@ and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.
 `mismatch`, `equal_range` and `minmax_element` directly construct authenticated
 scalar-pointer pair results; `minmax` uses its exact authenticated pair of two
-const references. Direct `shuffle` and `sample` also lower admitted scalar-pointer
-ranges with a checked source-owned generator by reference. The selected
+const references. Direct `shuffle` and `sample` also lower admitted raw-pointer
+or authenticated wrapped scalar ranges with a checked source-owned generator by
+reference. The selected
 `uniform_int_distribution` closure is pinned, preserving rejection draws,
 generator state and sample order without a libc++ runtime call.
 Numeric contributes an exact, platform-free 126-file C++17 header closure.
@@ -791,13 +792,16 @@ unfinished.
 
 Direct `std::shuffle` and C++17 `std::sample` also accept admitted scalar-pointer
 ranges with a checked source-owned unsigned generator bound by reference.
+Authenticated `std::__wrap_iter<T*>` inputs and outputs, including admitted
+vector/string iterators and mixed raw/wrapped sample ranges, preserve the
+original output iterator type.
 Their direct lowering preserves libc++'s rejection sampling, independent-bit
 assembly, generator state and stable sample order. Sample uses a nonnegative
 built-in integral count of at most 64 bits and returns the final output pointer.
 The selected SDK declaration closure rejects source replacements. The exact
 generator and range boundary is documented in the
 [algorithm contract](../docs/cpp-core-v2.md#algorithm-header-from-algorithm);
-`<random>` engines, wrapped/custom iterators and record elements remain outside
+`<random>` engines, custom iterators and record elements remain outside
 this subset.
 
 The adapter first inspects every owned declaration and expression, including

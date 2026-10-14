@@ -358272,3 +358272,132 @@ int main(){int a[3]{1,2,3};G g{};std::shuffle(a,a+3,g);}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsWrappedRangesPreserveState) {
+  for (const std::string &Name : {"vector", "mixed", "string"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-algorithms-" + Name + ".cpp");
+    const auto Output = tmpFile("random-algorithms-" + Name + ".nc");
+    const auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-wrapped-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RandomAlgorithmsWrappedRangesRetainSDK) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"wrapped-iterator-traits", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[2048]; };
+Arena arena{}; Size offset;
+void *operator new(Size) { auto p = arena.bytes + offset; offset += 256; return p; }
+void operator delete(void *) noexcept {}
+#include <algorithm>
+#include <vector>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> struct iterator_traits<vector<int>::iterator>{using difference_type=ptrdiff_t;using value_type=int;using pointer=int*;using reference=int&;using iterator_category=random_access_iterator_tag;};}
+int main(){
+ std::vector<int> a{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+ std::vector<int> b(8); G g{17,0};
+ std::shuffle(a.begin(),a.end(),g);
+ unsigned long long digest=0;
+ for(int i=0;i<17;++i)digest=digest*257+static_cast<unsigned>(a[i]+1);
+ if(digest!=18293149044577076889ULL||g.state!=3092164965u||g.calls!=20)return 1;
+ const auto &input=a;
+ auto end=std::sample(input.begin(),input.end(),b.begin(),8,g);
+ int expected[8]{11,7,6,14,8,2,16,9};
+ for(int i=0;i<8;++i)if(b[i]!=expected[i])return 2;
+ return end==b.end()&&g.state==735758288u&&g.calls==37?0:3;
+}
+)cpp"},
+      {"wrapped-shuffle-helper", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[2048]; };
+Arena arena{}; Size offset;
+void *operator new(Size) { auto p = arena.bytes + offset; offset += 256; return p; }
+void operator delete(void *) noexcept {}
+#include <algorithm>
+#include <vector>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> vector<int>::iterator __shuffle<_ClassicAlgPolicy,vector<int>::iterator,vector<int>::iterator,G&>(vector<int>::iterator a,vector<int>::iterator,G&){return a;}}
+int main(){
+ std::vector<int> a{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+ std::vector<int> b(8); G g{17,0};
+ std::shuffle(a.begin(),a.end(),g);
+ unsigned long long digest=0;
+ for(int i=0;i<17;++i)digest=digest*257+static_cast<unsigned>(a[i]+1);
+ if(digest!=18293149044577076889ULL||g.state!=3092164965u||g.calls!=20)return 1;
+ const auto &input=a;
+ auto end=std::sample(input.begin(),input.end(),b.begin(),8,g);
+ int expected[8]{11,7,6,14,8,2,16,9};
+ for(int i=0;i<8;++i)if(b[i]!=expected[i])return 2;
+ return end==b.end()&&g.state==735758288u&&g.calls==37?0:3;
+}
+)cpp"},
+      {"wrapped-public-sample", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[2048]; };
+Arena arena{}; Size offset;
+void *operator new(Size) { auto p = arena.bytes + offset; offset += 256; return p; }
+void operator delete(void *) noexcept {}
+#include <algorithm>
+#include <vector>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> vector<int>::iterator sample<vector<int>::const_iterator,vector<int>::iterator,int,G&>(vector<int>::const_iterator,vector<int>::const_iterator,vector<int>::iterator out,int,G&){return out;}}
+int main(){
+ std::vector<int> a{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+ std::vector<int> b(8); G g{17,0};
+ std::shuffle(a.begin(),a.end(),g);
+ unsigned long long digest=0;
+ for(int i=0;i<17;++i)digest=digest*257+static_cast<unsigned>(a[i]+1);
+ if(digest!=18293149044577076889ULL||g.state!=3092164965u||g.calls!=20)return 1;
+ const auto &input=a;
+ auto end=std::sample(input.begin(),input.end(),b.begin(),8,g);
+ int expected[8]{11,7,6,14,8,2,16,9};
+ for(int i=0;i<8;++i)if(b[i]!=expected[i])return 2;
+ return end==b.end()&&g.state==735758288u&&g.calls==37?0:3;
+}
+)cpp"},
+      {"wrapped-dereference", R"cpp(using Size = decltype(sizeof(0));
+struct Arena { unsigned long long alignment; unsigned char bytes[2048]; };
+Arena arena{}; Size offset;
+void *operator new(Size) { auto p = arena.bytes + offset; offset += 256; return p; }
+void operator delete(void *) noexcept {}
+#include <algorithm>
+#include <vector>
+struct G {using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+namespace std {template<> constexpr __wrap_iter<int*>::reference __wrap_iter<int*>::operator*() const noexcept {return *__i_;}}
+int main(){
+ std::vector<int> a{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+ std::vector<int> b(8); G g{17,0};
+ std::shuffle(a.begin(),a.end(),g);
+ unsigned long long digest=0;
+ for(int i=0;i<17;++i)digest=digest*257+static_cast<unsigned>(a[i]+1);
+ if(digest!=18293149044577076889ULL||g.state!=3092164965u||g.calls!=20)return 1;
+ const auto &input=a;
+ auto end=std::sample(input.begin(),input.end(),b.begin(),8,g);
+ int expected[8]{11,7,6,14,8,2,16,9};
+ for(int i=0;i<8;++i)if(b[i]!=expected[i])return 2;
+ return end==b.end()&&g.state==735758288u&&g.calls==37?0:3;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("random-wrapped-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("random-wrapped-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
