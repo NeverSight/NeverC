@@ -962,6 +962,14 @@ enum class UtilityOperation {
   AlgorithmGenerateN,
   AlgorithmShuffle,
   AlgorithmSample,
+  RandomEngineGenerate,
+  RandomEngineSeed,
+  RandomEngineDiscard,
+  RandomEngineMinimum,
+  RandomEngineMaximum,
+  RandomEngineEqual,
+  RandomEngineNotEqual,
+  RandomEngineAssign,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1191,6 +1199,31 @@ struct UtilityAlgorithmRandomCall {
   uint64_t MinimumValue, MaximumValue;
   unsigned ParameterIndex;
 };
+enum class RandomEngineKind { LinearCongruential, MersenneTwister };
+struct RandomEngineRecord {
+  RandomEngineKind Kind;
+  const clang::CXXRecordDecl *Record;
+  clang::QualType ResultType;
+  const clang::FieldDecl *State, *Index;
+  std::vector<uint64_t> Parameters;
+  uint64_t Minimum, Maximum, DefaultSeed;
+};
+std::optional<RandomEngineRecord> approvedRandomEngineRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+enum class RandomEngineConstruction { Default, Seed, CopyOrMove };
+std::optional<RandomEngineConstruction> approvedRandomEngineConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedRandomEngineOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+bool approvedRandomEngineDefaultArgument(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDefaultArgExpr *Default,
+    const clang::FunctionDecl *Function, unsigned Index,
+    const clang::ASTContext &Context);
 std::optional<UtilityAlgorithmRandomCall>
 approvedUtilityAlgorithmRandomCall(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -1948,6 +1981,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
+  std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;

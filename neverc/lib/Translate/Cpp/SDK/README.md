@@ -2,14 +2,20 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16`. It contains the 627 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17`. It contains the 664 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 529 libc++ headers, 14 Clang
-resource headers, three NeverC resource headers, and 81 Darwin platform headers.
+`clang20.1.8-libcxx200100-macos15.5` catalog: 564 libc++ headers, 14 Clang
+resource headers, five NeverC resource headers, and 81 Darwin platform headers.
 Copyright and license notices are preserved. Upstream-source bytes are retained
 except for the documented search-count correction below; the NeverC-authored C declaration shims are identified
 separately below. This is a fixed input set for the supported translation
 profiles, not a complete Apple SDK.
+
+The r17 distribution adds the original libc++ public `<random>` header and its
+34 missing internal dependencies. Parsing the header does not authorize its
+entire runtime API; selected engine operations require their separate checked
+layout and declaration proofs. All added files retain their LLVM license
+notices and exact LLVM 20.1.8 source bytes.
 
 The r16 distribution adds the three original libc++ random-distribution headers
 needed by `shuffle` and `sample`: `__random/is_valid.h`, `__random/log2.h` and

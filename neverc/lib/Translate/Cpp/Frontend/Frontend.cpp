@@ -11315,7 +11315,14 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
     if (D && D->getDefinition() && !D->isUnion()) {
       D = D->getDefinition();
-      if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
+      if (const auto Engine = approvedRandomEngineRecord(S, Sources, D, Context)) {
+        if (RequiredRandomEngines.insert(D->getCanonicalDecl()).second) {
+          for (const auto *Field : D->fields())
+            if (type(Field->getType(), L, false, Depth + 1).empty())
+              return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
+      } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
@@ -15293,7 +15300,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
-        (approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedRandomEngineConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
          approvedFunctionalReferenceConstruction(A.S, A.Sources, C,
                                                  A.Context) ||
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
@@ -15887,6 +15895,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   algorithmCallableSource(const CallExpr *Call) {
     if (auto Random = approvedUtilityAlgorithmRandomCall(A.S, A.Sources, Call,
                                                          A.Context)) {
+      if (approvedRandomEngineRecord(A.S, A.Sources,
+                                    Random->ObjectType.getNonReferenceType()
+                                        ->getAsCXXRecordDecl(), A.Context))
+        return AlgorithmCallableSource{Call->getDirectCallee(), nullptr};
       for (const auto *Bound : {Random->Minimum, Random->Maximum}) {
         collectOperationFunctionTypeSource(Bound);
         const auto *Body = cast<CompoundStmt>(Bound->getDefinition()->getBody());
@@ -18790,7 +18802,9 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedFunctionalReferenceConstruction(A.S, A.Sources, Construction,
+          (approvedRandomEngineConstruction(A.S, A.Sources, Construction,
+                                            A.Context) ||
+           approvedFunctionalReferenceConstruction(A.S, A.Sources, Construction,
                                                    A.Context) ||
            approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
@@ -24226,7 +24240,9 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedFunctionalObjectConstruction(A.S, A.Sources, C,
+        } else if (approvedRandomEngineConstruction(A.S, A.Sources, C,
+                                                    A.Context) ||
+                   approvedFunctionalObjectConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
                    approvedFunctionalReferenceConstruction(
                        A.S, A.Sources, C, A.Context) ||
@@ -25050,7 +25066,7 @@ public:
            (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
             Name != "cstddef" && Name != "utility" && Name != "array" &&
             Name != "tuple" && Name != "iterator" && Name != "algorithm" &&
-            Name != "numeric" && Name != "initializer_list" &&
+            Name != "numeric" && Name != "random" && Name != "initializer_list" &&
             Name != "optional" && Name != "memory" && Name != "new" &&
             Name != "functional" && Name != "ratio" && Name != "cstring" &&
             Name != "string_view" && Name != "string" && Name != "vector"))) {
@@ -25058,7 +25074,7 @@ public:
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
                "#include <array>, #include <tuple>, #include <iterator>, "
-               "#include <algorithm>, #include <numeric>, "
+               "#include <algorithm>, #include <numeric>, #include <random>, "
                "#include <initializer_list>, #include <optional> and "
                "#include <memory>, #include <new> and #include <functional> "
                "and #include <ratio>, #include <cstring> and "
@@ -26171,6 +26187,7 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                "-fno-ms-compatibility", "-fno-ms-extensions",
                                "-fno-delayed-template-parsing",
                                "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
+                               "-D_NEVERC_CPP_CORE_V2_SDK",
                                // Stream iterators require an unpinned I/O
                                // header closure and runtime operations. Their
                                // declarations stay absent even though the

@@ -4,7 +4,9 @@
 
 # C++ を NeverC に変換する
 
-Core v2 は、対応するスカラーの生ポインター範囲または認証済みラップイテレーター範囲で `std::shuffle` と C++17 の `std::sample` を直接変換します。生成器はソース所有の標準レイアウトで、コピーとデストラクターが trivial なレコードです。bool 以外の最大 64 ビットの符号なし `result_type` を直接宣言し、同じ型を返す引数なしの呼び出し演算子と、単一の定数 return を持ち `min() < max()` を満たす static constexpr `min()`/`max()` を定義します。生成器を参照で渡し、状態、libc++ の棄却による再抽選回数と独立ビットの組み立てを保ちます。Sample は最大 64 ビットの非負の組み込み整数を個数として受け取り、入力順序を保ち、書き込み可能な出力の終端ポインターを返します。空または単一要素の shuffle と、個数ゼロまたは空入力の sample は生成器を呼びません。選択された SDK のソース置換は拒否され、`<random>` エンジン、独自のイテレーター、レコード要素はこの範囲外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+Core v2 は、対応するスカラーの生ポインター範囲または認証済みラップイテレーター範囲で `std::shuffle` と C++17 の `std::sample` を直接変換します。生成器はソース所有の標準レイアウトで、コピーとデストラクターが trivial なレコードです。bool 以外の最大 64 ビットの符号なし `result_type` を直接宣言し、同じ型を返す引数なしの呼び出し演算子と、単一の定数 return を持ち `min() < max()` を満たす static constexpr `min()`/`max()` を定義します。生成器を参照で渡し、状態、libc++ の棄却による再抽選回数と独立ビットの組み立てを保ちます。Sample は最大 64 ビットの非負の組み込み整数を個数として受け取り、入力順序を保ち、書き込み可能な出力の終端ポインターを返します。空または単一要素の shuffle と、個数ゼロまたは空入力の sample は生成器を呼びません。選択された SDK のソース置換は拒否され、その他の `<random>` 機能、独自のイテレーター、レコード要素はこの範囲外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+
+Core v2 は認証済みの `std::linear_congruential_engine` と `std::mersenne_twister_engine` もサポートします。符号なし結果型は最大 64 ビットで、`minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64` を含みます。デフォルトおよび整数シードによる構築、コピー、代入、`seed`、`operator()`、`discard`、`min`/`max`、等価比較は固定 SDK の状態とターゲット配置を維持します。ラップされた範囲を含む `shuffle`/`sample` に渡せます。選択された SDK のソース置換は拒否されます。シード列、エンジンアダプター、分布、ストリーム直列化、`random_device` は引き続き実装が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
 
 両アルゴリズムは、対応する vector と string のイテレーターを含む、検証済みの `std::__wrap_iter<T*>` 範囲も受け入れます。Sample の入力と出力には生ポインターまたはラップイテレーターを個別に使用でき、const 入力、検証済みのスカラー変換、元の出力イテレーター型を保ちます。選択された SDK イテレーター操作も認証します。
 

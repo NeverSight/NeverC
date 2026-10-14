@@ -4,7 +4,9 @@
 
 # 將 C++ 轉譯為 NeverC
 
-Core v2 現可直接降低原始指標或經認證的包裝迭代器純量範圍上的 `std::shuffle` 和 C++17 `std::sample`。產生器須為原始碼自有、標準配置、可平凡複製且解構平凡的記錄，直接宣告最多 64 位元的非 bool 無號 `result_type`、傳回相同型別的零參數呼叫運算子，以及各含一個常數傳回敘述且滿足 `min() < max()` 的靜態 constexpr `min()`/`max()`。產生器以參考繫結，保留狀態、libc++ 的精確拒絕重抽次數及獨立位元組合。Sample 接受最多 64 位元的非負內建整數數量，保留輸入順序並傳回可寫輸出的結束指標。空／單元素 shuffle 和零數量／空輸入 sample 不呼叫產生器。所選 SDK 的原始碼替換仍遭拒絕；`<random>` 引擎、自訂迭代器及記錄元素尚不在此支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+Core v2 現可直接降低原始指標或經認證的包裝迭代器純量範圍上的 `std::shuffle` 和 C++17 `std::sample`。產生器須為原始碼自有、標準配置、可平凡複製且解構平凡的記錄，直接宣告最多 64 位元的非 bool 無號 `result_type`、傳回相同型別的零參數呼叫運算子，以及各含一個常數傳回敘述且滿足 `min() < max()` 的靜態 constexpr `min()`/`max()`。產生器以參考繫結，保留狀態、libc++ 的精確拒絕重抽次數及獨立位元組合。Sample 接受最多 64 位元的非負內建整數數量，保留輸入順序並傳回可寫輸出的結束指標。空／單元素 shuffle 和零數量／空輸入 sample 不呼叫產生器。所選 SDK 的原始碼替換仍遭拒絕；其他 `<random>` 功能、自訂迭代器及記錄元素尚不在此支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
+
+Core v2 另支援經認證的 `std::linear_congruential_engine` 與 `std::mersenne_twister_engine` 實例，無號結果型別最多 64 位元，包含 `minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64`。預設及純量種子建構、複製、賦值、`seed`、`operator()`、`discard`、`min`/`max` 與相等比較保留固定 SDK 的狀態語義及目標配置；這些引擎可直接用於 `shuffle`/`sample`，包括包裝迭代器範圍。所選 SDK 的原始碼替換仍遭拒絕。種子序列、引擎適配器、分布、串流序列化及 `random_device` 仍待支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
 
 兩個演算法也接納經校驗的 `std::__wrap_iter<T*>` 範圍，包括已支援的 vector 和 string 迭代器。Sample 的輸入和輸出可分別使用原始指標或包裝迭代器，保留 const 輸入及經校驗的純量轉換，並傳回原輸出迭代器型別。所選 SDK 迭代器操作仍須通過認證。
 

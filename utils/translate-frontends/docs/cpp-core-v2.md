@@ -8229,9 +8229,42 @@ The selected algorithm, distribution, helper, trait, alias and redeclaration
 closure is authenticated; source SDK replacements and owned macro expansions do
 not inherit this lowering. The compiler's intrinsic common-type and leading-zero
 metadata are used only within that checked closure. Independent distribution
-calls, `<random>` engines, custom iterators and record elements remain
+calls, other `<random>` facilities, custom iterators and record elements remain
 outside this random-algorithm subset. Quoted includes, user shadow headers and
 forged declarations remain rejected.
+
+## Standard random engines from `<random>`
+
+Core v2 admits the pinned public `<random>` header and authenticated
+`std::linear_congruential_engine` and `std::mersenne_twister_engine` instances
+with supported unsigned result types through 64 bits. This includes
+`std::minstd_rand0`, `std::minstd_rand`, `std::default_random_engine`,
+`std::mt19937` and `std::mt19937_64`. The SDK must accept the concrete template
+parameters; MT state arrays also retain the existing 65,536-element storage
+limit. Their real scalar/array fields and index use Clang's target layout.
+
+Default and scalar-seed construction, trivial copying and assignment, `seed`
+(including its default argument), `operator()`, `discard`, static `min`/`max`,
+and equality are lowered without a libc++ runtime call. State and reseeding
+match LLVM 20.1.8. Modulus zero retains the result type's unsigned wrap, while
+large 64-bit modular products are computed without requiring a target
+`unsigned __int128` carrier. MT initialization, tempering, state-index wrap and
+logical state comparison retain the pinned implementation.
+
+These engines can be passed by reference or as full-expression temporaries to
+the admitted raw or wrapped `shuffle`/`sample` forms. Original operands are
+evaluated once, including a receiver used only to call static `min`/`max`.
+Selected constructors, methods, helper templates, traits, aliases and
+redeclarations are authenticated; source SDK replacements cannot acquire the
+lowering. The MT equality proof admits its compiler constant-evaluation and
+memory-comparison intrinsics only as dependencies of the selected SDK body.
+
+The new SDK resource `math.h` and `stdlib.h` supply declarations needed to parse
+the complete public header in core v2. They do not admit C runtime calls and
+forward to the platform SDK in the existing math profile. Seed sequences,
+other engine families and adaptors, distributions, stream serialization and
+`std::random_device` still require their own runtime support. Parsing those
+declarations does not authorize their execution.
 
 ## Standard template parsing across targets
 

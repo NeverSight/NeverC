@@ -11167,6 +11167,9 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
+  if (approvedRandomEngineDefaultArgument(S, SM, Default, Function, Index,
+                                         Context))
+    return true;
   const auto *Parameter = Default ? Default->getParam() : nullptr;
   const auto *Owner =
       Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
@@ -74536,6 +74539,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return CString;
   if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
     return Random->Operation;
+  if (auto Engine = approvedRandomEngineOperation(S, SM, Call, Context))
+    return Engine;
   if (auto Predicate =
           approvedUtilityAlgorithmPredicateCall(S, SM, Call, Context))
     return Predicate->Operation;

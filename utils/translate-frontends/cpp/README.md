@@ -801,8 +801,16 @@ built-in integral count of at most 64 bits and returns the final output pointer.
 The selected SDK declaration closure rejects source replacements. The exact
 generator and range boundary is documented in the
 [algorithm contract](../docs/cpp-core-v2.md#algorithm-header-from-algorithm);
-`<random>` engines, custom iterators and record elements remain outside
+other `<random>` facilities, custom iterators and record elements remain outside
 this subset.
+
+Authenticated `linear_congruential_engine` and `mersenne_twister_engine`
+instances are also admitted, including `minstd_rand0`, `minstd_rand`,
+`default_random_engine`, `mt19937` and `mt19937_64`. Their default/scalar-seed
+construction, copies, assignment, `seed`, generation, `discard`, `min`/`max`,
+equality and use with the admitted random algorithms retain the pinned SDK
+state and target layout. The [engine contract](../docs/cpp-core-v2.md#standard-random-engines-from-random)
+records the checked bounds and remaining random-library interfaces.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
@@ -923,13 +931,13 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-627 approved header files and separate SDK metadata. The original header bytes
+664 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.
-A typical `<cmath>` module consumes 201 embedded headers.
+A typical `<cmath>` module consumes 203 embedded headers.
 
 Before parsing, the frontend verifies the complete compiled file inventory and
 its hashes. It maps those bytes into a reserved in-memory filesystem and

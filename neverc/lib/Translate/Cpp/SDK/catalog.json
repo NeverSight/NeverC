@@ -1,7 +1,7 @@
 {
   "schema": "neverc.cpp.sdk.catalog",
   "version": 1,
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r16",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17",
   "clang_version": "20.1.8",
   "libcxx_version": 200100,
   "platform_sdk_version": "15.5",
@@ -1602,8 +1602,98 @@
     },
     {
       "root": "libcxx",
+      "path": "__random/bernoulli_distribution.h",
+      "sha256": "30ced4560e46172e7ef659529f06511312bda3628f17f00ba508a5a8020d030a"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/binomial_distribution.h",
+      "sha256": "423eefeb9cc66b52e217485ad360d51212e5b534d4d9e45e1ef5a32e25d5eb05"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/cauchy_distribution.h",
+      "sha256": "aad1fcdac7a0919e8a116779b85c2371b10cb97f866a0903d9e6eaa711061590"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/chi_squared_distribution.h",
+      "sha256": "c3a82f63ae37b130c363890285e80cfc427eab01fe01d790351e2c55c83efb64"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/clamp_to_integral.h",
+      "sha256": "4bea963954c0176600a329221588ff353b393321a8e209f44b79e0af45e0858f"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/default_random_engine.h",
+      "sha256": "edec62fe7965574d57ab4be0b78715083fdb6dcf6fa9b780534e175aca9de5ef"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/discard_block_engine.h",
+      "sha256": "834e3bf3be3b700d81cca3881acb39c1e16fd206ddf154f2ff909b5eb61f3633"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/discrete_distribution.h",
+      "sha256": "c9ebfa0ca530dc9918c2509ed9a5b224236bd77e6602a705c07027e0849df7c2"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/exponential_distribution.h",
+      "sha256": "e5c1bdf049a9098f1c31835a45458aebb2ca18c03fdc7dcd630b042e2476d998"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/extreme_value_distribution.h",
+      "sha256": "e83991f4cb4f3e3a94ecf1193901f32b51e04651877e8a309f1f32f3dbbb99b2"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/fisher_f_distribution.h",
+      "sha256": "45e193349bfa620369319009817206ce0adcc81a803a9ad2b0fd01bc6df954ad"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/gamma_distribution.h",
+      "sha256": "286f2f44022ea41da5b631eb28b299cc61e801a62dd747a793820593227580c8"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/generate_canonical.h",
+      "sha256": "27ba63d20ed6b2a803b679b574121ec185dc80705224aafe103dd4109c2319ad"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/geometric_distribution.h",
+      "sha256": "701ed0f23d2cc51a249fb57dc6a61f9e91d4426499f914a12347e2e61cd10e7b"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/independent_bits_engine.h",
+      "sha256": "6b28c3892bd1d82e4b4f13cf76c8a734aacacf2fa82f23eba24cbba4f8f34ebf"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/is_seed_sequence.h",
+      "sha256": "f26a98a4b54947b91f84bdcd0b8299d1c5b8f91cdebf9a0b5cedaf9657b22c38"
+    },
+    {
+      "root": "libcxx",
       "path": "__random/is_valid.h",
       "sha256": "0dbf38b3f8c04360407d16f3c032f30ed6488d6e102ffc2fce3969a2c39666c0"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/knuth_b.h",
+      "sha256": "cb41ac032361dacda57f28009f0452977214076951b87d472ef61da58e329c97"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/linear_congruential_engine.h",
+      "sha256": "c703204c116f80c9aa524bf76432a22aebd3dbc6470dec239b35a6cc36babce1"
     },
     {
       "root": "libcxx",
@@ -1612,8 +1702,88 @@
     },
     {
       "root": "libcxx",
+      "path": "__random/lognormal_distribution.h",
+      "sha256": "c9ad877572caa8180ee83fb5d3ca8f2a4d7caf6a5d4c6a6ffa8b126e01fa46b3"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/mersenne_twister_engine.h",
+      "sha256": "574d8a4cb85cee7d951720a002cddfbc014273a5a746bfd62937035a2d66b799"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/negative_binomial_distribution.h",
+      "sha256": "0466781e1761899905d0428c207a9cfb08da48a6695dc979e2ec9aedf166b575"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/normal_distribution.h",
+      "sha256": "dbe1f744b307a29e3cd6d2aac146b846295e2a705849d484637ae54322b377e9"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/piecewise_constant_distribution.h",
+      "sha256": "437486c52dfefa374daff172b36f463457079d66fc81c99d68b232fec10a1372"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/piecewise_linear_distribution.h",
+      "sha256": "4f16a2ff85110f61a206b2c3f105f854f858f89f542b0655ab3ba8e76085da66"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/poisson_distribution.h",
+      "sha256": "e998f23556074678b1ac23775378ed05987595c518c88c4d413d6bef56b17b3a"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/random_device.h",
+      "sha256": "b00c7b4e45a000be7daf033576cc82861bf932887a164ac00ef940ceb37b3301"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/ranlux.h",
+      "sha256": "043dbe85d5c0ec7c0712652b09dc96f85539b7386a4fad3f0fa16968a94beaa0"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/seed_seq.h",
+      "sha256": "933b68c48dfe6b4808ae2392cbfe63f2df0b0f348e80072bb269f9bc4f4b5424"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/shuffle_order_engine.h",
+      "sha256": "8d8cd03e078f8176a2beee5530edf28c05260e15770635765dc12c46ed875a04"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/student_t_distribution.h",
+      "sha256": "006b17c5f007aba3df27ab18e66c782f888da04af96dfa194ee6b11eb87b1b35"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/subtract_with_carry_engine.h",
+      "sha256": "7985fd85870fe2947ee60174ab509d12add1813e3ae87f1ab9904db0b34e562d"
+    },
+    {
+      "root": "libcxx",
       "path": "__random/uniform_int_distribution.h",
       "sha256": "90d1c832a1a402cb7e4b7e7d10d5e2ae4428a3bc1baa3bde08c19c20d452c84b"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/uniform_random_bit_generator.h",
+      "sha256": "a9d26bddca997566c548f4537534d99cc800c026cab44d646e3f3f155e9b2ac6"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/uniform_real_distribution.h",
+      "sha256": "c86f355188747fbde1e6612b309fb47ebf58c5a76acd1d5ecda1f41fb4733d6f"
+    },
+    {
+      "root": "libcxx",
+      "path": "__random/weibull_distribution.h",
+      "sha256": "52632b8f6f337cc3597f333e38973c98264a5aefdd9ab8a090f4a2d9e9464863"
     },
     {
       "root": "libcxx",
@@ -2582,6 +2752,11 @@
     },
     {
       "root": "libcxx",
+      "path": "random",
+      "sha256": "7e743da346ddefd1615bc1f1c30ad31e116f97e18646336e356045040e429bea"
+    },
+    {
+      "root": "libcxx",
       "path": "ratio",
       "sha256": "ac7a6f9408051c060fd22c795adf3822098fb597284978e22bac91d4e20f3fc4"
     },
@@ -3127,6 +3302,11 @@
     },
     {
       "root": "resource",
+      "path": "include/math.h",
+      "sha256": "ef6368b749c6775ae2ef91ee1fc19bead326ac1dca7541fbb224e347cdcd0aa7"
+    },
+    {
+      "root": "resource",
       "path": "include/stddef.h",
       "sha256": "b3e62a046ddf28d09eedebe6eb9461cb7060e47cad2c69964b222c4eea10347e"
     },
@@ -3139,6 +3319,11 @@
       "root": "resource",
       "path": "include/stdio.h",
       "sha256": "61671cdf4407de89e23a90a8b80cc7acddcdd1bd28d5be6a4242063a6fc9d6da"
+    },
+    {
+      "root": "resource",
+      "path": "include/stdlib.h",
+      "sha256": "53b7278fabaf114e53d17726586520748beb1af6b768e1f3ca6ab5b4c2a71c98"
     },
     {
       "root": "resource",

@@ -358401,3 +358401,72 @@ int main(){
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2StandardRandomEngineSequencesAndState) {
+  for (const std::string &Name : {"lcg", "mt", "wide-modulus", "boundaries"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-engines-" + Name + ".cpp");
+    const auto Output = tmpFile("random-engines-" + Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-engines-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StandardRandomEnginesRetainSelectedSDK) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"lcg-call", R"cpp(#include <random>
+namespace std {template<> unsigned minstd_rand::operator()(){return 7;}}
+int main(){std::minstd_rand e; return e()==7?0:1;}
+)cpp"},
+      {"lcg-seed", R"cpp(#include <random>
+namespace std {template<> void minstd_rand::seed(result_type x){__x_=x+2;}}
+int main(){std::minstd_rand e(17);return e()==0;}
+)cpp"},
+      {"lcg-next-helper", R"cpp(#include <random>
+namespace std {template<> struct __lce_ta<48271,0,2147483647,unsigned(-1),_LCE_Schrage>{static unsigned next(unsigned){return 7;}};}
+int main(){std::minstd_rand e;return e()==7?0:1;}
+)cpp"},
+      {"mt-minimum", R"cpp(#include <random>
+namespace std {template<> constexpr unsigned mt19937::min(){return 3;}}
+int main(){return std::mt19937::min()==3?0:1;}
+)cpp"},
+      {"mt-seed", R"cpp(#include <random>
+namespace std {template<> void mt19937::seed(result_type){__i_=0;for(auto &x:__x_)x=5;}}
+int main(){std::mt19937 e;return e()==0;}
+)cpp"},
+      {"mt-shift-helper", R"cpp(#include <random>
+namespace std {template<> template<> unsigned mt19937::__rshift<1,0>(unsigned x){return x;}}
+int main(){std::mt19937 e;return e()==0;}
+)cpp"},
+      {"mt-equality", R"cpp(#include <random>
+namespace std {template<> bool operator==(const mt19937&,const mt19937&){return false;}}
+int main(){std::mt19937 a,b;return a==b;}
+)cpp"},
+      {"mt-array-equality", R"cpp(#include <random>
+namespace std {template<> bool equal<const mt19937::result_type*,const mt19937::result_type*>(const mt19937::result_type*,const mt19937::result_type*,const mt19937::result_type*){return false;}}
+int main(){std::mt19937 a,b;return a==b;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("random-engine-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("random-engine-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
