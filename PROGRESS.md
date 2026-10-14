@@ -1,5 +1,70 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-14
+
+- Cutoff: **2026-10-14 00:59 UTC / 08:59 Asia/Shanghai**. Reviewed source: dev [4eb09cd0](https://github.com/NeverSight/NeverC/commit/4eb09cd078ba99795bb44482abba16d5659aca6a).
+- Incoming range: [dfdc797e…4eb09cd0](https://github.com/NeverSight/NeverC/compare/dfdc797eece61dcc9685c07c87ff131a7c441a50...4eb09cd078ba99795bb44482abba16d5659aca6a), **31 commits / 73 paths**. Excluding the October 13 PROGRESS-only commit [4a9c6d09](https://github.com/NeverSight/NeverC/commit/4a9c6d098809f582c461b4bae60164e322270a62) leaves **30 author commits / 72 product/documentation paths**. Inventory is not an audit-completion percentage.
+- **No newly confirmed bug or new source patch in this bounded review.** The previously diagnosed MSVC fixture-literal defect has an independent author fix, described below. The old uncommitted candidate is superseded and was not retried.
+- Strictly static: source, patch, caller/interface, fixture-source and existing-CI reads only. **No project execution, build, tests, benchmarks, repository scripts, dynamic analysis or manual CI dispatch/rerun.** Author validation statements and existing GitHub jobs are not tests performed by this review.
+- Read root AGENTS.md, docs/local-dev.md and .github/ci-policy.md. Relevant compiler/test ancestor inventories contain no nested AGENTS/contribution guide. Repository instructions to run checks yield to the explicit static-only constraint. dev remains the default branch, writable and unprotected; the returned ruleset is disabled.
+
+## Activity and review queue
+
+**9 ordinary open issues / 0 open PRs**, unchanged since the October 13 01:51 UTC snapshot. The complete all-state issue collection returned 18 entries including historical PRs, then an empty second page at 100/page. Open PR pages one and two are empty. No issue/PR was newly opened, closed or merged in the interval; issue-comment and PR review-comment collections since the prior cutoff are empty. There is no current PR review queue.
+
+Roadmap issues #7–#12 and #16–#18 remain open. Their status does not certify the corresponding product milestones; no owners, delivery dates or completion percentages are assigned here.
+
+## Previous confirmed defect: source fix now present
+
+The author committed [9c6826bc](https://github.com/NeverSight/NeverC/commit/9c6826bcd293c63efc9bc6d4ebd4ffc67146f359), **tests: keep translation fixture literals within MSVC limits**, after yesterday's snapshot. It addresses the nine oversized raw literals in tests/neverc/TranslateTests.cpp that caused MSVC C2026.
+
+Static inspection of the complete one-file patch confirms **64 added / 32 removed lines, all 32 replacement sites exclusively inserting adjacent raw-literal boundaries**. Each removed payload line reappears unchanged immediately after the new raw-literal opener; the preceding newline remains inside the earlier token. Thus this patch preserves the embedded fixture payload and surrounding assertions. The author's claim that tokens are at most 8,000 bytes and that local fixtures ran is recorded as author validation, not a fresh whole-file measurement or execution by this review.
+
+Independent existing-CI evidence has advanced: on current source **4eb09cd0**, [Windows x64 job 115498786983](https://github.com/NeverSight/NeverC/actions/runs/38455896665/job/115498786983) successfully completed both **Build neverc** and the formerly blocked **Verify compiled C++ SDK catalog bytes** stage. It is still running **Run neverc tests**. This supports removal of the earlier fixture-compilation blocker on this descendant, not an overall Windows or test-suite pass. No obsolete candidate write was retried or represented as our published fix.
+
+## Bounded static coverage
+
+All 31 incoming commit subjects and all 73 changed-path records were inventoried. Product work includes stored transparent wrapper operations/predicates, exact result-query dependencies, fixture corrections, and hosted DynCode with explicit C++ core targets. Many paths are translated documentation; author-reported native command counts are not independently reproduced.
+
+- **Latest search predicate admission:** read every MathSDK.cpp changed hunk in [4eb09cd0](https://github.com/NeverSight/NeverC/commit/4eb09cd078ba99795bb44482abba16d5659aca6a): eight construction gates for find_first_of, search, find_end and search_n, including independently qualified inputs. The new stored-source branch requires a direct DeclRefExpr to VarDecl and an authenticated CopyOrMove construction, rather than accepting arbitrary member/comma/returned predicate expressions.
+- **Shared constructor and record proof:** read MathSDK.cpp [933–1025](https://github.com/NeverSight/NeverC/blob/4eb09cd078ba99795bb44482abba16d5659aca6a/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L933-L1025) and [1314–1375](https://github.com/NeverSight/NeverC/blob/4eb09cd078ba99795bb44482abba16d5659aca6a/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L1314-L1375). Traced empty/standard-layout/trivially-copyable record shape, exact SDK origins, transparent void specialization, complete nondependent construction, implicit trivial nonthrowing constructor, same canonical source/destination record and reference-parameter qualification. The change does not admit arbitrary stateful user predicates.
+- **One complete algorithm proof and dispatch:** read find_first_of comparison authentication, including its signature, SDK helper delegation, nested-loop bounds/increments, dereference operands and original first/end iterator returns, plus dispatch at [80908–80960](https://github.com/NeverSight/NeverC/blob/4eb09cd078ba99795bb44482abba16d5659aca6a/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L80908-L80960). Other search algorithms received changed-hunk inspection, not full loop/lowering proofs.
+- **Equality/mismatch result queries:** read the complete Frontend.cpp patch in [e32e0439](https://github.com/NeverSight/NeverC/commit/e32e04397e0d1157625b401f3d47acaf60e915db), algorithmCallableSource at [15886–15982](https://github.com/NeverSight/NeverC/blob/4eb09cd078ba99795bb44482abba16d5659aca6a/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L15886-L15982), exact-call authentication at 16479–16490 and admission consumer at 23942–23960. The four-parameter signature distinguishes a pointer end argument from a predicate record; exact argument/parameter counts and full existing operation admission remain prerequisites. Source authentication is keyed to the actual call/reference, not blanket permission for all uses of a specialization.
+- **Fixture-source inspection:** sampled the latest stored-search matrix and full rejection-table tail: mutable/const variables, independent input qualification, empty/single/nonempty ranges, first/last results, plus retained comma/member/returned/typed/source-operator rejection cases. Also inspected equality/mismatch result-query assertions for bool and exact iterator-pair types, const qualification, NaN/signed zero and cleanup counts. These are assertions in source, not observed test passes.
+- **Prior portability fix:** complete patch-level payload-preservation check described above.
+
+**Not covered end-to-end:** the remaining stored numeric/filter/adjacency recognizers, all search loop variants and lowerers, the new hosted DynCode pipeline, full source-dependency propagation, most fixture changes (11,797 additions / 2,032 deletions), translated prose, runtime/std/LLVM and installed packaging. MathSDK.cpp changed 948 additions / 163 deletions and Frontend.cpp 89 / 3 in the aggregate. This is not a whole-repository scan. Large file-content reads returned empty content; complete compiler blob reads recovered the selected source regions, without treating an empty read as an empty file.
+
+## Existing CI at the exact source
+
+At **00:59 UTC**, source **4eb09cd0** has **11 workflows: 5 failure / 3 in progress / 3 success**. A 00:58 UTC check-run sample contains **23 checks: 5 failure / 3 in progress / 15 success**, all within one 100-entry page. There is no PR head to compare.
+
+- Running: [Linux x64](https://github.com/NeverSight/NeverC/actions/runs/38455896761), [Windows x64](https://github.com/NeverSight/NeverC/actions/runs/38455896665), [Windows ARM64 Clang-LTO](https://github.com/NeverSight/NeverC/actions/runs/38455896642).
+- Failed: [Windows x64 Clang-LTO](https://github.com/NeverSight/NeverC/actions/runs/38455896640) and [Linux ARM64](https://github.com/NeverSight/NeverC/actions/runs/38455896636) at **Install neverc**; [Windows ARM64](https://github.com/NeverSight/NeverC/actions/runs/38455896676) and [macOS ARM64](https://github.com/NeverSight/NeverC/actions/runs/38455896686) at **Build network product examples**. These are observed failing stages, not independently proven root causes. The macOS job log download failed with a transport error.
+- [Python plugin bindings](https://github.com/NeverSight/NeverC/actions/runs/38455896723) has now finished **failure**, advancing from the running state sampled earlier this morning; its Linux-x64 matrix check failed while other returned platform checks succeeded.
+- Successful workflows: documentation lint, C++ frontend-tools archive audit and VBS enclave differential CI. These do not certify the failed or unfinished platform gates.
+
+The previous source **dfdc797e** has now finished with **5 failed / 3 cancelled / 3 successful workflows**. Cancelled jobs are not passing evidence. Any automatically created checks for this documentation update belong to its later report SHA, not the reviewed source; none are manually triggered.
+
+## Suggested priorities
+
+1. **Diagnose current install and network-example failures separately.** Dependencies: complete logs/artifacts for the exact failing jobs above. Acceptance: identify a concrete cause and bounded fix or infrastructure limitation for each stage, then use its actual descendant CI result; do not reuse yesterday's C2026 diagnosis for these failures.
+2. **Finish bounded stored-predicate and result-query review.** Dependencies: exact SDK bodies, original-call source roots, lowerers and positive/negative fixture sources. Acceptance: trace the remaining search/count/restart and cleanup/aliasing paths end to end, including author-noted negative search_n count behavior, before expanding supported-domain claims.
+3. **Qualify hosted DynCode and reconcile roadmap #16 with evidence.** Dependencies: explicit target/host constraints, relocation/section/final-verifier contracts and existing platform/package results. Acceptance: distinguish implemented source, static review, author local claims and independently observed native/install evidence; no whole-feature completion claim from commit messages alone.
+
+## Daily log — 2026-10-14
+
+- Kept issue/PR counts at 9/0 with no interval state changes or active PR review queue.
+- Inventoried 31 commits / 73 paths and reviewed the bounded stored-search construction, exact-call result-query and fixture-source paths above.
+- Confirmed the author's prior MSVC fixture fix is present and the previously blocked Windows-x64 stage now succeeds on 4eb09cd0; the stale uncommitted candidate was not retried.
+- No newly proven bug or source/test patch from this review. Recorded separate current install/network-example/plugin failures and incomplete platform tests.
+- Prepended this English snapshot and daily log while retaining prior snapshots and human edits verbatim below. No build/test/script execution, manual CI, dependency/security change, issue mutation, merge or deployment.
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-13
 
 - Cutoff: **2026-10-13 01:51 UTC / 09:51 Asia/Shanghai**. Reviewed dev remains [dfdc797e](https://github.com/NeverSight/NeverC/commit/dfdc797eece61dcc9685c07c87ff131a7c441a50).
@@ -1049,6 +1114,8 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
 
 </details>
 
