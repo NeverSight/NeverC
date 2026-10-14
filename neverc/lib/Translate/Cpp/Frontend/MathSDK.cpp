@@ -19828,6 +19828,253 @@ static bool utilityAlgorithmIntegralComparisonReference(
   return utilityAlgorithmReference(E, Value, Context);
 }
 
+static std::optional<QualType>
+utilitySearchNIntegralCount(QualType Count, const ASTContext &Context) {
+  if (Count.isNull() || Count.hasQualifiers())
+    return std::nullopt;
+  if (const auto *Enumeration = Count->getAs<EnumType>()) {
+    if (Enumeration->getDecl()->isScoped())
+      return std::nullopt;
+    Count = Enumeration->getDecl()->getIntegerType();
+  }
+  if (Count.isNull() || !Count->isBuiltinType() || !Count->isIntegerType() ||
+      Context.getTypeSize(Count) > 64)
+    return std::nullopt;
+  return Context.isPromotableIntegerType(Count)
+             ? Context.getPromotedIntegerType(Count)
+             : Count;
+}
+
+// The enum overload obtains its result from SDK type traits. Authenticate the
+// selected trait specializations as well as the concrete conversion body:
+// source specializations can otherwise preserve the result type while changing
+// the declarations used to obtain it.
+static bool utilitySearchNEnumCountTraits(const State &S,
+                                         const SourceManager &SM,
+                                         const FunctionDecl *Function,
+                                         QualType Count, QualType Integral,
+                                         const ASTContext &Context) {
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  auto Named = [](QualType Type) {
+    for (unsigned I = 0; I != 8 && !Type.isNull(); ++I) {
+      if (const auto *E = dyn_cast<ElaboratedType>(Type.getTypePtr()))
+        Type = E->getNamedType();
+      else
+        return Type;
+    }
+    return QualType();
+  };
+  auto Record = [&](const ClassTemplateSpecializationDecl *R,
+                    llvm::StringRef Name, llvm::StringRef Path, bool Truth,
+                    bool Partial) {
+    const auto *Primary = R ? R->getSpecializedTemplate() : nullptr;
+    if (!R || !R->isCompleteDefinition() || !R->getIdentifier() ||
+        R->getName() != Name || !Primary ||
+        R->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        R->getTemplateArgs().size() != (Truth ? 2u : 1u) ||
+        R->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !Same(R->getTemplateArgs().get(0).getAsType(), Count) ||
+        (Truth &&
+         (R->getTemplateArgs().get(1).getKind() != TemplateArgument::Integral ||
+          R->getTemplateArgs().get(1).getAsIntegral() != 1)))
+      return false;
+    for (const auto *D : R->redecls())
+      if (!Origin(D, Path))
+        return false;
+    for (const auto *D : Primary->redecls())
+      if (!Origin(D, Path) || !Origin(D->getTemplatedDecl(), Path))
+        return false;
+    const auto Selected = R->getSpecializedTemplateOrPartial();
+    const auto *Part =
+        Selected.dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+    if (Partial) {
+      if (!Part)
+        return false;
+      for (const auto *D : Part->redecls())
+        if (!Origin(D, Path))
+          return false;
+    } else if (Part || Selected.dyn_cast<ClassTemplateDecl *>() != Primary) {
+      return false;
+    }
+    return true;
+  };
+  auto Alias = [&](const CXXRecordDecl *R,
+                   llvm::StringRef Name) -> const TypedefDecl * {
+    const TypedefDecl *Found = nullptr;
+    if (!R)
+      return nullptr;
+    for (const auto *D : R->decls()) {
+      const auto *T = dyn_cast<TypedefDecl>(D);
+      if (!T || T->getName() != Name)
+        continue;
+      if (Found)
+        return nullptr;
+      Found = T;
+    }
+    return Found;
+  };
+  const auto ReturnType = Named(Function->getReturnType());
+  const auto *ReturnAlias = ReturnType.isNull()
+                                ? nullptr
+                                : dyn_cast<TypedefType>(ReturnType.getTypePtr());
+  const auto *Promoted = ReturnAlias ? ReturnAlias->getDecl() : nullptr;
+  const auto *Traits =
+      Promoted ? dyn_cast<ClassTemplateSpecializationDecl>(
+                     Promoted->getDeclContext())
+               : nullptr;
+  if (!Promoted || Promoted->getName() != "__promoted_type" ||
+      !Origin(Promoted, "__utility/convert_to_integral.h") ||
+      !Same(Promoted->getUnderlyingType(), Integral) ||
+      !Record(Traits, "__sfinae_underlying_type",
+              "__utility/convert_to_integral.h", true, false) ||
+      !Traits->field_empty() || Traits->getNumBases())
+    return false;
+  const auto *Underlying = Alias(Traits, "type");
+  const auto *Qualified =
+      Underlying ? dyn_cast<ElaboratedType>(
+                       Underlying->getUnderlyingType().getTypePtr())
+                 : nullptr;
+  const auto *Qualifier = Qualified ? Qualified->getQualifier() : nullptr;
+  const auto *PublicUnderlying =
+      Qualifier && Qualifier->getAsType()
+          ? dyn_cast<ClassTemplateSpecializationDecl>(
+                Qualifier->getAsType()->getAsCXXRecordDecl())
+          : nullptr;
+  if (!Underlying || !Origin(Underlying, "__utility/convert_to_integral.h") ||
+      !Record(PublicUnderlying, "underlying_type",
+              "__type_traits/underlying_type.h", false, false) ||
+      !PublicUnderlying->field_empty() || PublicUnderlying->getNumBases() != 1)
+    return false;
+  const auto *Implementation = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      PublicUnderlying->bases_begin()->getType()->getAsCXXRecordDecl());
+  const auto *Builtin = Alias(Implementation, "type");
+  const auto BuiltinType = Builtin ? Named(Builtin->getUnderlyingType())
+                                  : QualType();
+  const auto *Transform =
+      BuiltinType.isNull()
+          ? nullptr
+          : dyn_cast<UnaryTransformType>(BuiltinType.getTypePtr());
+  const auto *Enumeration = Count->getAs<EnumType>();
+  if (!Record(Implementation, "__underlying_type_impl",
+              "__type_traits/underlying_type.h", true, true) ||
+      !Builtin || !Origin(Builtin, "__type_traits/underlying_type.h") ||
+      !Transform ||
+      Transform->getUTTKind() != UnaryTransformType::EnumUnderlyingType ||
+      !Same(Transform->getBaseType(), Count) || !Enumeration ||
+      !Same(Transform->getUnderlyingType(),
+            Enumeration->getDecl()->getIntegerType()))
+    return false;
+
+  const auto *Parameters = Traits->getSpecializedTemplate()->getTemplateParameters();
+  const auto *Default = Parameters && Parameters->size() == 2
+                            ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1))
+                            : nullptr;
+  const auto Argument = Default && Default->hasDefaultArgument()
+                            ? Default->getDefaultArgument().getArgument()
+                            : TemplateArgument();
+  const auto *Reference =
+      Argument.getKind() == TemplateArgument::Expression
+          ? dyn_cast<DependentScopeDeclRefExpr>(Argument.getAsExpr())
+          : nullptr;
+  const auto *Q = Reference ? Reference->getQualifier() : nullptr;
+  const auto QT = Q && Q->getAsType() ? Named(QualType(Q->getAsType(), 0))
+                                     : QualType();
+  const auto *Specialization =
+      QT.isNull() ? nullptr
+                  : dyn_cast<TemplateSpecializationType>(QT.getTypePtr());
+  const auto *IsEnum =
+      Specialization ? dyn_cast_or_null<ClassTemplateDecl>(
+                           Specialization->getTemplateName().getAsTemplateDecl())
+                     : nullptr;
+  if (!Reference || Reference->getDeclName().getAsString() != "value" ||
+      !IsEnum || IsEnum->getName() != "is_enum" ||
+      !Origin(IsEnum, "__type_traits/is_enum.h"))
+    return false;
+  for (const auto *R : IsEnum->specializations()) {
+    if (R->getTemplateArgs().size() == 1 &&
+        R->getTemplateArgs().get(0).getKind() == TemplateArgument::Type &&
+        Same(R->getTemplateArgs().get(0).getAsType(), Count))
+      return Record(R, "is_enum", "__type_traits/is_enum.h", false, false);
+  }
+  return false;
+}
+
+static bool utilitySearchNConvertCount(const State &S, const SourceManager &SM,
+                                       const CallExpr *Call,
+                                       const ValueDecl *Value, QualType Expected,
+                                       QualType Integral,
+                                       const ASTContext &Context) {
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__utility/convert_to_integral.h");
+  };
+  const bool Enum = !Expected.isNull() && Expected->isEnumeralType();
+  const auto Promoted = utilitySearchNIntegralCount(Expected, Context);
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Argument =
+      Call && Call->getNumArgs() == 1 ? Call->getArg(0) : nullptr;
+  if (!Enum && !Same(Expected, Integral)) {
+    const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Argument);
+    if (!Cast || Cast->getCastKind() != CK_IntegralCast ||
+        !Same(Cast->getType(), Integral) ||
+        !Same(Cast->getSubExpr()->getType(), Expected))
+      return false;
+    Argument = Cast->getSubExpr();
+  }
+  const auto *D = F ? F->getDefinition() : nullptr;
+  const auto *B = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
+  const auto *R = B && B->size() == 1
+                      ? dyn_cast<ReturnStmt>(*B->body_begin())
+                      : nullptr;
+  if (!Promoted || !Same(*Promoted, Integral) || !Value ||
+      !Same(Value->getType(), Expected) || !Call || Call->getNumArgs() != 1 ||
+      !Call->isPRValue() || !Same(Call->getType(), Integral) || !F ||
+      !F->getIdentifier() || F->getName() != "__convert_to_integral" ||
+      F->isVariadic() || F->isInvalidDecl() || F->isDeleted() ||
+      !F->isInlined() || !F->isConstexpr() || F->getNumParams() != 1 ||
+      !Same(F->getReturnType(), Integral) ||
+      !Same(F->getParamDecl(0)->getType(), Enum ? Expected : Integral) ||
+      !Origin(D) || !R || !utilityAlgorithmSDKReference(S, SM, Call, F) ||
+      !utilityAlgorithmReference(Argument, Value, Context))
+    return false;
+  for (const auto *Declaration : F->redecls())
+    if (!Origin(Declaration))
+      return false;
+  const Expr *Returned = R->getRetValue();
+  if (Enum) {
+    const auto *Primary = F->getPrimaryTemplate();
+    const auto *Args = F->getTemplateSpecializationArgs();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Returned);
+    if (!Primary || !Origin(Primary) || !Origin(Primary->getTemplatedDecl()) ||
+        F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Args || Args->size() != 1 ||
+        Args->get(0).getKind() != TemplateArgument::Type ||
+        !Same(Args->get(0).getAsType(), Expected) || !Cast ||
+        Cast->getCastKind() != CK_IntegralCast ||
+        !Same(Cast->getType(), Integral) ||
+        !Same(Cast->getSubExpr()->getType(), Expected) ||
+        !utilitySearchNEnumCountTraits(S, SM, F, Expected, Integral, Context))
+      return false;
+    for (const auto *Declaration : Primary->redecls())
+      if (!Origin(Declaration) || !Origin(Declaration->getTemplatedDecl()))
+        return false;
+    Returned = Cast->getSubExpr();
+  } else if (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate) {
+    return false;
+  }
+  return utilityAlgorithmReference(Returned, D->getParamDecl(0), Context);
+}
+
 static bool
 utilityAlgorithmCallbackArgumentConversion(const ASTContext &Context,
                                            QualType From, QualType To) {
@@ -30183,9 +30430,8 @@ static bool utilityWrapperSearchN(const State &S, const SourceManager &SM,
                                   QualType CountType,
                                   const ASTContext &Context) {
   constexpr unsigned Arity = 4;
-  if (!First->isPointerType() || !CountType->isBuiltinType() ||
-      !CountType->isIntegerType() || CountType.hasQualifiers() ||
-      Context.getTypeSize(CountType) > 64)
+  const auto PromotedCount = utilitySearchNIntegralCount(CountType, Context);
+  if (!First->isPointerType() || !PromotedCount)
     return false;
   const auto Element = First->getPointeeType().getUnqualifiedType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -30238,9 +30484,7 @@ static bool utilityWrapperSearchN(const State &S, const SourceManager &SM,
   const auto *OuterCount = Outer && Outer->getNumArgs() == Arity + 1
                                ? dyn_cast<CallExpr>(Outer->getArg(2))
                                : nullptr;
-  const auto Integral = Context.isPromotableIntegerType(CountType)
-                            ? Context.getPromotedIntegerType(CountType)
-                            : CountType;
+  const auto Integral = *PromotedCount;
   const auto *Construction =
       Outer && Outer->getNumArgs() == Arity + 1
           ? dyn_cast_or_null<CXXConstructExpr>(
@@ -30333,38 +30577,8 @@ static bool utilityWrapperSearchN(const State &S, const SourceManager &SM,
   };
   auto ConvertCount = [&](const CallExpr *Call, const ValueDecl *Value,
                           QualType Expected) {
-    const auto *F = Call ? Call->getDirectCallee() : nullptr;
-    const auto *Argument =
-        Call && Call->getNumArgs() == 1 ? Call->getArg(0) : nullptr;
-    if (!Same(Expected, Integral)) {
-      const auto *C = dyn_cast_or_null<ImplicitCastExpr>(Argument);
-      if (!C || C->getCastKind() != CK_IntegralCast ||
-          !Same(C->getType(), Integral) ||
-          !Same(C->getSubExpr()->getType(), Expected))
-        return false;
-      Argument = C->getSubExpr();
-    }
-    const auto *D = F ? F->getDefinition() : nullptr;
-    const auto *B = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
-    const auto *R =
-        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
-    if (!Call || Call->getNumArgs() != 1 || !Call->isPRValue() ||
-        !Same(Call->getType(), Integral) || !F || !F->getIdentifier() ||
-        F->getName() != "__convert_to_integral" ||
-        F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        F->isVariadic() || F->isInvalidDecl() || F->isDeleted() ||
-        !F->isInlined() || !F->isConstexpr() || F->getNumParams() != 1 ||
-        !Same(F->getReturnType(), Integral) ||
-        !Same(F->getParamDecl(0)->getType(), Integral) ||
-        !Origin(D, "__utility/convert_to_integral.h") || !R ||
-        !Reference(R->getRetValue(), D->getParamDecl(0)) ||
-        !utilityAlgorithmSDKReference(S, SM, Call, F) ||
-        !Reference(Argument, Value) || !Same(Value->getType(), Expected))
-      return false;
-    for (const auto *Declaration : F->redecls())
-      if (!Origin(Declaration, "__utility/convert_to_integral.h"))
-        return false;
-    return true;
+    return utilitySearchNConvertCount(S, SM, Call, Value, Expected, Integral,
+                                      Context);
   };
   if (!ConvertCount(OuterCount, Definition->getParamDecl(2), CountType))
     return false;
@@ -54975,9 +55189,8 @@ static bool utilityWrapperSearchNComparison(const State &S,
                                             const ASTContext &Context,
                                             const CallExpr *Selected) {
   constexpr unsigned Arity = 4;
-  if (!First->isPointerType() || !CountType->isBuiltinType() ||
-      !CountType->isIntegerType() || CountType.hasQualifiers() ||
-      Context.getTypeSize(CountType) > 64)
+  const auto PromotedCount = utilitySearchNIntegralCount(CountType, Context);
+  if (!First->isPointerType() || !PromotedCount)
     return false;
   const auto Element = First->getPointeeType().getUnqualifiedType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -55100,9 +55313,7 @@ static bool utilityWrapperSearchNComparison(const State &S,
     return false;
   const auto *Record = Construct(4, Name);
   const auto Predicate = Record ? Context.getRecordType(Record) : QualType();
-  const auto Integral = Context.isPromotableIntegerType(CountType)
-                            ? Context.getPromotedIntegerType(CountType)
-                            : CountType;
+  const auto Integral = *PromotedCount;
   const QualType PublicArgs[] = {First, CountType, Element, Predicate};
   const QualType PublicParameters[] = {First, First, CountType, ValueRef,
                                        Predicate};
@@ -55138,38 +55349,8 @@ static bool utilityWrapperSearchNComparison(const State &S,
   };
   auto ConvertCount = [&](const CallExpr *Call, const ValueDecl *Value,
                           QualType Expected) {
-    const auto *F = Call ? Call->getDirectCallee() : nullptr;
-    const auto *Argument =
-        Call && Call->getNumArgs() == 1 ? Call->getArg(0) : nullptr;
-    if (!Same(Expected, Integral)) {
-      const auto *C = dyn_cast_or_null<ImplicitCastExpr>(Argument);
-      if (!C || C->getCastKind() != CK_IntegralCast ||
-          !Same(C->getType(), Integral) ||
-          !Same(C->getSubExpr()->getType(), Expected))
-        return false;
-      Argument = C->getSubExpr();
-    }
-    const auto *D = F ? F->getDefinition() : nullptr;
-    const auto *B = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
-    const auto *R =
-        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
-    if (!Call || Call->getNumArgs() != 1 || !Call->isPRValue() ||
-        !Same(Call->getType(), Integral) || !F || !F->getIdentifier() ||
-        F->getName() != "__convert_to_integral" ||
-        F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        F->isVariadic() || F->isInvalidDecl() || F->isDeleted() ||
-        !F->isInlined() || !F->isConstexpr() || F->getNumParams() != 1 ||
-        !Same(F->getReturnType(), Integral) ||
-        !Same(F->getParamDecl(0)->getType(), Integral) ||
-        !Origin(D, "__utility/convert_to_integral.h") || !R ||
-        !Reference(R->getRetValue(), D->getParamDecl(0)) ||
-        !utilityAlgorithmSDKReference(S, SM, Call, F) ||
-        !Reference(Argument, Value) || !Same(Value->getType(), Expected))
-      return false;
-    for (const auto *Declaration : F->redecls())
-      if (!Origin(Declaration, "__utility/convert_to_integral.h"))
-        return false;
-    return true;
+    return utilitySearchNConvertCount(S, SM, Call, Value, Expected, Integral,
+                                      Context);
   };
   UtilityWrapperEqualRangeProof RangeProof(S, SM, Context);
 
@@ -55607,9 +55788,8 @@ static bool utilityWrapperSearchNComparisonInputs(
     QualType First, QualType CountType, const ASTContext &Context,
     const CallExpr *Selected) {
   constexpr unsigned Arity = 4;
-  if (!First->isPointerType() || !CountType->isBuiltinType() ||
-      !CountType->isIntegerType() || CountType.hasQualifiers() ||
-      Context.getTypeSize(CountType) > 64)
+  const auto PromotedCount = utilitySearchNIntegralCount(CountType, Context);
+  if (!First->isPointerType() || !PromotedCount)
     return false;
   const auto Element = First->getPointeeType().getUnqualifiedType();
   const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -55730,9 +55910,7 @@ static bool utilityWrapperSearchNComparisonInputs(
     return false;
   const auto *Record = Construct(4, Name);
   const auto Predicate = Record ? Context.getRecordType(Record) : QualType();
-  const auto Integral = Context.isPromotableIntegerType(CountType)
-                            ? Context.getPromotedIntegerType(CountType)
-                            : CountType;
+  const auto Integral = *PromotedCount;
   const QualType PublicArgs[] = {First, CountType, Element, Predicate};
   const QualType PublicParameters[] = {First, First, CountType, ValueRef,
                                        Predicate};
@@ -55768,38 +55946,8 @@ static bool utilityWrapperSearchNComparisonInputs(
   };
   auto ConvertCount = [&](const CallExpr *Call, const ValueDecl *Value,
                           QualType Expected) {
-    const auto *F = Call ? Call->getDirectCallee() : nullptr;
-    const auto *Argument =
-        Call && Call->getNumArgs() == 1 ? Call->getArg(0) : nullptr;
-    if (!Same(Expected, Integral)) {
-      const auto *C = dyn_cast_or_null<ImplicitCastExpr>(Argument);
-      if (!C || C->getCastKind() != CK_IntegralCast ||
-          !Same(C->getType(), Integral) ||
-          !Same(C->getSubExpr()->getType(), Expected))
-        return false;
-      Argument = C->getSubExpr();
-    }
-    const auto *D = F ? F->getDefinition() : nullptr;
-    const auto *B = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
-    const auto *R =
-        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
-    if (!Call || Call->getNumArgs() != 1 || !Call->isPRValue() ||
-        !Same(Call->getType(), Integral) || !F || !F->getIdentifier() ||
-        F->getName() != "__convert_to_integral" ||
-        F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        F->isVariadic() || F->isInvalidDecl() || F->isDeleted() ||
-        !F->isInlined() || !F->isConstexpr() || F->getNumParams() != 1 ||
-        !Same(F->getReturnType(), Integral) ||
-        !Same(F->getParamDecl(0)->getType(), Integral) ||
-        !Origin(D, "__utility/convert_to_integral.h") || !R ||
-        !Reference(R->getRetValue(), D->getParamDecl(0)) ||
-        !utilityAlgorithmSDKReference(S, SM, Call, F) ||
-        !Reference(Argument, Value) || !Same(Value->getType(), Expected))
-      return false;
-    for (const auto *Declaration : F->redecls())
-      if (!Origin(Declaration, "__utility/convert_to_integral.h"))
-        return false;
-    return true;
+    return utilitySearchNConvertCount(S, SM, Call, Value, Expected, Integral,
+                                      Context);
   };
   UtilityWrapperEqualRangeProof RangeProof(S, SM, Context);
 

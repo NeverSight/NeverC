@@ -219089,7 +219089,7 @@ using W=std::reference_wrapper<int>;using P=W*;
 struct Eq{bool operator()(const W&a,const W&b)const{return a.get()==b.get();}};auto selected2(P a,P b){return std::search_n(a,a+1,1,*b,Eq{});}
 auto selected(P a,P b){return std::search_n(a,a+1,1,*b);}
 )cpp"},
-      {"enum-count", R"cpp(
+      {"extended-enum-count", R"cpp(
 #include <algorithm>
 #include <functional>
 #include <utility>
@@ -219097,7 +219097,7 @@ auto selected(P a,P b){return std::search_n(a,a+1,1,*b);}
 #include <type_traits>
 #pragma clang diagnostic ignored "-Winvalid-specialization"
 using W=std::reference_wrapper<int>;using P=W*;
-enum N{one=1};auto selected2(P a,P b){return std::search_n(a,a+1,one,*b);}
+enum N : unsigned __int128 {one=1};auto selected2(P a,P b){return std::search_n(a,a+1,one,*b);}
 auto selected(P a,P b){return std::search_n(a,a+1,1,*b);}
 )cpp"},
       {"enum-referents", R"cpp(
@@ -279400,6 +279400,66 @@ auto selected(P a,P b,P c,P d){std::less_equal<int>op;return std::search_n(a,b,2
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapperSearchNEnumCountsAtBothOptimizations) {
+  const auto Source = fixture("search-n-wrapper-enum-count.cpp");
+  const auto Output = tmpFile("search-n-wrapper-enum-count.nc");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("search-n-wrapper-enum-count" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSearchNEnumCountsRetainSDKTraits) {
+  struct Case {
+    const char *Name;
+    const char *Replacement;
+  };
+  const Case Cases[] = {
+      {"conversion-specialization",
+       "template<> constexpr unsigned __convert_to_integral(E value) { return value; }"},
+      {"sfinae-specialization",
+       "template<> struct __sfinae_underlying_type<E> { typedef unsigned type; typedef unsigned __promoted_type; };"},
+      {"sfinae-partial-specialization",
+       "template<bool B> struct __sfinae_underlying_type<E,B> { typedef unsigned type; typedef unsigned __promoted_type; };"},
+      {"underlying-specialization",
+       "template<> struct underlying_type<E> : __underlying_type_impl<E,true> {};"},
+      {"underlying-implementation",
+       "template<> struct __underlying_type_impl<E,true> { typedef unsigned type; };"},
+      {"is-enum-specialization",
+       "template<> struct is_enum<E> : true_type {};"},
+  };
+  for (const auto &Case : Cases) {
+    for (const bool Predicate : {false, true}) {
+      SCOPED_TRACE(Case.Name);
+      SCOPED_TRACE(Predicate);
+      const auto Stem = std::string("search-n-enum-reject-") + Case.Name +
+                        (Predicate ? "-predicate" : "-default");
+      const auto Source = tmpFile(Stem + ".cpp");
+      const auto Output = tmpFile(Stem + ".nc");
+      std::string Text = "#include <algorithm>\n#include <functional>\n"
+                         "#pragma clang diagnostic ignored \"-Winvalid-specialization\"\n"
+                         "enum E { two = 2 };\n"
+                         "namespace std { inline namespace __1 { ";
+      Text += Case.Replacement;
+      Text += " } }\nusing W=std::reference_wrapper<int>;\n"
+              "auto selected(W *first,const W &value) { return std::search_n(first,first+3,two,value";
+      Text += Predicate ? ",std::equal_to<>{}); }\n" : "); }\n";
+      writeFile(Source, Text);
+      expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 "TR0201");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapperWindowsPaddedBaseUsesIntegerCarrier) {
   const auto Source = tmpFile("wrapper-windows-padded-base.cpp");
   writeFile(Source, R"cpp(#include <functional>
@@ -317567,11 +317627,11 @@ using W=std::reference_wrapper<int>;using P=const W*;
 using F=P(*)(P,P,int,const W&,std::equal_to<void>);
 P selected(P a,P b,const W&v){return static_cast<F>(&std::search_n<P,int,W,std::equal_to<void>>)(a,b,2,v,std::equal_to<>{});}
 )cpp"},
-      {"enum-count", R"cpp(
+      {"extended-enum-count", R"cpp(
 #include <algorithm>
 #include <functional>
 using W=std::reference_wrapper<int>;using P=const W*;
-enum N{one=1};
+enum N : unsigned __int128 {one=1};
 auto selected(P a,P b,const W&v){return std::search_n(a,b,one,v,std::equal_to<>{});}
 )cpp"},
       {"enum-referents", R"cpp(
@@ -318918,11 +318978,11 @@ using W=std::reference_wrapper<int>;using P=W*;
 using F=P(*)(P,P,int,const W&,std::equal_to<void>);
 P selected(P a,P b,const W&v){return static_cast<F>(&std::search_n<P,int,W,std::equal_to<void>>)(a,b,2,v,std::equal_to<>{});}
 )cpp"},
-      {"enum-count", R"cpp(
+      {"extended-enum-count", R"cpp(
 #include <algorithm>
 #include <functional>
 using W=std::reference_wrapper<int>;using P=W*;
-enum N{one=1};
+enum N : unsigned __int128 {one=1};
 auto selected(P a,P b,const W&v){return std::search_n(a,b,one,v,std::equal_to<>{});}
 )cpp"},
       {"enum-referents", R"cpp(
