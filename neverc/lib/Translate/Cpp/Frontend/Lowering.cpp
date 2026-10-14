@@ -917,6 +917,20 @@ class FunctionLowering {
                        PointerType, L),
                  std::move(Position), type(Engine.ResultType, L), L);
   }
+  Expression uniformIntParameter(Expression Place, const UniformIntRecord &Info,
+                                 SourceLocation L) {
+    return Info.Record == Info.Distribution
+        ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
+  }
+  Expression uniformIntArgument(const Expr *E, QualType Parameter, SourceLocation L) {
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(E)) {
+      const auto Value = Default->getExpr()->getIntegerConstantExpr(A.Context);
+      if (!Value)
+        reject(L, "uniform distribution default", "A retained integer constant is required.");
+      return A.literal(*Value, type(Parameter, L), L);
+    }
+    return argument(E, Parameter);
+  }
   Expression seedSequenceIterator(const Expr *E, SourceLocation L) {
     if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
             A.S, A.Sources, E->getType()->getAsCXXRecordDecl(), A.Context)) {
@@ -2894,6 +2908,96 @@ class FunctionLowering {
       auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
       discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
       return {};
+    }
+    if (Operation >= UtilityOperation::UniformIntGenerate &&
+        Operation <= UtilityOperation::UniformIntAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent()
+          : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedUniformIntRecord(A.S, A.Sources, R, A.Context);
+      if (!Info)
+        reject(L, "uniform distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::UniformIntEqual ||
+          Operation == UtilityOperation::UniformIntNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto LP = uniformIntParameter(dereference(std::move(Left), L), *Info, L);
+        auto RP = uniformIntParameter(dereference(std::move(Right), L), *Info, L);
+        auto Equal = snapshot(quantity(0, "bool", L), L);
+        const auto CompareUpper = labelName(), Done = labelName();
+        branch(binary("==", fieldStorage(LP, Info->Lower, L), fieldStorage(RP, Info->Lower, L), "bool", L), CompareUpper, Done, L);
+        label(CompareUpper, L);
+        assign(Equal, binary("==", fieldStorage(LP, Info->Upper, L), fieldStorage(RP, Info->Upper, L), "bool", L), L);
+        jump(Done, L);
+        label(Done, L);
+        return Operation == UtilityOperation::UniformIntNotEqual
+            ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : std::move(Equal);
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::UniformIntAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
+        return Place;
+      }
+      auto Parameter = uniformIntParameter(Place, *Info, L);
+      switch (Operation) {
+      case UtilityOperation::UniformIntLower:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Lower, L), L);
+      case UtilityOperation::UniformIntUpper:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Upper, L), L);
+      case UtilityOperation::UniformIntParamGet: {
+        auto Value = snapshot(std::move(Parameter), L);
+        if (Destination) {
+          assign(*Destination, std::move(Value), L);
+          return json::Object(*Destination);
+        }
+        return Value;
+      }
+      case UtilityOperation::UniformIntParamSet: {
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
+        return {};
+      }
+      case UtilityOperation::UniformIntReset:
+        return {};
+      default:
+        break;
+      }
+      const unsigned First = Operator ? 1 : 0;
+      const auto GeneratorType = F->getParamDecl(0)->getType();
+      const auto Random = approvedUniformIntRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random)
+        reject(L, "uniform generator", "The selected generator source is unavailable.");
+      auto GeneratorAddress = argument(Call->getArg(First), GeneratorType);
+      if (F->getNumParams() == 2) {
+        auto ParameterAddress = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(std::move(ParameterAddress), L);
+      }
+      auto Lower = snapshot(fieldStorage(Parameter, Info->Lower, L), L);
+      auto Upper = snapshot(fieldStorage(std::move(Parameter), Info->Upper, L), L);
+      const auto Unsigned = A.Context.getTypeSize(Info->ResultType) <= 32
+          ? A.Context.UnsignedIntTy : A.Context.getCorrespondingUnsignedType(Info->ResultType);
+      const auto U = type(Unsigned, L), Result = type(Info->ResultType, L);
+      auto Span = snapshot(binary("-", cast(Upper, U, L), cast(Lower, U, L), U, L), L);
+      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), GeneratorType, Random->Method, std::nullopt};
+      auto Draw = snapshot(emitAlgorithmRandom(Generator, *Random, Span, L), L);
+      auto Value = temporary(Result, L);
+      const auto Full = labelName(), Bounded = labelName(), Done = labelName();
+      branch(binary("==", binary("+", Span, quantity(1, U, L), U, L), quantity(0, U, L), "bool", L), Full, Bounded, L);
+      label(Full, L);
+      assign(Value, Draw, L);
+      jump(Done, L);
+      label(Bounded, L);
+      assign(Value, cast(binary("+", cast(Draw, U, L), cast(Lower, U, L), U, L), Result, L), L);
+      jump(Done, L);
+      label(Done, L);
+      return Value;
     }
     if (Operation >= UtilityOperation::SeedSequenceGenerate &&
         Operation <= UtilityOperation::SeedSequenceParam) {
@@ -27847,6 +27951,35 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Kind = approvedUniformIntConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedUniformIntRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (*Kind == UniformIntConstruction::CopyOrMove) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(std::move(Place), snapshot(dereference(std::move(Source), L), L), L);
+      } else if (*Kind == UniformIntConstruction::Parameter) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(fieldStorage(std::move(Place), Info->Storage, L), snapshot(dereference(std::move(Source), L), L), L);
+      } else {
+        const auto Result = type(Info->ResultType, L);
+        Expression Lower, Upper;
+        if (*Kind == UniformIntConstruction::Default) {
+          Lower = quantity(0, Result, L);
+          const unsigned Bits = A.Context.getTypeSize(Info->ResultType);
+          Upper = A.literal(llvm::APSInt(Info->ResultType->isUnsignedIntegerType()
+              ? llvm::APInt::getAllOnes(Bits) : llvm::APInt::getSignedMaxValue(Bits),
+              Info->ResultType->isUnsignedIntegerType()), Result, L);
+        } else {
+          Lower = uniformIntArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L);
+          Upper = uniformIntArgument(C->getArg(1), Constructor->getParamDecl(1)->getType(), L);
+        }
+        auto Parameter = uniformIntParameter(std::move(Place), *Info, L);
+        auto CapturedLower = snapshot(std::move(Lower), L);
+        auto CapturedUpper = snapshot(std::move(Upper), L);
+        assign(fieldStorage(Parameter, Info->Lower, L), std::move(CapturedLower), L);
+        assign(fieldStorage(std::move(Parameter), Info->Upper, L), std::move(CapturedUpper), L);
+      }
+      return;
+    }
     if (const auto Kind = approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
       for (const auto *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})

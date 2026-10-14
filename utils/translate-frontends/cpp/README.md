@@ -817,6 +817,13 @@ including nested bases, `base()`, integral list/raw/wrapped seed construction,
 allocation and cleanup remain observable; the pinned zero-modulus LCG
 seed-sequence division-by-zero path is rejected.
 
+`uniform_int_distribution<T>` and `param_type` also retain the pinned layout,
+constructors/defaults, parameters, state-free property/reset operations and both
+generator call forms for admitted integers through 64 bits. Checked SDK engines
+and the source-generator contract above preserve negative/narrow/full-width
+range arithmetic, rejection draws and generator state. See the
+[integer distribution contract](../docs/cpp-core-v2.md#uniform-integer-distributions-from-random).
+
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
 bool and trivial aggregate operations, free functions, resolved namespaces and

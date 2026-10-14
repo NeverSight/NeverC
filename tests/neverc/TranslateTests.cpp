@@ -358616,3 +358616,64 @@ int main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return 0
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2UniformIntegerDistributionPreservesState) {
+  for (const std::string &Name : {"int", "source"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture("random-uniform-" + Name + ".cpp");
+    const auto Output = tmpFile("random-uniform-" + Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("random-uniform-" + Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniformIntegerDistributionRetainsSelectedSDK) {
+  struct Case {const char *Name;const char *Source;};
+  const Case Cases[] = {
+      {"constructor",R"cpp(#include <random>
+namespace std {template<> uniform_int_distribution<int>::uniform_int_distribution(int,int):__p_(3,3){}}
+int main(){std::uniform_int_distribution<int> d(0,9);return d.a()==3?0:1;}
+)cpp"},
+      {"parameter-lower",R"cpp(#include <random>
+namespace std {template<> int uniform_int_distribution<int>::param_type::a()const{return 3;}}
+int main(){std::uniform_int_distribution<int> d(0,9);return d.a()==3?0:1;}
+)cpp"},
+      {"minimum",R"cpp(#include <random>
+namespace std {template<> int uniform_int_distribution<int>::min()const{return 3;}}
+int main(){std::uniform_int_distribution<int> d;return d.min()==3?0:1;}
+)cpp"},
+      {"call",R"cpp(#include <random>
+namespace std {template<> template<> int uniform_int_distribution<int>::operator()<mt19937>(mt19937&,const param_type&){return 7;}}
+int main(){std::uniform_int_distribution<int> d(0,9);std::mt19937 e;return d(e)==7?0:1;}
+)cpp"},
+      {"bits-helper",R"cpp(#include <random>
+namespace std {template<> unsigned __independent_bits_engine<mt19937,unsigned>::operator()(){return 7;}}
+int main(){std::uniform_int_distribution<int> d(0,9);std::mt19937 e;return d(e)==7?0:1;}
+)cpp"},
+      {"engine-bound",R"cpp(#include <random>
+namespace std {template<> constexpr unsigned mt19937::max(){return 99;}}
+int main(){std::uniform_int_distribution<int> d(0,9);std::mt19937 e;return d(e)==7?0:1;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("uniform-int-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("uniform-int-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

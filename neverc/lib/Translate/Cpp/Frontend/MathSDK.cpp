@@ -11167,6 +11167,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
+  if (approvedUniformIntDefaultArgument(S, SM, Default, Function, Index, Context))
+    return true;
   if (approvedRandomEngineDefaultArgument(S, SM, Default, Function, Index,
                                          Context))
     return true;
@@ -74539,6 +74541,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return CString;
   if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
     return Random->Operation;
+  if (auto Uniform = approvedUniformIntOperation(S, SM, Call, Context))
+    return Uniform;
   if (auto Sequence = approvedSeedSequenceOperation(S, SM, Call, Context))
     return Sequence;
   if (auto Engine = approvedRandomEngineOperation(S, SM, Call, Context))

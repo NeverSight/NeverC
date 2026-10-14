@@ -8261,7 +8261,7 @@ memory-comparison intrinsics only as dependencies of the selected SDK body.
 
 The new SDK resource `math.h` and `stdlib.h` supply declarations needed to parse
 the complete public header in core v2. They do not admit C runtime calls and
-forward to the platform SDK in the existing math profile. Distributions,
+forward to the platform SDK in the existing math profile. Other distributions,
 stream serialization and `std::random_device` still require their own runtime
 support. Parsing those
 declarations does not authorize their execution.
@@ -8296,6 +8296,35 @@ for zero-modulus LCG seed-sequence seeding; those calls are rejected rather than
 lowered to a different algorithm. Source-defined seed-sequence classes need a
 separate source-body admission. Selected seed-sequence methods, iterator traits,
 vector helpers and nested base-engine replacements remain rejected.
+
+## Uniform integer distributions from `<random>`
+
+`std::uniform_int_distribution<T>` and its nested `param_type` retain the pinned
+scalar fields and target layout for the SDK's accepted non-bool integer types
+through 64 bits, including its signed/unsigned 8-bit extension and 16-bit types.
+Default construction, lower-bound-only and two-bound construction, construction
+from `param_type`, trivial copies and assignment, `a`/`b`, `min`/`max`, parameter
+get/set, equality and `reset` are admitted. Default upper bounds retain the
+selected `numeric_limits<T>::max()` definition. Parameter getters initialize
+both ordinary and caller-supplied result storage.
+
+Both `operator()(generator)` and `operator()(generator, parameter)` accept the
+checked SDK engines/adaptors or the existing source-owned generator contract
+used by `shuffle`/`sample`. The actual source call operator must close and be
+emitted. Generator unsigned result types through 64 bits, narrow nonzero lower
+bounds and full-width generators retain the pinned independent-bit chunking and
+rejection draws. Original receiver, generator and explicit parameter operands
+are evaluated once. Explicit parameters do not change the stored bounds, and
+single-point intervals consume no generator draws. Signed, negative, narrow and
+full-width intervals retain the selected SDK arithmetic, including its direct
+independent-bit return for a full-width population. As in the SDK, bounds must
+satisfy the distribution's `a <= b` precondition.
+
+Selected distribution/parameter constructors and methods, nested helpers,
+traits, generator methods/bounds and redeclarations remain authenticated.
+Source SDK replacements are rejected without partial artifacts. Other
+distributions, real-number generation, stream serialization and `random_device`
+need their own admission; this contract does not authorize their runtime calls.
 
 ## Standard template parsing across targets
 
