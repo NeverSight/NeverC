@@ -62,9 +62,19 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     }
   }
-  bool engineIntrinsic(const FunctionDecl *F) const {
-    if (!SDKGenerator || !F || !F->isImplicit())
+  bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
+    if (!F || !F->isImplicit())
       return false;
+    if (!SDKGenerator) {
+      // A source generator can still be called by a pinned vector algorithm.
+      // Its iterator alignment/constant-evaluation helpers are SDK proof
+      // dependencies; the source generator body closes separately.
+      const auto File = S.sdkFile(SM, Location);
+      if (!File || File->Root != "libcxx" ||
+          (F->getBuiltinID() != Builtin::BI__builtin_is_constant_evaluated &&
+           F->getBuiltinID() != Builtin::BI__builtin_assume_aligned))
+        return false;
+    }
     // Equality and seed-sequence storage use these selected SDK helpers.
     // These compiler intrinsics are proof dependencies, never emitted calls.
     return F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated ||
@@ -313,7 +323,7 @@ public:
   }
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *F = dyn_cast<FunctionDecl>(E->getDecl());
-    if (countLeadingZeros(F) || engineIntrinsic(F) || allocatorHook(F))
+    if (countLeadingZeros(F) || engineIntrinsic(F, E->getExprLoc()) || allocatorHook(F))
       return true;
     // Calls retain source methods with their actual selected receiver below.
     if (F && S.owns(SM, F->getLocation()))
@@ -337,8 +347,9 @@ public:
           File->Path == "__memory/allocator.h" && !E->getNumArgs() &&
           E->getType()->isVoidType() && Destructor->isArrow() &&
           Destructor->getBase()->getType()->isPointerType() &&
-          Destructor->getDestroyedType()->isUnsignedIntegerType() &&
-          Context.getTypeSize(Destructor->getDestroyedType()) == 32 &&
+          ((Destructor->getDestroyedType()->isUnsignedIntegerType() &&
+            Context.getTypeSize(Destructor->getDestroyedType()) == 32) ||
+           Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy)) &&
           Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
               Destructor->getBase()->getType()->getPointeeType()))
         return true;
@@ -349,7 +360,7 @@ public:
     if (countLeadingZeros(F))
       return E->getType()->isSpecificBuiltinType(BuiltinType::Int) &&
              E->getNumArgs() >= 1 && E->getNumArgs() <= 2;
-    if (engineIntrinsic(F)) {
+    if (engineIntrinsic(F, E->getExprLoc())) {
       switch (F->getBuiltinID()) {
       case Builtin::BI__builtin_is_constant_evaluated:
         return E->getNumArgs() == 0 && E->getType()->isBooleanType();
@@ -1340,6 +1351,181 @@ approvedBernoulliOperation(const State &S, const SourceManager &SM,
     Operation = F->getOverloadedOperator() == OO_EqualEqual ? UtilityOperation::BernoulliEqual : UtilityOperation::BernoulliNotEqual;
   }
   RandomSelection Selection(S, SM, Context, Info->Distribution, Context.BoolTy, Context.DoubleTy);
+  return Operation && Selection.retain(F) ? Operation : std::nullopt;
+}
+
+std::optional<DiscreteDistributionRecord>
+approvedDiscreteDistributionRecord(const State &S, const SourceManager &SM,
+                                   const CXXRecordDecl *Record,
+                                   const ASTContext &Context) {
+  const auto *R = Record ? Record->getDefinition() : nullptr;
+  const auto *Outer = R && R->getName() == "param_type"
+      ? dyn_cast<CXXRecordDecl>(R->getDeclContext()) : R;
+  const auto *Specialization = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Outer);
+  const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  if (!S.coreV2() || !R || !Outer || !Specialization || !File ||
+      File->Root != "libcxx" || File->Path != "__random/discrete_distribution.h" ||
+      Outer->getName() != "discrete_distribution" ||
+      !approvedStandardSDKDeclaration(S, SM, Outer) || R->getNumBases() ||
+      R->isUnion() || !R->isStandardLayout() ||
+      Specialization->getTemplateArgs().size() != 1 ||
+      Specialization->getTemplateArgs().get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  auto Result = Specialization->getTemplateArgs().get(0).getAsType();
+  if (!Result->isIntegerType() || Result->isBooleanType() ||
+      Result.hasLocalQualifiers() || Context.getTypeSize(Result) > 64)
+    return std::nullopt;
+  const CXXRecordDecl *Parameter = nullptr;
+  for (const auto *D : Outer->decls())
+    if (const auto *Nested = dyn_cast<CXXRecordDecl>(D);
+        Nested && Nested->getName() == "param_type" && Nested->getDefinition())
+      Parameter = Nested->getDefinition();
+  if (!Parameter || (R != Outer && R != Parameter) ||
+      !Parameter->isStandardLayout() || Parameter->getNumBases() ||
+      !approvedStandardSDKDeclaration(S, SM, Parameter))
+    return std::nullopt;
+  const FieldDecl *Storage = nullptr, *Thresholds = nullptr;
+  for (const auto *F : Parameter->fields()) {
+    const auto Vector = approvedUtilityVectorRecord(
+        S, SM, F->getType()->getAsCXXRecordDecl(), Context);
+    if (Thresholds || F->getName() != "__p_" || F->isBitField() || F->isMutable() ||
+        !approvedStandardSDKDeclaration(S, SM, F) || !Vector ||
+        !Context.hasSameType(Vector->ElementType, Context.DoubleTy))
+      return std::nullopt;
+    Thresholds = F;
+  }
+  for (const auto *F : Outer->fields()) {
+    if (Storage || F->getName() != "__p_" || F->isBitField() || F->isMutable() ||
+        !approvedStandardSDKDeclaration(S, SM, F) ||
+        !Context.hasSameType(F->getType(), Context.getRecordType(Parameter)))
+      return std::nullopt;
+    Storage = F;
+  }
+  RandomSelection Selection(S, SM, Context, Outer, Result, Context.DoubleTy);
+  if (!Storage || !Thresholds || !Selection.retain(R))
+    return std::nullopt;
+  return DiscreteDistributionRecord{R, Outer, Parameter, Result, Storage, Thresholds};
+}
+
+std::optional<DiscreteDistributionConstruction>
+approvedDiscreteDistributionConstruction(const State &S, const SourceManager &SM,
+                                         const CXXConstructExpr *Construction,
+                                         const ASTContext &Context) {
+  const auto *C = Construction ? Construction->getConstructor() : nullptr;
+  const auto Info = C ? approvedDiscreteDistributionRecord(S, SM, C->getParent(), Context)
+                      : std::nullopt;
+  if (!Info || C->isVariadic() || !approvedStandardSDKDeclaration(S, SM, C) ||
+      Construction->getNumArgs() != C->getNumParams())
+    return std::nullopt;
+  std::optional<DiscreteDistributionConstruction> Kind;
+  if (C->isCopyOrMoveConstructor()) {
+    if (!C->isImplicit())
+      return std::nullopt;
+    Kind = C->isMoveConstructor() ? DiscreteDistributionConstruction::Move
+                                  : DiscreteDistributionConstruction::Copy;
+  } else if (!C->getNumParams()) {
+    Kind = DiscreteDistributionConstruction::Default;
+  } else if (C->getNumParams() == 1) {
+    if (Info->Record == Info->Distribution && Context.hasSameType(
+        C->getParamDecl(0)->getType(), Context.getLValueReferenceType(
+            Context.getRecordType(Info->Parameter).withConst()))) {
+      Kind = DiscreteDistributionConstruction::Parameter;
+    } else if (const auto List = approvedUtilityInitializerListRecord(S, SM,
+                   C->getParamDecl(0)->getType()->getAsCXXRecordDecl(), Context);
+               List && Context.hasSameType(List->ElementType, Context.DoubleTy)) {
+      const auto *Argument = dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
+      if (Argument && !approvedUtilityInitializerListExpression(S, SM, Argument, Context))
+        return std::nullopt;
+      Kind = DiscreteDistributionConstruction::InitializerList;
+    }
+  } else if (C->getNumParams() == 2 && Context.hasSameType(
+                 C->getParamDecl(0)->getType(), C->getParamDecl(1)->getType())) {
+    const auto Pointer = seedSequencePointer(S, SM, C->getParamDecl(0)->getType(), Context);
+    if (!Pointer.isNull() && !Pointer->getPointeeType().isVolatileQualified() &&
+        scalarElement(Pointer->getPointeeType(), Context))
+      Kind = DiscreteDistributionConstruction::Range;
+  }
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy);
+  return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
+}
+
+std::optional<UtilityAlgorithmRandomCall>
+approvedDiscreteDistributionRandomCall(const State &S, const SourceManager &SM,
+                                      const CallExpr *Call,
+                                      const ASTContext &Context) {
+  const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto Info = M ? approvedDiscreteDistributionRecord(S, SM, M->getParent(), Context)
+                      : std::nullopt;
+  if (!Info || Info->Record != Info->Distribution || M->isStatic() || M->isConst() ||
+      M->isVolatile() || M->isVariadic() || M->getOverloadedOperator() != OO_Call ||
+      M->getNumParams() < 1 || M->getNumParams() > 2 ||
+      !approvedStandardSDKDeclaration(S, SM, M) ||
+      !Context.hasSameType(M->getReturnType(), Info->ResultType) ||
+      Call->getNumArgs() != M->getNumParams() + (Operator ? 1u : 0u) ||
+      !(Operator || isa<CXXMemberCallExpr>(Call)) ||
+      (M->getNumParams() == 2 && !Context.hasSameType(M->getParamDecl(1)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))))
+    return std::nullopt;
+  return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Context.DoubleTy,
+      UtilityOperation::DiscreteGenerate, Operator ? 1u : 0u, Context);
+}
+
+std::optional<UtilityOperation>
+approvedDiscreteDistributionOperation(const State &S, const SourceManager &SM,
+                                     const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *R = M ? M->getParent() : F && F->getNumParams() == 2
+      ? F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
+  const auto Info = approvedDiscreteDistributionRecord(S, SM, R, Context);
+  if (!Info || !F || F->isVariadic() || !approvedStandardSDKDeclaration(S, SM, F) ||
+      Call->getNumArgs() != F->getNumParams() + (Operator && M ? 1u : 0u))
+    return std::nullopt;
+  if (approvedDiscreteDistributionRandomCall(S, SM, Call, Context))
+    return UtilityOperation::DiscreteGenerate;
+  std::optional<UtilityOperation> Operation;
+  if (M && !M->isStatic() && !M->isVolatile()) {
+    if (M->isConst() && M->getIdentifier() && !M->getNumParams()) {
+      if (M->getName() == "probabilities") {
+        const auto Vector = approvedUtilityVectorRecord(S, SM,
+            M->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Vector && Context.hasSameType(Vector->ElementType, Context.DoubleTy))
+          Operation = UtilityOperation::DiscreteProbabilities;
+      } else if (Info->Record == Info->Distribution &&
+                 Context.hasSameType(M->getReturnType(), Info->ResultType)) {
+        if (M->getName() == "min") Operation = UtilityOperation::DiscreteMinimum;
+        else if (M->getName() == "max") Operation = UtilityOperation::DiscreteMaximum;
+      } else if (M->getName() == "param" && Info->Record == Info->Distribution &&
+                 Context.hasSameType(M->getReturnType(), Context.getRecordType(Info->Parameter))) {
+        Operation = UtilityOperation::DiscreteParamGet;
+      }
+    } else if (!M->isConst() && M->getIdentifier() && M->getReturnType()->isVoidType() &&
+               Info->Record == Info->Distribution) {
+      if (M->getName() == "reset" && !M->getNumParams())
+        Operation = UtilityOperation::DiscreteReset;
+      else if (M->getName() == "param" && M->getNumParams() == 1 &&
+          Context.hasSameType(M->getParamDecl(0)->getType(),
+              Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
+        Operation = UtilityOperation::DiscreteParamSet;
+    }
+    if (M->getOverloadedOperator() == OO_Equal && M->isImplicit() &&
+        M->getNumParams() == 1 && M->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(M->getReturnType().getNonReferenceType(), Context.getRecordType(Info->Record)) &&
+        M->getParamDecl(0)->getType()->isReferenceType() &&
+        Context.hasSameUnqualifiedType(M->getParamDecl(0)->getType().getNonReferenceType(), Context.getRecordType(Info->Record)))
+      Operation = UtilityOperation::DiscreteAssign;
+  } else if (!M && F->getReturnType()->isBooleanType() && F->getNumParams() == 2 &&
+             (F->getOverloadedOperator() == OO_EqualEqual || F->getOverloadedOperator() == OO_ExclaimEqual)) {
+    for (const auto *P : F->parameters())
+      if (!Context.hasSameType(P->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Info->Record).withConst())))
+        return std::nullopt;
+    Operation = F->getOverloadedOperator() == OO_EqualEqual
+        ? UtilityOperation::DiscreteEqual : UtilityOperation::DiscreteNotEqual;
+  }
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy);
   return Operation && Selection.retain(F) ? Operation : std::nullopt;
 }
 

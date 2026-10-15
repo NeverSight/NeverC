@@ -16,6 +16,8 @@ Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersen
 
 `bernoulli_distribution` 及 `param_type` 现支持默认、概率和参数对象构造、复制与赋值、`p`、`min`/`max`、参数读取与设置、相等比较、reset 和两种生成器调用形式。已认证 SDK 引擎及已接入的源码生成器保留所选双精度 canonical 取数和概率比较，包括概率 0 和 1；显式参数不改变存储概率。沿用严格浮点契约及所选 SDK 替换拦截。概率须满足 SDK 前置条件 `0 <= p <= 1`。
 
+`discrete_distribution<IntType>` 及 `param_type` 现支持默认、初始化列表、原始指针或封装迭代器算术范围、参数对象、复制与移动构造，复制与移动赋值，以及 `probabilities`、边界、参数读写、相等比较、reset 和两种生成器调用。归一化、累计阈值、概率重建和 canonical 取数沿用固定 SDK 的运算顺序，包括空范围及单权重。内部及返回的 `vector<double>` 保留独立副本、容量复用和源码分配释放。沿用严格浮点契约与所选 SDK 替换拦截。
+
 两个算法也接纳经校验的 `std::__wrap_iter<T*>` 范围，包括已支持的 vector 和 string 迭代器。Sample 的输入和输出可分别使用原始指针或包装迭代器，保留 const 输入及经校验的标量转换，并返回原输出迭代器类型。所选 SDK 迭代器操作仍须通过认证。
 
 Core v2 现支持内置且固定版本的 `<type_traits>`，用于编译期类型别名以及整数／枚举常量。`std::remove_cv_t`、`std::is_same_v`、已支持的构造／析构 traits 和 `std::integral_constant::value` 会降为现有核心类型与字面量。驱动会验证并记录 101 个 libc++／resource 头文件的哈希，覆盖受支持的 macOS、Linux 与 Windows 目标。运行时 trait 支持仅限下文列出的、经过验证的函数指针 `integral_constant` 形式；其他 trait 对象与 trait 存储身份仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).

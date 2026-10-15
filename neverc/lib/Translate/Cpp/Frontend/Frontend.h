@@ -995,6 +995,16 @@ enum class UtilityOperation {
   BernoulliEqual,
   BernoulliNotEqual,
   BernoulliAssign,
+  DiscreteGenerate,
+  DiscreteProbabilities,
+  DiscreteMinimum,
+  DiscreteMaximum,
+  DiscreteParamGet,
+  DiscreteParamSet,
+  DiscreteReset,
+  DiscreteEqual,
+  DiscreteNotEqual,
+  DiscreteAssign,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1298,6 +1308,27 @@ struct BernoulliRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   const clang::FieldDecl *Storage, *Probability;
 };
+struct DiscreteDistributionRecord {
+  const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
+  clang::QualType ResultType;
+  const clang::FieldDecl *Storage, *Thresholds;
+};
+std::optional<DiscreteDistributionRecord> approvedDiscreteDistributionRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+enum class DiscreteDistributionConstruction {
+  Default, Range, InitializerList, Parameter, Copy, Move
+};
+std::optional<DiscreteDistributionConstruction>
+approvedDiscreteDistributionConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedDiscreteDistributionOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityAlgorithmRandomCall> approvedDiscreteDistributionRandomCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 std::optional<BernoulliRecord> approvedBernoulliRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
@@ -2080,6 +2111,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredDiscreteDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;

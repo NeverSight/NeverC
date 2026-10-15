@@ -358796,3 +358796,109 @@ int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2DiscreteDistributionPreservesProbabilitiesStateAndOwnership) {
+  const auto Source = fixture("random-discrete.cpp");
+  const auto Output = tmpFile("random-discrete.nc");
+  const auto Result = translate(Source,
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("random-discrete" + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteDistributionRetainsSelectedSDK) {
+  struct Case {const char *Name; const char *Source;};
+  const Case Cases[] = {
+      {"outer-call",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> template<> int discrete_distribution<int>::operator()<mt19937>(mt19937&){return 0;}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"parameter-call",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> template<> int discrete_distribution<int>::operator()<mt19937>(mt19937&,const param_type&){return 0;}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"normalization",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> void discrete_distribution<int>::param_type::__init(){}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"probabilities",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> vector<double> discrete_distribution<int>::param_type::probabilities()const{return {1.};}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"partial-sum",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> __wrap_iter<double*> partial_sum<__wrap_iter<double*>,__wrap_iter<double*>>(__wrap_iter<double*> first,__wrap_iter<double*>,__wrap_iter<double*>) {return first;}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"canonical-helper",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> double generate_canonical<double,53,mt19937>(mt19937&){return .25;}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"uniform-helper",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> template<> double uniform_real_distribution<double>::operator()<mt19937>(mt19937&,const param_type&){return .25;}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+      {"engine-call",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long align;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned frees;
+void* operator new(Size n){auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> unsigned mt19937::operator()(){return 7;}}
+int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.probabilities();return d(e)+static_cast<int>(p.size());}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("discrete-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("discrete-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

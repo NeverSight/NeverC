@@ -8371,6 +8371,36 @@ methods/bounds and redeclarations are retained; source replacements are
 rejected without partial artifacts. Other distribution families, serialization
 and `random_device` remain separate admission work.
 
+## Discrete distributions from `<random>`
+
+`std::discrete_distribution<IntType>` supports pinned non-boolean integer result
+types through 64 bits. The distribution retains its actual `param_type` field,
+and the parameter retains its authenticated `vector<double>` of cumulative
+thresholds. Default, initializer-list, raw/wrapped arithmetic range, explicit
+parameter, copy and move construction; copy/move assignment; `probabilities`,
+`min`/`max`, parameter get/set, equality, reset and both generator call forms are
+admitted. Range elements convert to double once; named initializer lists and
+const wrapped iterators retain their normal borrowing semantics.
+
+The pinned SDK's normalization sum, division, partial sums, adjacent differences
+and final residual subtraction preserve their strict floating operation order.
+Empty and one-element inputs produce the single probability 1; sampling still
+consumes the selected double canonical draws. Generation uses the SDK upper-bound
+comparison over retained thresholds, including duplicate thresholds from zero
+weights. Explicit parameters leave stored thresholds unchanged. For two or more
+weights, defined inputs require nonnegative finite weights and a positive finite
+sum. The existing core floating and generator contracts apply.
+
+Owned threshold vectors and returned probability vectors preserve independent
+copies, pointer-stealing moves, capacity reuse/growth on copy assignment,
+self-copy behavior, allocation sizes and destruction through checked source-owned
+global new/delete. Parameter result getters construct into caller-provided
+storage. Selected constructor, normalization, partial-sum, comparison, probability
+and random helper declarations remain SDK proof dependencies; source replacements
+are rejected without partial artifacts. Function-generated weights, other
+iterator families, remaining distributions, stream serialization and
+`random_device` require further admission work.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

@@ -837,6 +837,13 @@ Their selected double canonical draw sequence is retained even for probability
 0 or 1, under the existing strict FP and source-proof contracts. See the
 [Bernoulli contract](../docs/cpp-core-v2.md#bernoulli-distributions-from-random).
 
+`discrete_distribution<IntType>` and `param_type` preserve normalized threshold
+storage, raw/wrapped arithmetic ranges and lists, independent copies, moves,
+parameter/probability results, assignment, equality, reset and generator calls.
+Canonical draws and probability arithmetic retain pinned SDK order; internal and
+returned vectors retain checked allocation and cleanup. See the
+[discrete contract](../docs/cpp-core-v2.md#discrete-distributions-from-random).
+
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
 bool and trivial aggregate operations, free functions, resolved namespaces and

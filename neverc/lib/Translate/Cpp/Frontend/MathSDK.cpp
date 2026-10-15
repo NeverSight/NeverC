@@ -74543,6 +74543,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return CString;
   if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
     return Random->Operation;
+  if (auto Discrete = approvedDiscreteDistributionOperation(S, SM, Call, Context))
+    return Discrete;
   if (auto Bernoulli = approvedBernoulliOperation(S, SM, Call, Context))
     return Bernoulli;
   if (approvedCanonicalRandomCall(S, SM, Call, Context))

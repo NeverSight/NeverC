@@ -16,6 +16,8 @@ The remaining deterministic families `subtract_with_carry_engine`, `discard_bloc
 
 `bernoulli_distribution` and `param_type` now support default/probability/parameter construction, copy and assignment, `p`, `min`/`max`, parameter get/set, equality, reset and both generator call forms. Checked SDK engines and admitted source generators retain the selected double canonical draws and probability comparison, including probabilities 0 and 1; explicit parameters do not change stored probability. The existing strict floating contract and selected SDK replacement guards apply. Probability must satisfy the SDK precondition `0 <= p <= 1`.
 
+`discrete_distribution<IntType>` and `param_type` now support default, initializer-list, raw/wrapped arithmetic range, parameter, copy and move construction; copy/move assignment; `probabilities`, bounds, parameter get/set, equality, reset and both generator call forms. Normalization, cumulative thresholds, probability reconstruction and canonical draws follow the pinned SDK operation order, including empty and single-weight cases. Internal and returned `vector<double>` storage retains independent copies, capacity reuse and source-owned allocation/release. The strict floating contract and selected SDK replacement guards apply.
+
 Both algorithms accept checked `std::__wrap_iter<T*>` ranges, including admitted vector and string iterators. Sample independently accepts raw or wrapped input and output, retains const input and checked scalar conversions, and returns the original output iterator type. Selected SDK iterator operations remain authenticated.
 
 Core v2 now accepts the pinned embedded `<type_traits>` header for compile-time

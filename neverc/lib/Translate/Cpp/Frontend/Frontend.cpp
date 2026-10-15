@@ -9560,6 +9560,15 @@ public:
     }
     // Storage release belongs to each pinned SDK destructor. Nested vectors
     // and source-owned records must close their actual element destruction.
+    if (const auto Discrete = approvedDiscreteDistributionRecord(A.S, A.Sources, Record, A.Context)) {
+      const auto *Destructor = Record->getDestructor();
+      if (!Destructor || !Destructor->isImplicit() ||
+          !approvedStandardSDKDeclaration(A.S, A.Sources, Destructor))
+        return false;
+      const auto *Field = Discrete->Record == Discrete->Distribution
+                              ? Discrete->Storage : Discrete->Thresholds;
+      return destruction(Field->getType()->getAsCXXRecordDecl(), Depth + 1);
+    }
     if (const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, Record, A.Context)) {
       const auto *Destructor = Record->getDestructor();
       if (!Destructor || !Destructor->isImplicit() ||
@@ -11324,6 +11333,13 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       D = D->getDefinition();
       if (const auto Engine = approvedRandomEngineRecord(S, Sources, D, Context)) {
         if (RequiredRandomEngines.insert(D->getCanonicalDecl()).second) {
+          for (const auto *Field : D->fields())
+            if (type(Field->getType(), L, false, Depth + 1).empty())
+              return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
+      } else if (const auto Discrete = approvedDiscreteDistributionRecord(S, Sources, D, Context)) {
+        if (RequiredDiscreteDistributionRecords.insert(D->getCanonicalDecl()).second) {
           for (const auto *Field : D->fields())
             if (type(Field->getType(), L, false, Depth + 1).empty())
               return {};
@@ -15326,7 +15342,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
-        (approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
          approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
          approvedRandomEngineConstruction(A.S, A.Sources, C, A.Context) ||
@@ -15925,6 +15942,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     auto Random = approvedUtilityAlgorithmRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
       Random = approvedUniformDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+    if (!Random)
+      Random = approvedDiscreteDistributionRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
       Random = approvedBernoulliRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
@@ -16678,6 +16697,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
+             approvedDiscreteDistributionRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              approvedSeedSequenceRecord(A.S, A.Sources, Destructor->getParent(), A.Context)))
           return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
@@ -18840,7 +18860,8 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedBernoulliConstruction(A.S, A.Sources, Construction, A.Context) ||
+          (approvedDiscreteDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedBernoulliConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUniformDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedRandomEngineConstruction(A.S, A.Sources, Construction,
@@ -24281,7 +24302,8 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
+        } else if (approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedRandomEngineConstruction(A.S, A.Sources, C,

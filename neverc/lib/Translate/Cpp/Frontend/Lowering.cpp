@@ -917,6 +917,211 @@ class FunctionLowering {
                        PointerType, L),
                  std::move(Position), type(Engine.ResultType, L), L);
   }
+  Expression discreteParameter(Expression Place,
+                               const DiscreteDistributionRecord &Info,
+                               SourceLocation L) {
+    return Info.Record == Info.Distribution
+               ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
+  }
+  Expression discreteVector(Expression Place,
+                            const DiscreteDistributionRecord &Info,
+                            SourceLocation L) {
+    return fieldStorage(discreteParameter(std::move(Place), Info, L), Info.Thresholds, L);
+  }
+  Expression randomVectorMember(Expression Place, const UtilityVectorRecord &Vector,
+                                const char *Name, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", type(Vector.PointerType, L)},
+                      {"name", Name}, {"args", json::Array{std::move(Place)}},
+                      {"loc", A.loc(L)}};
+  }
+  Expression randomVectorCount(Expression Place, const UtilityVectorRecord &Vector,
+                               const char *EndName, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto End = snapshot(randomVectorMember(std::move(Place), Vector, EndName, L), L);
+    auto Count = snapshot(quantity(0, Size, L), L);
+    const auto Measure = labelName(), Done = labelName();
+    branch(binary("!=", Begin, End, "bool", L), Measure, Done, L);
+    label(Measure, L);
+    assign(Count, cast(binary("-", End, Begin,
+           type(A.Context.getPointerDiffType(), L), L), Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Count;
+  }
+  void zeroRandomVector(Expression Place, const UtilityVectorRecord &Vector,
+                        SourceLocation L) {
+    for (const auto *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
+      assign(randomVectorMember(Place, Vector, Name, L), A.zero(Vector.PointerType, L), L);
+  }
+  void releaseRandomVector(Expression Place, const UtilityVectorRecord &Vector,
+                           SourceLocation L) {
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    const auto Release = labelName(), Done = labelName();
+    branch(cast(Begin, "bool", L), Release, Done, L);
+    label(Release, L);
+    const auto *Delete = A.allocatorHeapFunction(false, Vector.ElementType, L);
+    json::Array Args;
+    Args.push_back(cast(Begin, type(Delete->getParamDecl(0)->getType(), L), L));
+    if (Delete->getNumParams() == 2) {
+      auto Capacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
+      const auto Size = type(A.Context.getSizeType(), L);
+      Args.push_back(cast(binary("*", Capacity, quantity(
+          A.Context.getTypeSizeInChars(Vector.ElementType).getQuantity(), Size, L), Size, L),
+          type(Delete->getParamDecl(1)->getType(), L), L));
+    }
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Delete)},
+                               {"args", std::move(Args)}, {"loc", A.loc(L)}});
+    jump(Done, L);
+    label(Done, L);
+    zeroRandomVector(std::move(Place), Vector, L);
+  }
+  void allocateRandomVector(Expression Place, const UtilityVectorRecord &Vector,
+                            Expression Count, SourceLocation L) {
+    zeroRandomVector(Place, Vector, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Allocate = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Allocate, Done, L);
+    label(Allocate, L);
+    const auto *New = A.allocatorHeapFunction(true, Vector.ElementType, L);
+    json::Array Args;
+    Args.push_back(binary("*", Count, quantity(
+        A.Context.getTypeSizeInChars(Vector.ElementType).getQuantity(), Size, L), Size, L));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(New->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(New)},
+        {"args", std::move(Args)}, {"target", json::Object(Allocation)}, {"loc", A.loc(L)}});
+    auto Begin = snapshot(cast(std::move(Allocation), type(Vector.PointerType, L), L), L);
+    auto End = snapshot(binary("+", Begin, Count, type(Vector.PointerType, L), L), L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_begin", L), Begin, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L), End, L);
+    assign(randomVectorMember(std::move(Place), Vector, "nct_vector_capacity", L), End, L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  void copyRandomVector(Expression Target, Expression Source,
+                        const UtilityVectorRecord &Vector, bool Move,
+                        bool Assignment, SourceLocation L) {
+    if (Move) {
+      if (Assignment)
+        releaseRandomVector(Target, Vector, L);
+      for (const auto *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"}) {
+        auto Value = snapshot(randomVectorMember(Source, Vector, Name, L), L);
+        assign(randomVectorMember(Target, Vector, Name, L), Value, L);
+        assign(randomVectorMember(Source, Vector, Name, L), A.zero(Vector.PointerType, L), L);
+      }
+      return;
+    }
+    if (!Assignment)
+      zeroRandomVector(Target, Vector, L);
+    const auto Done = labelName(), Copy = labelName();
+    if (Assignment) {
+      const auto T = A.Context.getRecordType(Vector.Record).withConst();
+      auto Left = snapshot(address(Target, T, L), L);
+      auto Right = snapshot(address(Source, T, L), L);
+      branch(binary("==", Left, Right, "bool", L), Done, Copy, L);
+      label(Copy, L);
+    }
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Count = randomVectorCount(Source, Vector, "nct_vector_end", L);
+    auto Capacity = randomVectorCount(Target, Vector, "nct_vector_capacity", L);
+    const auto Grow = labelName(), Fill = labelName();
+    branch(binary("<=", Count, Capacity, "bool", L), Fill, Grow, L);
+    label(Grow, L);
+    auto NewCapacity = snapshot(Count, L);
+    if (Assignment) {
+      const auto Double = labelName(), Allocate = labelName();
+      auto Twice = binary("*", Capacity, quantity(2, Size, L), Size, L);
+      branch(binary(">", Twice, Count, "bool", L), Double, Allocate, L);
+      label(Double, L);
+      assign(NewCapacity, Twice, L);
+      jump(Allocate, L);
+      label(Allocate, L);
+    }
+    releaseRandomVector(Target, Vector, L);
+    allocateRandomVector(Target, Vector, NewCapacity, L);
+    jump(Fill, L);
+    label(Fill, L);
+    auto Input = snapshot(randomVectorMember(Source, Vector, "nct_vector_begin", L), L);
+    auto Output = snapshot(randomVectorMember(Target, Vector, "nct_vector_begin", L), L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Step = labelName(), Filled = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", I, Count, "bool", L), Step, Filled, L);
+    label(Step, L);
+    assign(index(Output, I, type(Vector.ElementType, L), L),
+           index(Input, I, type(Vector.ElementType, L), L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Filled, L);
+    assign(randomVectorMember(Target, Vector, "nct_vector_end", L), Output, L);
+    const auto NonEmpty = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), NonEmpty, Done, L);
+    label(NonEmpty, L);
+    assign(randomVectorMember(Target, Vector, "nct_vector_end", L),
+           binary("+", Output, Count, type(Vector.PointerType, L), L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  void initializeDiscreteThresholds(Expression Place, const UtilityVectorRecord &Vector,
+                                    Expression Count, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Real = type(A.Context.DoubleTy, L);
+    const auto Normalize = labelName(), Single = labelName(), Release = labelName(), Done = labelName();
+    branch(binary(">", Count, quantity(1, Size, L), "bool", L), Normalize, Single, L);
+    label(Single, L);
+    branch(binary("==", Count, quantity(1, Size, L), "bool", L), Release, Done, L);
+    label(Release, L);
+    releaseRandomVector(Place, Vector, L);
+    jump(Done, L);
+    label(Normalize, L);
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto Sum = snapshot(A.zero(A.Context.DoubleTy, L), L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto SumCheck = labelName(), SumStep = labelName(), Summed = labelName();
+    jump(SumCheck, L);
+    label(SumCheck, L);
+    branch(binary("<", I, Count, "bool", L), SumStep, Summed, L);
+    label(SumStep, L);
+    assign(Sum, binary("+", Sum, index(Begin, I, Real, L), Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(SumCheck, L);
+    label(Summed, L);
+    assign(I, quantity(0, Size, L), L);
+    const auto NormCheck = labelName(), NormStep = labelName(), Normalized = labelName();
+    jump(NormCheck, L);
+    label(NormCheck, L);
+    branch(binary("<", I, Count, "bool", L), NormStep, Normalized, L);
+    label(NormStep, L);
+    auto At = index(Begin, I, Real, L);
+    assign(At, binary("/", At, Sum, Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(NormCheck, L);
+    label(Normalized, L);
+    auto ThresholdCount = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+    auto Temporary = temporary(type(A.Context.getRecordType(Vector.Record), L), L);
+    allocateRandomVector(Temporary, Vector, ThresholdCount, L);
+    auto Output = snapshot(randomVectorMember(Temporary, Vector, "nct_vector_begin", L), L);
+    auto Partial = snapshot(index(Begin, quantity(0, Size, L), Real, L), L);
+    assign(index(Output, quantity(0, Size, L), Real, L), Partial, L);
+    assign(I, quantity(1, Size, L), L);
+    const auto PartialCheck = labelName(), PartialStep = labelName(), Completed = labelName();
+    jump(PartialCheck, L);
+    label(PartialCheck, L);
+    branch(binary("<", I, ThresholdCount, "bool", L), PartialStep, Completed, L);
+    label(PartialStep, L);
+    assign(Partial, binary("+", Partial, index(Begin, I, Real, L), Real, L), L);
+    assign(index(Output, I, Real, L), Partial, L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(PartialCheck, L);
+    label(Completed, L);
+    releaseRandomVector(Place, Vector, L);
+    assign(Place, Temporary, L);
+    jump(Done, L);
+    label(Done, L);
+  }
   Expression bernoulliParameter(Expression Place, const BernoulliRecord &Info,
                                SourceLocation L) {
     return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
@@ -2952,6 +3157,121 @@ class FunctionLowering {
       auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
       discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
       return {};
+    }
+    if (Operation >= UtilityOperation::DiscreteGenerate && Operation <= UtilityOperation::DiscreteAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedDiscreteDistributionRecord(A.S, A.Sources, R, A.Context);
+      if (!Info)
+        reject(L, "discrete distribution", "The checked distribution layout is unavailable.");
+      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+          Info->Thresholds->getType()->getAsCXXRecordDecl(), A.Context);
+      if (Operation == UtilityOperation::DiscreteEqual || Operation == UtilityOperation::DiscreteNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto Order = compareNestedVectors(discreteVector(dereference(Left, L), *Info, L),
+            discreteVector(dereference(Right, L), *Info, L), *Vector, true, L);
+        return binary(Operation == UtilityOperation::DiscreteEqual ? "==" : "!=",
+                      Order, quantity(0, "int", L), "bool", L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      auto Parameter = discreteParameter(Place, *Info, L);
+      auto Storage = fieldStorage(Parameter, Info->Thresholds, L);
+      if (Operation == UtilityOperation::DiscreteAssign || Operation == UtilityOperation::DiscreteParamSet) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        auto SourceVector = Operation == UtilityOperation::DiscreteAssign
+            ? discreteVector(dereference(Source, L), *Info, L)
+            : fieldStorage(dereference(Source, L), Info->Thresholds, L);
+        copyRandomVector(Storage, SourceVector, *Vector,
+                         F->getParamDecl(0)->getType()->isRValueReferenceType(), true, L);
+        if (Operation == UtilityOperation::DiscreteAssign)
+          return Place;
+        return {};
+      }
+      if (Operation == UtilityOperation::DiscreteReset)
+        return {};
+      if (Operation == UtilityOperation::DiscreteMinimum)
+        return quantity(0, type(Info->ResultType, L), L);
+      if (Operation == UtilityOperation::DiscreteParamGet) {
+        auto Value = Destination ? json::Object(*Destination)
+            : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
+        copyRandomVector(fieldStorage(Value, Info->Thresholds, L), Storage, *Vector, false, false, L);
+        return Value;
+      }
+      const auto Size = type(A.Context.getSizeType(), L);
+      const auto Real = type(A.Context.DoubleTy, L);
+      if (Operation == UtilityOperation::DiscreteMaximum)
+        return cast(randomVectorCount(Storage, *Vector, "nct_vector_end", L), type(Info->ResultType, L), L);
+      if (Operation == UtilityOperation::DiscreteProbabilities) {
+        auto Count = randomVectorCount(Storage, *Vector, "nct_vector_end", L);
+        auto Value = Destination ? json::Object(*Destination)
+            : objectTemporary(F->getReturnType(), L);
+        allocateRandomVector(Value, *Vector, binary("+", Count, quantity(1, Size, L), Size, L), L);
+        auto Output = snapshot(randomVectorMember(Value, *Vector, "nct_vector_begin", L), L);
+        auto Input = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
+        const auto Empty = labelName(), NonEmpty = labelName(), Done = labelName();
+        branch(binary("==", Count, quantity(0, Size, L), "bool", L), Empty, NonEmpty, L);
+        label(Empty, L);
+        assign(index(Output, quantity(0, Size, L), Real, L), one(Real, L), L);
+        jump(Done, L);
+        label(NonEmpty, L);
+        auto Previous = snapshot(index(Input, quantity(0, Size, L), Real, L), L);
+        assign(index(Output, quantity(0, Size, L), Real, L), Previous, L);
+        auto I = snapshot(quantity(1, Size, L), L);
+        const auto Check = labelName(), Step = labelName(), Finished = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", I, Count, "bool", L), Step, Finished, L);
+        label(Step, L);
+        auto Current = snapshot(index(Input, I, Real, L), L);
+        assign(index(Output, I, Real, L), binary("-", Current, Previous, Real, L), L);
+        assign(Previous, Current, L);
+        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+        jump(Check, L);
+        label(Finished, L);
+        assign(index(Output, Count, Real, L), binary("-", one(Real, L), Previous, Real, L), L);
+        jump(Done, L);
+        label(Done, L);
+        return Value;
+      }
+      const auto Random = approvedDiscreteDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random)
+        reject(L, "discrete generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Source = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Storage = fieldStorage(dereference(Source, L), Info->Thresholds, L);
+      }
+      auto Count = randomVectorCount(Storage, *Vector, "nct_vector_end", L);
+      auto Input = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
+      CapturedAlgorithmPredicate Generator{GeneratorAddress, Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = snapshot(emitCanonicalRandom(Generator, *Random, 53, L), L);
+      auto Position = snapshot(quantity(0, Size, L), L);
+      auto Remaining = snapshot(Count, L);
+      const auto Check = labelName(), Step = labelName(), Left = labelName(), Right = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Step, Done, L);
+      label(Step, L);
+      auto Half = snapshot(binary("/", Remaining, quantity(2, Size, L), Size, L), L);
+      auto Middle = snapshot(binary("+", Position, Half, Size, L), L);
+      branch(binary("<", Draw, index(Input, Middle, Real, L), "bool", L), Left, Right, L);
+      label(Left, L);
+      assign(Remaining, Half, L);
+      jump(Check, L);
+      label(Right, L);
+      assign(Position, binary("+", Middle, quantity(1, Size, L), Size, L), L);
+      assign(Remaining, binary("-", binary("-", Remaining, Half, Size, L), quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(Done, L);
+      return cast(Position, type(Info->ResultType, L), L);
     }
     if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
       const auto *F = Call->getDirectCallee();
@@ -27030,7 +27350,7 @@ class FunctionLowering {
   Expression compareNestedVectors(Expression Left, Expression Right,
                                   const UtilityVectorRecord &Vector,
                                   bool Equality, SourceLocation L) {
-    const auto VectorType = A.Context.getRecordType(Vector.Record);
+    const auto VectorType = A.Context.getRecordType(Vector.Record).withConst();
     auto LeftAddress = snapshot(address(std::move(Left), VectorType, L), L);
     auto RightAddress = snapshot(address(std::move(Right), VectorType, L), L);
     auto Member = [&](const Expression &Address, const char *Name) {
@@ -28065,6 +28385,63 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Kind = approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedDiscreteDistributionRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+          Info->Thresholds->getType()->getAsCXXRecordDecl(), A.Context);
+      auto Storage = discreteVector(Place, *Info, L);
+      if (*Kind == DiscreteDistributionConstruction::Copy || *Kind == DiscreteDistributionConstruction::Move ||
+          *Kind == DiscreteDistributionConstruction::Parameter) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        auto Input = *Kind == DiscreteDistributionConstruction::Parameter
+            ? fieldStorage(dereference(Source, L), Info->Thresholds, L)
+            : discreteVector(dereference(Source, L), *Info, L);
+        copyRandomVector(Storage, Input, *Vector, *Kind == DiscreteDistributionConstruction::Move, false, L);
+        return;
+      }
+      zeroRandomVector(Storage, *Vector, L);
+      if (*Kind == DiscreteDistributionConstruction::Default)
+        return;
+      const auto Size = type(A.Context.getSizeType(), L);
+      Expression Input, Count;
+      QualType Element;
+      if (*Kind == DiscreteDistributionConstruction::InitializerList) {
+        const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+            Constructor->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        auto Value = snapshot(expression(C->getArg(0)), L);
+        Input = snapshot(fieldStorage(Value, List->Begin, L), L);
+        Count = snapshot(fieldStorage(Value, List->Size, L), L);
+        Element = List->ElementType.withConst();
+      } else {
+        Input = seedSequenceIterator(C->getArg(0), L);
+        auto Last = seedSequenceIterator(C->getArg(1), L);
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(A.S, A.Sources,
+            C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        Element = (Wrapped ? Wrapped->IteratorType : C->getArg(0)->getType())->getPointeeType();
+        Count = snapshot(quantity(0, Size, L), L);
+        const auto Measure = labelName(), Done = labelName();
+        branch(binary("!=", Input, Last, "bool", L), Measure, Done, L);
+        label(Measure, L);
+        assign(Count, cast(binary("-", Last, Input, type(A.Context.getPointerDiffType(), L), L), Size, L), L);
+        jump(Done, L);
+        label(Done, L);
+      }
+      allocateRandomVector(Storage, *Vector, Count, L);
+      auto Begin = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto Check = labelName(), Step = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", I, Count, "bool", L), Step, Done, L);
+      label(Step, L);
+      assign(index(Begin, I, type(A.Context.DoubleTy, L), L),
+             cast(index(Input, I, type(Element, L), L), type(A.Context.DoubleTy, L), L), L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(Done, L);
+      initializeDiscreteThresholds(Storage, *Vector, Count, L);
+      return;
+    }
     if (const auto Kind = approvedBernoulliConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedBernoulliRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
       if (*Kind == BernoulliConstruction::CopyOrMove) {
