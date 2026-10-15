@@ -8433,7 +8433,7 @@ observable new/delete effects. Existing source reference/lifetime checks apply.
 ### Source function objects for discrete weights
 
 The four-argument distribution/parameter constructors admit ordinary source-owned
-non-template standard-layout records with no bases, unions or lambdas. The SDK's
+standard-layout records with no bases, unions or lambdas. The SDK's
 actual selected copy construction and nonstatic, nonvolatile unary call operator
 must satisfy the source constructor and callable rules, with arithmetic
 value/reference components and an lvalue receiver. Their signatures, definitions
@@ -8441,6 +8441,12 @@ and bodies remain ordinary source dependencies. Source-defined and supported
 generated copy constructors and destructors follow the existing source lifecycle
 checks; missing definitions or throwing bodies never gain admission from an SDK
 proof. The nested copy is authenticated from the exact outer parameter slot.
+
+Checked concrete primary, partial and full class-template specializations also
+qualify when their selected non-template call operator is defined in the class
+body. The actual method has no member function-template primary. Type/value
+arguments, defaults, receiver layouts, distinct instantiated method identities
+and source copy/destruction bodies retain the ordinary class-template checks.
 
 Construct the actual outer by-value parameter in final storage. Distribution
 construction then invokes the selected copy for the nested param_type parameter;
@@ -8450,8 +8456,8 @@ actual objects. Zero/one counts retain copying and destruction while suppressing
 weight calls. Destroy the nested parameter after weight initialization and keep
 the outer/direct parameter alive until the caller's complete expression ends,
 including comma-expression observations. Default-argument and subobject lifetime
-rules continue to apply. Class-template callables, bases, unions and lambdas
-remain separate admission work.
+rules continue to apply. Member function templates, out-of-line template call operators, bases, unions
+and lambdas remain separate admission work.
 
 ## Standard template parsing across targets
 

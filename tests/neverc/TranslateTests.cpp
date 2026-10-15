@@ -359226,3 +359226,61 @@ int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2DiscreteTemplateWeightsPreserveSpecializationsAndLifetimes) {
+  for (const std::string &Name : {"random-discrete-template-weights",
+                                 "random-discrete-template-lifetimes"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name + ".cpp");
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteTemplateWeightsRetainSourceAndSDKBoundaries) {
+  struct Case {const char *Name; const char *Declarations;};
+  const Case Cases[] = {
+      {"outer-constructor",R"cpp(template<class T>struct Weight{double operator()(double x)const{return x*x+1.;}};
+namespace std {template<> template<> discrete_distribution<int>::discrete_distribution(size_t,double,double,Weight<int>){}})cpp"},
+      {"parameter-constructor",R"cpp(template<class T>struct Weight{double operator()(double x)const{return x*x+1.;}};
+namespace std {template<> template<> discrete_distribution<int>::param_type::param_type(size_t,double,double,Weight<int>){}})cpp"},
+      {"external-operator",R"cpp(template<class T>struct Weight{double operator()(double)const;};)cpp"},
+      {"throwing-operator",R"cpp(template<class T>struct Weight{double operator()(double)const{throw 1;}};)cpp"},
+      {"member-template",R"cpp(template<class T>struct Weight{template<class U>double operator()(U x)const{return x*x+1.;}};)cpp"},
+      {"out-of-line",R"cpp(template<class T>struct Weight{double operator()(double)const;}; template<class T>double Weight<T>::operator()(double x)const{return x*x+1.;})cpp"},
+      {"throwing-copy",R"cpp(template<class T>struct Weight{Weight(){} Weight(const Weight&){throw 1;} double operator()(double x)const{return x*x+1.;}};)cpp"},
+      {"missing-copy",R"cpp(template<class T>struct Weight{Weight(){} Weight(const Weight&); double operator()(double x)const{return x*x+1.;}};)cpp"},
+      {"throwing-destructor",R"cpp(template<class T>struct Weight{~Weight(){throw 1;} double operator()(double x)const{return x*x+1.;}};)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("discrete-template-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("discrete-template-guard-") + Case.Name + ".nc");
+    writeFile(Source,
+        std::string(R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[1024];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+)cpp") + Case.Declarations + R"cpp(
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight<int>{});return d.max();}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

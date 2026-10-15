@@ -157,7 +157,9 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
         M->getParent()->getCanonicalDecl() != WeightRecord->getCanonicalDecl() ||
         M->isStatic() || M->isVolatile() || M->isVariadic() || M->getNumParams() != 1 ||
         M->getOverloadedOperator() != OO_Call || M->getRefQualifier() == RQ_RValue ||
-        M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         M->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        M->getPrimaryTemplate() || M->getDescribedFunctionTemplate() ||
         !ordinaryOperator(M) || !callableMethod(M) ||
         !randomWeightScalar(M->getReturnType().getNonReferenceType(), Context) ||
         !randomWeightScalar(M->getParamDecl(0)->getType().getNonReferenceType(), Context) ||
@@ -1538,12 +1540,20 @@ approvedDiscreteWeightObjectConstruction(const State &S, const SourceManager &SM
   const auto *R = Object->getAsCXXRecordDecl(); R = R ? R->getDefinition() : nullptr;
   if (!R || Object.hasLocalQualifiers() || !S.owns(SM, R->getLocation()) ||
       R->isLambda() || R->isUnion() || R->getNumBases() ||
-      isa<ClassTemplateSpecializationDecl>(R) || !R->isStandardLayout())
+      !R->isStandardLayout())
     return std::nullopt;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy, true, R);
   const bool Outer = C->getParent()->getCanonicalDecl() == Info->Distribution->getCanonicalDecl();
   if (!Selection.retain(C) || !Selection.WeightMethod || (Outer && !Selection.WeightCopy))
     return std::nullopt;
+  if (isa<ClassTemplateSpecializationDecl>(R)) {
+    const auto *Pattern = Selection.WeightMethod->getInstantiatedFromMemberFunction();
+    const auto *Written = Pattern ? Pattern->getDefinition() : Selection.WeightMethod->getDefinition();
+    // Start with source definitions written in a class body. Out-of-line
+    // template signatures need their own retained declaration-context proof.
+    if (!Written || !Written->getLexicalDeclContext()->isRecord())
+      return std::nullopt;
+  }
   const auto *D = R->getDestructor();
   if (D && !D->isTrivial()) {
     if (D->isDeleted() || (!ordinaryDestructor(D) && !defaultedLifecycle(D)) || !D->hasBody())
