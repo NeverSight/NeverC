@@ -53,7 +53,7 @@ enum class ExprKind {
   Literal, Var, Unary, Binary, Cast, BitCast, Member, Aggregate, Null, Address,
   Dereference, ArrayDecay, Index, FunctionAddress
 };
-enum class UnaryOperator { Plus, Minus, BitNot, LogicalNot, Sqrt };
+enum class UnaryOperator { Plus, Minus, BitNot, LogicalNot, Sqrt, Log };
 enum class BinaryOperator {
   Add,
   Subtract,

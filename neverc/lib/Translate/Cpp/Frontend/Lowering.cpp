@@ -1433,6 +1433,10 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
   }
+  Expression exponentialParameter(Expression Place, const ExponentialRecord &Info,
+                               SourceLocation L) {
+    return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
+  }
   Expression bernoulliParameter(Expression Place, const BernoulliRecord &Info,
                                SourceLocation L) {
     return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
@@ -3712,6 +3716,71 @@ class FunctionLowering {
       jump(Check, L);
       label(Done, L);
       return cast(Position, type(Info->ResultType, L), L);
+    }
+    if (Operation >= UtilityOperation::ExponentialGenerate && Operation <= UtilityOperation::ExponentialAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedExponentialRecord(A.S, A.Sources, R, A.Context);
+      if (!Info) reject(L, "Exponential distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::ExponentialEqual || Operation == UtilityOperation::ExponentialNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        return binary(Operation == UtilityOperation::ExponentialEqual ? "==" : "!=",
+            fieldStorage(exponentialParameter(dereference(std::move(Left), L), *Info, L), Info->Rate, L),
+            fieldStorage(exponentialParameter(dereference(std::move(Right), L), *Info, L), Info->Rate, L), "bool", L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::ExponentialAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
+        return Place;
+      }
+      auto Parameter = exponentialParameter(Place, *Info, L);
+      switch (Operation) {
+      case UtilityOperation::ExponentialRate:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Rate, L), L);
+      case UtilityOperation::ExponentialMinimum: return A.zero(Info->ResultType, L);
+      case UtilityOperation::ExponentialMaximum: return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
+      case UtilityOperation::ExponentialReset: return {};
+      case UtilityOperation::ExponentialParamGet: {
+        auto Value = snapshot(std::move(Parameter), L);
+        if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
+        return Value;
+      }
+      case UtilityOperation::ExponentialParamSet: {
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
+        return {};
+      }
+      default: break;
+      }
+      const auto Random = approvedExponentialRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random) reject(L, "Exponential generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(std::move(Address), L);
+      }
+      const auto Real = type(Info->ResultType, L);
+      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = emitCanonicalRandom(Generator, *Random,
+          Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
+      json::Array Arguments;
+      Arguments.push_back(binary("-", one(Real, L), std::move(Draw), Real, L));
+      auto Log = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
+          {"args", std::move(Arguments)}, {"loc", A.loc(L)}}, L);
+      json::Array Negative;
+      Negative.push_back(std::move(Log));
+      auto Numerator = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "-"},
+          {"args", std::move(Negative)}, {"loc", A.loc(L)}}, L);
+      // The selected SDK expression reads lambda after its canonical draw.
+      auto Rate = snapshot(fieldStorage(std::move(Parameter), Info->Rate, L), L);
+      return snapshot(binary("/", std::move(Numerator), std::move(Rate), Real, L), L);
     }
     if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
       const auto *F = Call->getDirectCallee();
@@ -29087,6 +29156,21 @@ class FunctionLowering {
       jump(Check, L);
       label(Done, L);
       initializeDiscreteThresholds(Storage, *Vector, Count, L);
+      return;
+    }
+    if (const auto Kind = approvedExponentialConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedExponentialRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (*Kind == ExponentialConstruction::CopyOrMove) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(std::move(Place), snapshot(dereference(std::move(Source), L), L), L);
+      } else if (*Kind == ExponentialConstruction::Parameter) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(fieldStorage(std::move(Place), Info->Storage, L), snapshot(dereference(std::move(Source), L), L), L);
+      } else {
+        auto Rate = *Kind == ExponentialConstruction::Default ? one(type(Info->ResultType, L), L)
+            : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L);
+        assign(fieldStorage(exponentialParameter(std::move(Place), *Info, L), Info->Rate, L), std::move(Rate), L);
+      }
       return;
     }
     if (const auto Kind = approvedBernoulliConstruction(A.S, A.Sources, C, A.Context)) {

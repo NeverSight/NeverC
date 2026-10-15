@@ -985,6 +985,16 @@ enum class UtilityOperation {
   UniformNotEqual,
   UniformAssign,
   GenerateCanonical,
+  ExponentialGenerate,
+  ExponentialRate,
+  ExponentialMinimum,
+  ExponentialMaximum,
+  ExponentialParamGet,
+  ExponentialParamSet,
+  ExponentialReset,
+  ExponentialEqual,
+  ExponentialNotEqual,
+  ExponentialAssign,
   BernoulliGenerate,
   BernoulliProbability,
   BernoulliMinimum,
@@ -1313,6 +1323,27 @@ struct CanonicalRandomCall {
   uint64_t Bits;
 };
 std::optional<CanonicalRandomCall> approvedCanonicalRandomCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+struct ExponentialRecord {
+  const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
+  clang::QualType ResultType;
+  const clang::FieldDecl *Storage, *Rate;
+};
+enum class ExponentialConstruction { Default, Rate, Parameter, CopyOrMove };
+std::optional<ExponentialRecord> approvedExponentialRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<ExponentialConstruction> approvedExponentialConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedExponentialDefaultArgument(
+    const State &S, const clang::SourceManager &SM, const clang::CXXDefaultArgExpr *Default,
+    const clang::FunctionDecl *Function, unsigned Index, const clang::ASTContext &Context);
+std::optional<UtilityAlgorithmRandomCall> approvedExponentialRandomCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedExponentialOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 struct BernoulliRecord {
@@ -2150,6 +2181,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredExponentialRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;

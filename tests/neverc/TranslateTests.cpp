@@ -359526,3 +359526,61 @@ int main(){
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2ExponentialPreservesParametersStateAndSamples) {
+  for (const std::string &Name : {"random-exponential-source", "random-exponential-minstd", "random-exponential-mt64", "random-exponential-zero"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExponentialRetainsSDKMathAndLimitBodies) {
+  struct Case {const char *Name; const char *Declarations; const char *Body;};
+  const Case Cases[] = {
+      {"outer-default", R"cpp(namespace std{template<> exponential_distribution<double>::exponential_distribution(){}})cpp", R"cpp(D d;return d.lambda()!=1.;)cpp"},
+      {"parameter-constructor", R"cpp(namespace std{template<> exponential_distribution<double>::param_type::param_type(double){}})cpp", R"cpp(D::param_type p;return p.lambda()!=1.;)cpp"},
+      {"rate-getter", R"cpp(namespace std{template<> double exponential_distribution<double>::lambda()const{return 2.;}})cpp", R"cpp(D d;return d.lambda()!=2.;)cpp"},
+      {"minimum", R"cpp(namespace std{template<> double exponential_distribution<double>::min()const{return 2.;}})cpp", R"cpp(D d;return d.min()!=2.;)cpp"},
+      {"maximum", R"cpp(namespace std{template<> double exponential_distribution<double>::max()const{return 2.;}})cpp", R"cpp(D d;return d.max()!=2.;)cpp"},
+      {"sampling", R"cpp(namespace std{template<> template<> double exponential_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"log-declaration", R"cpp(extern "C" double log(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"logf-declaration", R"cpp(extern "C" float logf(float);)cpp", R"cpp(std::exponential_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"builtin-log-declaration", R"cpp(extern "C" double __builtin_log(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"builtin-logf-declaration", R"cpp(extern "C" float __builtin_logf(float);)cpp", R"cpp(std::exponential_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"builtin-infinity-declaration", R"cpp(extern "C" double __builtin_huge_val();)cpp", R"cpp(D d;return d.max()!=0.;)cpp"},
+      {"builtin-infinityf-declaration", R"cpp(extern "C" float __builtin_huge_valf();)cpp", R"cpp(std::exponential_distribution<float>d;return d.max()!=0.f;)cpp"},
+      {"raw-log", R"cpp()cpp", R"cpp(return __builtin_log(2.)<0.;)cpp"},
+      {"standalone-std-log", R"cpp()cpp", R"cpp(return std::log(2.)<0.;)cpp"},
+      {"long-double", R"cpp()cpp", R"cpp(std::exponential_distribution<long double>d;return d.lambda()!=1.;)cpp"},
+      {"source-rate-body", R"cpp(double rate(){asm("");return 2.;})cpp", R"cpp(D d(rate());return d.lambda()!=2.;)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("exponential-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("exponential-guard-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <random>
+struct G{using result_type=unsigned;unsigned state=17,calls=0;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+template<class R>unsigned long long bits(R v){const auto*p=static_cast<const unsigned char*>(static_cast<const void*>(&v));unsigned long long n=0;for(unsigned i=0;i<sizeof(R);++i)n|=static_cast<unsigned long long>(p[i])<<(8*i);return n;}
+)cpp") + Case.Declarations + R"cpp(
+using D=std::exponential_distribution<double>;
+int main(){
+)cpp" + Case.Body + "}\n");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

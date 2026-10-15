@@ -331,6 +331,10 @@ public:
         if (!CoreV2 || O.size() != 5)
           return error("Square root requires core v2 and only kind, type, operator, args and location.");
         E.UnaryOp = UnaryOperator::Sqrt;
+      } else if (Op == "log") {
+        if (!CoreV2 || O.size() != 5)
+          return error("Logarithm requires core v2 and only kind, type, operator, args and location.");
+        E.UnaryOp = UnaryOperator::Log;
       } else
         return error("Unknown unary operator.");
     } else if (K == "binary") {
@@ -1000,6 +1004,10 @@ class Verifier {
         return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
                 E.Args[0].ValueType == E.ValueType) ||
                error(E.Loc, "Square root requires matching core v2 float/double operand and result types.");
+      if (E.UnaryOp == UnaryOperator::Log)
+        return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
+                E.Args[0].ValueType == E.ValueType) ||
+               error(E.Loc, "Logarithm requires matching core v2 float/double operand and result types.");
       if (E.UnaryOp == UnaryOperator::LogicalNot)
         return (E.Args[0].ValueType.isScalar() &&
                 !E.Args[0].ValueType.isFloating() &&

@@ -16237,3 +16237,35 @@ linear sampling body. It authenticates the selected builtin signature, SDK
 call site and all explicit redeclarations, and retains intervening SDK wrapper
 bodies. Source redeclarations or replacements are rejected. This adds no math
 mapping, external libm import or ordinary source builtin allowance.
+
+
+### Exponential distributions and authenticated logarithms
+
+`exponential_distribution<float/double>` and `param_type` admit default, rate, parameter, copy and move construction, assignment, lambda, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. Sampling retains RealType canonical subtraction, logarithm, negation and division under the existing strict floating environment, including negative zero and the pinned canonical upper-endpoint infinity. Selected SDK log and infinity declarations, bodies and explicit redeclarations are authenticated; source replacements and ordinary core-profile math calls remain restricted. The typed logarithm uses the C23 backend and hosted CRT/libm log/logf, whose last bits can vary by platform; independent native sample comparisons use small ULP tolerances while generator state and parameter bits remain exact. These distributions need no heap storage. Long double and stream serialization remain separate work.
+
+The checked layout consists of one RealType rate in param_type and that parameter
+as the distribution's only field. Trivial SDK copy/move and assignment preserve
+independent scalar storage. Default construction and omitted parameter rates use
+one; selected source rate expressions evaluate once. The parameter getter returns
+a value and the setter copies the supplied parameter. Sampling retains the
+canonical precision of 24 bits for float or 53 for double, subtraction in
+RealType, the selected logarithm, unary negation and rate division. The supplied
+generator is mutated in place and no extra draws are inserted.
+
+The typed IR unary `log` operation has the same exact profile, one-operand,
+matching float/double and five-field wire restrictions as `sqrt`. NC uses
+`__builtin_logf` or `__builtin_log`; the C23 backend owns their LLVM lowering and
+hosted CRT/libm dependency. This adds no cpp-math-v1 module or implicit mapping.
+The selected SDK sampling proof separately permits only its logarithm builtin
+signature and authenticated call sites in the exponential or logarithm helper
+header. Every explicit redeclaration is checked. The maximum-property proof also
+retains the selected numeric_limits body and its exact SDK infinity builtin.
+Source replacements, builtin redeclarations, unsupported source argument bodies,
+ordinary core math calls and long double remain rejected.
+
+Native O0/O2 references cover source, minstd and mt19937_64 generators, four
+rates for each real type, API identities and 384 independently collected sample
+values. Generated tests use small ULP tolerances for those platform math values,
+with exact parameter bits and next-generator states. Exact negative-zero,
+canonical upper-endpoint infinity and once-only rate evaluation edges complement
+the typed/protocol and source-provenance rejection tests.

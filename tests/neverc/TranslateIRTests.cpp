@@ -3976,3 +3976,85 @@ TEST(TranslateIR, CoreV2SquareRootWireRetainsProfileAndPayloadBoundary) {
       EXPECT_FALSE(parseModule(Wire(true, Arg, Extra), M, D));
   }
 }
+
+TEST(TranslateIR, CoreV2LogarithmRequiresMatchingFloatingTypes) {
+  for (auto Kind : {TypeKind::Float, TypeKind::Double}) {
+    const Type T{Kind, {}};
+    auto M = module(true);
+    M.Functions[0].Result = T;
+    M.Functions[0].Params.push_back({"nct_input", T, InputLoc});
+    auto Root = pointerExpr(ExprKind::Unary, T, {variable("nct_input", T)});
+    Root.UnaryOp = UnaryOperator::Log;
+    M.Functions[0].Body.back() = ret(Root);
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(Kind == TypeKind::Float ? "__builtin_logf(nct_input)"
+                                                       : "__builtin_log(nct_input)"),
+              std::string::npos);
+    EXPECT_NE(Output.Text.find("#pragma STDC FP_CONTRACT OFF"), std::string::npos);
+    EXPECT_TRUE(M.Mappings.empty());
+    for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(T),
+                             Type{Kind == TypeKind::Float ? TypeKind::Double : TypeKind::Float, {}}}) {
+      auto Bad = M;
+      Bad.Functions[0].Params[0].ValueType = Wrong;
+      Bad.Functions[0].Body.back().Value->Args[0].ValueType = Wrong;
+      invalid(Bad, "Logarithm");
+    }
+    for (unsigned Count : {0u, 2u}) {
+      auto Bad = M;
+      Bad.Functions[0].Body.back().Value->Args.resize(Count, variable("nct_input", T));
+      invalid(Bad, "operand count");
+    }
+    auto Bad = M;
+    Bad.Functions[0].Body.back().Value->UnaryOp = static_cast<UnaryOperator>(255);
+    invalid(Bad);
+    Bad = M;
+    Bad.Profile = "cpp-core-v1";
+    Bad.Target.Carriers.reset();
+    invalid(Bad);
+  }
+  for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(intType())}) {
+    auto M = module(true);
+    M.Functions[0].Result = Wrong;
+    M.Functions[0].Params.push_back({"nct_input", Wrong, InputLoc});
+    auto Root = pointerExpr(ExprKind::Unary, Wrong, {variable("nct_input", Wrong)});
+    Root.UnaryOp = UnaryOperator::Log;
+    M.Functions[0].Body.back() = ret(Root);
+    invalid(M, "Logarithm");
+    if (Wrong.Kind != TypeKind::Pointer) {
+      M.Profile = "cpp-core-v1";
+      M.Target.Carriers.reset();
+      invalid(M, "Logarithm");
+    }
+  }
+}
+
+TEST(TranslateIR, CoreV2LogarithmWireRetainsProfileAndPayloadBoundary) {
+  for (const std::string T : {"float", "double"}) {
+    const std::string Loc = R"json("loc":{"file":"input.cpp","line":2,"column":9})json";
+    const std::string Arg = "{\"kind\":\"literal\",\"type\":\"" + T +
+        "\",\"bits\":\"" + (T == "float" ? "40800000" : "4010000000000000") + "\"," + Loc + "}";
+    auto Wire = [&](bool V2, const std::string &Args, const std::string &Extra = "") {
+      auto JSON = wireModule(V2);
+      replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + T + "\"");
+      const auto Begin = JSON.find("{\"kind\": \"literal\"");
+      const auto End = JSON.find("}}", Begin) + 2;
+      JSON.replace(Begin, End - Begin, "{\"kind\":\"unary\",\"type\":\"" + T +
+          "\",\"operator\":\"log\",\"args\":[" + Args + "]," + Loc + Extra + "}");
+      return JSON;
+    };
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(Wire(true, Arg), M, D));
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    EXPECT_EQ(M.Functions[0].Body.back().Value->UnaryOp, UnaryOperator::Log);
+    for (const auto &Args : {std::string(), Arg + "," + Arg}) {
+      ASSERT_TRUE(parseModule(Wire(true, Args), M, D));
+      invalid(M, "operand count");
+    }
+    EXPECT_FALSE(parseModule(Wire(false, Arg), M, D));
+    for (const auto *Extra : {",\"name\":\"log\"", ",\"value\":\"4\"", ",\"bits\":\"40800000\""})
+      EXPECT_FALSE(parseModule(Wire(true, Arg, Extra), M, D));
+  }
+}

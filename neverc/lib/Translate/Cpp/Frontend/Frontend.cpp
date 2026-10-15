@@ -11364,6 +11364,12 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
               return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
+      } else if (const auto Exponential = approvedExponentialRecord(S, Sources, D, Context)) {
+        if (RequiredExponentialRecords.insert(D->getCanonicalDecl()).second) {
+          for (const auto *Field : D->fields())
+            if (type(Field->getType(), L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
       } else if (const auto Bernoulli = approvedBernoulliRecord(S, Sources, D, Context)) {
         if (RequiredBernoulliRecords.insert(D->getCanonicalDecl()).second) {
           for (const auto *Field : D->fields())
@@ -15363,7 +15369,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (A.S.coreV2() &&
         (approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
          approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedExponentialConstruction(A.S, A.Sources, C, A.Context) ||
+          approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
          approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
          approvedRandomEngineConstruction(A.S, A.Sources, C, A.Context) ||
@@ -15975,6 +15982,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       Random = approvedPiecewiseRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
       Random = approvedDiscreteDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+    if (!Random)
+      Random = approvedExponentialRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
       Random = approvedBernoulliRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
@@ -18894,7 +18903,8 @@ public:
           Construction &&
           (approvedPiecewiseConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedDiscreteDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
-           approvedBernoulliConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedExponentialConstruction(A.S, A.Sources, Construction, A.Context) ||
+          approvedBernoulliConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUniformDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedRandomEngineConstruction(A.S, A.Sources, Construction,
@@ -24337,7 +24347,8 @@ public:
           // by authenticated optional operations.
         } else if (approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
-                   approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedExponentialConstruction(A.S, A.Sources, C, A.Context) ||
+          approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedRandomEngineConstruction(A.S, A.Sources, C,
