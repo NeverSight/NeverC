@@ -15377,6 +15377,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           checkBinding(C->getArg(I), true);
       }
       if (const auto Object = approvedDiscreteWeightObjectConstruction(A.S, A.Sources, C, A.Context)) {
+        if (!checkUtilitySelectedConstruction(Object->NestedConstruction, L))
+          return;
         AlgorithmPredicateMethods.emplace(Object->Method->getCanonicalDecl(), L);
         collectOperationFunctionTypeSource(Object->Method);
         for (auto *Dependencies : ActiveOperationSources)

@@ -358970,13 +358970,13 @@ void operator delete(void*)noexcept{++frees;}
 double weight(double){throw 1;}
 int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
 )cpp"},
-      {"function-object-callback",R"cpp(using Size=decltype(sizeof(0));
+      {"throwing-object-copy",R"cpp(using Size=decltype(sizeof(0));
 struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
 Arena arena{};Size offset;unsigned allocations,frees;
 void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
 void operator delete(void*)noexcept{++frees;}
 #include <random>
-struct Weight {Weight(){} Weight(const Weight&){} double operator()(double x) const {return x*x+1.;}}; Weight weight;
+struct Weight {Weight(){} Weight(const Weight&){throw 1;} double operator()(double x) const {return x*x+1.;}}; Weight weight;
 int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
 )cpp"},
   };
@@ -359140,22 +359140,22 @@ void operator delete(void*)noexcept{++frees;}
 struct Weight {double operator()(double) const {throw 1;}};
 int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
 )cpp"},
-      {"nontrivial-copy",R"cpp(using Size=decltype(sizeof(0));
+      {"missing-copy-body",R"cpp(using Size=decltype(sizeof(0));
 struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
 Arena arena{};Size offset;unsigned allocations,frees;
 void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
 void operator delete(void*)noexcept{++frees;}
 #include <random>
-struct Weight {Weight(){} Weight(const Weight&){} double operator()(double x)const{return x*x+1.;}};
+struct Weight {Weight(){} Weight(const Weight&); double operator()(double x)const{return x*x+1.;}};
 int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
 )cpp"},
-      {"nontrivial-destructor",R"cpp(using Size=decltype(sizeof(0));
+      {"missing-destructor-body",R"cpp(using Size=decltype(sizeof(0));
 struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
 Arena arena{};Size offset;unsigned allocations,frees;
 void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
 void operator delete(void*)noexcept{++frees;}
 #include <random>
-struct Weight {~Weight(){} double operator()(double x)const{return x*x+1.;}};
+struct Weight {~Weight(); double operator()(double x)const{return x*x+1.;}};
 int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
 )cpp"},
   };
@@ -359164,6 +359164,60 @@ int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
     const auto Source = tmpFile(std::string("discrete-object-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("discrete-object-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteWeightObjectsPreserveNontrivialLifetimes) {
+  for (const std::string &Name : {"random-discrete-object-lifetimes",
+                                 "random-discrete-object-parameters",
+                                 "random-discrete-object-defaults"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name + ".cpp");
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteWeightObjectLifecyclesRetainSourceBodies) {
+  struct Case {const char *Name; const char *Lifecycle;};
+  const Case Cases[] = {
+      {"throwing-copy", "Weight(){} Weight(const Weight&){throw 1;}"},
+      {"throwing-destructor", "~Weight(){throw 1;}"},
+      {"throwing-copy-default", "Weight(){} Weight(const Weight&, int n=bad()){} static int bad(){throw 1;}"},
+      {"missing-copy-default", "Weight(){} Weight(const Weight&, int n=bad()){} static int bad();"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("discrete-lifecycle-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("discrete-lifecycle-guard-") + Case.Name + ".nc");
+    writeFile(Source,
+        std::string(R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {
+)cpp") + Case.Lifecycle + R"cpp(
+double operator()(double x)const{return x*x+1.;}};
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp");
     const auto Result = translate(Source,
         {"--profile", "cpp-core-v2", "-o", Output.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;

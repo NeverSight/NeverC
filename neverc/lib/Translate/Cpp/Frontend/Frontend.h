@@ -1323,6 +1323,7 @@ enum class DiscreteDistributionConstruction {
 struct DiscreteWeightObject {
   const clang::CXXRecordDecl *Record;
   const clang::CXXMethodDecl *Method;
+  const clang::CXXConstructExpr *NestedConstruction;
   clang::QualType ObjectType;
 };
 std::optional<DiscreteWeightObject> approvedDiscreteWeightObjectConstruction(

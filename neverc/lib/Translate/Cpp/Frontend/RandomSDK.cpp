@@ -140,8 +140,9 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   }
   bool sourceWeightCopy(const CXXConstructorDecl *C) const {
     if (!WeightRecord || !C || C->getParent()->getCanonicalDecl() != WeightRecord->getCanonicalDecl() ||
-        !C->isImplicit() || !C->isTrivial() || C->isDeleted() || !C->isCopyOrMoveConstructor() ||
-        C->getNumParams() != 1 || !C->getParamDecl(0)->getType()->isReferenceType() ||
+        C->isDeleted() || !C->isCopyConstructor() ||
+        (!(C->isImplicit() && C->isTrivial()) && (!supportedConstructor(C) || !C->hasBody())) ||
+        !C->getNumParams() || !C->getParamDecl(0)->getType()->isReferenceType() ||
         !Context.hasSameUnqualifiedType(C->getParamDecl(0)->getType().getNonReferenceType(),
                                         Context.getRecordType(WeightRecord)))
       return false;
@@ -227,6 +228,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
 public:
   const CXXMethodDecl *Method = nullptr, *Minimum = nullptr, *Maximum = nullptr;
   const CXXMethodDecl *WeightMethod = nullptr;
+  const CXXConstructExpr *WeightCopy = nullptr;
   uint64_t MinimumValue = 0, MaximumValue = 0;
 
   RandomSelection(const State &S, const SourceManager &SM,
@@ -530,7 +532,36 @@ public:
     return retain(F);
   }
   bool VisitCXXConstructExpr(CXXConstructExpr *E) {
+    if (WeightRecord && E->getConstructor()->getParent()->getCanonicalDecl() == WeightRecord->getCanonicalDecl()) {
+      const auto *Reference = E->getNumArgs() >= 1
+          ? dyn_cast<DeclRefExpr>(E->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+      const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+      const auto *C = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
+      const auto File = C ? S.sdkFile(SM, C->getLocation()) : std::nullopt;
+      if (!sourceWeightCopy(E->getConstructor()) || E->getNumArgs() != E->getConstructor()->getNumParams() ||
+          !C || C->getNumParams() != 4 ||
+          Parameter != C->getParamDecl(3) || !File || File->Root != "libcxx" ||
+          File->Path != "__random/discrete_distribution.h" ||
+          !approvedStandardSDKDeclaration(S, SM, C) ||
+          !Context.hasSameUnqualifiedType(Parameter->getType(), Context.getRecordType(WeightRecord)) ||
+          !E->getArg(0)->isLValue() || (WeightCopy && WeightCopy != E))
+        return false;
+      for (unsigned I = 1; I < E->getNumArgs(); ++I)
+        if (!isa<CXXDefaultArgExpr>(E->getArg(I))) return false;
+      WeightCopy = E;
+    }
     return retainType(E->getType()) && retain(E->getConstructor());
+  }
+  bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
+    const auto *D = E->getTemporary()->getDestructor();
+    if (!WeightRecord || !D || D->getParent()->getCanonicalDecl() != WeightRecord->getCanonicalDecl())
+      return true;
+    if (D->isDeleted() || (!D->isTrivial() && !ordinaryDestructor(D) && !defaultedLifecycle(D)) ||
+        (!D->isTrivial() && !D->hasBody()))
+      return false;
+    for (const auto *Declaration : D->redecls())
+      if (!S.owns(SM, Declaration->getLocation())) return false;
+    return true;
   }
   bool VisitType(Type *T) { return retainType(QualType(T, 0)); }
   bool VisitExpr(Expr *E) {
@@ -1507,13 +1538,20 @@ approvedDiscreteWeightObjectConstruction(const State &S, const SourceManager &SM
   const auto *R = Object->getAsCXXRecordDecl(); R = R ? R->getDefinition() : nullptr;
   if (!R || Object.hasLocalQualifiers() || !S.owns(SM, R->getLocation()) ||
       R->isLambda() || R->isUnion() || R->getNumBases() ||
-      isa<ClassTemplateSpecializationDecl>(R) || !R->isStandardLayout() ||
-      !R->isTriviallyCopyable() || !R->hasTrivialCopyConstructor() || !R->hasTrivialDestructor())
+      isa<ClassTemplateSpecializationDecl>(R) || !R->isStandardLayout())
     return std::nullopt;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy, true, R);
-  if (!Selection.retain(C) || !Selection.WeightMethod)
+  const bool Outer = C->getParent()->getCanonicalDecl() == Info->Distribution->getCanonicalDecl();
+  if (!Selection.retain(C) || !Selection.WeightMethod || (Outer && !Selection.WeightCopy))
     return std::nullopt;
-  return DiscreteWeightObject{R, Selection.WeightMethod, Object};
+  const auto *D = R->getDestructor();
+  if (D && !D->isTrivial()) {
+    if (D->isDeleted() || (!ordinaryDestructor(D) && !defaultedLifecycle(D)) || !D->hasBody())
+      return std::nullopt;
+    for (const auto *Declaration : D->redecls())
+      if (!S.owns(SM, Declaration->getLocation())) return std::nullopt;
+  }
+  return DiscreteWeightObject{R, Selection.WeightMethod, Selection.WeightCopy, Object};
 }
 
 std::optional<DiscreteDistributionConstruction>

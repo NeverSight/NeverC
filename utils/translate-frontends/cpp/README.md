@@ -848,9 +848,10 @@ core arithmetic value/reference signatures, retaining source bodies, bindings, m
 conversion order, zero/one-count callback suppression and SDK vector growth.
 Referenced double weights are read at element construction after allocation and
 before old-buffer release, preserving source allocator side effects.
-Ordinary source non-template function objects with implicit trivial copying and
-trivial destruction retain their selected operator and separate outer/inner
-parameter copies, including mutable state and self-pointer identity. Direct param_type construction retains just its own by-value parameter.
+Ordinary source non-template function objects retain checked source copies and
+destruction, selected operators, actual parameter identities and mutable state.
+The nested parameter ends after weight initialization; the outer/direct parameter
+survives to the caller complete-expression end, even for zero/one counts.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,

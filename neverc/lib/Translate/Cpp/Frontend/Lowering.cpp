@@ -28452,12 +28452,26 @@ class FunctionLowering {
         auto Lower = snapshot(argument(C->getArg(1), Constructor->getParamDecl(1)->getType()), L);
         auto Upper = snapshot(argument(C->getArg(2), Constructor->getParamDecl(2)->getType()), L);
         auto Callback = snapshot(argument(C->getArg(3), Constructor->getParamDecl(3)->getType()), L);
-        if (Object && Info->Record->getCanonicalDecl() == Info->Distribution->getCanonicalDecl()) {
-          // The SDK outer parameter and nested param_type parameter are two
-          // distinct objects, even when their copy operation is trivial.
-          auto Nested = objectTemporary(Object->ObjectType, L);
-          assign(Nested, dereference(Callback, L), L);
-          Callback = snapshot(address(Nested, Object->ObjectType, L), L);
+        std::optional<Expression> NestedCallback;
+        if (Object) {
+          // Clang keeps the caller's by-value parameter alive until the end of
+          // the complete expression, including direct param_type construction.
+          if (needsDestruction(Object->ObjectType)) {
+            if (FullExpressions.empty())
+              reject(L, "discrete callback lifetime", "An enclosing complete expression is required.");
+            own(dereference(Callback, L), Object->ObjectType, L, FullExpressions.back());
+          }
+          if (Object->NestedConstruction) {
+            auto Nested = objectTemporary(Object->ObjectType, L);
+            // This copy is a constructor argument. Its default temporaries
+            // live through the entire nested parameter constructor call.
+            beginFullExpression();
+            constructMemorySource(Nested, Object->ObjectType,
+                                  Object->NestedConstruction->getConstructor(), Callback, L,
+                                  Object->NestedConstruction);
+            NestedCallback = Nested;
+            Callback = snapshot(address(Nested, Object->ObjectType, L), L);
+          }
         }
         const auto Real = type(A.Context.DoubleTy, L);
         const auto Fill = labelName(), Done = labelName();
@@ -28509,6 +28523,10 @@ class FunctionLowering {
         initializeDiscreteThresholds(Storage, *Vector, Count, L);
         jump(Done, L);
         label(Done, L);
+        if (NestedCallback) {
+          destroy(*NestedCallback, Object->ObjectType, L);
+          endFullExpression();
+        }
         return;
       }
       Expression Input, Count;

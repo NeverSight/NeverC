@@ -8432,23 +8432,26 @@ observable new/delete effects. Existing source reference/lifetime checks apply.
 
 ### Source function objects for discrete weights
 
-The four-argument distribution/parameter constructors also admit ordinary
-source-owned non-template standard-layout records with no bases or unions,
-implicit trivial copy construction and trivial destruction. The exact selected
-nonstatic, nonvolatile unary call operator must be source-owned, non-template,
-callable on an lvalue and have supported arithmetic value/reference components.
-Its signature, definition and body remain ordinary source dependencies; a
-header proof never substitutes for completing that body.
+The four-argument distribution/parameter constructors admit ordinary source-owned
+non-template standard-layout records with no bases, unions or lambdas. The SDK's
+actual selected copy construction and nonstatic, nonvolatile unary call operator
+must satisfy the source constructor and callable rules, with arithmetic
+value/reference components and an lvalue receiver. Their signatures, definitions
+and bodies remain ordinary source dependencies. Source-defined and supported
+generated copy constructors and destructors follow the existing source lifecycle
+checks; missing definitions or throwing bodies never gain admission from an SDK
+proof. The nested copy is authenticated from the exact outer parameter slot.
 
-Construct the actual outer by-value parameter, then copy it into the nested
-parameter constructor's separate object. Invoke the latter consistently, so
-mutable state stays in that copy and a self pointer established during prvalue
-construction still refers to the outer object. A const operator preserves its
-receiver qualification. Direct param_type construction has only its own
-by-value parameter and does not add an outer copy. User construction runs through the normal source path;
-trivial copies do not erase it. Zero/one counts retain these parameter objects
-while suppressing invocations. Nontrivial copies/destruction, class-template
-callables, bases, unions and lambdas remain separate admission work.
+Construct the actual outer by-value parameter in final storage. Distribution
+construction then invokes the selected copy for the nested param_type parameter;
+direct param_type construction has only its own parameter. Mutable state, self
+identity, const operators and arithmetic value/reference conversions use these
+actual objects. Zero/one counts retain copying and destruction while suppressing
+weight calls. Destroy the nested parameter after weight initialization and keep
+the outer/direct parameter alive until the caller's complete expression ends,
+including comma-expression observations. Default-argument and subobject lifetime
+rules continue to apply. Class-template callables, bases, unions and lambdas
+remain separate admission work.
 
 ## Standard template parsing across targets
 
