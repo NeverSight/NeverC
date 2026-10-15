@@ -2296,6 +2296,80 @@ class FunctionLowering {
     label(Done, L);
     return snapshot(binary("/", Sum, Base, Real, L), L);
   }
+  Expression emitGammaRandom(const CapturedAlgorithmPredicate &Generator,
+                             const UtilityAlgorithmRandomCall &Random,
+                             QualType ResultType, Expression ShapeInput,
+                             Expression ScaleInput, SourceLocation L) {
+    const auto Real = type(ResultType, L);
+    auto Draw = [&]() {
+      return emitCanonicalRandom(Generator, Random,
+          ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
+    };
+    auto Unary = [&](llvm::StringRef Operator, Expression Value) {
+      json::Array Args;
+      Args.push_back(std::move(Value));
+      return snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", Operator.str()},
+          {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+    };
+    auto Exponential = [&]() {
+      return Unary("-", Unary("log", binary("-", one(Real, L), Draw(), Real, L)));
+    };
+    auto Shape = snapshot(std::move(ShapeInput), L);
+    auto Value = temporary(Real, L);
+    auto Zero = A.zero(ResultType, L);
+    auto Two = cast(quantity(2, "int", L), Real, L);
+    const auto Unit = labelName(), NonUnit = labelName(), Large = labelName(), Small = labelName(), Done = labelName();
+    branch(binary("==", Shape, one(Real, L), "bool", L), Unit, NonUnit, L);
+    label(Unit, L);
+    assign(Value, Exponential(), L);
+    jump(Done, L);
+    label(NonUnit, L);
+    branch(binary(">", Shape, one(Real, L), "bool", L), Large, Small, L);
+    label(Large, L);
+    auto B = snapshot(binary("-", Shape, one(Real, L), Real, L), L);
+    auto C = snapshot(binary("-", binary("*", cast(quantity(3, "int", L), Real, L), Shape, Real, L),
+        cast(A.floatingLiteral(llvm::APFloat(0.75), L), Real, L), Real, L), L);
+    const auto RetryLarge = labelName(), Nonzero = labelName(), Nonnegative = labelName(), LogCheck = labelName();
+    jump(RetryLarge, L);
+    label(RetryLarge, L);
+    auto U = snapshot(Draw(), L);
+    auto V = snapshot(Draw(), L);
+    auto W = snapshot(binary("*", U, binary("-", one(Real, L), U, Real, L), Real, L), L);
+    branch(binary("!=", W, Zero, "bool", L), Nonzero, RetryLarge, L);
+    label(Nonzero, L);
+    auto Y = snapshot(binary("*", Unary("sqrt", binary("/", C, W, Real, L)),
+        binary("-", U, cast(A.floatingLiteral(llvm::APFloat(0.5), L), Real, L), Real, L), Real, L), L);
+    assign(Value, binary("+", B, Y, Real, L), L);
+    branch(binary(">=", Value, Zero, "bool", L), Nonnegative, RetryLarge, L);
+    label(Nonnegative, L);
+    auto Z = snapshot(binary("*", binary("*", binary("*", binary("*", binary("*",
+        cast(quantity(64, "int", L), Real, L), W, Real, L), W, Real, L), W, Real, L), V, Real, L), V, Real, L), L);
+    auto Limit = binary("-", one(Real, L), binary("/", binary("*", binary("*", Two, Y, Real, L), Y, Real, L), Value, Real, L), Real, L);
+    branch(binary("<=", Z, std::move(Limit), "bool", L), Done, LogCheck, L);
+    label(LogCheck, L);
+    auto Threshold = binary("*", Two, binary("-", binary("*", B,
+        Unary("log", binary("/", Value, B, Real, L)), Real, L), Y, Real, L), Real, L);
+    branch(binary("<=", Unary("log", Z), std::move(Threshold), "bool", L), Done, RetryLarge, L);
+    label(Small, L);
+    auto Inverse = binary("/", one(Real, L), Shape, Real, L);
+    const auto RetrySmall = labelName(), Lower = labelName(), Upper = labelName();
+    jump(RetrySmall, L);
+    label(RetrySmall, L);
+    auto SmallU = snapshot(Draw(), L);
+    auto ES = Exponential();
+    branch(binary("<=", SmallU, binary("-", one(Real, L), Shape, Real, L), "bool", L), Lower, Upper, L);
+    label(Lower, L);
+    assign(Value, binary("pow", SmallU, Inverse, Real, L), L);
+    branch(binary("<=", Value, ES, "bool", L), Done, RetrySmall, L);
+    label(Upper, L);
+    auto E = Unary("-", Unary("log", binary("/", binary("-", one(Real, L), SmallU, Real, L), Shape, Real, L)));
+    auto Base = binary("+", binary("-", one(Real, L), Shape, Real, L), binary("*", Shape, E, Real, L), Real, L);
+    assign(Value, binary("pow", std::move(Base), Inverse, Real, L), L);
+    branch(binary("<=", Value, binary("+", E, ES, Real, L), "bool", L), Done, RetrySmall, L);
+    label(Done, L);
+    auto Scale = snapshot(std::move(ScaleInput), L);
+    return snapshot(binary("*", Value, Scale, Real, L), L);
+  }
   Expression emitAlgorithmRandom(const CapturedAlgorithmPredicate &Generator,
                                  const UtilityAlgorithmRandomCall &Info,
                                  Expression Upper, SourceLocation L) {
@@ -3854,6 +3928,9 @@ class FunctionLowering {
       }
       const auto Real = type(Info->ResultType, L);
       CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      if (Info->Kind == ScalarRealDistributionKind::Gamma)
+        return emitGammaRandom(Generator, *Random, Info->ResultType,
+            fieldStorage(Parameter, Info->First, L), fieldStorage(Parameter, Info->Second, L), L);
       if (Info->CacheValid) {
         auto Up = temporary(Real, L);
         const auto UseSpare = labelName(), Fresh = labelName(), Retry = labelName(), CheckZero = labelName(), Accepted = labelName(), Sampled = labelName();
@@ -29323,7 +29400,7 @@ class FunctionLowering {
           assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       } else {
         auto First = snapshot(*Kind == ScalarRealDistributionConstruction::Default
-            ? (Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
+            ? (Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
             : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L), L);
         std::optional<Expression> Second;
         if (Info->Second)

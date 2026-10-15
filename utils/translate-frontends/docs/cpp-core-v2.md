@@ -16395,3 +16395,36 @@ scale pairs, 288 initial samples and exact next-generator states. Edge fixtures
 cover signed zero, infinity, canonical draw counts and argument effects. Both
 formal distribution suites, power protocol tests, affected regressions, eight
 targets and unchanged managed-source sanitizer runs remain required checks.
+
+
+### Gamma distributions and rejection branches
+
+`gamma_distribution<float/double>` and `param_type` admit default, alpha/beta, parameter, copy/move construction, assignment, alpha/beta getters, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. Alpha and beta default to one; bounds are positive zero/infinity. Sampling preserves the pinned alpha-below/equal/above-one branches, paired draws, every rejection and selected sqrt/log/pow operations. Alpha is copied before generator calls and beta is read at return, preserving parameter mutations during sampling. Selected SDK layouts, defaults, parameter getters, exponential dependencies, math bodies and explicit redeclarations are authenticated. Native comparisons use small math tolerances with exact parameter effects and generator states. No new primitive or SDK/catalog revision is added beyond the existing power support. Long double and stream serialization remain separate work.
+
+The scalar gamma parameter owns alpha/beta fields, both defaulting to one.
+No cache or runtime ownership is added. The selected sampling body first copies
+alpha, creates the uniform and exponential dependencies and selects its branch.
+Alpha equal to one uses the default-rate exponential sample. Alpha greater than
+one preserves the two uniform draws, zero-w rejection, nonnegative-x check,
+polynomial acceptance shortcut and final logarithmic acceptance test. Alpha less
+than one draws both the uniform and exponential values before either power
+branch, preserving rejection and the additional upper-branch logarithm.
+The final beta load follows all generator calls. Explicit sample parameters do
+not replace stored parameters. Arithmetic association and RealType rounding
+follow the pinned body; no unsupported logical binary operator is introduced.
+
+The SDK proof follows the actual parameter accessors and exponential bodies.
+Square root is limited to gamma/roots wrapper sites, logarithm to gamma,
+exponential and logarithm wrapper sites, and power to gamma/exponential-function
+wrapper sites. Exact signatures, actual argument types and explicit redeclaration
+origins remain checked. Existing strict typed sqrt/log/pow and hosted C23 backend
+math are reused without changing the SDK/catalog or math mapping fingerprints.
+
+Independent native O0/O2 references cover alpha below/equal/above one, both real
+precisions, source/minstd/mt19937_64 engines, 288 first sample values and exact
+next-generator states. Deterministic fixtures force zero-w and negative-x
+rejections, polynomial acceptance, logarithmic rejection/acceptance and both
+small-alpha power branches. A generator mutating an explicit parameter proves
+old-alpha/new-beta timing. Source replacements, math declarations, malformed
+existing math protocol cases, eight-target checks and unchanged managed-source
+sanitizers remain required verification before publication.

@@ -36,6 +36,8 @@ Core v2 另支援經認證的 `std::linear_congruential_engine` 與 `std::mersen
 
 `weibull_distribution<float/double>` 及 `param_type` 支援預設、形狀/尺度、參數、複製/移動建構、指派、a/b、邊界、參數介面、相等比較、reset，以及使用已驗證原始碼或 SDK 產生器的兩種取樣形式。形狀與尺度皆預設為一，邊界為正零與正無窮；取樣保留 b*pow(exponential(1),1/a)、RealType 運算與產生器消耗。所選 Weibull/指數分布本體、預設值與 log/pow 宣告皆經驗證。核心 v2 的 pow 要求兩個相符的 float/double 參數並產生 C23 內建呼叫，宿主 CRT/libm 匯入由後端處理。原生數值對照使用較小數學容差，參數與產生器狀態精確比較。long double 與串流序列化仍待接入。
 
+`gamma_distribution<float/double>` 及 `param_type` 支援預設、alpha/beta、參數、複製/移動建構、指派、alpha/beta 存取器、邊界、參數介面、相等比較、reset，以及使用已驗證原始碼或 SDK 產生器的兩種取樣形式。alpha 與 beta 皆預設為一，邊界為正零與正無窮。取樣保留固定 SDK 中 alpha 小於、等於、大於一的三條分支、成對亂數、每次拒絕重試與所選 sqrt/log/pow 運算；呼叫產生器前複製 alpha，回傳時讀取 beta，因此保留取樣期間的參數修改。所選 SDK 佈局、預設值、參數存取器、指數分布依賴、數學本體與明確重新宣告皆經驗證。原生對照使用較小數學容差，參數效果與產生器狀態精確比較；重用既有冪運算，不新增原語或 SDK/目錄版本。long double 與串流序列化仍待接入。
+
 離散權重函式指標也支援算術型別的 const 左值參考、右值參考參數及參考回傳值。轉換後的引數暫存物件在回呼期間保留參考身分；參考結果沿用已檢查的間接呼叫路徑。double 參考於 SDK 元素建構時複製，即擴容配置後、舊緩衝釋放前；其他算術結果於插入前轉為 double。O0/O2 對照涵蓋參數修改、全域參考回傳及可觀察的配置器副作用。
 
 兩個演算法也接納經校驗的 `std::__wrap_iter<T*>` 範圍，包括已支援的 vector 和 string 迭代器。Sample 的輸入和輸出可分別使用原始指標或包裝迭代器，保留 const 輸入及經校驗的純量轉換，並傳回原輸出迭代器型別。所選 SDK 迭代器操作仍須通過認證。
