@@ -1324,7 +1324,7 @@ struct PiecewiseConstantRecord {
   clang::QualType ResultType;
   const clang::FieldDecl *Storage, *Bounds, *Densities, *Areas;
 };
-enum class PiecewiseConstantConstruction { Default, Range, Parameter, Copy };
+enum class PiecewiseConstantConstruction { Default, Range, Parameter, Copy, CountWeights, ListWeights };
 std::optional<PiecewiseConstantRecord> approvedPiecewiseConstantRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
@@ -1349,13 +1349,13 @@ enum class DiscreteDistributionConstruction {
   Default, Range, InitializerList, Parameter, Copy, Move, FunctionWeights,
   ObjectWeights
 };
-struct DiscreteWeightObject {
+struct RandomWeightObject {
   const clang::CXXRecordDecl *Record;
   const clang::CXXMethodDecl *Method;
   const clang::CXXConstructExpr *NestedConstruction;
   clang::QualType ObjectType;
 };
-std::optional<DiscreteWeightObject> approvedDiscreteWeightObjectConstruction(
+std::optional<RandomWeightObject> approvedRandomWeightObjectConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 std::optional<DiscreteDistributionConstruction>

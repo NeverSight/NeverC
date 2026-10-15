@@ -15396,7 +15396,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (Constructor->getParamDecl(I)->getType()->isReferenceType())
           checkBinding(C->getArg(I), true);
       }
-      if (const auto Object = approvedDiscreteWeightObjectConstruction(A.S, A.Sources, C, A.Context)) {
+      if (const auto Object = approvedRandomWeightObjectConstruction(A.S, A.Sources, C, A.Context)) {
         if (!checkUtilitySelectedConstruction(Object->NestedConstruction, L))
           return;
         AlgorithmPredicateMethods.emplace(Object->Method->getCanonicalDecl(), L);

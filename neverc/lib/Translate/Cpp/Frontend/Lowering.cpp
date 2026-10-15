@@ -1107,6 +1107,77 @@ class FunctionLowering {
            binary("+", Begin, binary("+", Count, quantity(1, Size, L), Size, L),
                   type(Vector.PointerType, L), L), L);
   }
+  struct RandomWeightCall {
+    std::optional<RandomWeightObject> Object;
+    Expression Callback;
+    QualType CallbackType;
+    std::optional<Expression> Nested;
+  };
+  RandomWeightCall captureRandomWeightCall(const CXXConstructExpr *C, unsigned Slot, SourceLocation L) {
+    const auto Object = approvedRandomWeightObjectConstruction(A.S, A.Sources, C, A.Context);
+    const auto CallbackType = C->getConstructor()->getParamDecl(Slot)->getType();
+    auto Callback = snapshot(argument(C->getArg(Slot), CallbackType), L);
+    std::optional<Expression> NestedCallback;
+    if (Object) {
+      // Clang keeps the caller's by-value parameter alive until the end of
+      // the complete expression, including direct param_type construction.
+      if (needsDestruction(Object->ObjectType)) {
+        if (FullExpressions.empty())
+          reject(L, "random callback lifetime", "An enclosing complete expression is required.");
+        own(dereference(Callback, L), Object->ObjectType, L, FullExpressions.back());
+      }
+      if (Object->NestedConstruction) {
+        auto Nested = objectTemporary(Object->ObjectType, L);
+        // This copy is a constructor argument. Its default temporaries
+        // live through the entire nested parameter constructor call.
+        beginFullExpression();
+        constructMemorySource(Nested, Object->ObjectType,
+                              Object->NestedConstruction->getConstructor(), Callback, L,
+                              Object->NestedConstruction);
+        NestedCallback = Nested;
+        Callback = snapshot(address(Nested, Object->ObjectType, L), L);
+      }
+    }
+    return {Object, std::move(Callback), CallbackType, std::move(NestedCallback)};
+  }
+  void finishRandomWeightCall(RandomWeightCall &Weight, SourceLocation L) {
+    if (Weight.Nested) {
+      destroy(*Weight.Nested, Weight.Object->ObjectType, L);
+      endFullExpression();
+    }
+  }
+  void appendRandomWeight(Expression Storage, const UtilityVectorRecord &Vector,
+                          RandomWeightCall &WeightCall, Expression Point,
+                          Expression Count, SourceLocation L) {
+    const auto &Object = WeightCall.Object;
+    const auto *Prototype = Object ? Object->Method->getType()->getAs<FunctionProtoType>()
+        : WeightCall.CallbackType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto ParameterType = Prototype->getParamType(0);
+    auto Converted = snapshot(cast(std::move(Point), type(ParameterType.getNonReferenceType(), L), L), L);
+    json::Array Arguments;
+    if (ParameterType->isReferenceType())
+      Arguments.push_back(cast(address(Converted, ParameterType.getNonReferenceType(), L), type(ParameterType, L), L));
+    else
+      Arguments.push_back(json::Object(Converted));
+    Expression Weight;
+    if (Object) {
+      json::Array CallArguments;
+      CallArguments.push_back(cast(WeightCall.Callback, type(Object->Method->getThisType(), L), L));
+      CallArguments.push_back(std::move(Arguments[0]));
+      chargeCall(CallArguments, L);
+      auto Result = temporary(type(Object->Method->getReturnType(), L), L);
+      Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Object->Method)},
+          {"args", std::move(CallArguments)}, {"target", json::Object(Result)}, {"loc", A.loc(L)}});
+      Weight = Object->Method->getReturnType()->isReferenceType()
+                   ? dereference(std::move(Result), L) : std::move(Result);
+    } else {
+      Weight = emitAlgorithmCallback(WeightCall.Callback, WeightCall.CallbackType, std::move(Arguments), L);
+    }
+    const bool ReferenceValue = Prototype->getReturnType()->isReferenceType() &&
+        A.Context.hasSameUnqualifiedType(Prototype->getReturnType().getNonReferenceType(), Vector.ElementType);
+    appendRandomVector(Storage, Vector, cast(std::move(Weight), type(Vector.ElementType, L), L),
+                       Count, L, ReferenceValue);
+  }
   Expression piecewiseParameter(Expression Place, const PiecewiseConstantRecord &Info,
                                 SourceLocation L) {
     return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L)
@@ -28677,16 +28748,68 @@ class FunctionLowering {
         assign(index(Begin, quantity(1, Size, L), Real, L), one(Real, L), L);
         return;
       }
-      auto First = seedSequenceIterator(C->getArg(0), L);
-      auto Last = seedSequenceIterator(C->getArg(1), L);
-      auto Weights = seedSequenceIterator(C->getArg(2), L);
-      auto Count = snapshot(quantity(0, Size, L), L);
-      const auto Measure = labelName(), Measured = labelName();
-      branch(binary("!=", First, Last, "bool", L), Measure, Measured, L);
-      label(Measure, L);
-      assign(Count, cast(binary("-", Last, First, type(A.Context.getPointerDiffType(), L), L), Size, L), L);
-      jump(Measured, L);
-      label(Measured, L);
+      if (*Kind == PiecewiseConstantConstruction::CountWeights) {
+        auto Count = snapshot(argument(C->getArg(0), Constructor->getParamDecl(0)->getType()), L);
+        auto Lower = snapshot(argument(C->getArg(1), Constructor->getParamDecl(1)->getType()), L);
+        auto Upper = snapshot(argument(C->getArg(2), Constructor->getParamDecl(2)->getType()), L);
+        auto WeightCall = captureRandomWeightCall(C, 3, L);
+        auto BoundCount = snapshot(binary("+", Count, quantity(1, Size, L), Size, L), L);
+        const auto Empty = labelName(), Sized = labelName();
+        branch(binary("==", Count, quantity(0, Size, L), "bool", L), Empty, Sized, L);
+        label(Empty, L);
+        assign(BoundCount, quantity(2, Size, L), L);
+        jump(Sized, L);
+        label(Sized, L);
+        allocateRandomVector(Bounds, *Vector, BoundCount, L);
+        fillRandomVector(Bounds, *Vector, BoundCount, A.zero(Info->ResultType, L), L);
+        auto Begin = snapshot(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), L);
+        auto N = snapshot(binary("-", BoundCount, quantity(1, Size, L), Size, L), L);
+        auto Width = snapshot(binary("/", binary("-", Upper, Lower, Real, L), cast(N, Real, L), Real, L), L);
+        allocateRandomVector(Density, *Vector, N, L);
+        assign(randomVectorMember(Density, *Vector, "nct_vector_end", L),
+               randomVectorMember(Density, *Vector, "nct_vector_begin", L), L);
+        auto I = snapshot(quantity(0, Size, L), L);
+        const auto Check = labelName(), Step = labelName(), Filled = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", I, N, "bool", L), Step, Filled, L);
+        label(Step, L);
+        assign(index(Begin, I, Real, L),
+               binary("+", Lower, binary("*", cast(I, Real, L), Width, Real, L), Real, L), L);
+        // The SDK's .5 literal promotes the midpoint to double even for float.
+        const auto Double = type(A.Context.DoubleTy, L);
+        auto Point = snapshot(binary("+", cast(index(Begin, I, Real, L), Double, L),
+            binary("*", cast(Width, Double, L), A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), Double, L), L);
+        appendRandomWeight(Density, *Vector, WeightCall, std::move(Point), I, L);
+        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+        jump(Check, L);
+        label(Filled, L);
+        assign(index(Begin, N, Real, L), Upper, L);
+        initializePiecewiseConstant(Parameter, *Info, *Vector, L);
+        finishRandomWeightCall(WeightCall, L);
+        return;
+      }
+      Expression First, Weights, Count;
+      std::optional<RandomWeightCall> WeightCall;
+      if (*Kind == PiecewiseConstantConstruction::ListWeights) {
+        const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+            Constructor->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        auto Value = snapshot(expression(C->getArg(0)), L);
+        First = snapshot(fieldStorage(Value, List->Begin, L), L);
+        Count = snapshot(fieldStorage(Value, List->Size, L), L);
+        WeightCall = captureRandomWeightCall(C, 1, L);
+      } else {
+        First = seedSequenceIterator(C->getArg(0), L);
+        auto Last = seedSequenceIterator(C->getArg(1), L);
+        Weights = seedSequenceIterator(C->getArg(2), L);
+        Count = snapshot(quantity(0, Size, L), L);
+        const auto Measure = labelName(), Measured = labelName();
+        branch(binary("!=", First, Last, "bool", L), Measure, Measured, L);
+        label(Measure, L);
+        assign(Count, cast(binary("-", Last, First, type(A.Context.getPointerDiffType(), L), L), Size, L), L);
+        jump(Measured, L);
+        label(Measured, L);
+      }
       allocateRandomVector(Bounds, *Vector, Count, L);
       auto Begin = snapshot(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), L);
       auto I = snapshot(quantity(0, Size, L), L);
@@ -28728,6 +28851,9 @@ class FunctionLowering {
       label(Weighted, L);
       auto N = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
       allocateRandomVector(Density, *Vector, N, L);
+      if (WeightCall)
+        assign(randomVectorMember(Density, *Vector, "nct_vector_end", L),
+               randomVectorMember(Density, *Vector, "nct_vector_begin", L), L);
       auto Output = snapshot(randomVectorMember(Density, *Vector, "nct_vector_begin", L), L);
       assign(I, quantity(0, Size, L), L);
       const auto WeightCheck = labelName(), WeightStep = labelName(), Filled = labelName();
@@ -28735,14 +28861,25 @@ class FunctionLowering {
       label(WeightCheck, L);
       branch(binary("<", I, N, "bool", L), WeightStep, Filled, L);
       label(WeightStep, L);
-      assign(index(Output, I, Real, L), cast(dereference(Weights, L), Real, L), L);
-      assign(Weights, binary("+", Weights, quantity(1, Size, L), *Weights.getString("type"), L), L);
+      if (WeightCall) {
+        // The addition occurs in RealType before the .5 double multiplication.
+        auto Sum = snapshot(binary("+", index(Begin, binary("+", I, quantity(1, Size, L), Size, L), Real, L),
+                                   index(Begin, I, Real, L), Real, L), L);
+        const auto Double = type(A.Context.DoubleTy, L);
+        auto Point = snapshot(binary("*", cast(Sum, Double, L), A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), L);
+        appendRandomWeight(Density, *Vector, *WeightCall, std::move(Point), I, L);
+      } else {
+        assign(index(Output, I, Real, L), cast(dereference(Weights, L), Real, L), L);
+        assign(Weights, binary("+", Weights, quantity(1, Size, L), *Weights.getString("type"), L), L);
+      }
       assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
       jump(WeightCheck, L);
       label(Filled, L);
       initializePiecewiseConstant(Parameter, *Info, *Vector, L);
       jump(Done, L);
       label(Done, L);
+      if (WeightCall)
+        finishRandomWeightCall(*WeightCall, L);
       return;
     }
     if (const auto Kind = approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context)) {
@@ -28765,32 +28902,10 @@ class FunctionLowering {
       const auto Size = type(A.Context.getSizeType(), L);
       if (*Kind == DiscreteDistributionConstruction::FunctionWeights ||
           *Kind == DiscreteDistributionConstruction::ObjectWeights) {
-        const auto Object = approvedDiscreteWeightObjectConstruction(A.S, A.Sources, C, A.Context);
         auto Count = snapshot(argument(C->getArg(0), Constructor->getParamDecl(0)->getType()), L);
         auto Lower = snapshot(argument(C->getArg(1), Constructor->getParamDecl(1)->getType()), L);
         auto Upper = snapshot(argument(C->getArg(2), Constructor->getParamDecl(2)->getType()), L);
-        auto Callback = snapshot(argument(C->getArg(3), Constructor->getParamDecl(3)->getType()), L);
-        std::optional<Expression> NestedCallback;
-        if (Object) {
-          // Clang keeps the caller's by-value parameter alive until the end of
-          // the complete expression, including direct param_type construction.
-          if (needsDestruction(Object->ObjectType)) {
-            if (FullExpressions.empty())
-              reject(L, "discrete callback lifetime", "An enclosing complete expression is required.");
-            own(dereference(Callback, L), Object->ObjectType, L, FullExpressions.back());
-          }
-          if (Object->NestedConstruction) {
-            auto Nested = objectTemporary(Object->ObjectType, L);
-            // This copy is a constructor argument. Its default temporaries
-            // live through the entire nested parameter constructor call.
-            beginFullExpression();
-            constructMemorySource(Nested, Object->ObjectType,
-                                  Object->NestedConstruction->getConstructor(), Callback, L,
-                                  Object->NestedConstruction);
-            NestedCallback = Nested;
-            Callback = snapshot(address(Nested, Object->ObjectType, L), L);
-          }
-        }
+        auto WeightCall = captureRandomWeightCall(C, 3, L);
         const auto Real = type(A.Context.DoubleTy, L);
         const auto Fill = labelName(), Done = labelName();
         branch(binary(">", Count, quantity(1, Size, L), "bool", L), Fill, Done, L);
@@ -28809,42 +28924,14 @@ class FunctionLowering {
         label(Step, L);
         auto Point = snapshot(binary("+", binary("+", Lower,
             binary("*", cast(I, Real, L), Width, Real, L), Real, L), Half, Real, L), L);
-        const auto *Prototype = Object ? Object->Method->getType()->getAs<FunctionProtoType>()
-            : Constructor->getParamDecl(3)->getType()->getPointeeType()->getAs<FunctionProtoType>();
-        const auto ParameterType = Prototype->getParamType(0);
-        auto Converted = snapshot(cast(std::move(Point), type(ParameterType.getNonReferenceType(), L), L), L);
-        json::Array Arguments;
-        if (ParameterType->isReferenceType())
-          Arguments.push_back(cast(address(Converted, ParameterType.getNonReferenceType(), L), type(ParameterType, L), L));
-        else
-          Arguments.push_back(json::Object(Converted));
-        Expression Weight;
-        if (Object) {
-          json::Array CallArguments;
-          CallArguments.push_back(cast(Callback, type(Object->Method->getThisType(), L), L));
-          CallArguments.push_back(std::move(Arguments[0]));
-          chargeCall(CallArguments, L);
-          auto Result = temporary(type(Object->Method->getReturnType(), L), L);
-          Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Object->Method)},
-              {"args", std::move(CallArguments)}, {"target", json::Object(Result)}, {"loc", A.loc(L)}});
-          Weight = Object->Method->getReturnType()->isReferenceType()
-                       ? dereference(std::move(Result), L) : std::move(Result);
-        } else {
-          Weight = emitAlgorithmCallback(Callback, Constructor->getParamDecl(3)->getType(), std::move(Arguments), L);
-        }
-        const bool ReferenceValue = Prototype->getReturnType()->isReferenceType() &&
-            A.Context.hasSameUnqualifiedType(Prototype->getReturnType().getNonReferenceType(), A.Context.DoubleTy);
-        appendRandomVector(Storage, *Vector, cast(std::move(Weight), Real, L), I, L, ReferenceValue);
+        appendRandomWeight(Storage, *Vector, WeightCall, std::move(Point), I, L);
         assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
         jump(Check, L);
         label(Filled, L);
         initializeDiscreteThresholds(Storage, *Vector, Count, L);
         jump(Done, L);
         label(Done, L);
-        if (NestedCallback) {
-          destroy(*NestedCallback, Object->ObjectType, L);
-          endFullExpression();
-        }
+        finishRandomWeightCall(WeightCall, L);
         return;
       }
       Expression Input, Count;

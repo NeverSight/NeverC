@@ -8481,8 +8481,23 @@ suppress parameter moves. Rvalue parameter construction and the outer generated
 move therefore copy all three vectors and preserve the source. Parameter
 assignment reserves all three capacities before assigning their contents;
 self-assignment and compatible capacities retain existing storage. Allocation,
-relocation and release follow the selected vector operations. Callback-based
-constructors, long double and stream serialization remain separate work.
+relocation and release follow the selected vector operations.
+
+Count and initializer-list weight constructors accept ordinary arithmetic
+value/reference function pointers and checked source standard-layout function
+objects, including admitted class-template specializations with in-class
+non-template operators. The actual SDK-selected source operator and copy bodies
+remain subject to ordinary source checks. Outer and nested by-value parameters,
+copy-constructor default temporaries and destruction retain their complete
+expression boundaries, including empty-list fallback.
+
+A zero interval count allocates two boundaries and performs one callback. Count
+construction computes the width and boundaries in RealType, then promotes to
+double for the SDK `.5` midpoint. List construction adds adjacent RealType
+boundaries before double multiplication by `.5`; fewer than two boundaries use
+the unit interval without invoking the callback. Argument/result conversions,
+reference reads, vector reserve order and normalization follow the selected SDK.
+Long double and stream serialization remain separate work.
 
 ## Standard template parsing across targets
 

@@ -138,6 +138,34 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     // global new/delete implementation. Do not traverse that user's body as SDK.
     return true;
   }
+  bool weightParameter(const ParmVarDecl *Parameter) const {
+    const auto *C = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
+    const auto *Owner = C ? C->getParent() : nullptr;
+    if (Owner && Owner->getName() == "param_type")
+      Owner = dyn_cast<CXXRecordDecl>(Owner->getDeclContext());
+    if ((!WeightCallback && !WeightRecord) || !C || !Owner ||
+        Owner->getCanonicalDecl() != Generator->getCanonicalDecl())
+      return false;
+    const bool Piecewise = Generator->getName() == "piecewise_constant_distribution";
+    if (!Piecewise && Generator->getName() != "discrete_distribution")
+      return false;
+    const auto File = S.sdkFile(SM, C->getLocation());
+    if (!File || File->Root != "libcxx" ||
+        File->Path != (Piecewise ? "__random/piecewise_constant_distribution.h"
+                                : "__random/discrete_distribution.h") ||
+        !approvedStandardSDKDeclaration(S, SM, C))
+      return false;
+    if (C->getNumParams() == 4)
+      return Parameter == C->getParamDecl(3) &&
+          Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) &&
+          Context.hasSameType(C->getParamDecl(1)->getType(), DistanceType) &&
+          Context.hasSameType(C->getParamDecl(2)->getType(), DistanceType);
+    if (!Piecewise || C->getNumParams() != 2 || Parameter != C->getParamDecl(1))
+      return false;
+    const auto List = approvedUtilityInitializerListRecord(S, SM,
+        C->getParamDecl(0)->getType()->getAsCXXRecordDecl(), Context);
+    return List && Context.hasSameType(List->ElementType, DistanceType);
+  }
   bool sourceWeightCopy(const CXXConstructorDecl *C) const {
     if (!WeightRecord || !C || C->getParent()->getCanonicalDecl() != WeightRecord->getCanonicalDecl() ||
         C->isDeleted() || !C->isCopyConstructor() ||
@@ -167,11 +195,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     const auto *Object = dyn_cast<DeclRefExpr>(Invocation->getArg(0)->IgnoreParenImpCasts());
     const auto *Parameter = Object ? dyn_cast<ParmVarDecl>(Object->getDecl()) : nullptr;
-    const auto *C = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
-    const auto File = C ? S.sdkFile(SM, C->getLocation()) : std::nullopt;
-    if (!C || C->getNumParams() != 4 || Parameter != C->getParamDecl(3) ||
-        !File || File->Root != "libcxx" || File->Path != "__random/discrete_distribution.h" ||
-        !approvedStandardSDKDeclaration(S, SM, C) ||
+    if (!weightParameter(Parameter) ||
         !Context.hasSameUnqualifiedType(Parameter->getType(), Context.getRecordType(WeightRecord)) ||
         !Invocation->getArg(0)->isLValue() ||
         !Context.hasSameUnqualifiedType(Invocation->getArg(1)->getType(), M->getParamDecl(0)->getType().getNonReferenceType()))
@@ -417,12 +441,7 @@ public:
     if (!F) {
       const auto *Reference = dyn_cast<DeclRefExpr>(E->getCallee()->IgnoreParenImpCasts());
       const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
-      const auto *Constructor = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
-      const auto Origin = Constructor ? S.sdkFile(SM, Constructor->getLocation()) : std::nullopt;
-      if (WeightCallback && Constructor && Constructor->getNumParams() == 4 &&
-          Parameter == Constructor->getParamDecl(3) && Origin &&
-          Origin->Root == "libcxx" && Origin->Path == "__random/discrete_distribution.h" &&
-          approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      if (WeightCallback && weightParameter(Parameter) &&
           E->getNumArgs() == 1 && randomWeightFunction(Parameter->getType(), Context)) {
         const auto *Prototype = Parameter->getType()->getPointeeType()->getAs<FunctionProtoType>();
         return Context.hasSameUnqualifiedType(E->getType(), Prototype->getReturnType().getNonReferenceType()) &&
@@ -539,13 +558,8 @@ public:
       const auto *Reference = E->getNumArgs() >= 1
           ? dyn_cast<DeclRefExpr>(E->getArg(0)->IgnoreParenImpCasts()) : nullptr;
       const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
-      const auto *C = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
-      const auto File = C ? S.sdkFile(SM, C->getLocation()) : std::nullopt;
       if (!sourceWeightCopy(E->getConstructor()) || E->getNumArgs() != E->getConstructor()->getNumParams() ||
-          !C || C->getNumParams() != 4 ||
-          Parameter != C->getParamDecl(3) || !File || File->Root != "libcxx" ||
-          File->Path != "__random/discrete_distribution.h" ||
-          !approvedStandardSDKDeclaration(S, SM, C) ||
+          !weightParameter(Parameter) ||
           !Context.hasSameUnqualifiedType(Parameter->getType(), Context.getRecordType(WeightRecord)) ||
           !E->getArg(0)->isLValue() || (WeightCopy && WeightCopy != E))
         return false;
@@ -1565,7 +1579,30 @@ approvedPiecewiseConstantConstruction(const State &S, const SourceManager &SM,
         scalarElement(Weight->getPointeeType(), Context))
       Kind = PiecewiseConstantConstruction::Range;
   }
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
+  if (C->getNumParams() == 4 &&
+      Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(C->getParamDecl(1)->getType(), Info->ResultType) &&
+      Context.hasSameType(C->getParamDecl(2)->getType(), Info->ResultType))
+    Kind = PiecewiseConstantConstruction::CountWeights;
+  if (C->getNumParams() == 2) {
+    const auto List = approvedUtilityInitializerListRecord(S, SM,
+        C->getParamDecl(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (List && Context.hasSameType(List->ElementType, Info->ResultType)) {
+      const auto *Argument = dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
+      if (Argument && !approvedUtilityInitializerListExpression(S, SM, Argument, Context))
+        return std::nullopt;
+      Kind = PiecewiseConstantConstruction::ListWeights;
+    }
+  }
+  const bool Callback = Kind == PiecewiseConstantConstruction::CountWeights ||
+                        Kind == PiecewiseConstantConstruction::ListWeights;
+  if (Callback) {
+    if (approvedRandomWeightObjectConstruction(S, SM, Construction, Context))
+      return Kind;
+    if (!randomWeightFunction(C->getParamDecl(C->getNumParams() - 1)->getType(), Context))
+      return std::nullopt;
+  }
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType, Callback);
   return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
 }
 
@@ -1701,26 +1738,44 @@ approvedDiscreteDistributionRecord(const State &S, const SourceManager &SM,
   return DiscreteDistributionRecord{R, Outer, Parameter, Result, Storage, Thresholds};
 }
 
-std::optional<DiscreteWeightObject>
-approvedDiscreteWeightObjectConstruction(const State &S, const SourceManager &SM,
+std::optional<RandomWeightObject>
+approvedRandomWeightObjectConstruction(const State &S, const SourceManager &SM,
                                         const CXXConstructExpr *Construction,
                                         const ASTContext &Context) {
   const auto *C = Construction ? Construction->getConstructor() : nullptr;
-  const auto Info = C ? approvedDiscreteDistributionRecord(S, SM, C->getParent(), Context) : std::nullopt;
-  if (!Info || !C || C->getNumParams() != 4 || Construction->getNumArgs() != 4 ||
-      !C->hasBody() || C->isVariadic() || !approvedStandardSDKDeclaration(S, SM, C) ||
-      !Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) ||
-      !Context.hasSameType(C->getParamDecl(1)->getType(), Context.DoubleTy) ||
-      !Context.hasSameType(C->getParamDecl(2)->getType(), Context.DoubleTy))
+  const auto Discrete = C ? approvedDiscreteDistributionRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  const auto Piecewise = !Discrete && C ? approvedPiecewiseConstantRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  if ((!Discrete && !Piecewise) || !C || !C->hasBody() || C->isVariadic() ||
+      Construction->getNumArgs() != C->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, C))
     return std::nullopt;
-  const auto Object = C->getParamDecl(3)->getType();
+  const auto *Distribution = Discrete ? Discrete->Distribution : Piecewise->Distribution;
+  const auto Result = Discrete ? Discrete->ResultType : Piecewise->ResultType;
+  const auto Real = Discrete ? Context.DoubleTy : Piecewise->ResultType;
+  if (C->getNumParams() == 4) {
+    if (!Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) ||
+        !Context.hasSameType(C->getParamDecl(1)->getType(), Real) ||
+        !Context.hasSameType(C->getParamDecl(2)->getType(), Real))
+      return std::nullopt;
+  } else if (Piecewise && C->getNumParams() == 2) {
+    const auto List = approvedUtilityInitializerListRecord(S, SM,
+        C->getParamDecl(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (!List || !Context.hasSameType(List->ElementType, Real))
+      return std::nullopt;
+    const auto *Argument = dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
+    if (Argument && !approvedUtilityInitializerListExpression(S, SM, Argument, Context))
+      return std::nullopt;
+  } else {
+    return std::nullopt;
+  }
+  const auto Object = C->getParamDecl(C->getNumParams() - 1)->getType();
   const auto *R = Object->getAsCXXRecordDecl(); R = R ? R->getDefinition() : nullptr;
   if (!R || Object.hasLocalQualifiers() || !S.owns(SM, R->getLocation()) ||
       R->isLambda() || R->isUnion() || R->getNumBases() ||
       !R->isStandardLayout())
     return std::nullopt;
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy, true, R);
-  const bool Outer = C->getParent()->getCanonicalDecl() == Info->Distribution->getCanonicalDecl();
+  RandomSelection Selection(S, SM, Context, Distribution, Result, Real, true, R);
+  const bool Outer = C->getParent()->getCanonicalDecl() == Distribution->getCanonicalDecl();
   if (!Selection.retain(C) || !Selection.WeightMethod || (Outer && !Selection.WeightCopy))
     return std::nullopt;
   if (isa<ClassTemplateSpecializationDecl>(R)) {
@@ -1738,7 +1793,7 @@ approvedDiscreteWeightObjectConstruction(const State &S, const SourceManager &SM
     for (const auto *Declaration : D->redecls())
       if (!S.owns(SM, Declaration->getLocation())) return std::nullopt;
   }
-  return DiscreteWeightObject{R, Selection.WeightMethod, Selection.WeightCopy, Object};
+  return RandomWeightObject{R, Selection.WeightMethod, Selection.WeightCopy, Object};
 }
 
 std::optional<DiscreteDistributionConstruction>
@@ -1785,7 +1840,7 @@ approvedDiscreteDistributionConstruction(const State &S, const SourceManager &SM
       Context.hasSameType(C->getParamDecl(2)->getType(), Context.DoubleTy) &&
       randomWeightFunction(C->getParamDecl(3)->getType(), Context))
     Kind = DiscreteDistributionConstruction::FunctionWeights;
-  if (approvedDiscreteWeightObjectConstruction(S, SM, Construction, Context))
+  if (approvedRandomWeightObjectConstruction(S, SM, Construction, Context))
     return DiscreteDistributionConstruction::ObjectWeights;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy,
       Kind == DiscreteDistributionConstruction::FunctionWeights);

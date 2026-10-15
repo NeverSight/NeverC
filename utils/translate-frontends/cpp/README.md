@@ -1083,5 +1083,8 @@ Piecewise constant float/double distributions retain the pinned three-vector
 boundary/density/area layout through default/range/parameter construction,
 copy-on-move ownership, assignment, vector queries, parameters, equality and
 sampling. Normalization, canonical draws, interval selection, capacity reuse and
-reserve-before-assignment order remain exact. Callback constructors, long double
-and serialization require further support.
+reserve-before-assignment order remain exact. Count/list callback constructors
+retain checked arithmetic value/reference function pointers and source function
+objects with their selected copies, default temporaries, destruction and strict
+midpoint conversions. Count zero calls once; short lists suppress callbacks.
+Long double and serialization require further support.
