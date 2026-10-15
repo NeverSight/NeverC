@@ -1317,8 +1317,17 @@ std::optional<DiscreteDistributionRecord> approvedDiscreteDistributionRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 enum class DiscreteDistributionConstruction {
-  Default, Range, InitializerList, Parameter, Copy, Move, FunctionWeights
+  Default, Range, InitializerList, Parameter, Copy, Move, FunctionWeights,
+  ObjectWeights
 };
+struct DiscreteWeightObject {
+  const clang::CXXRecordDecl *Record;
+  const clang::CXXMethodDecl *Method;
+  clang::QualType ObjectType;
+};
+std::optional<DiscreteWeightObject> approvedDiscreteWeightObjectConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 std::optional<DiscreteDistributionConstruction>
 approvedDiscreteDistributionConstruction(
     const State &S, const clang::SourceManager &SM,

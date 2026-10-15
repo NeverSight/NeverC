@@ -15376,6 +15376,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (Constructor->getParamDecl(I)->getType()->isReferenceType())
           checkBinding(C->getArg(I), true);
       }
+      if (const auto Object = approvedDiscreteWeightObjectConstruction(A.S, A.Sources, C, A.Context)) {
+        AlgorithmPredicateMethods.emplace(Object->Method->getCanonicalDecl(), L);
+        collectOperationFunctionTypeSource(Object->Method);
+        for (auto *Dependencies : ActiveOperationSources)
+          if (Dependencies->Definitions.insert(Object->Method).second)
+            A.chargeExpansion(1, L);
+      }
       if (ArrayElementConstructor &&
           defaultedCopyOrMoveConstructor(ArrayElementConstructor))
         queueGenerated(ArrayElementConstructor, L);

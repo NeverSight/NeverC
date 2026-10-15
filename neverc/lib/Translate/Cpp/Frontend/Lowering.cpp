@@ -28445,11 +28445,20 @@ class FunctionLowering {
       if (*Kind == DiscreteDistributionConstruction::Default)
         return;
       const auto Size = type(A.Context.getSizeType(), L);
-      if (*Kind == DiscreteDistributionConstruction::FunctionWeights) {
+      if (*Kind == DiscreteDistributionConstruction::FunctionWeights ||
+          *Kind == DiscreteDistributionConstruction::ObjectWeights) {
+        const auto Object = approvedDiscreteWeightObjectConstruction(A.S, A.Sources, C, A.Context);
         auto Count = snapshot(argument(C->getArg(0), Constructor->getParamDecl(0)->getType()), L);
         auto Lower = snapshot(argument(C->getArg(1), Constructor->getParamDecl(1)->getType()), L);
         auto Upper = snapshot(argument(C->getArg(2), Constructor->getParamDecl(2)->getType()), L);
         auto Callback = snapshot(argument(C->getArg(3), Constructor->getParamDecl(3)->getType()), L);
+        if (Object && Info->Record->getCanonicalDecl() == Info->Distribution->getCanonicalDecl()) {
+          // The SDK outer parameter and nested param_type parameter are two
+          // distinct objects, even when their copy operation is trivial.
+          auto Nested = objectTemporary(Object->ObjectType, L);
+          assign(Nested, dereference(Callback, L), L);
+          Callback = snapshot(address(Nested, Object->ObjectType, L), L);
+        }
         const auto Real = type(A.Context.DoubleTy, L);
         const auto Fill = labelName(), Done = labelName();
         branch(binary(">", Count, quantity(1, Size, L), "bool", L), Fill, Done, L);
@@ -28468,7 +28477,8 @@ class FunctionLowering {
         label(Step, L);
         auto Point = snapshot(binary("+", binary("+", Lower,
             binary("*", cast(I, Real, L), Width, Real, L), Real, L), Half, Real, L), L);
-        const auto *Prototype = Constructor->getParamDecl(3)->getType()->getPointeeType()->getAs<FunctionProtoType>();
+        const auto *Prototype = Object ? Object->Method->getType()->getAs<FunctionProtoType>()
+            : Constructor->getParamDecl(3)->getType()->getPointeeType()->getAs<FunctionProtoType>();
         const auto ParameterType = Prototype->getParamType(0);
         auto Converted = snapshot(cast(std::move(Point), type(ParameterType.getNonReferenceType(), L), L), L);
         json::Array Arguments;
@@ -28476,7 +28486,20 @@ class FunctionLowering {
           Arguments.push_back(cast(address(Converted, ParameterType.getNonReferenceType(), L), type(ParameterType, L), L));
         else
           Arguments.push_back(json::Object(Converted));
-        auto Weight = emitAlgorithmCallback(Callback, Constructor->getParamDecl(3)->getType(), std::move(Arguments), L);
+        Expression Weight;
+        if (Object) {
+          json::Array CallArguments;
+          CallArguments.push_back(cast(Callback, type(Object->Method->getThisType(), L), L));
+          CallArguments.push_back(std::move(Arguments[0]));
+          chargeCall(CallArguments, L);
+          auto Result = temporary(type(Object->Method->getReturnType(), L), L);
+          Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Object->Method)},
+              {"args", std::move(CallArguments)}, {"target", json::Object(Result)}, {"loc", A.loc(L)}});
+          Weight = Object->Method->getReturnType()->isReferenceType()
+                       ? dereference(std::move(Result), L) : std::move(Result);
+        } else {
+          Weight = emitAlgorithmCallback(Callback, Constructor->getParamDecl(3)->getType(), std::move(Arguments), L);
+        }
         const bool ReferenceValue = Prototype->getReturnType()->isReferenceType() &&
             A.Context.hasSameUnqualifiedType(Prototype->getReturnType().getNonReferenceType(), A.Context.DoubleTy);
         appendRandomVector(Storage, *Vector, cast(std::move(Weight), Real, L), I, L, ReferenceValue);

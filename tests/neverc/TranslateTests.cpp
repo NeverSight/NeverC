@@ -358976,7 +358976,7 @@ Arena arena{};Size offset;unsigned allocations,frees;
 void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
 void operator delete(void*)noexcept{++frees;}
 #include <random>
-struct Weight {double operator()(double x) const {return x*x+1.;}}; Weight weight;
+struct Weight {Weight(){} Weight(const Weight&){} double operator()(double x) const {return x*x+1.;}}; Weight weight;
 int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
 )cpp"},
   };
@@ -359068,6 +359068,101 @@ int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("discrete-reference-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("discrete-reference-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteFunctionObjectsPreserveCopiesIdentityAndState) {
+  for (const std::string &Name : {"random-discrete-functors",
+                                 "random-discrete-functor-parameters",
+                                 "random-discrete-functor-prvalues"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name + ".cpp");
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteFunctionObjectsRetainSDKAndSourceOperators) {
+  struct Case {const char *Name;const char *Source;};
+  const Case Cases[] = {
+      {"outer-constructor",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {double operator()(double x) const {return x*x+1.;}};
+namespace std {template<> template<> discrete_distribution<int>::discrete_distribution(size_t,double,double,Weight){}}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp"},
+      {"parameter-constructor",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {double operator()(double x) const {return x*x+1.;}};
+namespace std {template<> template<> discrete_distribution<int>::param_type::param_type(size_t,double,double,Weight){}}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp"},
+      {"external-operator",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {double operator()(double) const;};
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp"},
+      {"throwing-operator",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {double operator()(double) const {throw 1;}};
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp"},
+      {"nontrivial-copy",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {Weight(){} Weight(const Weight&){} double operator()(double x)const{return x*x+1.;}};
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp"},
+      {"nontrivial-destructor",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct Weight {~Weight(){} double operator()(double x)const{return x*x+1.;}};
+int main(){std::discrete_distribution<int> d(3,-3.,5.,Weight{});return d.max();}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("discrete-object-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("discrete-object-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source,
         {"--profile", "cpp-core-v2", "-o", Output.string()});

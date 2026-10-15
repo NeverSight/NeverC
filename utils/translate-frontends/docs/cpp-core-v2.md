@@ -8407,7 +8407,7 @@ unary function pointer with core arithmetic value or reference components:
 non-boolean or boolean integers through 64 bits, float and double. Source aliases,
 function-pointer variables and factory-returned pointers retain ordinary source
 function ownership and body checks. Missing definitions, unsupported bodies,
-and function objects are not admitted.
+and unsupported callable forms are not admitted.
 
 Constructor arguments evaluate once. Counts zero and one do not invoke the
 callback or allocate threshold storage. Larger counts preserve the SDK reserve
@@ -8429,6 +8429,26 @@ in the selected SDK call. Source allocator side effects cannot move these reads
 across allocation or deletion. Native O0/O2 cases cover converted const-int
 references, rvalue mutation, global reference results, zero/one counts and
 observable new/delete effects. Existing source reference/lifetime checks apply.
+
+### Source function objects for discrete weights
+
+The four-argument distribution/parameter constructors also admit ordinary
+source-owned non-template standard-layout records with no bases or unions,
+implicit trivial copy construction and trivial destruction. The exact selected
+nonstatic, nonvolatile unary call operator must be source-owned, non-template,
+callable on an lvalue and have supported arithmetic value/reference components.
+Its signature, definition and body remain ordinary source dependencies; a
+header proof never substitutes for completing that body.
+
+Construct the actual outer by-value parameter, then copy it into the nested
+parameter constructor's separate object. Invoke the latter consistently, so
+mutable state stays in that copy and a self pointer established during prvalue
+construction still refers to the outer object. A const operator preserves its
+receiver qualification. Direct param_type construction has only its own
+by-value parameter and does not add an outer copy. User construction runs through the normal source path;
+trivial copies do not erase it. Zero/one counts retain these parameter objects
+while suppressing invocations. Nontrivial copies/destruction, class-template
+callables, bases, unions and lambdas remain separate admission work.
 
 ## Standard template parsing across targets
 

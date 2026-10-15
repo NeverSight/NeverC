@@ -33,6 +33,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   const CXXRecordDecl *Generator;
   bool SDKGenerator;
   bool WeightCallback;
+  const CXXRecordDecl *WeightRecord;
   QualType ResultType, DistanceType;
   llvm::DenseSet<const Decl *> Declarations;
   llvm::DenseSet<const Type *> Types;
@@ -137,6 +138,48 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     // global new/delete implementation. Do not traverse that user's body as SDK.
     return true;
   }
+  bool sourceWeightCopy(const CXXConstructorDecl *C) const {
+    if (!WeightRecord || !C || C->getParent()->getCanonicalDecl() != WeightRecord->getCanonicalDecl() ||
+        !C->isImplicit() || !C->isTrivial() || C->isDeleted() || !C->isCopyOrMoveConstructor() ||
+        C->getNumParams() != 1 || !C->getParamDecl(0)->getType()->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(C->getParamDecl(0)->getType().getNonReferenceType(),
+                                        Context.getRecordType(WeightRecord)))
+      return false;
+    for (const auto *D : C->redecls())
+      if (!S.owns(SM, D->getLocation())) return false;
+    return true;
+  }
+  bool sourceWeightMethod(const CXXMethodDecl *M, const CallExpr *Call) {
+    const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *Definition = M ? M->getDefinition() : nullptr;
+    if (!WeightRecord || !M || !Definition || !Invocation || Invocation->getNumArgs() != 2 ||
+        M->getParent()->getCanonicalDecl() != WeightRecord->getCanonicalDecl() ||
+        M->isStatic() || M->isVolatile() || M->isVariadic() || M->getNumParams() != 1 ||
+        M->getOverloadedOperator() != OO_Call || M->getRefQualifier() == RQ_RValue ||
+        M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        !ordinaryOperator(M) || !callableMethod(M) ||
+        !randomWeightScalar(M->getReturnType().getNonReferenceType(), Context) ||
+        !randomWeightScalar(M->getParamDecl(0)->getType().getNonReferenceType(), Context) ||
+        !S.owns(SM, Definition->getLocation()))
+      return false;
+    const auto *Object = dyn_cast<DeclRefExpr>(Invocation->getArg(0)->IgnoreParenImpCasts());
+    const auto *Parameter = Object ? dyn_cast<ParmVarDecl>(Object->getDecl()) : nullptr;
+    const auto *C = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
+    const auto File = C ? S.sdkFile(SM, C->getLocation()) : std::nullopt;
+    if (!C || C->getNumParams() != 4 || Parameter != C->getParamDecl(3) ||
+        !File || File->Root != "libcxx" || File->Path != "__random/discrete_distribution.h" ||
+        !approvedStandardSDKDeclaration(S, SM, C) ||
+        !Context.hasSameUnqualifiedType(Parameter->getType(), Context.getRecordType(WeightRecord)) ||
+        !Invocation->getArg(0)->isLValue() ||
+        !Context.hasSameUnqualifiedType(Invocation->getArg(1)->getType(), M->getParamDecl(0)->getType().getNonReferenceType()))
+      return false;
+    for (const auto *D : M->redecls())
+      if (!S.owns(SM, D->getLocation())) return false;
+    if (WeightMethod && WeightMethod->getCanonicalDecl() != M->getCanonicalDecl())
+      return false;
+    WeightMethod = M;
+    return true;
+  }
   bool sourceMethod(const CXXMethodDecl *M, const CallExpr *Call) {
     const auto *Definition = M->getDefinition();
     if (!Definition ||
@@ -183,14 +226,16 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
 
 public:
   const CXXMethodDecl *Method = nullptr, *Minimum = nullptr, *Maximum = nullptr;
+  const CXXMethodDecl *WeightMethod = nullptr;
   uint64_t MinimumValue = 0, MaximumValue = 0;
 
   RandomSelection(const State &S, const SourceManager &SM,
                   const ASTContext &Context, const CXXRecordDecl *Generator,
-                  QualType ResultType, QualType DistanceType, bool WeightCallback = false)
+                  QualType ResultType, QualType DistanceType, bool WeightCallback = false,
+                  const CXXRecordDecl *WeightRecord = nullptr)
       : S(S), SM(SM), Context(Context), Generator(Generator),
         SDKGenerator(approvedStandardSDKDeclaration(S, SM, Generator)),
-        WeightCallback(WeightCallback),
+        WeightCallback(WeightCallback), WeightRecord(WeightRecord),
         ResultType(ResultType), DistanceType(DistanceType) {}
 
   bool retainType(QualType T) {
@@ -201,7 +246,9 @@ public:
       return false;
     if (const auto *Alias = dyn_cast<TypedefType>(T.getTypePtr())) {
       const auto *D = Alias->getDecl();
-      if (D->getDeclContext() == Generator) {
+      if (WeightRecord && D->getDeclContext() == WeightRecord) {
+        if (!S.owns(SM, D->getLocation())) return false;
+      } else if (D->getDeclContext() == Generator) {
         if (SDKGenerator ? !origin(D) : !S.owns(SM, D->getLocation()))
           return false;
       } else if (!retain(D)) {
@@ -227,6 +274,7 @@ public:
     if (const auto *RT = T->getAs<RecordType>()) {
       const auto *R = dyn_cast<CXXRecordDecl>(RT->getDecl());
       if (R && R->getCanonicalDecl() != Generator->getCanonicalDecl() &&
+          (!WeightRecord || R->getCanonicalDecl() != WeightRecord->getCanonicalDecl()) &&
           !retain(R))
         return false;
     }
@@ -239,6 +287,13 @@ public:
   bool retain(const Decl *D) {
     if (!D || !Declarations.insert(D).second)
       return true;
+    if (WeightRecord) {
+      if (const auto *R = dyn_cast<CXXRecordDecl>(D);
+          R && R->getCanonicalDecl() == WeightRecord->getCanonicalDecl())
+        return S.owns(SM, R->getLocation());
+      if (const auto *C = dyn_cast<CXXConstructorDecl>(D); sourceWeightCopy(C))
+        return true;
+    }
     if (const auto *Builtin = dyn_cast<BuiltinTemplateDecl>(D))
       return Builtin->isImplicit() && Builtin->getLocation().isInvalid() &&
              Builtin->getBuiltinTemplateKind() == BTK__builtin_common_type;
@@ -349,7 +404,8 @@ public:
     if (const auto *M = dyn_cast<CXXMethodDecl>(E->getMemberDecl());
         M && S.owns(SM, M->getLocation()))
       return qualifier(E->getQualifier()) &&
-             M->getParent()->getCanonicalDecl() == Generator->getCanonicalDecl();
+             (M->getParent()->getCanonicalDecl() == Generator->getCanonicalDecl() ||
+              (WeightRecord && M->getParent()->getCanonicalDecl() == WeightRecord->getCanonicalDecl()));
     return qualifier(E->getQualifier()) && retain(E->getMemberDecl());
   }
   bool VisitCallExpr(CallExpr *E) {
@@ -433,7 +489,7 @@ public:
     }
     if (S.owns(SM, F->getLocation())) {
       const auto *M = dyn_cast<CXXMethodDecl>(F);
-      return M && sourceMethod(M, E);
+      return M && (sourceWeightMethod(M, E) || sourceMethod(M, E));
     }
     if (SDKGenerator)
       if (const auto *M = dyn_cast<CXXMethodDecl>(F);
@@ -1435,6 +1491,31 @@ approvedDiscreteDistributionRecord(const State &S, const SourceManager &SM,
   return DiscreteDistributionRecord{R, Outer, Parameter, Result, Storage, Thresholds};
 }
 
+std::optional<DiscreteWeightObject>
+approvedDiscreteWeightObjectConstruction(const State &S, const SourceManager &SM,
+                                        const CXXConstructExpr *Construction,
+                                        const ASTContext &Context) {
+  const auto *C = Construction ? Construction->getConstructor() : nullptr;
+  const auto Info = C ? approvedDiscreteDistributionRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  if (!Info || !C || C->getNumParams() != 4 || Construction->getNumArgs() != 4 ||
+      !C->hasBody() || C->isVariadic() || !approvedStandardSDKDeclaration(S, SM, C) ||
+      !Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(C->getParamDecl(1)->getType(), Context.DoubleTy) ||
+      !Context.hasSameType(C->getParamDecl(2)->getType(), Context.DoubleTy))
+    return std::nullopt;
+  const auto Object = C->getParamDecl(3)->getType();
+  const auto *R = Object->getAsCXXRecordDecl(); R = R ? R->getDefinition() : nullptr;
+  if (!R || Object.hasLocalQualifiers() || !S.owns(SM, R->getLocation()) ||
+      R->isLambda() || R->isUnion() || R->getNumBases() ||
+      isa<ClassTemplateSpecializationDecl>(R) || !R->isStandardLayout() ||
+      !R->isTriviallyCopyable() || !R->hasTrivialCopyConstructor() || !R->hasTrivialDestructor())
+    return std::nullopt;
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy, true, R);
+  if (!Selection.retain(C) || !Selection.WeightMethod)
+    return std::nullopt;
+  return DiscreteWeightObject{R, Selection.WeightMethod, Object};
+}
+
 std::optional<DiscreteDistributionConstruction>
 approvedDiscreteDistributionConstruction(const State &S, const SourceManager &SM,
                                          const CXXConstructExpr *Construction,
@@ -1479,6 +1560,8 @@ approvedDiscreteDistributionConstruction(const State &S, const SourceManager &SM
       Context.hasSameType(C->getParamDecl(2)->getType(), Context.DoubleTy) &&
       randomWeightFunction(C->getParamDecl(3)->getType(), Context))
     Kind = DiscreteDistributionConstruction::FunctionWeights;
+  if (approvedDiscreteWeightObjectConstruction(S, SM, Construction, Context))
+    return DiscreteDistributionConstruction::ObjectWeights;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy,
       Kind == DiscreteDistributionConstruction::FunctionWeights);
   return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
