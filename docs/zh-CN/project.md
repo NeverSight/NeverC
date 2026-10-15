@@ -202,8 +202,7 @@ neverc update v3389.1.2       # 切换到精确版本，也支持降级
 ## 贡献
 
 NeverC **设计上仅支持 C**（C23）。C++、Objective-C、CUDA 及类似语言前端不在项目范围内；
-相关 Pull Request 将被直接关闭。若需要面向 C++ 的 LLVM 工具链，请考虑
-[llvm-msvc](https://github.com/backengineering/llvm-msvc)。
+相关 Pull Request 将被直接关闭。
 
 涉及语言、ABI 或运行时的大范围改动，请先开 issue 讨论范围，再提交 Pull Request。
 

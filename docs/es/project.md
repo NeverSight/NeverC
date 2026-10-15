@@ -203,9 +203,7 @@ Requisitos, comandos de compilación, compilación cruzada a Windows, configurac
 ## Contribuir
 
 NeverC es **solo C por diseño** (C23). Los frontends de C++, Objective-C, CUDA y lenguajes
-similares quedan fuera de alcance; las pull requests que los añadan se cerrarán. Si
-necesita una toolchain LLVM orientada a C++, considere
-[llvm-msvc](https://github.com/backengineering/llvm-msvc).
+similares quedan fuera de alcance; las pull requests que los añadan se cerrarán.
 
 Para cambios grandes de lenguaje, ABI o runtime, abra primero un issue y acuerde el
 alcance antes de enviar una pull request.

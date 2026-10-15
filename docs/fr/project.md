@@ -204,8 +204,7 @@ Prérequis, commandes de compilation, compilation croisée Windows, configuratio
 
 NeverC est **volontairement limité au C** (C23). Les frontends C++, Objective-C, CUDA et
 langages similaires sont hors périmètre ; les pull requests qui les ajoutent seront
-fermées. Pour une chaîne LLVM orientée C++, voir plutôt
-[llvm-msvc](https://github.com/backengineering/llvm-msvc).
+fermées.
 
 Pour les changements importants de langage, d'ABI ou de runtime, ouvrez d'abord une
 issue pour discuter du périmètre avant d'envoyer une pull request.

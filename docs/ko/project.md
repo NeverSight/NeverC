@@ -203,8 +203,7 @@ runtime release에 문제가 있으면 `neverc update <이전 버전>`을 실행
 ## 기여
 
 NeverC는 **설계상 C만** 지원합니다(C23). C++ / Objective-C / CUDA 등 유사 언어 프론트엔드는
-범위 밖이며, 이를 추가하는 Pull Request는 닫힙니다. C++ 지향 LLVM 툴체인이 필요하면
-[llvm-msvc](https://github.com/backengineering/llvm-msvc)를 고려하세요.
+범위 밖이며, 이를 추가하는 Pull Request는 닫힙니다.
 
 언어·ABI·런타임에 대한 대규모 변경은 Pull Request 전에 먼저 issue를 열어 범위를
 논의하세요.

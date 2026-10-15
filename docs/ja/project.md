@@ -203,9 +203,7 @@ runtime release に問題がある場合は `neverc update <古いバージョ�
 ## コントリビューション
 
 NeverC は**設計上 C のみ**（C23）です。C++ / Objective-C / CUDA などの言語フロントエンドは
-スコープ外であり、それらを追加する Pull Request はクローズされます。C++ 向けの LLVM
-ツールチェーンが必要な場合は [llvm-msvc](https://github.com/backengineering/llvm-msvc) を
-検討してください。
+スコープ外であり、それらを追加する Pull Request はクローズされます。
 
 言語・ABI・ランタイムに関する大規模な変更は、Pull Request の前にまず issue を開いて
 スコープを相談してください。

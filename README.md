@@ -209,9 +209,7 @@ See **[Local Development](docs/local-dev.md)** for build requirements, build com
 ## Contributing
 
 NeverC is **C-only by design** (C23). C++, Objective-C, CUDA, and similar language
-frontends are out of scope; pull requests that add them will be closed. If you need a
-C++-oriented LLVM toolchain, consider [llvm-msvc](https://github.com/backengineering/llvm-msvc)
-instead.
+frontends are out of scope; pull requests that add them will be closed.
 
 For large language, ABI, or runtime changes, open an issue first and discuss scope
 before sending a pull request.
