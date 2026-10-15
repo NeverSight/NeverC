@@ -1433,12 +1433,26 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
   }
+  Expression scalarRealDistributionState(Expression Place, const ScalarRealDistributionRecord &Info,
+                                         SourceLocation L) {
+    return Info.Nested && Info.Record == Info.Distribution
+        ? fieldStorage(std::move(Place), Info.Nested, L) : std::move(Place);
+  }
+  Expression scalarRealDistributionField(Expression Parameter, const ScalarRealDistributionRecord &Info,
+                                         bool Second, SourceLocation L, bool External = false) {
+    const bool Nested = Info.Nested && Info.Record == Info.Distribution && !External;
+    const auto *Field = Second ? (Nested ? Info.NestedSecond : Info.Second)
+                               : (Nested ? Info.NestedFirst : Info.First);
+    return fieldStorage(std::move(Parameter), Field, L);
+  }
   void copyScalarRealDistribution(Expression Target, Expression Source,
                                   const ScalarRealDistributionRecord &Info, SourceLocation L) {
     if (!Info.CacheValid || Info.Record != Info.Distribution) {
       assign(std::move(Target), snapshot(std::move(Source), L), L);
       return;
     }
+    Target = scalarRealDistributionState(std::move(Target), Info, L);
+    Source = scalarRealDistributionState(std::move(Source), Info, L);
     auto Parameter = snapshot(fieldStorage(Source, Info.Storage, L), L);
     auto Hot = snapshot(fieldStorage(Source, Info.CacheValid, L), L);
     assign(fieldStorage(Target, Info.Storage, L), std::move(Parameter), L);
@@ -1452,7 +1466,8 @@ class FunctionLowering {
   }
   Expression scalarRealDistributionParameter(Expression Place, const ScalarRealDistributionRecord &Info,
                                SourceLocation L) {
-    return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
+    return Info.Record == Info.Distribution
+        ? fieldStorage(scalarRealDistributionState(std::move(Place), Info, L), Info.Storage, L) : std::move(Place);
   }
   Expression bernoulliParameter(Expression Place, const BernoulliRecord &Info,
                                SourceLocation L) {
@@ -3746,15 +3761,15 @@ class FunctionLowering {
         auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
         auto LeftParameter = scalarRealDistributionParameter(dereference(Left, L), *Info, L);
         auto RightParameter = scalarRealDistributionParameter(dereference(Right, L), *Info, L);
-        auto Equal = binary("==", fieldStorage(LeftParameter, Info->First, L),
-                            fieldStorage(RightParameter, Info->First, L), "bool", L);
+        auto Equal = binary("==", scalarRealDistributionField(LeftParameter, *Info, false, L),
+                            scalarRealDistributionField(RightParameter, *Info, false, L), "bool", L);
         if (Info->Second) {
           auto Result = snapshot(std::move(Equal), L);
           const auto CompareSecond = labelName(), Compared = labelName();
           branch(Result, CompareSecond, Compared, L);
           label(CompareSecond, L);
-          assign(Result, binary("==", fieldStorage(LeftParameter, Info->Second, L),
-                                fieldStorage(RightParameter, Info->Second, L), "bool", L), L);
+          assign(Result, binary("==", scalarRealDistributionField(LeftParameter, *Info, true, L),
+                                scalarRealDistributionField(RightParameter, *Info, true, L), "bool", L), L);
           jump(Compared, L);
           label(Compared, L);
           Equal = std::move(Result);
@@ -3764,15 +3779,15 @@ class FunctionLowering {
           const auto CheckFlags = labelName(), CheckHot = labelName(), CheckSpare = labelName(), Compared = labelName();
           branch(Result, CheckFlags, Compared, L);
           label(CheckFlags, L);
-          auto LeftHot = snapshot(fieldStorage(dereference(Left, L), Info->CacheValid, L), L);
-          auto RightHot = snapshot(fieldStorage(dereference(Right, L), Info->CacheValid, L), L);
+          auto LeftHot = snapshot(fieldStorage(scalarRealDistributionState(dereference(Left, L), *Info, L), Info->CacheValid, L), L);
+          auto RightHot = snapshot(fieldStorage(scalarRealDistributionState(dereference(Right, L), *Info, L), Info->CacheValid, L), L);
           assign(Result, binary("==", LeftHot, RightHot, "bool", L), L);
           branch(Result, CheckHot, Compared, L);
           label(CheckHot, L);
           branch(LeftHot, CheckSpare, Compared, L);
           label(CheckSpare, L);
-          assign(Result, binary("==", fieldStorage(dereference(Left, L), Info->Cached, L),
-                                fieldStorage(dereference(Right, L), Info->Cached, L), "bool", L), L);
+          assign(Result, binary("==", fieldStorage(scalarRealDistributionState(dereference(Left, L), *Info, L), Info->Cached, L),
+                                fieldStorage(scalarRealDistributionState(dereference(Right, L), *Info, L), Info->Cached, L), "bool", L), L);
           jump(Compared, L);
           label(Compared, L);
           Equal = std::move(Result);
@@ -3789,27 +3804,39 @@ class FunctionLowering {
         return Place;
       }
       auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
+      auto State = scalarRealDistributionState(Place, *Info, L);
       switch (Operation) {
       case UtilityOperation::ScalarRealDistributionFirst:
-        return snapshot(fieldStorage(std::move(Parameter), Info->First, L), L);
+        return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, false, L), L);
       case UtilityOperation::ScalarRealDistributionSecond:
-        return snapshot(fieldStorage(std::move(Parameter), Info->Second, L), L);
+        return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, true, L), L);
       case UtilityOperation::ScalarRealDistributionMinimum:
-        return Info->Second ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
+        return Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::ExtremeValue
+            ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
                             : A.zero(Info->ResultType, L);
       case UtilityOperation::ScalarRealDistributionMaximum: return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
       case UtilityOperation::ScalarRealDistributionReset:
         if (Info->CacheValid)
-          assign(fieldStorage(Place, Info->CacheValid, L), quantity(0, "bool", L), L);
+          assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
         return {};
       case UtilityOperation::ScalarRealDistributionParamGet: {
-        auto Value = snapshot(std::move(Parameter), L);
+        auto Value = Info->Nested ? temporary(type(A.Context.getRecordType(Info->Parameter), L), L)
+                                  : snapshot(Parameter, L);
+        if (Info->Nested) {
+          assign(fieldStorage(Value, Info->First, L), snapshot(scalarRealDistributionField(Parameter, *Info, false, L), L), L);
+          assign(fieldStorage(Value, Info->Second, L), snapshot(scalarRealDistributionField(Parameter, *Info, true, L), L), L);
+        }
         if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
         return Value;
       }
       case UtilityOperation::ScalarRealDistributionParamSet: {
         auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
+        auto Value = snapshot(dereference(std::move(Source), L), L);
+        if (Info->Nested) {
+          assign(scalarRealDistributionField(Parameter, *Info, false, L), fieldStorage(Value, Info->First, L), L);
+          assign(scalarRealDistributionField(Parameter, *Info, true, L), fieldStorage(Value, Info->Second, L), L);
+        } else
+          assign(std::move(Parameter), std::move(Value), L);
         return {};
       }
       default: break;
@@ -3821,16 +3848,19 @@ class FunctionLowering {
       if (F->getNumParams() == 2) {
         auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
         Parameter = dereference(std::move(Address), L);
+        // The lognormal overload constructs a separate normal param_type
+        // before it invokes the generator. Preserve that copy boundary.
+        if (Info->Nested) Parameter = snapshot(std::move(Parameter), L);
       }
       const auto Real = type(Info->ResultType, L);
       CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
       if (Info->CacheValid) {
         auto Up = temporary(Real, L);
         const auto UseSpare = labelName(), Fresh = labelName(), Retry = labelName(), CheckZero = labelName(), Accepted = labelName(), Sampled = labelName();
-        branch(fieldStorage(Place, Info->CacheValid, L), UseSpare, Fresh, L);
+        branch(fieldStorage(State, Info->CacheValid, L), UseSpare, Fresh, L);
         label(UseSpare, L);
-        assign(fieldStorage(Place, Info->CacheValid, L), quantity(0, "bool", L), L);
-        assign(Up, fieldStorage(Place, Info->Cached, L), L);
+        assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
+        assign(Up, fieldStorage(State, Info->Cached, L), L);
         jump(Sampled, L);
         label(Fresh, L);
         jump(Retry, L);
@@ -3856,14 +3886,19 @@ class FunctionLowering {
         RootArguments.push_back(std::move(Quotient));
         auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
             {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
-        assign(fieldStorage(Place, Info->Cached, L), binary("*", V, Factor, Real, L), L);
-        assign(fieldStorage(Place, Info->CacheValid, L), quantity(1, "bool", L), L);
+        assign(fieldStorage(State, Info->Cached, L), binary("*", V, Factor, Real, L), L);
+        assign(fieldStorage(State, Info->CacheValid, L), quantity(1, "bool", L), L);
         assign(Up, binary("*", U, Factor, Real, L), L);
         jump(Sampled, L);
         label(Sampled, L);
-        auto Deviation = snapshot(fieldStorage(Parameter, Info->Second, L), L);
-        auto Mean = snapshot(fieldStorage(Parameter, Info->First, L), L);
-        return snapshot(binary("+", binary("*", Up, Deviation, Real, L), Mean, Real, L), L);
+        auto Deviation = snapshot(scalarRealDistributionField(Parameter, *Info, true, L, F->getNumParams() == 2), L);
+        auto Mean = snapshot(scalarRealDistributionField(Parameter, *Info, false, L, F->getNumParams() == 2), L);
+        auto Value = snapshot(binary("+", binary("*", Up, Deviation, Real, L), Mean, Real, L), L);
+        if (!Info->Nested) return Value;
+        json::Array Arguments;
+        Arguments.push_back(std::move(Value));
+        return snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "exp"},
+            {"args", std::move(Arguments)}, {"loc", A.loc(L)}}, L);
       }
       auto Draw = emitCanonicalRandom(Generator, *Random,
           Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
@@ -3885,7 +3920,7 @@ class FunctionLowering {
         return snapshot(binary("-", std::move(Location),
             binary("*", std::move(Scale), std::move(OuterLog), Real, L), Real, L), L);
       }
-      auto Rate = snapshot(fieldStorage(std::move(Parameter), Info->First, L), L);
+      auto Rate = snapshot(scalarRealDistributionField(std::move(Parameter), *Info, false, L), L);
       return snapshot(binary("/", std::move(Numerator), std::move(Rate), Real, L), L);
     }
     if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
@@ -29271,9 +29306,15 @@ class FunctionLowering {
         copyScalarRealDistribution(Place, dereference(std::move(Source), L), *Info, L);
       } else if (*Kind == ScalarRealDistributionConstruction::Parameter) {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
-        assign(fieldStorage(Place, Info->Storage, L), snapshot(dereference(std::move(Source), L), L), L);
+        auto Value = snapshot(dereference(std::move(Source), L), L);
+        auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
+        if (Info->Nested) {
+          assign(scalarRealDistributionField(Parameter, *Info, false, L), fieldStorage(Value, Info->First, L), L);
+          assign(scalarRealDistributionField(Parameter, *Info, true, L), fieldStorage(Value, Info->Second, L), L);
+        } else
+          assign(std::move(Parameter), std::move(Value), L);
         if (Info->CacheValid)
-          assign(fieldStorage(Place, Info->CacheValid, L), quantity(0, "bool", L), L);
+          assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       } else {
         auto First = snapshot(*Kind == ScalarRealDistributionConstruction::Default
             ? (Info->Second ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
@@ -29283,11 +29324,11 @@ class FunctionLowering {
           Second = snapshot(*Kind == ScalarRealDistributionConstruction::Default ? one(type(Info->ResultType, L), L)
               : uniformDistributionArgument(C->getArg(1), Constructor->getParamDecl(1)->getType(), L), L);
         auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
-        assign(fieldStorage(Parameter, Info->First, L), std::move(First), L);
+        assign(scalarRealDistributionField(Parameter, *Info, false, L), std::move(First), L);
         if (Second)
-          assign(fieldStorage(Parameter, Info->Second, L), std::move(*Second), L);
+          assign(scalarRealDistributionField(Parameter, *Info, true, L), std::move(*Second), L);
         if (Info->CacheValid && Info->Record == Info->Distribution)
-          assign(fieldStorage(Place, Info->CacheValid, L), quantity(0, "bool", L), L);
+          assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       }
       return;
     }

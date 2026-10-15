@@ -339,6 +339,9 @@ class Emitter {
       if (E.UnaryOp == UnaryOperator::Log)
         return std::string(E.ValueType.Kind == TypeKind::Float ? "__builtin_logf(" : "__builtin_log(") +
                expression(E.Args[0]) + ")";
+      if (E.UnaryOp == UnaryOperator::Exp)
+        return std::string(E.ValueType.Kind == TypeKind::Float ? "__builtin_expf(" : "__builtin_exp(") +
+               expression(E.Args[0]) + ")";
       const char *Op = E.UnaryOp == UnaryOperator::Plus     ? "+"
                        : E.UnaryOp == UnaryOperator::Minus  ? "-"
                        : E.UnaryOp == UnaryOperator::BitNot ? "~"

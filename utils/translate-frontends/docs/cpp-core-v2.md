@@ -16329,3 +16329,37 @@ radius-too-large and zero-radius rejections, cached zero values, reset and
 parameter changes without extra draws, cold/hot equality and unequal parameter
 fields. Source replacements of defaults, getters, sampling, reset, setters,
 log/sqrt/infinity declarations and unsupported argument bodies remain rejected.
+
+
+### Lognormal distributions and nested normal state
+
+`lognormal_distribution<float/double>` and `param_type` admit construction, copy/move, assignment, m/s, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. The exact nested normal state retains its cached spare across copy/move and parameter replacement; reset clears it and cold operations avoid unused spare reads. Sampling applies checked RealType exp to the selected normal result, preserving temporary parameters and generator consumption. Layouts, nested operations, selected log/sqrt/exp bodies and explicit redeclarations remain authenticated. Native comparisons allow small platform-math tolerances; parameters, cache behavior and generator states are exact. Core v2 exp emits a C23 builtin whose hosted CRT/libm import belongs to the backend. Long double and stream serialization remain separate work.
+
+The checked outer layout is exactly one authenticated normal_distribution<RealType>
+field. Its independent param_type has m/s RealType fields with default zero/one.
+Construction, getters, parameter conversion and setters map those fields to the
+nested normal parameter without conflating the two record identities. The
+parameter getter returns a new lognormal param_type. The explicit-parameter
+sample overload copies m/s before any generator call, so a generator changing the
+original parameter cannot change that sample's selected values. Both sample forms
+retain the nested normal cache; explicit sample parameters do not replace stored parameters.
+Equality and copy/move/assignment preserve the normal hot flag and conditionally
+read the spare only when valid. Bounds are positive zero and positive infinity.
+
+The exp unary wire expression requires core v2, exactly kind/type/operator/args/loc,
+one argument and matching float or double operand/result types. Integer, mixed,
+pointer, extra-field and core-v1 inputs are rejected. NC emits __builtin_expf or
+__builtin_exp under the existing strict-FP contract. The C23 backend owns LLVM
+lowering and hosted CRT/libm imports, as it does for log; no mapping fingerprint,
+standard-header catalog or embedded SDK revision changes.
+
+The selected sampling proof follows both the outer lognormal and nested normal
+bodies, admitting exp only at its authenticated lognormal/wrapper call sites and
+log/sqrt only at the normal/wrapper sites. Source-defined specializations of either
+layer, explicit source math redeclarations and ordinary core exp calls remain
+outside this boundary. Independent native references cover float/double source,
+minstd and mt19937_64 engines, first samples, hot-state copy/move/assignment,
+parameter replacement, reset, explicit sample parameters and exact next-generator
+states. Deterministic rejection and cache fixtures execute at O0/O2; malformed exp
+protocol cases, source guards, eight-target checks and sanitizer execution of
+unchanged managed NC remain required verification.

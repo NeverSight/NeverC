@@ -359717,3 +359717,83 @@ int main(){
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2LognormalPreservesCachedStateAndSamples) {
+  for (const std::string &Name : {"random-lognormal-source", "random-lognormal-minstd", "random-lognormal-mt64", "random-lognormal-cache"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+
+
+TEST_F(TranslateTest, CoreV2LognormalRetainsNestedNormalAndSDKMathBodies) {
+  struct Case {const char *Name; const char *Declarations; const char *Body;};
+  const Case Cases[] = {
+      {"outer-default", R"cpp(namespace std{template<> lognormal_distribution<double>::lognormal_distribution(){}})cpp", R"cpp(D d;return d.m()!=0.;)cpp"},
+      {"parameter-constructor", R"cpp(namespace std{template<> lognormal_distribution<double>::param_type::param_type(double,double){}})cpp", R"cpp(D::param_type p;return p.m()!=0.;)cpp"},
+      {"rate-getter", R"cpp(namespace std{template<> double lognormal_distribution<double>::m()const{return 2.;}})cpp", R"cpp(D d;return d.m()!=2.;)cpp"},
+      {"minimum", R"cpp(namespace std{template<> double lognormal_distribution<double>::min()const{return 2.;}})cpp", R"cpp(D d;return d.min()!=2.;)cpp"},
+      {"maximum", R"cpp(namespace std{template<> double lognormal_distribution<double>::max()const{return 2.;}})cpp", R"cpp(D d;return d.max()!=2.;)cpp"},
+      {"sampling", R"cpp(namespace std{template<> template<> double lognormal_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d;D::param_type p;G g;return d(g,p)!=0.;)cpp"},
+      {"log-declaration", R"cpp(extern "C" double log(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"logf-declaration", R"cpp(extern "C" float logf(float);)cpp", R"cpp(std::lognormal_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"builtin-log-declaration", R"cpp(extern "C" double __builtin_log(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"builtin-logf-declaration", R"cpp(extern "C" float __builtin_logf(float);)cpp", R"cpp(std::lognormal_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"builtin-infinity-declaration", R"cpp(extern "C" double __builtin_huge_val();)cpp", R"cpp(D d;return d.max()!=0.;)cpp"},
+      {"builtin-infinityf-declaration", R"cpp(extern "C" float __builtin_huge_valf();)cpp", R"cpp(std::lognormal_distribution<float>d;return d.max()!=0.f;)cpp"},
+      {"raw-log", R"cpp()cpp", R"cpp(return __builtin_log(2.)<0.;)cpp"},
+      {"standalone-std-log", R"cpp()cpp", R"cpp(return std::log(2.)<0.;)cpp"},
+      {"long-double", R"cpp()cpp", R"cpp(std::lognormal_distribution<long double>d;return d.m()!=1.;)cpp"},
+      {"source-rate-body", R"cpp(double rate(){asm("");return 2.;})cpp", R"cpp(D d(rate());return d.m()!=2.;)cpp"},
+      {"second-getter", R"cpp(namespace std{template<> double lognormal_distribution<double>::s()const{return 2.;}})cpp", R"cpp(D d;return d.s()!=2.;)cpp"},
+      {"sqrt-declaration", R"cpp(extern "C" double sqrt(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"sqrtf-declaration", R"cpp(extern "C" float sqrtf(float);)cpp", R"cpp(std::lognormal_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"builtin-sqrt-declaration", R"cpp(extern "C" double __builtin_sqrt(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"builtin-sqrtf-declaration", R"cpp(extern "C" float __builtin_sqrtf(float);)cpp", R"cpp(std::lognormal_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"reset-body", R"cpp(namespace std{template<>void lognormal_distribution<double>::reset(){}})cpp", R"cpp(D d;d.reset();return d.m()!=0.;)cpp"},
+      {"parameter-setter", R"cpp(namespace std{template<>void lognormal_distribution<double>::param(const param_type&){}})cpp", R"cpp(D d;D::param_type p(2.,3.);d.param(p);return d.m()!=2.;)cpp"},
+      {"sampling-one-argument", R"cpp(namespace std{template<>template<>double lognormal_distribution<double>::operator()<G>(G&){return 0.;}})cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"exp-declaration", R"cpp(extern "C" double exp(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"expf-declaration", R"cpp(extern "C" float expf(float);)cpp", R"cpp(std::lognormal_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"builtin-exp-declaration", R"cpp(extern "C" double __builtin_exp(double);)cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"builtin-expf-declaration", R"cpp(extern "C" float __builtin_expf(float);)cpp", R"cpp(std::lognormal_distribution<float>d;G g;return d(g)!=0.f;)cpp"},
+      {"raw-exp", R"cpp()cpp", R"cpp(return __builtin_exp(2.)<0.;)cpp"},
+      {"standalone-std-exp", R"cpp()cpp", R"cpp(return std::exp(2.)<0.;)cpp"},
+      {"nested-normal-constructor", R"cpp(namespace std{template<> normal_distribution<double>::normal_distribution(double,double){}})cpp", R"cpp(D d;return d.m()!=0.;)cpp"},
+      {"nested-normal-parameter-constructor", R"cpp(namespace std{template<> normal_distribution<double>::param_type::param_type(double,double){}})cpp", R"cpp(D d;return d.m()!=0.;)cpp"},
+      {"nested-normal-sampling", R"cpp(namespace std{template<>template<>double normal_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d;G g;return d(g)!=0.;)cpp"},
+      {"nested-normal-reset", R"cpp(namespace std{template<>void normal_distribution<double>::reset(){}})cpp", R"cpp(D d;d.reset();return d.m()!=0.;)cpp"},
+      {"nested-normal-setter", R"cpp(namespace std{template<>void normal_distribution<double>::param(const param_type&){}})cpp", R"cpp(D d;D::param_type p(2.,3.);d.param(p);return d.m()!=2.;)cpp"},
+      {"nested-normal-mean", R"cpp(namespace std{template<>double normal_distribution<double>::mean()const{return 2.;}})cpp", R"cpp(D d;return d.m()!=2.;)cpp"},
+      {"nested-normal-stddev", R"cpp(namespace std{template<>double normal_distribution<double>::stddev()const{return 2.;}})cpp", R"cpp(D d;return d.s()!=2.;)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("lognormal-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("lognormal-guard-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <random>
+struct G{using result_type=unsigned;unsigned state=17,calls=0;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+)cpp") + Case.Declarations + R"cpp(
+using D=std::lognormal_distribution<double>;
+int main(){
+)cpp" + Case.Body + "}\n");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

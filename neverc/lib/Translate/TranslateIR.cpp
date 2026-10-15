@@ -335,6 +335,10 @@ public:
         if (!CoreV2 || O.size() != 5)
           return error("Logarithm requires core v2 and only kind, type, operator, args and location.");
         E.UnaryOp = UnaryOperator::Log;
+      } else if (Op == "exp") {
+        if (!CoreV2 || O.size() != 5)
+          return error("Exponential requires core v2 and only kind, type, operator, args and location.");
+        E.UnaryOp = UnaryOperator::Exp;
       } else
         return error("Unknown unary operator.");
     } else if (K == "binary") {
@@ -1008,6 +1012,10 @@ class Verifier {
         return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
                 E.Args[0].ValueType == E.ValueType) ||
                error(E.Loc, "Logarithm requires matching core v2 float/double operand and result types.");
+      if (E.UnaryOp == UnaryOperator::Exp)
+        return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
+                E.Args[0].ValueType == E.ValueType) ||
+               error(E.Loc, "Exponential requires matching core v2 float/double operand and result types.");
       if (E.UnaryOp == UnaryOperator::LogicalNot)
         return (E.Args[0].ValueType.isScalar() &&
                 !E.Args[0].ValueType.isFloating() &&

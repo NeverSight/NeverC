@@ -23,7 +23,7 @@ bool randomWeightFunction(QualType T, const ASTContext &Context) {
          randomWeightScalar(P->getParamType(0).getNonReferenceType(), Context);
 }
 
-enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog, Normal };
+enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog, Normal, Lognormal };
 
 // The lowering implements the pinned libc++ loops. Follow the declarations
 // actually selected by those loops, including instantiated traits and helper
@@ -114,17 +114,19 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     const bool Float = DistanceType->isSpecificBuiltinType(BuiltinType::Float);
     const auto ID = F->getBuiltinID();
-    const bool Root = Math == SelectedRandomMath::LinearSquareRoot ||
-        (Math == SelectedRandomMath::Normal &&
-         (ID == Builtin::BIsqrtf || ID == Builtin::BI__builtin_sqrtf ||
-          ID == Builtin::BIsqrt || ID == Builtin::BI__builtin_sqrt));
-    if (Root ? (Float ? ID != Builtin::BIsqrtf && ID != Builtin::BI__builtin_sqrtf
-                      : ID != Builtin::BIsqrt && ID != Builtin::BI__builtin_sqrt)
-             : (Float ? ID != Builtin::BIlogf && ID != Builtin::BI__builtin_logf
-                      : ID != Builtin::BIlog && ID != Builtin::BI__builtin_log))
+    const bool Root = Float ? ID == Builtin::BIsqrtf || ID == Builtin::BI__builtin_sqrtf
+                            : ID == Builtin::BIsqrt || ID == Builtin::BI__builtin_sqrt;
+    const bool Log = Float ? ID == Builtin::BIlogf || ID == Builtin::BI__builtin_logf
+                           : ID == Builtin::BIlog || ID == Builtin::BI__builtin_log;
+    const bool Exp = Float ? ID == Builtin::BIexpf || ID == Builtin::BI__builtin_expf
+                           : ID == Builtin::BIexp || ID == Builtin::BI__builtin_exp;
+    const bool Polar = Math == SelectedRandomMath::Normal || Math == SelectedRandomMath::Lognormal;
+    if (!(Root && (Math == SelectedRandomMath::LinearSquareRoot || Polar)) &&
+        !(Log && (Math == SelectedRandomMath::ExponentialLog || Math == SelectedRandomMath::ExtremeValueLog || Polar)) &&
+        !(Exp && Math == SelectedRandomMath::Lognormal))
       return false;
-    const llvm::StringRef Helper = Root ? "__math/roots.h" : "__math/logarithms.h";
-    const llvm::StringRef Distribution = Math == SelectedRandomMath::Normal ? "__random/normal_distribution.h"
+    const llvm::StringRef Helper = Root ? "__math/roots.h" : Exp ? "__math/exponential_functions.h" : "__math/logarithms.h";
+    const llvm::StringRef Distribution = Polar ? (Exp ? "__random/lognormal_distribution.h" : "__random/normal_distribution.h")
         : Root ? "__random/piecewise_linear_distribution.h"
         : Math == SelectedRandomMath::ExtremeValueLog ? "__random/extreme_value_distribution.h"
                                                      : "__random/exponential_distribution.h";
@@ -1565,10 +1567,11 @@ approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
   const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
   const bool Extreme = Template && Template->getName() == "extreme_value_distribution";
   const bool Normal = Template && Template->getName() == "normal_distribution";
+  const bool Lognormal = Template && Template->getName() == "lognormal_distribution";
   if (!S.coreV2() || !R || !Outer || !Template || !File || File->Root != "libcxx" ||
-      File->Path != (Normal ? "__random/normal_distribution.h"
+      File->Path != (Lognormal ? "__random/lognormal_distribution.h" : Normal ? "__random/normal_distribution.h"
                     : Extreme ? "__random/extreme_value_distribution.h" : "__random/exponential_distribution.h") ||
-      (!Extreme && !Normal && Template->getName() != "exponential_distribution") ||
+      (!Extreme && !Normal && !Lognormal && Template->getName() != "exponential_distribution") ||
       Outer->getSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !R->isStandardLayout() || !R->isTriviallyCopyable() ||
@@ -1595,12 +1598,30 @@ approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
     if (!approvedStandardSDKDeclaration(S, SM, F) || F->isBitField() || F->isMutable() ||
         !Context.hasSameType(F->getType(), Result))
       return std::nullopt;
-    if (F->getName() == (Normal ? "__mean_" : Extreme ? "__a_" : "__lambda_") && !First)
+    if (F->getName() == (Lognormal ? "__m_" : Normal ? "__mean_" : Extreme ? "__a_" : "__lambda_") && !First)
       First = F;
-    else if ((Extreme || Normal) && F->getName() == (Normal ? "__stddev_" : "__b_") && !Second)
+    else if ((Extreme || Normal || Lognormal) && F->getName() == (Lognormal ? "__s_" : Normal ? "__stddev_" : "__b_") && !Second)
       Second = F;
     else
       return std::nullopt;
+  }
+  if (Lognormal) {
+    const FieldDecl *Nested = nullptr;
+    for (const auto *F : Outer->fields()) {
+      if (Nested || F->getName() != "__nd_" || F->isBitField() || F->isMutable() ||
+          !approvedStandardSDKDeclaration(S, SM, F))
+        return std::nullopt;
+      Nested = F;
+    }
+    const auto Inner = Nested ? approvedScalarRealDistributionRecord(S, SM,
+        Nested->getType()->getAsCXXRecordDecl(), Context) : std::nullopt;
+    RandomSelection Selection(S, SM, Context, Outer, Result, Result);
+    if (!First || !Second || !Inner || Inner->Record != Inner->Distribution ||
+        Inner->Kind != ScalarRealDistributionKind::Normal || !Context.hasSameType(Inner->ResultType, Result) ||
+        !Selection.retain(Outer) || !Selection.retain(Parameter))
+      return std::nullopt;
+    return ScalarRealDistributionRecord{R, Outer, Parameter, Result, Inner->Storage, First, Second,
+        Inner->Cached, Inner->CacheValid, ScalarRealDistributionKind::Lognormal, Nested, Inner->First, Inner->Second};
   }
   for (const auto *F : Outer->fields()) {
     if (F->isBitField() || F->isMutable() || !approvedStandardSDKDeclaration(S, SM, F))
@@ -1682,7 +1703,8 @@ approvedScalarRealDistributionRandomCall(const State &S, const SourceManager &SM
     return std::nullopt;
   return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Info->ResultType,
       UtilityOperation::ScalarRealDistributionGenerate, Operator ? 1u : 0u, Context,
-      Info->Kind == ScalarRealDistributionKind::Normal ? SelectedRandomMath::Normal
+      Info->Kind == ScalarRealDistributionKind::Lognormal ? SelectedRandomMath::Lognormal
+      : Info->Kind == ScalarRealDistributionKind::Normal ? SelectedRandomMath::Normal
       : Info->Kind == ScalarRealDistributionKind::ExtremeValue ? SelectedRandomMath::ExtremeValueLog
                                                               : SelectedRandomMath::ExponentialLog);
 }
@@ -1705,9 +1727,9 @@ approvedScalarRealDistributionOperation(const State &S, const SourceManager &SM,
   if (M && !M->isStatic() && !M->isVolatile()) {
     if (M->isConst() && M->getIdentifier() && !M->getNumParams()) {
       if (Context.hasSameType(M->getReturnType(), Info->ResultType) &&
-          M->getName() == (Info->Kind == ScalarRealDistributionKind::Normal ? "mean" : Info->Second ? "a" : "lambda"))
+          M->getName() == (Info->Kind == ScalarRealDistributionKind::Lognormal ? "m" : Info->Kind == ScalarRealDistributionKind::Normal ? "mean" : Info->Second ? "a" : "lambda"))
         Operation = UtilityOperation::ScalarRealDistributionFirst;
-      else if (Info->Second && M->getName() == (Info->Kind == ScalarRealDistributionKind::Normal ? "stddev" : "b") &&
+      else if (Info->Second && M->getName() == (Info->Kind == ScalarRealDistributionKind::Lognormal ? "s" : Info->Kind == ScalarRealDistributionKind::Normal ? "stddev" : "b") &&
                Context.hasSameType(M->getReturnType(), Info->ResultType))
         Operation = UtilityOperation::ScalarRealDistributionSecond;
       else if (Info->Record == Info->Distribution && Context.hasSameType(M->getReturnType(), Info->ResultType)) {
