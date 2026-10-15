@@ -8403,11 +8403,11 @@ distributions, stream serialization and `random_device` require further work.
 ### Function-generated discrete weights
 
 The distribution and parameter four-argument constructor accepts an ordinary
-unary function pointer with by-value core arithmetic parameter and result types:
+unary function pointer with core arithmetic value or reference components:
 non-boolean or boolean integers through 64 bits, float and double. Source aliases,
 function-pointer variables and factory-returned pointers retain ordinary source
 function ownership and body checks. Missing definitions, unsupported bodies,
-function objects and reference parameter/result signatures are not admitted.
+and function objects are not admitted.
 
 Constructor arguments evaluate once. Counts zero and one do not invoke the
 callback or allocate threshold storage. Larger counts preserve the SDK reserve
@@ -8417,6 +8417,18 @@ Normalization and returned probabilities follow the preceding discrete contract.
 Selected SDK constructor and normalization replacements remain rejected, while
 the retained callback body still passes the ordinary source allowlist. All
 weights and live allocations must satisfy the existing defined-input contracts.
+
+Const lvalue-reference and rvalue-reference arithmetic parameters bind a scalar
+temporary after the SDK-selected conversion. Its address is passed with the
+actual reference qualifiers, and callback mutations affect that temporary.
+Arithmetic reference results use the existing checked indirect-call reference
+path. A double reference remains a glvalue until vector element construction:
+read it after growth allocation but before relocation and old-buffer release.
+Other arithmetic references convert to a double temporary before insertion, as
+in the selected SDK call. Source allocator side effects cannot move these reads
+across allocation or deletion. Native O0/O2 cases cover converted const-int
+references, rvalue mutation, global reference results, zero/one counts and
+observable new/delete effects. Existing source reference/lifetime checks apply.
 
 ## Standard template parsing across targets
 

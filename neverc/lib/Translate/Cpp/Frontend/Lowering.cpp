@@ -1066,11 +1066,14 @@ class FunctionLowering {
     label(Done, L);
   }
   void appendRandomVector(Expression Place, const UtilityVectorRecord &Vector,
-                          Expression Value, Expression Count, SourceLocation L) {
+                          Expression Value, Expression Count, SourceLocation L,
+                          bool ReferenceValue = false) {
     const auto Size = type(A.Context.getSizeType(), L);
-    auto Captured = snapshot(std::move(Value), L);
+    auto Captured = temporary(type(Vector.ElementType, L), L);
+    if (!ReferenceValue)
+      assign(Captured, Value, L);
     auto Capacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
-    const auto Grow = labelName(), Append = labelName();
+    const auto Grow = labelName(), Append = labelName(), Finish = labelName();
     branch(binary("==", Count, Capacity, "bool", L), Grow, Append, L);
     label(Grow, L);
     auto NewCapacity = snapshot(quantity(1, Size, L), L);
@@ -1082,13 +1085,24 @@ class FunctionLowering {
     label(Allocate, L);
     auto Temporary = objectTemporary(A.Context.getRecordType(Vector.Record), L);
     allocateRandomVector(Temporary, Vector, NewCapacity, L);
+    // libc++ constructs the new element before relocating/releasing the old
+    // buffer. A referenced weight can observe the source allocator's effects.
+    if (ReferenceValue)
+      assign(Captured, Value, L);
+    auto NewBegin = snapshot(randomVectorMember(Temporary, Vector, "nct_vector_begin", L), L);
+    assign(index(NewBegin, Count, type(Vector.ElementType, L), L), Captured, L);
     copyRandomVector(Temporary, Place, Vector, false, true, L);
     releaseRandomVector(Place, Vector, L);
     assign(Place, Temporary, L);
-    jump(Append, L);
+    jump(Finish, L);
     label(Append, L);
+    if (ReferenceValue)
+      assign(Captured, Value, L);
+    auto ExistingBegin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    assign(index(ExistingBegin, Count, type(Vector.ElementType, L), L), Captured, L);
+    jump(Finish, L);
+    label(Finish, L);
     auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
-    assign(index(Begin, Count, type(Vector.ElementType, L), L), Captured, L);
     assign(randomVectorMember(Place, Vector, "nct_vector_end", L),
            binary("+", Begin, binary("+", Count, quantity(1, Size, L), Size, L),
                   type(Vector.PointerType, L), L), L);
@@ -28455,10 +28469,17 @@ class FunctionLowering {
         auto Point = snapshot(binary("+", binary("+", Lower,
             binary("*", cast(I, Real, L), Width, Real, L), Real, L), Half, Real, L), L);
         const auto *Prototype = Constructor->getParamDecl(3)->getType()->getPointeeType()->getAs<FunctionProtoType>();
+        const auto ParameterType = Prototype->getParamType(0);
+        auto Converted = snapshot(cast(std::move(Point), type(ParameterType.getNonReferenceType(), L), L), L);
         json::Array Arguments;
-        Arguments.push_back(cast(std::move(Point), type(Prototype->getParamType(0), L), L));
+        if (ParameterType->isReferenceType())
+          Arguments.push_back(cast(address(Converted, ParameterType.getNonReferenceType(), L), type(ParameterType, L), L));
+        else
+          Arguments.push_back(json::Object(Converted));
         auto Weight = emitAlgorithmCallback(Callback, Constructor->getParamDecl(3)->getType(), std::move(Arguments), L);
-        appendRandomVector(Storage, *Vector, cast(std::move(Weight), Real, L), I, L);
+        const bool ReferenceValue = Prototype->getReturnType()->isReferenceType() &&
+            A.Context.hasSameUnqualifiedType(Prototype->getReturnType().getNonReferenceType(), A.Context.DoubleTy);
+        appendRandomVector(Storage, *Vector, cast(std::move(Weight), Real, L), I, L, ReferenceValue);
         assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
         jump(Check, L);
         label(Filled, L);

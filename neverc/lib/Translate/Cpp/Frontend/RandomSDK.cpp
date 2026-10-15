@@ -19,8 +19,8 @@ bool randomWeightFunction(QualType T, const ASTContext &Context) {
   const auto *P = T->isFunctionPointerType()
       ? T->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
   return P && !P->isVariadic() && P->getCallConv() == CC_C && P->getNumParams() == 1 &&
-         randomWeightScalar(P->getReturnType(), Context) &&
-         randomWeightScalar(P->getParamType(0), Context);
+         randomWeightScalar(P->getReturnType().getNonReferenceType(), Context) &&
+         randomWeightScalar(P->getParamType(0).getNonReferenceType(), Context);
 }
 
 // The lowering implements the pinned libc++ loops. Follow the declarations
@@ -365,8 +365,8 @@ public:
           approvedStandardSDKDeclaration(S, SM, Constructor) &&
           E->getNumArgs() == 1 && randomWeightFunction(Parameter->getType(), Context)) {
         const auto *Prototype = Parameter->getType()->getPointeeType()->getAs<FunctionProtoType>();
-        return Context.hasSameUnqualifiedType(E->getType(), Prototype->getReturnType()) &&
-               Context.hasSameUnqualifiedType(E->getArg(0)->getType(), Prototype->getParamType(0));
+        return Context.hasSameUnqualifiedType(E->getType(), Prototype->getReturnType().getNonReferenceType()) &&
+               Context.hasSameUnqualifiedType(E->getArg(0)->getType(), Prototype->getParamType(0).getNonReferenceType());
       }
       const auto *Destructor = dyn_cast<CXXPseudoDestructorExpr>(
           E->getCallee()->IgnoreParenImpCasts());
