@@ -917,6 +917,10 @@ class FunctionLowering {
                        PointerType, L),
                  std::move(Position), type(Engine.ResultType, L), L);
   }
+  Expression bernoulliParameter(Expression Place, const BernoulliRecord &Info,
+                               SourceLocation L) {
+    return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
+  }
   Expression uniformDistributionParameter(Expression Place, const UniformDistributionRecord &Info,
                                  SourceLocation L) {
     return Info.Record == Info.Distribution
@@ -2948,6 +2952,60 @@ class FunctionLowering {
       auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
       discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
       return {};
+    }
+    if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedBernoulliRecord(A.S, A.Sources, R, A.Context);
+      if (!Info) reject(L, "Bernoulli distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::BernoulliEqual || Operation == UtilityOperation::BernoulliNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        return binary(Operation == UtilityOperation::BernoulliEqual ? "==" : "!=",
+            fieldStorage(bernoulliParameter(dereference(std::move(Left), L), *Info, L), Info->Probability, L),
+            fieldStorage(bernoulliParameter(dereference(std::move(Right), L), *Info, L), Info->Probability, L), "bool", L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::BernoulliAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
+        return Place;
+      }
+      auto Parameter = bernoulliParameter(Place, *Info, L);
+      switch (Operation) {
+      case UtilityOperation::BernoulliProbability:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Probability, L), L);
+      case UtilityOperation::BernoulliMinimum: return quantity(0, "bool", L);
+      case UtilityOperation::BernoulliMaximum: return quantity(1, "bool", L);
+      case UtilityOperation::BernoulliReset: return {};
+      case UtilityOperation::BernoulliParamGet: {
+        auto Value = snapshot(std::move(Parameter), L);
+        if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
+        return Value;
+      }
+      case UtilityOperation::BernoulliParamSet: {
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
+        return {};
+      }
+      default: break;
+      }
+      const auto Random = approvedBernoulliRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random) reject(L, "Bernoulli generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(std::move(Address), L);
+      }
+      auto Probability = snapshot(fieldStorage(std::move(Parameter), Info->Probability, L), L);
+      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = emitCanonicalRandom(Generator, *Random, 53, L);
+      return snapshot(binary("<", std::move(Draw), std::move(Probability), "bool", L), L);
     }
     if (Operation == UtilityOperation::GenerateCanonical) {
       const auto Info = approvedCanonicalRandomCall(A.S, A.Sources, Call, A.Context);
@@ -28007,6 +28065,21 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Kind = approvedBernoulliConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedBernoulliRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (*Kind == BernoulliConstruction::CopyOrMove) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(std::move(Place), snapshot(dereference(std::move(Source), L), L), L);
+      } else if (*Kind == BernoulliConstruction::Parameter) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        assign(fieldStorage(std::move(Place), Info->Storage, L), snapshot(dereference(std::move(Source), L), L), L);
+      } else {
+        auto Probability = *Kind == BernoulliConstruction::Default ? A.floatingLiteral(llvm::APFloat(0.5), L)
+            : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L);
+        assign(fieldStorage(bernoulliParameter(std::move(Place), *Info, L), Info->Probability, L), std::move(Probability), L);
+      }
+      return;
+    }
     if (const auto Kind = approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUniformDistributionRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
       if (*Kind == UniformDistributionConstruction::CopyOrMove) {

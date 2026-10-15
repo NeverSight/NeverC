@@ -14,6 +14,8 @@ The remaining deterministic families `subtract_with_carry_engine`, `discard_bloc
 
 `uniform_real_distribution<float/double>` and `param_type` now preserve the same construction, parameter, property, copy/assignment, reset and equality interfaces. `generate_canonical<float/double, Bits>` accepts checked engines or admitted source generators and preserves the SDK draw order, bit-count clamp and floating formula; Bits zero still consumes one draw. Real single-point intervals also consume canonical draws. Operations follow the existing core-v2 IEEE nearest-rounding contract with fast math and FMA contraction disabled; native comparisons use the same flags. Long double, other distributions, serialization and `random_device` still need support.
 
+`bernoulli_distribution` and `param_type` now support default/probability/parameter construction, copy and assignment, `p`, `min`/`max`, parameter get/set, equality, reset and both generator call forms. Checked SDK engines and admitted source generators retain the selected double canonical draws and probability comparison, including probabilities 0 and 1; explicit parameters do not change stored probability. The existing strict floating contract and selected SDK replacement guards apply. Probability must satisfy the SDK precondition `0 <= p <= 1`.
+
 Both algorithms accept checked `std::__wrap_iter<T*>` ranges, including admitted vector and string iterators. Sample independently accepts raw or wrapped input and output, retains const input and checked scalar conversions, and returns the original output iterator type. Selected SDK iterator operations remain authenticated.
 
 Core v2 now accepts the pinned embedded `<type_traits>` header for compile-time

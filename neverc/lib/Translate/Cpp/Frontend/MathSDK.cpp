@@ -11167,6 +11167,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
+  if (approvedBernoulliDefaultArgument(S, SM, Default, Function, Index, Context))
+    return true;
   if (approvedUniformDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedRandomEngineDefaultArgument(S, SM, Default, Function, Index,
@@ -74541,6 +74543,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return CString;
   if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
     return Random->Operation;
+  if (auto Bernoulli = approvedBernoulliOperation(S, SM, Call, Context))
+    return Bernoulli;
   if (approvedCanonicalRandomCall(S, SM, Call, Context))
     return UtilityOperation::GenerateCanonical;
   if (auto Uniform = approvedUniformDistributionOperation(S, SM, Call, Context))

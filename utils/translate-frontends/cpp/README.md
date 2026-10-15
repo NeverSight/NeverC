@@ -831,6 +831,12 @@ native references use the same flags. Bits zero and real singleton intervals
 still consume generator draws. See the
 [real distribution contract](../docs/cpp-core-v2.md#uniform-real-distributions-and-canonical-generation).
 
+`bernoulli_distribution` and `param_type` preserve probability/parameter state,
+constructors, property/reset/equality operations and both generator call forms.
+Their selected double canonical draw sequence is retained even for probability
+0 or 1, under the existing strict FP and source-proof contracts. See the
+[Bernoulli contract](../docs/cpp-core-v2.md#bernoulli-distributions-from-random).
+
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
 bool and trivial aggregate operations, free functions, resolved namespaces and

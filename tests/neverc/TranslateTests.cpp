@@ -358738,3 +358738,61 @@ int main(){std::mt19937 e;return std::generate_canonical<double,53>(e)==.25?0:1;
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2BernoulliDistributionPreservesGeneratorState) {
+  const auto Source = fixture("random-bernoulli.cpp");
+  const auto Output = tmpFile("random-bernoulli.nc");
+  const auto Result = translate(Source,
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("random-bernoulli" + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BernoulliDistributionRetainsSelectedSDK) {
+  struct Case {const char *Name;const char *Source;};
+  const Case Cases[] = {
+      {"outer-call",R"cpp(#include <random>
+namespace std {template<> bool bernoulli_distribution::operator()<mt19937>(mt19937&){return false;}}
+int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
+)cpp"},
+      {"parameter-call",R"cpp(#include <random>
+namespace std {template<> bool bernoulli_distribution::operator()<mt19937>(mt19937&,const param_type&){return false;}}
+int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
+)cpp"},
+      {"canonical-helper",R"cpp(#include <random>
+namespace std {template<> double generate_canonical<double,53,mt19937>(mt19937&){return .25;}}
+int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
+)cpp"},
+      {"uniform-helper",R"cpp(#include <random>
+namespace std {template<> template<> double uniform_real_distribution<double>::operator()<mt19937>(mt19937&,const param_type&){return .25;}}
+int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
+)cpp"},
+      {"engine-bound",R"cpp(#include <random>
+namespace std {template<> constexpr unsigned mt19937::max(){return 99;}}
+int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
+)cpp"},
+      {"engine-call",R"cpp(#include <random>
+namespace std {template<> unsigned mt19937::operator()(){return 7;}}
+int main(){std::mt19937 e;std::bernoulli_distribution d;return d(e);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("bernoulli-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("bernoulli-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

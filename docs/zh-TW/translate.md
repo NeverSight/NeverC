@@ -14,6 +14,8 @@ Core v2 另支援經認證的 `std::linear_congruential_engine` 與 `std::mersen
 
 `uniform_real_distribution<float/double>` 及 `param_type` 現保留相同的建構、參數、屬性、複製與賦值、reset 和相等比較介面。`generate_canonical<float/double, Bits>` 支援已認證引擎或已接入的原始碼產生器，保留 SDK 的取數順序、位數上限及浮點公式；Bits 為零仍取一次數，實數單點區間亦會執行 canonical 取數。運算遵循現有 Core v2 的 IEEE 最近捨入契約，關閉 fast math 和 FMA 收縮；原生對照使用相同選項。long double、其他分布、序列化與 `random_device` 仍待支援。
 
+`bernoulli_distribution` 及 `param_type` 現支援預設、機率和參數物件建構、複製與賦值、`p`、`min`/`max`、參數讀取與設定、相等比較、reset 和兩種產生器呼叫形式。已認證 SDK 引擎及已接入的原始碼產生器保留所選雙精度 canonical 取數及機率比較，包括機率 0 和 1；顯式參數不改變儲存機率。沿用嚴格浮點契約與所選 SDK 替換攔截。機率須滿足 SDK 前置條件 `0 <= p <= 1`。
+
 兩個演算法也接納經校驗的 `std::__wrap_iter<T*>` 範圍，包括已支援的 vector 和 string 迭代器。Sample 的輸入和輸出可分別使用原始指標或包裝迭代器，保留 const 輸入及經校驗的純量轉換，並傳回原輸出迭代器型別。所選 SDK 迭代器操作仍須通過認證。
 
 Core v2 現支援內建且固定版本的 `<type_traits>`，用於編譯期型別別名以及整數／列舉常數。`std::remove_cv_t`、`std::is_same_v`、已支援的建構／解構 traits 與 `std::integral_constant::value` 會降為現有核心型別及常值。驅動程式會驗證並記錄 101 個 libc++／resource 標頭雜湊，涵蓋支援的 macOS、Linux 與 Windows 目標。執行期 trait 支援僅限下文列出的、經過驗證的函式指標 `integral_constant` 形式；其他 trait 物件與 trait 儲存身分仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).

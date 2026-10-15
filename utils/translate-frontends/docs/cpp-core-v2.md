@@ -8352,6 +8352,25 @@ at O0/O2. Long double, other distributions, stream serialization and
 constructors/methods, canonical specializations, traits and generator bounds
 remain source-authenticated; replacements cannot acquire these lowerings.
 
+## Bernoulli distributions from `<random>`
+
+`std::bernoulli_distribution` and `param_type` retain their actual double
+probability field and target layout. Default/probability/parameter construction,
+trivial copying and assignment, `p`, `min`/`max`, parameter get/set, equality and
+reset are admitted. Parameter getters initialize caller-supplied result storage.
+Both generator call forms use checked SDK engines/adaptors or the existing
+source-generator contract with completed source call operators.
+
+Generation preserves the pinned `uniform_real_distribution<double>` canonical
+formula followed by comparison with the selected probability. Probabilities
+zero and one still consume these draws; explicit parameters do not modify the
+stored probability. The existing strict core-v2 floating contract applies, and
+the caller must satisfy the SDK probability precondition `0 <= p <= 1`.
+Selected Bernoulli call specializations, real/canonical helpers, generator
+methods/bounds and redeclarations are retained; source replacements are
+rejected without partial artifacts. Other distribution families, serialization
+and `random_device` remain separate admission work.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

@@ -1190,6 +1190,159 @@ approvedUniformDistributionOperation(const State &S, const SourceManager &SM,
   return Operation && Selection.retain(F) ? Operation : std::nullopt;
 }
 
+std::optional<BernoulliRecord>
+approvedBernoulliRecord(const State &S, const SourceManager &SM,
+                       const CXXRecordDecl *Record, const ASTContext &Context) {
+  const auto *R = Record ? Record->getDefinition() : nullptr;
+  const auto *Outer = R && R->getName() == "param_type"
+      ? dyn_cast<CXXRecordDecl>(R->getDeclContext()) : R;
+  const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  if (!S.coreV2() || !R || !Outer || !File || File->Root != "libcxx" ||
+      File->Path != "__random/bernoulli_distribution.h" ||
+      Outer->getName() != "bernoulli_distribution" || isa<ClassTemplateSpecializationDecl>(Outer) ||
+      !approvedStandardSDKDeclaration(S, SM, Outer) || !R->isStandardLayout() ||
+      !R->isTriviallyCopyable() || !R->hasTrivialDestructor() || R->getNumBases() || R->isUnion())
+    return std::nullopt;
+  const CXXRecordDecl *Parameter = nullptr;
+  for (const auto *D : Outer->decls())
+    if (const auto *Nested = dyn_cast<CXXRecordDecl>(D);
+        Nested && Nested->getName() == "param_type" && Nested->getDefinition())
+      Parameter = Nested->getDefinition();
+  if (!Parameter || (R != Outer && R != Parameter) || !Parameter->isStandardLayout() ||
+      !Parameter->isTriviallyCopyable() || !Parameter->hasTrivialDestructor() || Parameter->getNumBases())
+    return std::nullopt;
+  const FieldDecl *Storage = nullptr, *Probability = nullptr;
+  for (const auto *F : Parameter->fields()) {
+    if (Probability || F->getName() != "__p_" || F->isBitField() || F->isMutable() ||
+        !approvedStandardSDKDeclaration(S, SM, F) || !Context.hasSameType(F->getType(), Context.DoubleTy))
+      return std::nullopt;
+    Probability = F;
+  }
+  for (const auto *F : Outer->fields()) {
+    if (Storage || F->getName() != "__p_" || F->isBitField() || F->isMutable() ||
+        !approvedStandardSDKDeclaration(S, SM, F) ||
+        !Context.hasSameType(F->getType(), Context.getRecordType(Parameter)))
+      return std::nullopt;
+    Storage = F;
+  }
+  RandomSelection Selection(S, SM, Context, Outer, Context.BoolTy, Context.DoubleTy);
+  if (!Storage || !Probability || !Selection.retain(Outer) || !Selection.retain(Parameter))
+    return std::nullopt;
+  return BernoulliRecord{R, Outer, Parameter, Storage, Probability};
+}
+
+std::optional<BernoulliConstruction>
+approvedBernoulliConstruction(const State &S, const SourceManager &SM,
+                             const CXXConstructExpr *Construction,
+                             const ASTContext &Context) {
+  const auto *C = Construction ? Construction->getConstructor() : nullptr;
+  const auto Info = C ? approvedBernoulliRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  if (!Info || C->isVariadic() || C->getPrimaryTemplate() ||
+      !approvedStandardSDKDeclaration(S, SM, C) || Construction->getNumArgs() != C->getNumParams())
+    return std::nullopt;
+  if (C->isCopyOrMoveConstructor())
+    return C->isImplicit() && C->isTrivial() ? std::optional<BernoulliConstruction>(BernoulliConstruction::CopyOrMove) : std::nullopt;
+  std::optional<BernoulliConstruction> Kind;
+  if (!C->getNumParams() && Info->Record == Info->Distribution)
+    Kind = BernoulliConstruction::Default;
+  else if (C->getNumParams() == 1 && Context.hasSameType(C->getParamDecl(0)->getType(), Context.DoubleTy))
+    Kind = BernoulliConstruction::Probability;
+  else if (C->getNumParams() == 1 && Info->Record == Info->Distribution &&
+           Context.hasSameType(C->getParamDecl(0)->getType(),
+               Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
+    Kind = BernoulliConstruction::Parameter;
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Context.BoolTy, Context.DoubleTy);
+  return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
+}
+
+bool approvedBernoulliDefaultArgument(const State &S, const SourceManager &SM,
+                                    const CXXDefaultArgExpr *Default,
+                                    const FunctionDecl *Function, unsigned Index,
+                                    const ASTContext &Context) {
+  const auto *C = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  const auto Info = C ? approvedBernoulliRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  if (!Info || !Default || Index || C->getNumParams() != 1 ||
+      Default->getParam() != C->getParamDecl(0) ||
+      !Context.hasSameType(C->getParamDecl(0)->getType(), Context.DoubleTy))
+    return false;
+  Expr::EvalResult Value;
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Context.BoolTy, Context.DoubleTy);
+  return Default->getExpr()->EvaluateAsRValue(Value, Context) && Value.Val.isFloat() &&
+      Value.Val.getFloat().isExactlyValue(0.5) && Selection.retain(C) &&
+      Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr()));
+}
+
+std::optional<UtilityAlgorithmRandomCall>
+approvedBernoulliRandomCall(const State &S, const SourceManager &SM,
+                          const CallExpr *Call, const ASTContext &Context) {
+  const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto Info = M ? approvedBernoulliRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  if (!Info || Info->Record != Info->Distribution || M->isStatic() || M->isConst() ||
+      M->isVolatile() || M->isVariadic() || M->getOverloadedOperator() != OO_Call ||
+      M->getNumParams() < 1 || M->getNumParams() > 2 ||
+      !approvedStandardSDKDeclaration(S, SM, M) || !M->getReturnType()->isBooleanType() ||
+      Call->getNumArgs() != M->getNumParams() + (Operator ? 1u : 0u) ||
+      !(Operator || isa<CXXMemberCallExpr>(Call)) ||
+      (M->getNumParams() == 2 && !Context.hasSameType(M->getParamDecl(1)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))))
+    return std::nullopt;
+  return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Context.DoubleTy,
+      UtilityOperation::BernoulliGenerate, Operator ? 1u : 0u, Context);
+}
+
+std::optional<UtilityOperation>
+approvedBernoulliOperation(const State &S, const SourceManager &SM,
+                         const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *R = M ? M->getParent() : F && F->getNumParams() == 2
+      ? F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
+  const auto Info = approvedBernoulliRecord(S, SM, R, Context);
+  if (!Info || !F || F->isVariadic() || !approvedStandardSDKDeclaration(S, SM, F) ||
+      Call->getNumArgs() != F->getNumParams() + (Operator && M ? 1u : 0u))
+    return std::nullopt;
+  if (approvedBernoulliRandomCall(S, SM, Call, Context))
+    return UtilityOperation::BernoulliGenerate;
+  std::optional<UtilityOperation> Operation;
+  if (M && !M->isStatic() && !M->isVolatile()) {
+    if (M->isConst() && M->getIdentifier() && !M->getNumParams()) {
+      if (M->getName() == "p" && Context.hasSameType(M->getReturnType(), Context.DoubleTy))
+        Operation = UtilityOperation::BernoulliProbability;
+      else if (Info->Record == Info->Distribution && M->getReturnType()->isBooleanType()) {
+        if (M->getName() == "min") Operation = UtilityOperation::BernoulliMinimum;
+        else if (M->getName() == "max") Operation = UtilityOperation::BernoulliMaximum;
+      } else if (M->getName() == "param" && Info->Record == Info->Distribution &&
+                 Context.hasSameType(M->getReturnType(), Context.getRecordType(Info->Parameter)))
+        Operation = UtilityOperation::BernoulliParamGet;
+    } else if (!M->isConst() && M->getIdentifier() && M->getReturnType()->isVoidType() &&
+               Info->Record == Info->Distribution) {
+      if (M->getName() == "reset" && !M->getNumParams())
+        Operation = UtilityOperation::BernoulliReset;
+      else if (M->getName() == "param" && M->getNumParams() == 1 &&
+          Context.hasSameType(M->getParamDecl(0)->getType(),
+              Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
+        Operation = UtilityOperation::BernoulliParamSet;
+    }
+    if (M->getOverloadedOperator() == OO_Equal && M->isImplicit() && M->isTrivial() &&
+        M->getNumParams() == 1 && M->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(M->getReturnType().getNonReferenceType(), Context.getRecordType(Info->Record)) &&
+        M->getParamDecl(0)->getType()->isReferenceType() &&
+        Context.hasSameUnqualifiedType(M->getParamDecl(0)->getType().getNonReferenceType(), Context.getRecordType(Info->Record)))
+      return UtilityOperation::BernoulliAssign;
+  } else if (!M && F->getReturnType()->isBooleanType() && F->getNumParams() == 2 &&
+             (F->getOverloadedOperator() == OO_EqualEqual || F->getOverloadedOperator() == OO_ExclaimEqual)) {
+    for (const auto *P : F->parameters())
+      if (!Context.hasSameType(P->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Info->Record).withConst())))
+        return std::nullopt;
+    Operation = F->getOverloadedOperator() == OO_EqualEqual ? UtilityOperation::BernoulliEqual : UtilityOperation::BernoulliNotEqual;
+  }
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Context.BoolTy, Context.DoubleTy);
+  return Operation && Selection.retain(F) ? Operation : std::nullopt;
+}
+
 std::optional<UtilityAlgorithmRandomCall>
 approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
                                    const CallExpr *Call,

@@ -985,6 +985,16 @@ enum class UtilityOperation {
   UniformNotEqual,
   UniformAssign,
   GenerateCanonical,
+  BernoulliGenerate,
+  BernoulliProbability,
+  BernoulliMinimum,
+  BernoulliMaximum,
+  BernoulliParamGet,
+  BernoulliParamSet,
+  BernoulliReset,
+  BernoulliEqual,
+  BernoulliNotEqual,
+  BernoulliAssign,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1284,6 +1294,27 @@ struct CanonicalRandomCall {
 std::optional<CanonicalRandomCall> approvedCanonicalRandomCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+struct BernoulliRecord {
+  const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
+  const clang::FieldDecl *Storage, *Probability;
+};
+std::optional<BernoulliRecord> approvedBernoulliRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+enum class BernoulliConstruction { Default, Probability, Parameter, CopyOrMove };
+std::optional<BernoulliConstruction> approvedBernoulliConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<UtilityAlgorithmRandomCall> approvedBernoulliRandomCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedBernoulliOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+bool approvedBernoulliDefaultArgument(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDefaultArgExpr *Default, const clang::FunctionDecl *Function,
+    unsigned Index, const clang::ASTContext &Context);
 bool approvedUniformDistributionDefaultArgument(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXDefaultArgExpr *Default, const clang::FunctionDecl *Function,
@@ -2048,6 +2079,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;
