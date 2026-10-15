@@ -1107,6 +1107,124 @@ class FunctionLowering {
            binary("+", Begin, binary("+", Count, quantity(1, Size, L), Size, L),
                   type(Vector.PointerType, L), L), L);
   }
+  Expression piecewiseParameter(Expression Place, const PiecewiseConstantRecord &Info,
+                                SourceLocation L) {
+    return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L)
+                                            : std::move(Place);
+  }
+  void reserveRandomVector(Expression Place, const UtilityVectorRecord &Vector,
+                           Expression Count, SourceLocation L) {
+    const auto Capacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
+    const auto Grow = labelName(), Done = labelName();
+    branch(binary(">", Count, Capacity, "bool", L), Grow, Done, L);
+    label(Grow, L);
+    auto Buffer = objectTemporary(A.Context.getRecordType(Vector.Record), L);
+    allocateRandomVector(Buffer, Vector, Count, L);
+    copyRandomVector(Buffer, Place, Vector, false, true, L);
+    releaseRandomVector(Place, Vector, L);
+    assign(Place, Buffer, L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  void fillRandomVector(Expression Place, const UtilityVectorRecord &Vector,
+                        Expression Count, Expression Value, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Step = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", I, Count, "bool", L), Step, Done, L);
+    label(Step, L);
+    assign(index(Begin, I, type(Vector.ElementType, L), L), Value, L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Done, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L),
+           binary("+", Begin, Count, type(Vector.PointerType, L), L), L);
+  }
+  void copyPiecewiseParameter(Expression Target, Expression Source,
+                              const PiecewiseConstantRecord &Info,
+                              const UtilityVectorRecord &Vector, bool Assignment,
+                              SourceLocation L) {
+    if (Assignment)
+      for (const auto *Field : {Info.Bounds, Info.Densities, Info.Areas}) {
+        auto Input = fieldStorage(Source, Field, L);
+        reserveRandomVector(fieldStorage(Target, Field, L), Vector,
+            randomVectorCount(Input, Vector, "nct_vector_end", L), L);
+      }
+    for (const auto *Field : {Info.Bounds, Info.Densities, Info.Areas})
+      copyRandomVector(fieldStorage(Target, Field, L), fieldStorage(Source, Field, L),
+                       Vector, false, Assignment, L);
+  }
+  void initializePiecewiseConstant(Expression Parameter, const PiecewiseConstantRecord &Info,
+                                   const UtilityVectorRecord &Vector, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Real = type(Info.ResultType, L);
+    auto Density = fieldStorage(Parameter, Info.Densities, L);
+    auto Areas = fieldStorage(Parameter, Info.Areas, L);
+    auto Count = randomVectorCount(Density, Vector, "nct_vector_end", L);
+    auto Values = snapshot(randomVectorMember(Density, Vector, "nct_vector_begin", L), L);
+    auto Bounds = snapshot(randomVectorMember(fieldStorage(Parameter, Info.Bounds, L),
+                                               Vector, "nct_vector_begin", L), L);
+    auto Sum = snapshot(A.zero(Info.ResultType, L), L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto SumCheck = labelName(), SumStep = labelName(), SumDone = labelName();
+    jump(SumCheck, L);
+    label(SumCheck, L);
+    branch(binary("<", I, Count, "bool", L), SumStep, SumDone, L);
+    label(SumStep, L);
+    assign(Sum, binary("+", Sum, index(Values, I, Real, L), Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(SumCheck, L);
+    label(SumDone, L);
+    assign(I, quantity(0, Size, L), L);
+    const auto NormalizeCheck = labelName(), NormalizeStep = labelName(), NormalizeDone = labelName();
+    jump(NormalizeCheck, L);
+    label(NormalizeCheck, L);
+    branch(binary("<", I, Count, "bool", L), NormalizeStep, NormalizeDone, L);
+    label(NormalizeStep, L);
+    auto Value = index(Values, I, Real, L);
+    assign(Value, binary("/", Value, Sum, Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(NormalizeCheck, L);
+    label(NormalizeDone, L);
+    allocateRandomVector(Areas, Vector, Count, L);
+    fillRandomVector(Areas, Vector, Count, A.zero(Info.ResultType, L), L);
+    auto Cumulative = snapshot(randomVectorMember(Areas, Vector, "nct_vector_begin", L), L);
+    auto Last = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+    const auto Prefix = labelName(), PrefixDone = labelName();
+    branch(binary(">", Count, quantity(1, Size, L), "bool", L), Prefix, PrefixDone, L);
+    label(Prefix, L);
+    assign(Sum, index(Values, quantity(0, Size, L), Real, L), L);
+    assign(index(Cumulative, quantity(1, Size, L), Real, L), Sum, L);
+    assign(I, quantity(1, Size, L), L);
+    const auto PrefixCheck = labelName(), PrefixStep = labelName();
+    jump(PrefixCheck, L);
+    label(PrefixCheck, L);
+    branch(binary("<", I, Last, "bool", L), PrefixStep, PrefixDone, L);
+    label(PrefixStep, L);
+    assign(Sum, binary("+", Sum, index(Values, I, Real, L), Real, L), L);
+    assign(index(Cumulative, binary("+", I, quantity(1, Size, L), Size, L), Real, L), Sum, L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(PrefixCheck, L);
+    label(PrefixDone, L);
+    assign(index(Values, Last, Real, L),
+           binary("-", one(Real, L), index(Cumulative, Last, Real, L), Real, L), L);
+    assign(I, quantity(0, Size, L), L);
+    const auto DivideCheck = labelName(), DivideStep = labelName(), Done = labelName();
+    jump(DivideCheck, L);
+    label(DivideCheck, L);
+    branch(binary("<", I, Count, "bool", L), DivideStep, Done, L);
+    label(DivideStep, L);
+    auto Width = binary("-", index(Bounds, binary("+", I, quantity(1, Size, L), Size, L), Real, L),
+                        index(Bounds, I, Real, L), Real, L);
+    Value = index(Values, I, Real, L);
+    assign(Value, binary("/", Value, Width, Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(DivideCheck, L);
+    label(Done, L);
+  }
   void initializeDiscreteThresholds(Expression Place, const UtilityVectorRecord &Vector,
                                     Expression Count, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -3199,6 +3317,108 @@ class FunctionLowering {
       auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
       discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
       return {};
+    }
+    if (Operation >= UtilityOperation::PiecewiseConstantGenerate &&
+        Operation <= UtilityOperation::PiecewiseConstantAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedPiecewiseConstantRecord(A.S, A.Sources, R, A.Context);
+      if (!Info)
+        reject(L, "piecewise constant distribution", "The checked distribution layout is unavailable.");
+      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+          Info->Bounds->getType()->getAsCXXRecordDecl(), A.Context);
+      if (Operation == UtilityOperation::PiecewiseConstantEqual || Operation == UtilityOperation::PiecewiseConstantNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto LP = piecewiseParameter(dereference(Left, L), *Info, L);
+        auto RP = piecewiseParameter(dereference(Right, L), *Info, L);
+        auto Equal = snapshot(binary("==", compareNestedVectors(fieldStorage(LP, Info->Densities, L),
+            fieldStorage(RP, Info->Densities, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
+        const auto BoundsEqual = labelName(), Done = labelName();
+        branch(Equal, BoundsEqual, Done, L);
+        label(BoundsEqual, L);
+        assign(Equal, binary("==", compareNestedVectors(fieldStorage(LP, Info->Bounds, L),
+            fieldStorage(RP, Info->Bounds, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
+        jump(Done, L);
+        label(Done, L);
+        return Operation == UtilityOperation::PiecewiseConstantNotEqual
+            ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : Equal;
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      auto Parameter = piecewiseParameter(Place, *Info, L);
+      if (Operation == UtilityOperation::PiecewiseConstantAssign || Operation == UtilityOperation::PiecewiseConstantParamSet) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        auto Input = Operation == UtilityOperation::PiecewiseConstantParamSet
+            ? dereference(Source, L) : piecewiseParameter(dereference(Source, L), *Info, L);
+        copyPiecewiseParameter(Parameter, Input, *Info, *Vector, true, L);
+        return Operation == UtilityOperation::PiecewiseConstantAssign ? Place : Expression{};
+      }
+      if (Operation == UtilityOperation::PiecewiseConstantReset)
+        return {};
+      if (Operation == UtilityOperation::PiecewiseConstantParamGet) {
+        auto Value = Destination ? json::Object(*Destination)
+            : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
+        copyPiecewiseParameter(Value, Parameter, *Info, *Vector, false, L);
+        return Value;
+      }
+      if (Operation == UtilityOperation::PiecewiseConstantIntervals || Operation == UtilityOperation::PiecewiseConstantDensities) {
+        auto Value = Destination ? json::Object(*Destination) : objectTemporary(F->getReturnType(), L);
+        copyRandomVector(Value, fieldStorage(Parameter, Operation == UtilityOperation::PiecewiseConstantIntervals
+            ? Info->Bounds : Info->Densities, L), *Vector, false, false, L);
+        return Value;
+      }
+      const auto Size = type(A.Context.getSizeType(), L);
+      const auto Real = type(Info->ResultType, L);
+      auto Bounds = fieldStorage(Parameter, Info->Bounds, L);
+      if (Operation == UtilityOperation::PiecewiseConstantMinimum || Operation == UtilityOperation::PiecewiseConstantMaximum) {
+        auto I = Operation == UtilityOperation::PiecewiseConstantMinimum ? quantity(0, Size, L)
+            : binary("-", randomVectorCount(Bounds, *Vector, "nct_vector_end", L), quantity(1, Size, L), Size, L);
+        return snapshot(index(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), I, Real, L), L);
+      }
+      const auto Random = approvedPiecewiseConstantRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random)
+        reject(L, "piecewise constant generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Source = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(Source, L);
+      }
+      auto Areas = fieldStorage(Parameter, Info->Areas, L);
+      auto Count = randomVectorCount(Areas, *Vector, "nct_vector_end", L);
+      auto Input = snapshot(randomVectorMember(Areas, *Vector, "nct_vector_begin", L), L);
+      CapturedAlgorithmPredicate Generator{GeneratorAddress, Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = snapshot(emitCanonicalRandom(Generator, *Random,
+          Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L), L);
+      auto Position = snapshot(quantity(0, Size, L), L);
+      auto Remaining = snapshot(Count, L);
+      const auto Check = labelName(), Step = labelName(), Left = labelName(), Right = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Step, Done, L);
+      label(Step, L);
+      auto Half = snapshot(binary("/", Remaining, quantity(2, Size, L), Size, L), L);
+      auto Middle = snapshot(binary("+", Position, Half, Size, L), L);
+      branch(binary("<", Draw, index(Input, Middle, Real, L), "bool", L), Left, Right, L);
+      label(Left, L);
+      assign(Remaining, Half, L);
+      jump(Check, L);
+      label(Right, L);
+      assign(Position, binary("+", Middle, quantity(1, Size, L), Size, L), L);
+      assign(Remaining, binary("-", binary("-", Remaining, Half, Size, L), quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(Done, L);
+      auto K = snapshot(binary("-", Position, quantity(1, Size, L), Size, L), L);
+      auto Density = randomVectorMember(fieldStorage(Parameter, Info->Densities, L), *Vector, "nct_vector_begin", L);
+      auto B = randomVectorMember(fieldStorage(Parameter, Info->Bounds, L), *Vector, "nct_vector_begin", L);
+      return snapshot(binary("+", binary("/", binary("-", Draw, index(Input, K, Real, L), Real, L),
+          index(Density, K, Real, L), Real, L), index(B, K, Real, L), Real, L), L);
     }
     if (Operation >= UtilityOperation::DiscreteGenerate && Operation <= UtilityOperation::DiscreteAssign) {
       const auto *F = Call->getDirectCallee();
@@ -28427,6 +28647,104 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Kind = approvedPiecewiseConstantConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedPiecewiseConstantRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+          Info->Bounds->getType()->getAsCXXRecordDecl(), A.Context);
+      auto Parameter = piecewiseParameter(Place, *Info, L);
+      if (*Kind == PiecewiseConstantConstruction::Copy || *Kind == PiecewiseConstantConstruction::Parameter) {
+        auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+        auto Input = *Kind == PiecewiseConstantConstruction::Parameter
+            ? dereference(Source, L) : piecewiseParameter(dereference(Source, L), *Info, L);
+        copyPiecewiseParameter(Parameter, Input, *Info, *Vector, false, L);
+        return;
+      }
+      auto Bounds = fieldStorage(Parameter, Info->Bounds, L);
+      auto Density = fieldStorage(Parameter, Info->Densities, L);
+      auto Areas = fieldStorage(Parameter, Info->Areas, L);
+      for (const auto *Field : {Info->Bounds, Info->Densities, Info->Areas})
+        zeroRandomVector(fieldStorage(Parameter, Field, L), *Vector, L);
+      const auto Size = type(A.Context.getSizeType(), L);
+      const auto Real = type(Info->ResultType, L);
+      if (*Kind == PiecewiseConstantConstruction::Default) {
+        allocateRandomVector(Bounds, *Vector, quantity(2, Size, L), L);
+        fillRandomVector(Bounds, *Vector, quantity(2, Size, L), A.zero(Info->ResultType, L), L);
+        allocateRandomVector(Density, *Vector, quantity(1, Size, L), L);
+        fillRandomVector(Density, *Vector, quantity(1, Size, L), one(Real, L), L);
+        allocateRandomVector(Areas, *Vector, quantity(1, Size, L), L);
+        fillRandomVector(Areas, *Vector, quantity(1, Size, L), A.zero(Info->ResultType, L), L);
+        auto Begin = randomVectorMember(Bounds, *Vector, "nct_vector_begin", L);
+        assign(index(Begin, quantity(1, Size, L), Real, L), one(Real, L), L);
+        return;
+      }
+      auto First = seedSequenceIterator(C->getArg(0), L);
+      auto Last = seedSequenceIterator(C->getArg(1), L);
+      auto Weights = seedSequenceIterator(C->getArg(2), L);
+      auto Count = snapshot(quantity(0, Size, L), L);
+      const auto Measure = labelName(), Measured = labelName();
+      branch(binary("!=", First, Last, "bool", L), Measure, Measured, L);
+      label(Measure, L);
+      assign(Count, cast(binary("-", Last, First, type(A.Context.getPointerDiffType(), L), L), Size, L), L);
+      jump(Measured, L);
+      label(Measured, L);
+      allocateRandomVector(Bounds, *Vector, Count, L);
+      auto Begin = snapshot(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), L);
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto CopyCheck = labelName(), CopyStep = labelName(), Copied = labelName();
+      jump(CopyCheck, L);
+      label(CopyCheck, L);
+      branch(binary("<", I, Count, "bool", L), CopyStep, Copied, L);
+      label(CopyStep, L);
+      assign(index(Begin, I, Real, L), cast(dereference(First, L), Real, L), L);
+      assign(First, binary("+", First, quantity(1, Size, L), *First.getString("type"), L), L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(CopyCheck, L);
+      label(Copied, L);
+      const auto Fallback = labelName(), Weighted = labelName(), Done = labelName();
+      branch(binary("<", Count, quantity(2, Size, L), "bool", L), Fallback, Weighted, L);
+      label(Fallback, L);
+      auto Buffer = objectTemporary(A.Context.getRecordType(Vector->Record), L);
+      allocateRandomVector(Buffer, *Vector, quantity(2, Size, L), L);
+      auto NewBegin = snapshot(randomVectorMember(Buffer, *Vector, "nct_vector_begin", L), L);
+      assign(index(NewBegin, quantity(1, Size, L), Real, L), A.zero(Info->ResultType, L), L);
+      const auto ZeroFirst = labelName(), Initialized = labelName();
+      branch(binary("==", Count, quantity(0, Size, L), "bool", L), ZeroFirst, Initialized, L);
+      label(ZeroFirst, L);
+      assign(index(NewBegin, quantity(0, Size, L), Real, L), A.zero(Info->ResultType, L), L);
+      jump(Initialized, L);
+      label(Initialized, L);
+      copyRandomVector(Buffer, Bounds, *Vector, false, true, L);
+      assign(randomVectorMember(Buffer, *Vector, "nct_vector_end", L),
+             binary("+", NewBegin, quantity(2, Size, L), type(Vector->PointerType, L), L), L);
+      releaseRandomVector(Bounds, *Vector, L);
+      assign(Bounds, Buffer, L);
+      assign(index(NewBegin, quantity(0, Size, L), Real, L), A.zero(Info->ResultType, L), L);
+      assign(index(NewBegin, quantity(1, Size, L), Real, L), one(Real, L), L);
+      allocateRandomVector(Density, *Vector, quantity(1, Size, L), L);
+      fillRandomVector(Density, *Vector, quantity(1, Size, L), one(Real, L), L);
+      allocateRandomVector(Areas, *Vector, quantity(1, Size, L), L);
+      fillRandomVector(Areas, *Vector, quantity(1, Size, L), A.zero(Info->ResultType, L), L);
+      jump(Done, L);
+      label(Weighted, L);
+      auto N = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+      allocateRandomVector(Density, *Vector, N, L);
+      auto Output = snapshot(randomVectorMember(Density, *Vector, "nct_vector_begin", L), L);
+      assign(I, quantity(0, Size, L), L);
+      const auto WeightCheck = labelName(), WeightStep = labelName(), Filled = labelName();
+      jump(WeightCheck, L);
+      label(WeightCheck, L);
+      branch(binary("<", I, N, "bool", L), WeightStep, Filled, L);
+      label(WeightStep, L);
+      assign(index(Output, I, Real, L), cast(dereference(Weights, L), Real, L), L);
+      assign(Weights, binary("+", Weights, quantity(1, Size, L), *Weights.getString("type"), L), L);
+      assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+      jump(WeightCheck, L);
+      label(Filled, L);
+      initializePiecewiseConstant(Parameter, *Info, *Vector, L);
+      jump(Done, L);
+      label(Done, L);
+      return;
+    }
     if (const auto Kind = approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedDiscreteDistributionRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
       const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,

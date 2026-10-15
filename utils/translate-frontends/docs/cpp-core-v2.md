@@ -8459,6 +8459,31 @@ including comma-expression observations. Default-argument and subobject lifetime
 rules continue to apply. Member function templates, out-of-line template call operators, bases, unions
 and lambdas remain separate admission work.
 
+### Piecewise constant distributions
+
+The pinned `piecewise_constant_distribution<float/double>` and nested `param_type`
+retain their three `vector<RealType>` fields for interval boundaries, densities
+and cumulative areas. Default, raw or authenticated wrapped arithmetic
+boundary/weight range, parameter, copy and rvalue construction are admitted,
+as are assignment, `intervals`, `densities`, distribution bounds, parameter
+get/set, equality, reset and both generator call forms. The selected SDK
+constructor, helpers, aliases and generator definitions remain authenticated.
+
+Fewer than two boundaries select `[0,1]` and never read a weight. Otherwise
+weights are normalized in the SDK order; cumulative areas begin at zero, the
+last normalized area is corrected from the preceding sum, then each density is
+divided by its interval width. Sampling retains canonical float/double draws,
+upper-bound selection and `(u-area)/density+boundary` with the existing strict
+floating rules. Returned vectors own independent storage.
+
+The SDK explicitly declares parameter copy construction and assignment, which
+suppress parameter moves. Rvalue parameter construction and the outer generated
+move therefore copy all three vectors and preserve the source. Parameter
+assignment reserves all three capacities before assigning their contents;
+self-assignment and compatible capacities retain existing storage. Allocation,
+relocation and release follow the selected vector operations. Callback-based
+constructors, long double and stream serialization remain separate work.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

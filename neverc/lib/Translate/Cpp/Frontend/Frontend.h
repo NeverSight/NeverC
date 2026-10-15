@@ -1005,6 +1005,17 @@ enum class UtilityOperation {
   DiscreteEqual,
   DiscreteNotEqual,
   DiscreteAssign,
+  PiecewiseConstantGenerate,
+  PiecewiseConstantIntervals,
+  PiecewiseConstantDensities,
+  PiecewiseConstantMinimum,
+  PiecewiseConstantMaximum,
+  PiecewiseConstantParamGet,
+  PiecewiseConstantParamSet,
+  PiecewiseConstantReset,
+  PiecewiseConstantEqual,
+  PiecewiseConstantNotEqual,
+  PiecewiseConstantAssign,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1308,6 +1319,24 @@ struct BernoulliRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   const clang::FieldDecl *Storage, *Probability;
 };
+struct PiecewiseConstantRecord {
+  const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
+  clang::QualType ResultType;
+  const clang::FieldDecl *Storage, *Bounds, *Densities, *Areas;
+};
+enum class PiecewiseConstantConstruction { Default, Range, Parameter, Copy };
+std::optional<PiecewiseConstantRecord> approvedPiecewiseConstantRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<PiecewiseConstantConstruction> approvedPiecewiseConstantConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedPiecewiseConstantOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityAlgorithmRandomCall> approvedPiecewiseConstantRandomCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 struct DiscreteDistributionRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   clang::QualType ResultType;
@@ -2121,7 +2150,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
-  std::set<const clang::CXXRecordDecl *> RequiredDiscreteDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;

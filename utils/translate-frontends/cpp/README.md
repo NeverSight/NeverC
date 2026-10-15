@@ -1078,3 +1078,10 @@ Reports contain machine-specific paths and belong outside version control.
 A passing installation on one measured host does not establish additional
 platform or cross-target support; consult the
 [support matrix](../docs/support-matrix.md).
+
+Piecewise constant float/double distributions retain the pinned three-vector
+boundary/density/area layout through default/range/parameter construction,
+copy-on-move ownership, assignment, vector queries, parameters, equality and
+sampling. Normalization, canonical draws, interval selection, capacity reuse and
+reserve-before-assignment order remain exact. Callback constructors, long double
+and serialization require further support.
