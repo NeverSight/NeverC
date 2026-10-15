@@ -8397,9 +8397,26 @@ self-copy behavior, allocation sizes and destruction through checked source-owne
 global new/delete. Parameter result getters construct into caller-provided
 storage. Selected constructor, normalization, partial-sum, comparison, probability
 and random helper declarations remain SDK proof dependencies; source replacements
-are rejected without partial artifacts. Function-generated weights, other
-iterator families, remaining distributions, stream serialization and
-`random_device` require further admission work.
+are rejected without partial artifacts. Other iterator families, remaining
+distributions, stream serialization and `random_device` require further work.
+
+### Function-generated discrete weights
+
+The distribution and parameter four-argument constructor accepts an ordinary
+unary function pointer with by-value core arithmetic parameter and result types:
+non-boolean or boolean integers through 64 bits, float and double. Source aliases,
+function-pointer variables and factory-returned pointers retain ordinary source
+function ownership and body checks. Missing definitions, unsupported bodies,
+function objects and reference parameter/result signatures are not admitted.
+
+Constructor arguments evaluate once. Counts zero and one do not invoke the
+callback or allocate threshold storage. Larger counts preserve the SDK reserve
+of count minus one, final push growth, midpoint computation in double, conversion
+to the callback parameter type and conversion of its result back to double.
+Normalization and returned probabilities follow the preceding discrete contract.
+Selected SDK constructor and normalization replacements remain rejected, while
+the retained callback body still passes the ordinary source allowlist. All
+weights and live allocations must satisfy the existing defined-input contracts.
 
 ## Standard template parsing across targets
 

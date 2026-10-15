@@ -1065,6 +1065,34 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
   }
+  void appendRandomVector(Expression Place, const UtilityVectorRecord &Vector,
+                          Expression Value, Expression Count, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Captured = snapshot(std::move(Value), L);
+    auto Capacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
+    const auto Grow = labelName(), Append = labelName();
+    branch(binary("==", Count, Capacity, "bool", L), Grow, Append, L);
+    label(Grow, L);
+    auto NewCapacity = snapshot(quantity(1, Size, L), L);
+    const auto Double = labelName(), Allocate = labelName();
+    branch(binary("!=", Capacity, quantity(0, Size, L), "bool", L), Double, Allocate, L);
+    label(Double, L);
+    assign(NewCapacity, binary("*", Capacity, quantity(2, Size, L), Size, L), L);
+    jump(Allocate, L);
+    label(Allocate, L);
+    auto Temporary = objectTemporary(A.Context.getRecordType(Vector.Record), L);
+    allocateRandomVector(Temporary, Vector, NewCapacity, L);
+    copyRandomVector(Temporary, Place, Vector, false, true, L);
+    releaseRandomVector(Place, Vector, L);
+    assign(Place, Temporary, L);
+    jump(Append, L);
+    label(Append, L);
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    assign(index(Begin, Count, type(Vector.ElementType, L), L), Captured, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L),
+           binary("+", Begin, binary("+", Count, quantity(1, Size, L), Size, L),
+                  type(Vector.PointerType, L), L), L);
+  }
   void initializeDiscreteThresholds(Expression Place, const UtilityVectorRecord &Vector,
                                     Expression Count, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -28403,6 +28431,42 @@ class FunctionLowering {
       if (*Kind == DiscreteDistributionConstruction::Default)
         return;
       const auto Size = type(A.Context.getSizeType(), L);
+      if (*Kind == DiscreteDistributionConstruction::FunctionWeights) {
+        auto Count = snapshot(argument(C->getArg(0), Constructor->getParamDecl(0)->getType()), L);
+        auto Lower = snapshot(argument(C->getArg(1), Constructor->getParamDecl(1)->getType()), L);
+        auto Upper = snapshot(argument(C->getArg(2), Constructor->getParamDecl(2)->getType()), L);
+        auto Callback = snapshot(argument(C->getArg(3), Constructor->getParamDecl(3)->getType()), L);
+        const auto Real = type(A.Context.DoubleTy, L);
+        const auto Fill = labelName(), Done = labelName();
+        branch(binary(">", Count, quantity(1, Size, L), "bool", L), Fill, Done, L);
+        label(Fill, L);
+        auto Capacity = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+        allocateRandomVector(Storage, *Vector, Capacity, L);
+        assign(randomVectorMember(Storage, *Vector, "nct_vector_end", L),
+               randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
+        auto Width = snapshot(binary("/", binary("-", Upper, Lower, Real, L), cast(Count, Real, L), Real, L), L);
+        auto Half = snapshot(binary("/", Width, A.floatingLiteral(llvm::APFloat(2.0), L), Real, L), L);
+        auto I = snapshot(quantity(0, Size, L), L);
+        const auto Check = labelName(), Step = labelName(), Filled = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", I, Count, "bool", L), Step, Filled, L);
+        label(Step, L);
+        auto Point = snapshot(binary("+", binary("+", Lower,
+            binary("*", cast(I, Real, L), Width, Real, L), Real, L), Half, Real, L), L);
+        const auto *Prototype = Constructor->getParamDecl(3)->getType()->getPointeeType()->getAs<FunctionProtoType>();
+        json::Array Arguments;
+        Arguments.push_back(cast(std::move(Point), type(Prototype->getParamType(0), L), L));
+        auto Weight = emitAlgorithmCallback(Callback, Constructor->getParamDecl(3)->getType(), std::move(Arguments), L);
+        appendRandomVector(Storage, *Vector, cast(std::move(Weight), Real, L), I, L);
+        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+        jump(Check, L);
+        label(Filled, L);
+        initializeDiscreteThresholds(Storage, *Vector, Count, L);
+        jump(Done, L);
+        label(Done, L);
+        return;
+      }
       Expression Input, Count;
       QualType Element;
       if (*Kind == DiscreteDistributionConstruction::InitializerList) {

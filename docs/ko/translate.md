@@ -18,6 +18,8 @@ Core v2는 인증된 `std::linear_congruential_engine`과 `std::mersenne_twister
 
 `discrete_distribution<IntType>`과 `param_type`은 기본, 초기화 목록, 포인터 또는 래퍼 반복자의 산술 범위, 매개변수, 복사와 이동 생성 및 대입, `probabilities`, 범위, 매개변수 조회와 설정, 동등 비교, reset과 두 생성기 호출을 지원합니다. 정규화, 누적 임계값, 확률 재구성과 canonical 추출은 빈 범위와 단일 가중치를 포함해 고정 SDK의 연산 순서를 유지합니다. 내부 및 반환 `vector<double>`은 독립 복사, 용량 재사용, 소스 할당과 해제를 유지하며 엄격한 부동소수점 계약과 SDK 대체 거부가 적용됩니다.
 
+분포와 매개변수의 네 인자 가중치 생성자는 핵심 산술형을 값으로 받고 반환하는 단항 함수 포인터를 지원합니다. 중점 계산, 인자와 결과 변환, 호출 횟수와 벡터 할당 순서는 고정 SDK를 따릅니다. 개수 0/1에서는 콜백을 호출하지 않으며 각 인자 식은 한 번 평가합니다. 별칭과 팩터리가 반환한 함수 포인터도 검사된 소스 본문을 유지합니다. 함수 객체와 참조 콜백 시그니처는 별도 지원이 필요합니다.
+
 두 알고리즘은 지원하는 vector와 string 반복자를 포함한 검증된 `std::__wrap_iter<T*>` 범위도 허용합니다. Sample의 입력과 출력은 각각 원시 포인터 또는 래핑 반복자를 사용할 수 있으며, const 입력과 검증된 스칼라 변환을 유지하고 원래 출력 반복자 타입을 반환합니다. 선택된 SDK 반복자 연산도 계속 인증합니다.
 
 Core v2는 컴파일 시간 형식 별칭과 정수·열거형 상수를 위해 내장된 고정 버전 `<type_traits>`를 지원합니다. `std::remove_cv_t`, `std::is_same_v`, 지원되는 생성·소멸 traits와 `std::integral_constant::value`는 기존 코어 형식과 리터럴로 변환됩니다. 드라이버는 지원되는 macOS, Linux, Windows 대상에서 사용된 libc++／resource 헤더 101개의 해시를 검증하고 기록합니다. 런타임 trait 지원은 아래에 설명된 검증된 함수 포인터 `integral_constant` 형태로 제한됩니다. 다른 trait 객체와 trait 저장소 식별은 아직 지원되지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).

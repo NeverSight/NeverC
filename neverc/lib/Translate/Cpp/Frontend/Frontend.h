@@ -1317,7 +1317,7 @@ std::optional<DiscreteDistributionRecord> approvedDiscreteDistributionRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 enum class DiscreteDistributionConstruction {
-  Default, Range, InitializerList, Parameter, Copy, Move
+  Default, Range, InitializerList, Parameter, Copy, Move, FunctionWeights
 };
 std::optional<DiscreteDistributionConstruction>
 approvedDiscreteDistributionConstruction(

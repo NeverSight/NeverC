@@ -10,6 +10,19 @@ using namespace clang;
 namespace nct {
 namespace {
 
+bool randomWeightScalar(QualType T, const ASTContext &Context) {
+  return (T->isIntegerType() && Context.getTypeSize(T) <= 64) ||
+         T->isSpecificBuiltinType(BuiltinType::Float) ||
+         T->isSpecificBuiltinType(BuiltinType::Double);
+}
+bool randomWeightFunction(QualType T, const ASTContext &Context) {
+  const auto *P = T->isFunctionPointerType()
+      ? T->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  return P && !P->isVariadic() && P->getCallConv() == CC_C && P->getNumParams() == 1 &&
+         randomWeightScalar(P->getReturnType(), Context) &&
+         randomWeightScalar(P->getParamType(0), Context);
+}
+
 // The lowering implements the pinned libc++ loops. Follow the declarations
 // actually selected by those loops, including instantiated traits and helper
 // bodies. Header identity alone cannot authenticate a source specialization.
@@ -19,6 +32,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   const ASTContext &Context;
   const CXXRecordDecl *Generator;
   bool SDKGenerator;
+  bool WeightCallback;
   QualType ResultType, DistanceType;
   llvm::DenseSet<const Decl *> Declarations;
   llvm::DenseSet<const Type *> Types;
@@ -173,9 +187,10 @@ public:
 
   RandomSelection(const State &S, const SourceManager &SM,
                   const ASTContext &Context, const CXXRecordDecl *Generator,
-                  QualType ResultType, QualType DistanceType)
+                  QualType ResultType, QualType DistanceType, bool WeightCallback = false)
       : S(S), SM(SM), Context(Context), Generator(Generator),
         SDKGenerator(approvedStandardSDKDeclaration(S, SM, Generator)),
+        WeightCallback(WeightCallback),
         ResultType(ResultType), DistanceType(DistanceType) {}
 
   bool retainType(QualType T) {
@@ -340,6 +355,19 @@ public:
   bool VisitCallExpr(CallExpr *E) {
     const auto *F = E->getDirectCallee();
     if (!F) {
+      const auto *Reference = dyn_cast<DeclRefExpr>(E->getCallee()->IgnoreParenImpCasts());
+      const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+      const auto *Constructor = Parameter ? dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext()) : nullptr;
+      const auto Origin = Constructor ? S.sdkFile(SM, Constructor->getLocation()) : std::nullopt;
+      if (WeightCallback && Constructor && Constructor->getNumParams() == 4 &&
+          Parameter == Constructor->getParamDecl(3) && Origin &&
+          Origin->Root == "libcxx" && Origin->Path == "__random/discrete_distribution.h" &&
+          approvedStandardSDKDeclaration(S, SM, Constructor) &&
+          E->getNumArgs() == 1 && randomWeightFunction(Parameter->getType(), Context)) {
+        const auto *Prototype = Parameter->getType()->getPointeeType()->getAs<FunctionProtoType>();
+        return Context.hasSameUnqualifiedType(E->getType(), Prototype->getReturnType()) &&
+               Context.hasSameUnqualifiedType(E->getArg(0)->getType(), Prototype->getParamType(0));
+      }
       const auto *Destructor = dyn_cast<CXXPseudoDestructorExpr>(
           E->getCallee()->IgnoreParenImpCasts());
       const auto File = S.sdkFile(SM, E->getExprLoc());
@@ -1445,7 +1473,14 @@ approvedDiscreteDistributionConstruction(const State &S, const SourceManager &SM
         scalarElement(Pointer->getPointeeType(), Context))
       Kind = DiscreteDistributionConstruction::Range;
   }
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy);
+  if (C->getNumParams() == 4 &&
+      Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(C->getParamDecl(1)->getType(), Context.DoubleTy) &&
+      Context.hasSameType(C->getParamDecl(2)->getType(), Context.DoubleTy) &&
+      randomWeightFunction(C->getParamDecl(3)->getType(), Context))
+    Kind = DiscreteDistributionConstruction::FunctionWeights;
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Context.DoubleTy,
+      Kind == DiscreteDistributionConstruction::FunctionWeights);
   return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
 }
 

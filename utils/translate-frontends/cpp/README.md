@@ -843,6 +843,9 @@ parameter/probability results, assignment, equality, reset and generator calls.
 Canonical draws and probability arithmetic retain pinned SDK order; internal and
 returned vectors retain checked allocation and cleanup. See the
 [discrete contract](../docs/cpp-core-v2.md#discrete-distributions-from-random).
+The four-argument weight constructor also accepts unary function pointers with
+by-value core arithmetic signatures, retaining source bodies, midpoint and
+conversion order, zero/one-count callback suppression and SDK vector growth.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,

@@ -18,6 +18,8 @@ The remaining deterministic families `subtract_with_carry_engine`, `discard_bloc
 
 `discrete_distribution<IntType>` and `param_type` now support default, initializer-list, raw/wrapped arithmetic range, parameter, copy and move construction; copy/move assignment; `probabilities`, bounds, parameter get/set, equality, reset and both generator call forms. Normalization, cumulative thresholds, probability reconstruction and canonical draws follow the pinned SDK operation order, including empty and single-weight cases. Internal and returned `vector<double>` storage retains independent copies, capacity reuse and source-owned allocation/release. The strict floating contract and selected SDK replacement guards apply.
 
+Function-generated discrete weights now support the four-argument distribution/parameter constructor with ordinary unary function pointers using by-value core arithmetic parameters and results. Midpoint evaluation, argument/result conversions, callback counts and vector allocation order follow the pinned SDK. Counts 0/1 never invoke the callback; argument expressions still evaluate once. Source aliases and returned function pointers retain their checked source bodies; function objects and reference callback signatures remain separate work.
+
 Both algorithms accept checked `std::__wrap_iter<T*>` ranges, including admitted vector and string iterators. Sample independently accepts raw or wrapped input and output, retains const input and checked scalar conversions, and returns the original output iterator type. Selected SDK iterator operations remain authenticated.
 
 Core v2 now accepts the pinned embedded `<type_traits>` header for compile-time

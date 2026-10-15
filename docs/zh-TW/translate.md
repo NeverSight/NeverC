@@ -18,6 +18,8 @@ Core v2 另支援經認證的 `std::linear_congruential_engine` 與 `std::mersen
 
 `discrete_distribution<IntType>` 及 `param_type` 現支援預設、初始化串列、原始指標或封裝迭代器算術範圍、參數物件、複製與移動建構，複製與移動賦值，以及 `probabilities`、邊界、參數讀寫、相等比較、reset 和兩種產生器呼叫。正規化、累計閾值、機率重建及 canonical 取數沿用固定 SDK 的運算順序，包括空範圍與單權重。內部及傳回的 `vector<double>` 保留獨立副本、容量重用和原始碼配置釋放。沿用嚴格浮點契約與所選 SDK 替換攔截。
 
+離散分布及參數物件現支援四參數函式權重建構：接受參數及回傳值按值傳遞的核心算術型別一元函式指標。中點計算、參數和結果轉換、回呼次數及向量配置順序沿用固定 SDK。數量為 0/1 時不呼叫回呼，各引數運算式仍求值一次。原始碼別名與工廠傳回的函式指標保留已檢查的函式本體；函式物件及參考回呼簽章仍待接入。
+
 兩個演算法也接納經校驗的 `std::__wrap_iter<T*>` 範圍，包括已支援的 vector 和 string 迭代器。Sample 的輸入和輸出可分別使用原始指標或包裝迭代器，保留 const 輸入及經校驗的純量轉換，並傳回原輸出迭代器型別。所選 SDK 迭代器操作仍須通過認證。
 
 Core v2 現支援內建且固定版本的 `<type_traits>`，用於編譯期型別別名以及整數／列舉常數。`std::remove_cv_t`、`std::is_same_v`、已支援的建構／解構 traits 與 `std::integral_constant::value` 會降為現有核心型別及常值。驅動程式會驗證並記錄 101 個 libc++／resource 標頭雜湊，涵蓋支援的 macOS、Linux 與 Windows 目標。執行期 trait 支援僅限下文列出的、經過驗證的函式指標 `integral_constant` 形式；其他 trait 物件與 trait 儲存身分仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).

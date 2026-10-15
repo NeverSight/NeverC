@@ -358902,3 +358902,94 @@ int main(){std::mt19937 e;std::discrete_distribution<int> d{1.,2.,3.};auto p=d.p
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2DiscreteFunctionWeightsPreserveCallbackStateAndOwnership) {
+  const auto Source = fixture("random-discrete-callback.cpp");
+  const auto Output = tmpFile("random-discrete-callback.nc");
+  const auto Result = translate(Source,
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("random-discrete-callback" + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DiscreteFunctionWeightsRetainSDKAndSourceCallbacks) {
+  struct Case {const char *Name;const char *Source;};
+  const Case Cases[] = {
+      {"outer-constructor",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> template<> discrete_distribution<int>::discrete_distribution(size_t,double,double,double(*)(double)){}}
+double weight(double x){return x*x+1.;}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
+)cpp"},
+      {"parameter-constructor",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> template<> discrete_distribution<int>::param_type::param_type(size_t,double,double,double(*)(double)){}}
+double weight(double x){return x*x+1.;}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
+)cpp"},
+      {"normalization",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+namespace std {template<> void discrete_distribution<int>::param_type::__init(){}}
+double weight(double x){return x*x+1.;}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
+)cpp"},
+      {"external-callback",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+double weight(double);
+int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
+)cpp"},
+      {"throwing-callback",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+double weight(double){throw 1;}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
+)cpp"},
+      {"reference-callback",R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[65536];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+double weight(const double& x){return x*x+1.;}
+int main(){std::discrete_distribution<int> d(3,-3.,5.,weight);return d.max();}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("discrete-callback-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("discrete-callback-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

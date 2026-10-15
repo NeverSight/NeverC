@@ -24303,7 +24303,7 @@ public:
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
         } else if (approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedSeedSequenceConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedRandomEngineConstruction(A.S, A.Sources, C,
