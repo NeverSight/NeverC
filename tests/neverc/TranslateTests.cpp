@@ -359419,3 +359419,110 @@ int main(){
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2PiecewiseLinearPreservesBitsStateAndOwnership) {
+  for (const std::string &Name : {"random-piecewise-linear", "random-piecewise-linear-api", "random-piecewise-linear-api-double", "random-piecewise-linear-wrappers"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PiecewiseLinearCallbacksPreserveBoundaryReferences) {
+  for (const std::string &Name : {"random-piecewise-linear-count-weights", "random-piecewise-linear-list-weights", "random-piecewise-linear-ref-weights-float", "random-piecewise-linear-ref-weights-double"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PiecewiseLinearObjectsPreserveCopiedLifetimes) {
+  for (const std::string &Name : {"random-piecewise-linear-objects-float", "random-piecewise-linear-objects-double", "random-piecewise-linear-callback-timing"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PiecewiseLinearRetainsSDKMathAndSourceBodies) {
+  struct Case {const char *Name; const char *Declarations; const char *Body;};
+  const Case Cases[] = {
+      {"count-outer", R"cpp(double weight(double x){return x*x+1.;}using Fn=double(*)(double);namespace std {template<> template<> piecewise_linear_distribution<double>::piecewise_linear_distribution(size_t,double,double,Fn){}})cpp", R"cpp(D d(3,-3.,5.,weight);return d.min()!=-3.;)cpp"},
+      {"count-parameter", R"cpp(double weight(double x){return x*x+1.;}using Fn=double(*)(double);namespace std {template<> template<> piecewise_linear_distribution<double>::param_type::param_type(size_t,double,double,Fn){}})cpp", R"cpp(D::param_type p(3,-3.,5.,weight);D d(p);return d.min()!=-3.;)cpp"},
+      {"list-outer", R"cpp(double weight(double x){return x*x+1.;}using Fn=double(*)(double);namespace std {template<> template<> piecewise_linear_distribution<double>::piecewise_linear_distribution(initializer_list<double>,Fn){}})cpp", R"cpp(D d({-3.,-1.,5.},weight);return d.min()!=-3.;)cpp"},
+      {"list-parameter", R"cpp(double weight(double x){return x*x+1.;}using Fn=double(*)(double);namespace std {template<> template<> piecewise_linear_distribution<double>::param_type::param_type(initializer_list<double>,Fn){}})cpp", R"cpp(D::param_type p({-3.,-1.,5.},weight);D d(p);return d.min()!=-3.;)cpp"},
+      {"function-definition", R"cpp(double weight(double);)cpp", R"cpp(D d(3,-3.,5.,weight);return d.min()!=-3.;)cpp"},
+      {"function-body", R"cpp(double weight(double x){asm("");return x*x+1.;})cpp", R"cpp(D d({-3.,-1.,5.},weight);return d.min()!=-3.;)cpp"},
+      {"copy-definition", R"cpp(struct Weight{Weight(){}Weight(const Weight&);double operator()(double x){return x*x+1.;}};)cpp", R"cpp(Weight w;D d(3,-3.,5.,w);return d.min()!=-3.;)cpp"},
+      {"destructor-definition", R"cpp(struct Weight{~Weight();double operator()(double x){return x*x+1.;}};)cpp", R"cpp(D d({-3.,-1.,5.},Weight{});return d.min()!=-3.;)cpp"},
+      {"operator-template", R"cpp(struct Weight{template<class T>double operator()(T x){return x*x+1.;}};)cpp", R"cpp(D d(3,-3.,5.,Weight{});return d.min()!=-3.;)cpp"},
+      {"out-of-line-template", R"cpp(template<class T>struct Weight{double operator()(double);};template<class T>double Weight<T>::operator()(double x){return x*x+1.;})cpp", R"cpp(D d({-3.,-1.,5.},Weight<int>{});return d.min()!=-3.;)cpp"},
+      {"default-body", R"cpp(struct Note{Note(){asm("");}};struct Weight{Weight(){}Weight(const Weight&,const Note& note=Note()){}double operator()(double x){return x*x+1.;}};)cpp", R"cpp(Weight w;D d(3,-3.,5.,w);return d.min()!=-3.;)cpp"},
+      {"union-object", R"cpp(union Weight{double operator()(double x){return x*x+1.;}};)cpp", R"cpp(D d({-3.,-1.,5.},Weight{});return d.min()!=-3.;)cpp"},
+      {"outer-constructor", R"cpp(namespace std {template<> piecewise_linear_distribution<double>::piecewise_linear_distribution(){}})cpp", R"cpp(D d;return d.min()!=0.;)cpp"},
+      {"parameter-constructor", R"cpp(namespace std {template<> piecewise_linear_distribution<double>::param_type::param_type(){}})cpp", R"cpp(D d;return d.min()!=0.;)cpp"},
+      {"normalization", R"cpp(namespace std {template<> void piecewise_linear_distribution<double>::param_type::__init(){}})cpp", R"cpp(double b[]={0.,1.,3.},w[]={1.,4.,2.};D d(b,b+3,w);return d.max()!=3.;)cpp"},
+      {"sampling", R"cpp(namespace std {template<> template<> double piecewise_linear_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d;G g{17,0};return d(g)!=0.;)cpp"},
+      {"interval-getter", R"cpp(namespace std {template<> vector<double> piecewise_linear_distribution<double>::intervals()const{return {};}})cpp", R"cpp(D d;auto b=d.intervals();return b.size()!=2;)cpp"},
+      {"parameter-assignment", R"cpp(namespace std {template<> piecewise_linear_distribution<double>::param_type& piecewise_linear_distribution<double>::param_type::operator=(const param_type&){return *this;}})cpp", R"cpp(D::param_type a,b;a=b;return a!=b;)cpp"},
+      {"long-double", R"cpp()cpp", R"cpp(std::piecewise_linear_distribution<long double>d;return d.min()!=0;)cpp"},
+      {"sqrt-declaration", R"cpp(extern "C" double sqrt(double);)cpp", R"cpp(D d;G g{17,0};return d(g)!=0.;)cpp"},
+      {"builtin-sqrt-declaration", R"cpp(extern "C" double __builtin_sqrt(double);)cpp", R"cpp(D d;G g{17,0};return d(g)!=0.;)cpp"},
+      {"builtin-sqrtf-declaration", R"cpp(extern "C" float __builtin_sqrtf(float);)cpp", R"cpp(std::piecewise_linear_distribution<float>d;G g{17,0};return d(g)!=0.;)cpp"},
+      {"raw-sqrt-call", R"cpp()cpp", R"cpp(return __builtin_sqrt(4.)!=2.;)cpp"},
+      {"standalone-std-sqrt", R"cpp()cpp", R"cpp(return std::sqrt(4.)!=2.;)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("piecewise-linear-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("piecewise-linear-guard-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(using Size=decltype(sizeof(0));
+struct Arena {unsigned long long alignment;unsigned char bytes[4096];};
+Arena arena{};Size offset;unsigned allocations,frees;
+void* operator new(Size n){++allocations;auto p=arena.bytes+offset;offset+=(n+15)/16*16;return p;}
+void operator delete(void*)noexcept{++frees;}
+#include <random>
+struct G{using result_type=unsigned;unsigned state,calls;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+template<class R> unsigned long long bits(R value){const auto *p=static_cast<const unsigned char*>(static_cast<const void*>(&value));unsigned long long result=0;for(unsigned i=0;i<sizeof(R);++i)result|=static_cast<unsigned long long>(p[i])<<(8*i);return result;}
+)cpp") + Case.Declarations + R"cpp(
+using D=std::piecewise_linear_distribution<double>;
+int main(){
+)cpp" + Case.Body + "}\n");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

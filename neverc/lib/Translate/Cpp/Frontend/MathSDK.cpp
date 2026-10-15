@@ -74543,7 +74543,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return CString;
   if (auto Random = approvedUtilityAlgorithmRandomCall(S, SM, Call, Context))
     return Random->Operation;
-  if (auto Piecewise = approvedPiecewiseConstantOperation(S, SM, Call, Context))
+  if (auto Piecewise = approvedPiecewiseOperation(S, SM, Call, Context))
     return Piecewise;
   if (auto Discrete = approvedDiscreteDistributionOperation(S, SM, Call, Context))
     return Discrete;

@@ -327,7 +327,11 @@ public:
         E.UnaryOp = UnaryOperator::BitNot;
       else if (Op == "!")
         E.UnaryOp = UnaryOperator::LogicalNot;
-      else
+      else if (Op == "sqrt") {
+        if (!CoreV2 || O.size() != 5)
+          return error("Square root requires core v2 and only kind, type, operator, args and location.");
+        E.UnaryOp = UnaryOperator::Sqrt;
+      } else
         return error("Unknown unary operator.");
     } else if (K == "binary") {
       E.Kind = ExprKind::Binary;
@@ -992,6 +996,10 @@ class Verifier {
     case ExprKind::Unary:
       if (!Arity(1))
         return false;
+      if (E.UnaryOp == UnaryOperator::Sqrt)
+        return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
+                E.Args[0].ValueType == E.ValueType) ||
+               error(E.Loc, "Square root requires matching core v2 float/double operand and result types.");
       if (E.UnaryOp == UnaryOperator::LogicalNot)
         return (E.Args[0].ValueType.isScalar() &&
                 !E.Args[0].ValueType.isFloating() &&

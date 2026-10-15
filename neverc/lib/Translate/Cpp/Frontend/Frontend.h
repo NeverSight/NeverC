@@ -1005,17 +1005,17 @@ enum class UtilityOperation {
   DiscreteEqual,
   DiscreteNotEqual,
   DiscreteAssign,
-  PiecewiseConstantGenerate,
-  PiecewiseConstantIntervals,
-  PiecewiseConstantDensities,
-  PiecewiseConstantMinimum,
-  PiecewiseConstantMaximum,
-  PiecewiseConstantParamGet,
-  PiecewiseConstantParamSet,
-  PiecewiseConstantReset,
-  PiecewiseConstantEqual,
-  PiecewiseConstantNotEqual,
-  PiecewiseConstantAssign,
+  PiecewiseGenerate,
+  PiecewiseIntervals,
+  PiecewiseDensities,
+  PiecewiseMinimum,
+  PiecewiseMaximum,
+  PiecewiseParamGet,
+  PiecewiseParamSet,
+  PiecewiseReset,
+  PiecewiseEqual,
+  PiecewiseNotEqual,
+  PiecewiseAssign,
   NumericIota,
   NumericAccumulate,
   NumericInnerProduct,
@@ -1319,22 +1319,23 @@ struct BernoulliRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   const clang::FieldDecl *Storage, *Probability;
 };
-struct PiecewiseConstantRecord {
+struct PiecewiseRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   clang::QualType ResultType;
   const clang::FieldDecl *Storage, *Bounds, *Densities, *Areas;
+  bool Linear = false;
 };
-enum class PiecewiseConstantConstruction { Default, Range, Parameter, Copy, CountWeights, ListWeights };
-std::optional<PiecewiseConstantRecord> approvedPiecewiseConstantRecord(
+enum class PiecewiseConstruction { Default, Range, Parameter, Copy, CountWeights, ListWeights };
+std::optional<PiecewiseRecord> approvedPiecewiseRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
-std::optional<PiecewiseConstantConstruction> approvedPiecewiseConstantConstruction(
+std::optional<PiecewiseConstruction> approvedPiecewiseConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
-std::optional<UtilityOperation> approvedPiecewiseConstantOperation(
+std::optional<UtilityOperation> approvedPiecewiseOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-std::optional<UtilityAlgorithmRandomCall> approvedPiecewiseConstantRandomCall(
+std::optional<UtilityAlgorithmRandomCall> approvedPiecewiseRandomCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 struct DiscreteDistributionRecord {

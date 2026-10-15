@@ -33,6 +33,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   const CXXRecordDecl *Generator;
   bool SDKGenerator;
   bool WeightCallback;
+  bool LinearSquareRoot;
   const CXXRecordDecl *WeightRecord;
   QualType ResultType, DistanceType;
   llvm::DenseSet<const Decl *> Declarations;
@@ -102,6 +103,36 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
            F->getBuiltinID() == Builtin::BI__builtin_operator_new ||
            F->getBuiltinID() == Builtin::BI__builtin_operator_delete;
   }
+  bool linearSquareRoot(const FunctionDecl *F, SourceLocation Location) const {
+    if (!LinearSquareRoot || !F || F->isVariadic() || F->getNumParams() != 1 ||
+        (!DistanceType->isSpecificBuiltinType(BuiltinType::Float) &&
+         !DistanceType->isSpecificBuiltinType(BuiltinType::Double)) ||
+        !Context.hasSameType(F->getReturnType(), DistanceType) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(), DistanceType))
+      return false;
+    const bool Float = DistanceType->isSpecificBuiltinType(BuiltinType::Float);
+    const auto ID = F->getBuiltinID();
+    if (Float ? (ID != Builtin::BIsqrtf && ID != Builtin::BI__builtin_sqrtf)
+              : (ID != Builtin::BIsqrt && ID != Builtin::BI__builtin_sqrt))
+      return false;
+    const auto CallFile = S.sdkFile(SM, Location);
+    if (!CallFile || CallFile->Root != "libcxx" ||
+        (CallFile->Path != "__math/roots.h" &&
+         CallFile->Path != "__random/piecewise_linear_distribution.h"))
+      return false;
+    // A selected resource declaration can have source redeclarations. Every
+    // explicit declaration must still belong to the authenticated SDK.
+    for (const auto *D : F->redecls()) {
+      if (D->isImplicit() && D->getLocation().isInvalid())
+        continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || S.owns(SM, D->getLocation()) ||
+          !((File->Root == "resource" && File->Path == "include/math.h") ||
+            (File->Root == "libcxx" && File->Path == "__math/roots.h")))
+        return false;
+    }
+    return true;
+  }
   bool alignmentType(QualType T) const {
     const auto *E = T->getAs<EnumType>();
     const auto *D = E ? E->getDecl() : nullptr;
@@ -146,13 +177,15 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     if ((!WeightCallback && !WeightRecord) || !C || !Owner ||
         Owner->getCanonicalDecl() != Generator->getCanonicalDecl())
       return false;
-    const bool Piecewise = Generator->getName() == "piecewise_constant_distribution";
+    const bool Linear = Generator->getName() == "piecewise_linear_distribution";
+    const bool Piecewise = Linear || Generator->getName() == "piecewise_constant_distribution";
     if (!Piecewise && Generator->getName() != "discrete_distribution")
       return false;
     const auto File = S.sdkFile(SM, C->getLocation());
     if (!File || File->Root != "libcxx" ||
-        File->Path != (Piecewise ? "__random/piecewise_constant_distribution.h"
-                                : "__random/discrete_distribution.h") ||
+        File->Path != (Linear ? "__random/piecewise_linear_distribution.h"
+                     : Piecewise ? "__random/piecewise_constant_distribution.h"
+                                 : "__random/discrete_distribution.h") ||
         !approvedStandardSDKDeclaration(S, SM, C))
       return false;
     if (C->getNumParams() == 4)
@@ -260,10 +293,10 @@ public:
   RandomSelection(const State &S, const SourceManager &SM,
                   const ASTContext &Context, const CXXRecordDecl *Generator,
                   QualType ResultType, QualType DistanceType, bool WeightCallback = false,
-                  const CXXRecordDecl *WeightRecord = nullptr)
+                  const CXXRecordDecl *WeightRecord = nullptr, bool LinearSquareRoot = false)
       : S(S), SM(SM), Context(Context), Generator(Generator),
         SDKGenerator(approvedStandardSDKDeclaration(S, SM, Generator)),
-        WeightCallback(WeightCallback), WeightRecord(WeightRecord),
+        WeightCallback(WeightCallback), LinearSquareRoot(LinearSquareRoot), WeightRecord(WeightRecord),
         ResultType(ResultType), DistanceType(DistanceType) {}
 
   bool retainType(QualType T) {
@@ -421,7 +454,8 @@ public:
   }
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *F = dyn_cast<FunctionDecl>(E->getDecl());
-    if (countLeadingZeros(F) || engineIntrinsic(F, E->getExprLoc()) || allocatorHook(F))
+    if (countLeadingZeros(F) || engineIntrinsic(F, E->getExprLoc()) ||
+        linearSquareRoot(F, E->getExprLoc()) || allocatorHook(F))
       return true;
     // Calls retain source methods with their actual selected receiver below.
     if (F && S.owns(SM, F->getLocation()))
@@ -463,6 +497,9 @@ public:
         return true;
       return false;
     }
+    if (linearSquareRoot(F, E->getExprLoc()))
+      return E->getNumArgs() == 1 && Context.hasSameType(E->getType(), DistanceType) &&
+             Context.hasSameType(E->getArg(0)->getType(), DistanceType);
     if (allocatorHook(F))
       return E->getNumArgs() == F->getNumParams();
     if (countLeadingZeros(F))
@@ -1194,7 +1231,7 @@ namespace {
 std::optional<UtilityAlgorithmRandomCall> selectedRandomGenerator(
     const State &S, const SourceManager &SM, const FunctionDecl *Function,
     QualType Object, QualType Distance, UtilityOperation Operation, unsigned Index,
-    const ASTContext &Context) {
+    const ASTContext &Context, bool LinearSquareRoot = false) {
   const auto *Generator = Object.getNonReferenceType()->getAsCXXRecordDecl();
   Generator = Generator ? Generator->getDefinition() : nullptr;
   const auto Engine = approvedRandomEngineRecord(S, SM, Generator, Context);
@@ -1216,7 +1253,7 @@ std::optional<UtilityAlgorithmRandomCall> selectedRandomGenerator(
   if (Result.isNull() || Result.hasLocalQualifiers() || !Result->isUnsignedIntegerType() ||
       Result->isBooleanType() || Context.getTypeSize(Result) > 64)
     return std::nullopt;
-  RandomSelection Selection(S, SM, Context, Generator, Result, Distance);
+  RandomSelection Selection(S, SM, Context, Generator, Result, Distance, false, nullptr, LinearSquareRoot);
   if (!Selection.retain(Function) || !Selection.Method || !Selection.Minimum || !Selection.Maximum ||
       Selection.MinimumValue >= Selection.MaximumValue ||
       (Engine && (Selection.MinimumValue != Engine->Minimum || Selection.MaximumValue != Engine->Maximum)))
@@ -1486,8 +1523,8 @@ approvedBernoulliOperation(const State &S, const SourceManager &SM,
   return Operation && Selection.retain(F) ? Operation : std::nullopt;
 }
 
-std::optional<PiecewiseConstantRecord>
-approvedPiecewiseConstantRecord(const State &S, const SourceManager &SM,
+std::optional<PiecewiseRecord>
+approvedPiecewiseRecord(const State &S, const SourceManager &SM,
                                 const CXXRecordDecl *Record,
                                 const ASTContext &Context) {
   const auto *R = Record ? Record->getDefinition() : nullptr;
@@ -1495,9 +1532,12 @@ approvedPiecewiseConstantRecord(const State &S, const SourceManager &SM,
       ? dyn_cast<CXXRecordDecl>(R->getDeclContext()) : R;
   const auto *Specialization = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Outer);
   const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  const bool Linear = Outer && Outer->getName() == "piecewise_linear_distribution";
   if (!S.coreV2() || !R || !Outer || !Specialization || !File ||
-      File->Root != "libcxx" || File->Path != "__random/piecewise_constant_distribution.h" ||
-      Outer->getName() != "piecewise_constant_distribution" ||
+      File->Root != "libcxx" ||
+      File->Path != (Linear ? "__random/piecewise_linear_distribution.h"
+                           : "__random/piecewise_constant_distribution.h") ||
+      (!Linear && Outer->getName() != "piecewise_constant_distribution") ||
       !approvedStandardSDKDeclaration(S, SM, Outer) || R->getNumBases() ||
       R->isUnion() || !R->isStandardLayout() ||
       Specialization->getTemplateArgs().size() != 1 ||
@@ -1540,19 +1580,19 @@ approvedPiecewiseConstantRecord(const State &S, const SourceManager &SM,
   RandomSelection Selection(S, SM, Context, Outer, Real, Real);
   if (Index != 3 || !Storage || !Selection.retain(R))
     return std::nullopt;
-  return PiecewiseConstantRecord{R, Outer, Parameter, Real, Storage, Fields[0], Fields[1], Fields[2]};
+  return PiecewiseRecord{R, Outer, Parameter, Real, Storage, Fields[0], Fields[1], Fields[2], Linear};
 }
 
-std::optional<PiecewiseConstantConstruction>
-approvedPiecewiseConstantConstruction(const State &S, const SourceManager &SM,
+std::optional<PiecewiseConstruction>
+approvedPiecewiseConstruction(const State &S, const SourceManager &SM,
                                       const CXXConstructExpr *Construction,
                                       const ASTContext &Context) {
   const auto *C = Construction ? Construction->getConstructor() : nullptr;
-  const auto Info = C ? approvedPiecewiseConstantRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  const auto Info = C ? approvedPiecewiseRecord(S, SM, C->getParent(), Context) : std::nullopt;
   if (!Info || C->isVariadic() || !approvedStandardSDKDeclaration(S, SM, C) ||
       Construction->getNumArgs() != C->getNumParams())
     return std::nullopt;
-  std::optional<PiecewiseConstantConstruction> Kind;
+  std::optional<PiecewiseConstruction> Kind;
   if (C->isCopyOrMoveConstructor()) {
     if ((!C->isImplicit() && !C->isExplicitlyDefaulted()) || C->getNumParams() != 1 ||
         !C->getParamDecl(0)->getType()->isReferenceType() ||
@@ -1561,13 +1601,13 @@ approvedPiecewiseConstantConstruction(const State &S, const SourceManager &SM,
       return std::nullopt;
     // param_type explicitly declares copy construction/assignment and has no
     // move. The outer generated move therefore copies its parameter member.
-    Kind = PiecewiseConstantConstruction::Copy;
+    Kind = PiecewiseConstruction::Copy;
   } else if (!C->getNumParams()) {
-    Kind = PiecewiseConstantConstruction::Default;
+    Kind = PiecewiseConstruction::Default;
   } else if (C->getNumParams() == 1 && Info->Record == Info->Distribution &&
       Context.hasSameType(C->getParamDecl(0)->getType(),
           Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))) {
-    Kind = PiecewiseConstantConstruction::Parameter;
+    Kind = PiecewiseConstruction::Parameter;
   } else if (C->getNumParams() == 3 &&
       Context.hasSameType(C->getParamDecl(0)->getType(), C->getParamDecl(1)->getType())) {
     const auto Bound = seedSequencePointer(S, SM, C->getParamDecl(0)->getType(), Context);
@@ -1577,13 +1617,13 @@ approvedPiecewiseConstantConstruction(const State &S, const SourceManager &SM,
         !Weight->getPointeeType().isVolatileQualified() &&
         scalarElement(Bound->getPointeeType(), Context) &&
         scalarElement(Weight->getPointeeType(), Context))
-      Kind = PiecewiseConstantConstruction::Range;
+      Kind = PiecewiseConstruction::Range;
   }
   if (C->getNumParams() == 4 &&
       Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()) &&
       Context.hasSameType(C->getParamDecl(1)->getType(), Info->ResultType) &&
       Context.hasSameType(C->getParamDecl(2)->getType(), Info->ResultType))
-    Kind = PiecewiseConstantConstruction::CountWeights;
+    Kind = PiecewiseConstruction::CountWeights;
   if (C->getNumParams() == 2) {
     const auto List = approvedUtilityInitializerListRecord(S, SM,
         C->getParamDecl(0)->getType()->getAsCXXRecordDecl(), Context);
@@ -1591,11 +1631,11 @@ approvedPiecewiseConstantConstruction(const State &S, const SourceManager &SM,
       const auto *Argument = dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
       if (Argument && !approvedUtilityInitializerListExpression(S, SM, Argument, Context))
         return std::nullopt;
-      Kind = PiecewiseConstantConstruction::ListWeights;
+      Kind = PiecewiseConstruction::ListWeights;
     }
   }
-  const bool Callback = Kind == PiecewiseConstantConstruction::CountWeights ||
-                        Kind == PiecewiseConstantConstruction::ListWeights;
+  const bool Callback = Kind == PiecewiseConstruction::CountWeights ||
+                        Kind == PiecewiseConstruction::ListWeights;
   if (Callback) {
     if (approvedRandomWeightObjectConstruction(S, SM, Construction, Context))
       return Kind;
@@ -1607,11 +1647,11 @@ approvedPiecewiseConstantConstruction(const State &S, const SourceManager &SM,
 }
 
 std::optional<UtilityAlgorithmRandomCall>
-approvedPiecewiseConstantRandomCall(const State &S, const SourceManager &SM,
+approvedPiecewiseRandomCall(const State &S, const SourceManager &SM,
                                    const CallExpr *Call, const ASTContext &Context) {
   const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  const auto Info = M ? approvedPiecewiseConstantRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  const auto Info = M ? approvedPiecewiseRecord(S, SM, M->getParent(), Context) : std::nullopt;
   if (!Info || Info->Record != Info->Distribution || M->isStatic() || M->isConst() ||
       M->isVolatile() || M->isVariadic() || M->getOverloadedOperator() != OO_Call ||
       M->getNumParams() < 1 || M->getNumParams() > 2 ||
@@ -1623,23 +1663,23 @@ approvedPiecewiseConstantRandomCall(const State &S, const SourceManager &SM,
           Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))))
     return std::nullopt;
   return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Info->ResultType,
-      UtilityOperation::PiecewiseConstantGenerate, Operator ? 1u : 0u, Context);
+      UtilityOperation::PiecewiseGenerate, Operator ? 1u : 0u, Context, Info->Linear);
 }
 
 std::optional<UtilityOperation>
-approvedPiecewiseConstantOperation(const State &S, const SourceManager &SM,
+approvedPiecewiseOperation(const State &S, const SourceManager &SM,
                                   const CallExpr *Call, const ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *R = M ? M->getParent() : F && F->getNumParams() == 2
       ? F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
-  const auto Info = approvedPiecewiseConstantRecord(S, SM, R, Context);
+  const auto Info = approvedPiecewiseRecord(S, SM, R, Context);
   if (!Info || !F || F->isVariadic() || !approvedStandardSDKDeclaration(S, SM, F) ||
       Call->getNumArgs() != F->getNumParams() + (Operator && M ? 1u : 0u))
     return std::nullopt;
-  if (approvedPiecewiseConstantRandomCall(S, SM, Call, Context))
-    return UtilityOperation::PiecewiseConstantGenerate;
+  if (approvedPiecewiseRandomCall(S, SM, Call, Context))
+    return UtilityOperation::PiecewiseGenerate;
   std::optional<UtilityOperation> Operation;
   if (M && !M->isStatic() && !M->isVolatile()) {
     if (M->isConst() && M->getIdentifier() && !M->getNumParams()) {
@@ -1647,31 +1687,31 @@ approvedPiecewiseConstantOperation(const State &S, const SourceManager &SM,
         const auto Vector = approvedUtilityVectorRecord(S, SM,
             M->getReturnType()->getAsCXXRecordDecl(), Context);
         if (Vector && Context.hasSameType(Vector->ElementType, Info->ResultType))
-          Operation = M->getName() == "intervals" ? UtilityOperation::PiecewiseConstantIntervals
-                                                : UtilityOperation::PiecewiseConstantDensities;
+          Operation = M->getName() == "intervals" ? UtilityOperation::PiecewiseIntervals
+                                                : UtilityOperation::PiecewiseDensities;
       } else if (Info->Record == Info->Distribution &&
                  Context.hasSameType(M->getReturnType(), Info->ResultType)) {
-        if (M->getName() == "min") Operation = UtilityOperation::PiecewiseConstantMinimum;
-        else if (M->getName() == "max") Operation = UtilityOperation::PiecewiseConstantMaximum;
+        if (M->getName() == "min") Operation = UtilityOperation::PiecewiseMinimum;
+        else if (M->getName() == "max") Operation = UtilityOperation::PiecewiseMaximum;
       } else if (M->getName() == "param" && Info->Record == Info->Distribution &&
                  Context.hasSameType(M->getReturnType(), Context.getRecordType(Info->Parameter))) {
-        Operation = UtilityOperation::PiecewiseConstantParamGet;
+        Operation = UtilityOperation::PiecewiseParamGet;
       }
     } else if (!M->isConst() && M->getIdentifier() && M->getReturnType()->isVoidType() &&
                Info->Record == Info->Distribution) {
       if (M->getName() == "reset" && !M->getNumParams())
-        Operation = UtilityOperation::PiecewiseConstantReset;
+        Operation = UtilityOperation::PiecewiseReset;
       else if (M->getName() == "param" && M->getNumParams() == 1 &&
           Context.hasSameType(M->getParamDecl(0)->getType(),
               Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
-        Operation = UtilityOperation::PiecewiseConstantParamSet;
+        Operation = UtilityOperation::PiecewiseParamSet;
     }
     if (M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
         M->getReturnType()->isLValueReferenceType() &&
         Context.hasSameType(M->getReturnType().getNonReferenceType(), Context.getRecordType(Info->Record)) &&
         M->getParamDecl(0)->getType()->isReferenceType() &&
         Context.hasSameUnqualifiedType(M->getParamDecl(0)->getType().getNonReferenceType(), Context.getRecordType(Info->Record)))
-      Operation = UtilityOperation::PiecewiseConstantAssign;
+      Operation = UtilityOperation::PiecewiseAssign;
   } else if (!M && F->getReturnType()->isBooleanType() && F->getNumParams() == 2 &&
              (F->getOverloadedOperator() == OO_EqualEqual || F->getOverloadedOperator() == OO_ExclaimEqual)) {
     for (const auto *P : F->parameters())
@@ -1679,7 +1719,7 @@ approvedPiecewiseConstantOperation(const State &S, const SourceManager &SM,
           Context.getLValueReferenceType(Context.getRecordType(Info->Record).withConst())))
         return std::nullopt;
     Operation = F->getOverloadedOperator() == OO_EqualEqual
-        ? UtilityOperation::PiecewiseConstantEqual : UtilityOperation::PiecewiseConstantNotEqual;
+        ? UtilityOperation::PiecewiseEqual : UtilityOperation::PiecewiseNotEqual;
   }
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Operation && Selection.retain(F) ? Operation : std::nullopt;
@@ -1744,7 +1784,7 @@ approvedRandomWeightObjectConstruction(const State &S, const SourceManager &SM,
                                         const ASTContext &Context) {
   const auto *C = Construction ? Construction->getConstructor() : nullptr;
   const auto Discrete = C ? approvedDiscreteDistributionRecord(S, SM, C->getParent(), Context) : std::nullopt;
-  const auto Piecewise = !Discrete && C ? approvedPiecewiseConstantRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  const auto Piecewise = !Discrete && C ? approvedPiecewiseRecord(S, SM, C->getParent(), Context) : std::nullopt;
   if ((!Discrete && !Piecewise) || !C || !C->hasBody() || C->isVariadic() ||
       Construction->getNumArgs() != C->getNumParams() ||
       !approvedStandardSDKDeclaration(S, SM, C))

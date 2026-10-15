@@ -1148,17 +1148,24 @@ class FunctionLowering {
   }
   void appendRandomWeight(Expression Storage, const UtilityVectorRecord &Vector,
                           RandomWeightCall &WeightCall, Expression Point,
-                          Expression Count, SourceLocation L) {
+                          Expression Count, SourceLocation L, bool BoundaryLValue = false) {
     const auto &Object = WeightCall.Object;
     const auto *Prototype = Object ? Object->Method->getType()->getAs<FunctionProtoType>()
         : WeightCall.CallbackType->getPointeeType()->getAs<FunctionProtoType>();
     const auto ParameterType = Prototype->getParamType(0);
-    auto Converted = snapshot(cast(std::move(Point), type(ParameterType.getNonReferenceType(), L), L), L);
     json::Array Arguments;
-    if (ParameterType->isReferenceType())
-      Arguments.push_back(cast(address(Converted, ParameterType.getNonReferenceType(), L), type(ParameterType, L), L));
-    else
-      Arguments.push_back(json::Object(Converted));
+    if (BoundaryLValue && ParameterType->isLValueReferenceType() &&
+        A.Context.hasSameUnqualifiedType(ParameterType.getNonReferenceType(), Vector.ElementType)) {
+      // Linear weights receive the actual stored boundary, including its
+      // identity when the selected parameter binds a matching reference.
+      Arguments.push_back(cast(address(std::move(Point), Vector.ElementType, L), type(ParameterType, L), L));
+    } else {
+      auto Converted = snapshot(cast(std::move(Point), type(ParameterType.getNonReferenceType(), L), L), L);
+      if (ParameterType->isReferenceType())
+        Arguments.push_back(cast(address(Converted, ParameterType.getNonReferenceType(), L), type(ParameterType, L), L));
+      else
+        Arguments.push_back(json::Object(Converted));
+    }
     Expression Weight;
     if (Object) {
       json::Array CallArguments;
@@ -1178,7 +1185,7 @@ class FunctionLowering {
     appendRandomVector(Storage, Vector, cast(std::move(Weight), type(Vector.ElementType, L), L),
                        Count, L, ReferenceValue);
   }
-  Expression piecewiseParameter(Expression Place, const PiecewiseConstantRecord &Info,
+  Expression piecewiseParameter(Expression Place, const PiecewiseRecord &Info,
                                 SourceLocation L) {
     return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L)
                                             : std::move(Place);
@@ -1215,7 +1222,7 @@ class FunctionLowering {
            binary("+", Begin, Count, type(Vector.PointerType, L), L), L);
   }
   void copyPiecewiseParameter(Expression Target, Expression Source,
-                              const PiecewiseConstantRecord &Info,
+                              const PiecewiseRecord &Info,
                               const UtilityVectorRecord &Vector, bool Assignment,
                               SourceLocation L) {
     if (Assignment)
@@ -1228,8 +1235,81 @@ class FunctionLowering {
       copyRandomVector(fieldStorage(Target, Field, L), fieldStorage(Source, Field, L),
                        Vector, false, Assignment, L);
   }
-  void initializePiecewiseConstant(Expression Parameter, const PiecewiseConstantRecord &Info,
+  void initializeLinearPiecewise(Expression Parameter, const PiecewiseRecord &Info,
+                                 const UtilityVectorRecord &Vector, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Real = type(Info.ResultType, L);
+    const auto Double = type(A.Context.DoubleTy, L);
+    auto Density = fieldStorage(Parameter, Info.Densities, L);
+    auto Areas = fieldStorage(Parameter, Info.Areas, L);
+    auto Count = randomVectorCount(Density, Vector, "nct_vector_end", L);
+    auto N = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+    allocateRandomVector(Areas, Vector, N, L);
+    fillRandomVector(Areas, Vector, N, A.zero(Info.ResultType, L), L);
+    auto Values = snapshot(randomVectorMember(Density, Vector, "nct_vector_begin", L), L);
+    auto Bounds = snapshot(randomVectorMember(fieldStorage(Parameter, Info.Bounds, L),
+                                               Vector, "nct_vector_begin", L), L);
+    auto Cumulative = snapshot(randomVectorMember(Areas, Vector, "nct_vector_begin", L), L);
+    auto Total = snapshot(A.zero(Info.ResultType, L), L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto AreaCheck = labelName(), AreaStep = labelName(), AreaDone = labelName();
+    jump(AreaCheck, L);
+    label(AreaCheck, L);
+    branch(binary("<", I, N, "bool", L), AreaStep, AreaDone, L);
+    label(AreaStep, L);
+    auto Next = binary("+", I, quantity(1, Size, L), Size, L);
+    auto Sum = snapshot(binary("+", index(Values, Next, Real, L), index(Values, I, Real, L), Real, L), L);
+    auto Width = snapshot(binary("-", index(Bounds, Next, Real, L), index(Bounds, I, Real, L), Real, L), L);
+    auto Product = snapshot(binary("*", Sum, Width, Real, L), L);
+    auto Area = cast(binary("*", cast(Product, Double, L),
+        A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), Real, L);
+    assign(index(Cumulative, I, Real, L), Area, L);
+    assign(Total, binary("+", Total, index(Cumulative, I, Real, L), Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(AreaCheck, L);
+    label(AreaDone, L);
+    assign(I, N, L);
+    const auto ReverseCheck = labelName(), ReverseStep = labelName(), ReverseDone = labelName();
+    jump(ReverseCheck, L);
+    label(ReverseCheck, L);
+    branch(binary(">", I, quantity(1, Size, L), "bool", L), ReverseStep, ReverseDone, L);
+    label(ReverseStep, L);
+    assign(I, binary("-", I, quantity(1, Size, L), Size, L), L);
+    assign(index(Cumulative, I, Real, L), binary("/", index(Cumulative,
+        binary("-", I, quantity(1, Size, L), Size, L), Real, L), Total, Real, L), L);
+    jump(ReverseCheck, L);
+    label(ReverseDone, L);
+    assign(index(Cumulative, quantity(0, Size, L), Real, L), A.zero(Info.ResultType, L), L);
+    assign(I, quantity(1, Size, L), L);
+    const auto PrefixCheck = labelName(), PrefixStep = labelName(), PrefixDone = labelName();
+    jump(PrefixCheck, L);
+    label(PrefixCheck, L);
+    branch(binary("<", I, N, "bool", L), PrefixStep, PrefixDone, L);
+    label(PrefixStep, L);
+    auto Value = index(Cumulative, I, Real, L);
+    assign(Value, binary("+", Value, index(Cumulative,
+        binary("-", I, quantity(1, Size, L), Size, L), Real, L), Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(PrefixCheck, L);
+    label(PrefixDone, L);
+    assign(I, quantity(0, Size, L), L);
+    const auto NormalizeCheck = labelName(), NormalizeStep = labelName(), NormalizeDone = labelName();
+    jump(NormalizeCheck, L);
+    label(NormalizeCheck, L);
+    branch(binary("<", I, Count, "bool", L), NormalizeStep, NormalizeDone, L);
+    label(NormalizeStep, L);
+    Value = index(Values, I, Real, L);
+    assign(Value, binary("/", Value, Total, Real, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(NormalizeCheck, L);
+    label(NormalizeDone, L);
+  }
+  void initializePiecewise(Expression Parameter, const PiecewiseRecord &Info,
                                    const UtilityVectorRecord &Vector, SourceLocation L) {
+    if (Info.Linear) {
+      initializeLinearPiecewise(Parameter, Info, Vector, L);
+      return;
+    }
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Real = type(Info.ResultType, L);
     auto Density = fieldStorage(Parameter, Info.Densities, L);
@@ -3389,18 +3469,18 @@ class FunctionLowering {
       discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
       return {};
     }
-    if (Operation >= UtilityOperation::PiecewiseConstantGenerate &&
-        Operation <= UtilityOperation::PiecewiseConstantAssign) {
+    if (Operation >= UtilityOperation::PiecewiseGenerate &&
+        Operation <= UtilityOperation::PiecewiseAssign) {
       const auto *F = Call->getDirectCallee();
       const auto *M = dyn_cast<CXXMethodDecl>(F);
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
       const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedPiecewiseConstantRecord(A.S, A.Sources, R, A.Context);
+      const auto Info = approvedPiecewiseRecord(A.S, A.Sources, R, A.Context);
       if (!Info)
         reject(L, "piecewise constant distribution", "The checked distribution layout is unavailable.");
       const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
           Info->Bounds->getType()->getAsCXXRecordDecl(), A.Context);
-      if (Operation == UtilityOperation::PiecewiseConstantEqual || Operation == UtilityOperation::PiecewiseConstantNotEqual) {
+      if (Operation == UtilityOperation::PiecewiseEqual || Operation == UtilityOperation::PiecewiseNotEqual) {
         auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
         auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
         auto LP = piecewiseParameter(dereference(Left, L), *Info, L);
@@ -3414,7 +3494,7 @@ class FunctionLowering {
             fieldStorage(RP, Info->Bounds, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
         jump(Done, L);
         label(Done, L);
-        return Operation == UtilityOperation::PiecewiseConstantNotEqual
+        return Operation == UtilityOperation::PiecewiseNotEqual
             ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : Equal;
       }
       const auto *Object = Operator ? Operator->getArg(0)
@@ -3423,38 +3503,38 @@ class FunctionLowering {
           : address(lvalue(Object), Object->getType(), L), L);
       auto Place = dereference(Receiver, L);
       auto Parameter = piecewiseParameter(Place, *Info, L);
-      if (Operation == UtilityOperation::PiecewiseConstantAssign || Operation == UtilityOperation::PiecewiseConstantParamSet) {
+      if (Operation == UtilityOperation::PiecewiseAssign || Operation == UtilityOperation::PiecewiseParamSet) {
         auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
-        auto Input = Operation == UtilityOperation::PiecewiseConstantParamSet
+        auto Input = Operation == UtilityOperation::PiecewiseParamSet
             ? dereference(Source, L) : piecewiseParameter(dereference(Source, L), *Info, L);
         copyPiecewiseParameter(Parameter, Input, *Info, *Vector, true, L);
-        return Operation == UtilityOperation::PiecewiseConstantAssign ? Place : Expression{};
+        return Operation == UtilityOperation::PiecewiseAssign ? Place : Expression{};
       }
-      if (Operation == UtilityOperation::PiecewiseConstantReset)
+      if (Operation == UtilityOperation::PiecewiseReset)
         return {};
-      if (Operation == UtilityOperation::PiecewiseConstantParamGet) {
+      if (Operation == UtilityOperation::PiecewiseParamGet) {
         auto Value = Destination ? json::Object(*Destination)
             : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
         copyPiecewiseParameter(Value, Parameter, *Info, *Vector, false, L);
         return Value;
       }
-      if (Operation == UtilityOperation::PiecewiseConstantIntervals || Operation == UtilityOperation::PiecewiseConstantDensities) {
+      if (Operation == UtilityOperation::PiecewiseIntervals || Operation == UtilityOperation::PiecewiseDensities) {
         auto Value = Destination ? json::Object(*Destination) : objectTemporary(F->getReturnType(), L);
-        copyRandomVector(Value, fieldStorage(Parameter, Operation == UtilityOperation::PiecewiseConstantIntervals
+        copyRandomVector(Value, fieldStorage(Parameter, Operation == UtilityOperation::PiecewiseIntervals
             ? Info->Bounds : Info->Densities, L), *Vector, false, false, L);
         return Value;
       }
       const auto Size = type(A.Context.getSizeType(), L);
       const auto Real = type(Info->ResultType, L);
       auto Bounds = fieldStorage(Parameter, Info->Bounds, L);
-      if (Operation == UtilityOperation::PiecewiseConstantMinimum || Operation == UtilityOperation::PiecewiseConstantMaximum) {
-        auto I = Operation == UtilityOperation::PiecewiseConstantMinimum ? quantity(0, Size, L)
+      if (Operation == UtilityOperation::PiecewiseMinimum || Operation == UtilityOperation::PiecewiseMaximum) {
+        auto I = Operation == UtilityOperation::PiecewiseMinimum ? quantity(0, Size, L)
             : binary("-", randomVectorCount(Bounds, *Vector, "nct_vector_end", L), quantity(1, Size, L), Size, L);
         return snapshot(index(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), I, Real, L), L);
       }
-      const auto Random = approvedPiecewiseConstantRandomCall(A.S, A.Sources, Call, A.Context);
+      const auto Random = approvedPiecewiseRandomCall(A.S, A.Sources, Call, A.Context);
       if (!Random)
-        reject(L, "piecewise constant generator", "The selected generator source is unavailable.");
+        reject(L, "piecewise generator", "The selected generator source is unavailable.");
       const unsigned First = Operator ? 1 : 0;
       auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
       if (F->getNumParams() == 2) {
@@ -3488,8 +3568,35 @@ class FunctionLowering {
       auto K = snapshot(binary("-", Position, quantity(1, Size, L), Size, L), L);
       auto Density = randomVectorMember(fieldStorage(Parameter, Info->Densities, L), *Vector, "nct_vector_begin", L);
       auto B = randomVectorMember(fieldStorage(Parameter, Info->Bounds, L), *Vector, "nct_vector_begin", L);
-      return snapshot(binary("+", binary("/", binary("-", Draw, index(Input, K, Real, L), Real, L),
-          index(Density, K, Real, L), Real, L), index(B, K, Real, L), Real, L), L);
+      auto U = snapshot(binary("-", Draw, index(Input, K, Real, L), Real, L), L);
+      auto DK = snapshot(index(Density, K, Real, L), L);
+      auto BK = snapshot(index(B, K, Real, L), L);
+      if (!Info->Linear)
+        return snapshot(binary("+", binary("/", U, DK, Real, L), BK, Real, L), L);
+      auto Next = binary("+", K, quantity(1, Size, L), Size, L);
+      auto DK1 = snapshot(index(Density, Next, Real, L), L);
+      auto DeltaD = snapshot(binary("-", DK1, DK, Real, L), L);
+      auto Result = temporary(Real, L);
+      const auto Flat = labelName(), Sloped = labelName(), Sampled = labelName();
+      branch(binary("==", DeltaD, A.zero(Info->ResultType, L), "bool", L), Flat, Sloped, L);
+      label(Flat, L);
+      assign(Result, binary("+", binary("/", U, DK, Real, L), BK, Real, L), L);
+      jump(Sampled, L);
+      label(Sloped, L);
+      auto BK1 = snapshot(index(B, Next, Real, L), L);
+      auto DeltaB = snapshot(binary("-", BK1, BK, Real, L), L);
+      auto Square = binary("*", binary("*", DeltaB, DK, Real, L), DK, Real, L);
+      auto Offset = binary("*", binary("*", cast(quantity(2, "int", L), Real, L), DeltaD, Real, L), U, Real, L);
+      auto Radicand = binary("*", DeltaB, binary("+", Square, Offset, Real, L), Real, L);
+      json::Array RootArguments;
+      RootArguments.push_back(std::move(Radicand));
+      auto Root = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
+          {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
+      auto Base = binary("-", binary("*", BK, DK1, Real, L), binary("*", BK1, DK, Real, L), Real, L);
+      assign(Result, binary("/", binary("+", Base, Root, Real, L), DeltaD, Real, L), L);
+      jump(Sampled, L);
+      label(Sampled, L);
+      return Result;
     }
     if (Operation >= UtilityOperation::DiscreteGenerate && Operation <= UtilityOperation::DiscreteAssign) {
       const auto *F = Call->getDirectCallee();
@@ -28718,14 +28825,14 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
-    if (const auto Kind = approvedPiecewiseConstantConstruction(A.S, A.Sources, C, A.Context)) {
-      const auto Info = approvedPiecewiseConstantRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+    if (const auto Kind = approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedPiecewiseRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
       const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
           Info->Bounds->getType()->getAsCXXRecordDecl(), A.Context);
       auto Parameter = piecewiseParameter(Place, *Info, L);
-      if (*Kind == PiecewiseConstantConstruction::Copy || *Kind == PiecewiseConstantConstruction::Parameter) {
+      if (*Kind == PiecewiseConstruction::Copy || *Kind == PiecewiseConstruction::Parameter) {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
-        auto Input = *Kind == PiecewiseConstantConstruction::Parameter
+        auto Input = *Kind == PiecewiseConstruction::Parameter
             ? dereference(Source, L) : piecewiseParameter(dereference(Source, L), *Info, L);
         copyPiecewiseParameter(Parameter, Input, *Info, *Vector, false, L);
         return;
@@ -28737,18 +28844,18 @@ class FunctionLowering {
         zeroRandomVector(fieldStorage(Parameter, Field, L), *Vector, L);
       const auto Size = type(A.Context.getSizeType(), L);
       const auto Real = type(Info->ResultType, L);
-      if (*Kind == PiecewiseConstantConstruction::Default) {
+      if (*Kind == PiecewiseConstruction::Default) {
         allocateRandomVector(Bounds, *Vector, quantity(2, Size, L), L);
         fillRandomVector(Bounds, *Vector, quantity(2, Size, L), A.zero(Info->ResultType, L), L);
-        allocateRandomVector(Density, *Vector, quantity(1, Size, L), L);
-        fillRandomVector(Density, *Vector, quantity(1, Size, L), one(Real, L), L);
+        allocateRandomVector(Density, *Vector, quantity(Info->Linear ? 2 : 1, Size, L), L);
+        fillRandomVector(Density, *Vector, quantity(Info->Linear ? 2 : 1, Size, L), one(Real, L), L);
         allocateRandomVector(Areas, *Vector, quantity(1, Size, L), L);
         fillRandomVector(Areas, *Vector, quantity(1, Size, L), A.zero(Info->ResultType, L), L);
         auto Begin = randomVectorMember(Bounds, *Vector, "nct_vector_begin", L);
         assign(index(Begin, quantity(1, Size, L), Real, L), one(Real, L), L);
         return;
       }
-      if (*Kind == PiecewiseConstantConstruction::CountWeights) {
+      if (*Kind == PiecewiseConstruction::CountWeights) {
         auto Count = snapshot(argument(C->getArg(0), Constructor->getParamDecl(0)->getType()), L);
         auto Lower = snapshot(argument(C->getArg(1), Constructor->getParamDecl(1)->getType()), L);
         auto Upper = snapshot(argument(C->getArg(2), Constructor->getParamDecl(2)->getType()), L);
@@ -28765,7 +28872,7 @@ class FunctionLowering {
         auto Begin = snapshot(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), L);
         auto N = snapshot(binary("-", BoundCount, quantity(1, Size, L), Size, L), L);
         auto Width = snapshot(binary("/", binary("-", Upper, Lower, Real, L), cast(N, Real, L), Real, L), L);
-        allocateRandomVector(Density, *Vector, N, L);
+        allocateRandomVector(Density, *Vector, Info->Linear ? BoundCount : N, L);
         assign(randomVectorMember(Density, *Vector, "nct_vector_end", L),
                randomVectorMember(Density, *Vector, "nct_vector_begin", L), L);
         auto I = snapshot(quantity(0, Size, L), L);
@@ -28776,22 +28883,27 @@ class FunctionLowering {
         label(Step, L);
         assign(index(Begin, I, Real, L),
                binary("+", Lower, binary("*", cast(I, Real, L), Width, Real, L), Real, L), L);
-        // The SDK's .5 literal promotes the midpoint to double even for float.
-        const auto Double = type(A.Context.DoubleTy, L);
-        auto Point = snapshot(binary("+", cast(index(Begin, I, Real, L), Double, L),
-            binary("*", cast(Width, Double, L), A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), Double, L), L);
-        appendRandomWeight(Density, *Vector, WeightCall, std::move(Point), I, L);
+        Expression Point = index(Begin, I, Real, L);
+        if (!Info->Linear) {
+          // Constant weights use a double midpoint, even for float.
+          const auto Double = type(A.Context.DoubleTy, L);
+          Point = snapshot(binary("+", cast(Point, Double, L),
+              binary("*", cast(Width, Double, L), A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), Double, L), L);
+        }
+        appendRandomWeight(Density, *Vector, WeightCall, std::move(Point), I, L, Info->Linear);
         assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
         jump(Check, L);
         label(Filled, L);
         assign(index(Begin, N, Real, L), Upper, L);
-        initializePiecewiseConstant(Parameter, *Info, *Vector, L);
+        if (Info->Linear)
+          appendRandomWeight(Density, *Vector, WeightCall, index(Begin, N, Real, L), N, L, true);
+        initializePiecewise(Parameter, *Info, *Vector, L);
         finishRandomWeightCall(WeightCall, L);
         return;
       }
       Expression First, Weights, Count;
       std::optional<RandomWeightCall> WeightCall;
-      if (*Kind == PiecewiseConstantConstruction::ListWeights) {
+      if (*Kind == PiecewiseConstruction::ListWeights) {
         const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
             Constructor->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
         auto Value = snapshot(expression(C->getArg(0)), L);
@@ -28843,13 +28955,14 @@ class FunctionLowering {
       assign(Bounds, Buffer, L);
       assign(index(NewBegin, quantity(0, Size, L), Real, L), A.zero(Info->ResultType, L), L);
       assign(index(NewBegin, quantity(1, Size, L), Real, L), one(Real, L), L);
-      allocateRandomVector(Density, *Vector, quantity(1, Size, L), L);
-      fillRandomVector(Density, *Vector, quantity(1, Size, L), one(Real, L), L);
+      allocateRandomVector(Density, *Vector, quantity(Info->Linear ? 2 : 1, Size, L), L);
+      fillRandomVector(Density, *Vector, quantity(Info->Linear ? 2 : 1, Size, L), one(Real, L), L);
       allocateRandomVector(Areas, *Vector, quantity(1, Size, L), L);
       fillRandomVector(Areas, *Vector, quantity(1, Size, L), A.zero(Info->ResultType, L), L);
       jump(Done, L);
       label(Weighted, L);
-      auto N = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+      auto N = snapshot(Info->Linear ? Count
+          : binary("-", Count, quantity(1, Size, L), Size, L), L);
       allocateRandomVector(Density, *Vector, N, L);
       if (WeightCall)
         assign(randomVectorMember(Density, *Vector, "nct_vector_end", L),
@@ -28862,12 +28975,15 @@ class FunctionLowering {
       branch(binary("<", I, N, "bool", L), WeightStep, Filled, L);
       label(WeightStep, L);
       if (WeightCall) {
-        // The addition occurs in RealType before the .5 double multiplication.
-        auto Sum = snapshot(binary("+", index(Begin, binary("+", I, quantity(1, Size, L), Size, L), Real, L),
-                                   index(Begin, I, Real, L), Real, L), L);
-        const auto Double = type(A.Context.DoubleTy, L);
-        auto Point = snapshot(binary("*", cast(Sum, Double, L), A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), L);
-        appendRandomWeight(Density, *Vector, *WeightCall, std::move(Point), I, L);
+        Expression Point = index(Begin, I, Real, L);
+        if (!Info->Linear) {
+          // The addition occurs in RealType before the .5 double multiplication.
+          auto Sum = snapshot(binary("+", index(Begin, binary("+", I, quantity(1, Size, L), Size, L), Real, L),
+                                     Point, Real, L), L);
+          const auto Double = type(A.Context.DoubleTy, L);
+          Point = snapshot(binary("*", cast(Sum, Double, L), A.floatingLiteral(llvm::APFloat(0.5), L), Double, L), L);
+        }
+        appendRandomWeight(Density, *Vector, *WeightCall, std::move(Point), I, L, Info->Linear);
       } else {
         assign(index(Output, I, Real, L), cast(dereference(Weights, L), Real, L), L);
         assign(Weights, binary("+", Weights, quantity(1, Size, L), *Weights.getString("type"), L), L);
@@ -28875,7 +28991,7 @@ class FunctionLowering {
       assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
       jump(WeightCheck, L);
       label(Filled, L);
-      initializePiecewiseConstant(Parameter, *Info, *Vector, L);
+      initializePiecewise(Parameter, *Info, *Vector, L);
       jump(Done, L);
       label(Done, L);
       if (WeightCall)

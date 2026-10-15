@@ -333,6 +333,9 @@ class Emitter {
     case ExprKind::Var:
       return E.Name;
     case ExprKind::Unary: {
+      if (E.UnaryOp == UnaryOperator::Sqrt)
+        return std::string(E.ValueType.Kind == TypeKind::Float ? "__builtin_sqrtf(" : "__builtin_sqrt(") +
+               expression(E.Args[0]) + ")";
       const char *Op = E.UnaryOp == UnaryOperator::Plus     ? "+"
                        : E.UnaryOp == UnaryOperator::Minus  ? "-"
                        : E.UnaryOp == UnaryOperator::BitNot ? "~"

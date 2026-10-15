@@ -9560,7 +9560,7 @@ public:
     }
     // Storage release belongs to each pinned SDK destructor. Nested vectors
     // and source-owned records must close their actual element destruction.
-    if (const auto Piecewise = approvedPiecewiseConstantRecord(A.S, A.Sources, Record, A.Context)) {
+    if (const auto Piecewise = approvedPiecewiseRecord(A.S, A.Sources, Record, A.Context)) {
       const auto *Destructor = Record->getDestructor();
       if (!Destructor || !Destructor->isImplicit() ||
           !approvedStandardSDKDeclaration(A.S, A.Sources, Destructor))
@@ -11350,7 +11350,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
               return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
-      } else if (const auto Piecewise = approvedPiecewiseConstantRecord(S, Sources, D, Context)) {
+      } else if (const auto Piecewise = approvedPiecewiseRecord(S, Sources, D, Context)) {
         if (RequiredVectorDistributionRecords.insert(D->getCanonicalDecl()).second) {
           for (const auto *Field : D->fields())
             if (type(Field->getType(), L, false, Depth + 1).empty())
@@ -15361,7 +15361,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
-        (approvedPiecewiseConstantConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
          approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
          approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||
@@ -15972,7 +15972,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!Random)
       Random = approvedUniformDistributionRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
-      Random = approvedPiecewiseConstantRandomCall(A.S, A.Sources, Call, A.Context);
+      Random = approvedPiecewiseRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
       Random = approvedDiscreteDistributionRandomCall(A.S, A.Sources, Call, A.Context);
     if (!Random)
@@ -16728,7 +16728,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
-             approvedPiecewiseConstantRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
+             approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              approvedDiscreteDistributionRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              approvedSeedSequenceRecord(A.S, A.Sources, Destructor->getParent(), A.Context)))
           return;
@@ -18892,7 +18892,7 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedPiecewiseConstantConstruction(A.S, A.Sources, Construction, A.Context) ||
+          (approvedPiecewiseConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedDiscreteDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedBernoulliConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUniformDistributionConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -24335,7 +24335,7 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedPiecewiseConstantConstruction(A.S, A.Sources, C, A.Context) ||
+        } else if (approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedBernoulliConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUniformDistributionConstruction(A.S, A.Sources, C, A.Context) ||

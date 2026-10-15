@@ -16206,3 +16206,34 @@ existing behavior, including supported concrete friend types.
 The embedded parser preserves lexical lookup while checking late default arguments
 in the function context. Omitted defaults keep their call-site evaluation and
 cleanup behavior.
+
+
+### Piecewise linear distributions and authenticated square roots
+
+`piecewise_linear_distribution<float/double>` and `param_type` also retain default/range/count/list construction, arithmetic value/reference callbacks and admitted source function objects, copy-on-move ownership, assignment, vector queries, parameters, equality, reset and both sampling forms. Linear callbacks visit actual stored boundary lvalues, including matching reference identity; a zero count visits both endpoints, while lists with fewer than two boundaries do not call. Endpoint densities, trapezoidal normalization, cumulative areas and inverse sampling preserve the pinned operation order and strict float/double rounding. Sampling admits a typed square-root primitive only through the authenticated selected SDK math declarations and bodies; ordinary core-profile math calls remain restricted. Selected copies, default temporaries, destruction, allocation order and capacity reuse are retained. Long double and stream serialization remain separate work.
+
+Linear construction owns separate boundary, endpoint-density and cumulative-area
+vectors. A range reads one weight per boundary. Count construction reserves the
+boundary count for densities and visits the final upper boundary after storing
+it. List construction visits each copied boundary. Matching lvalue-reference
+parameters bind those elements directly; other selected arithmetic conversions
+retain their temporary storage. Callback results, including references, retain
+the SDK push-back read order. The shared function-object path preserves nested
+copies, default argument temporaries and complete-expression cleanup.
+
+Normalization computes each adjacent density sum and boundary difference in
+RealType, multiplies them before the SDK double `.5` conversion, accumulates in
+RealType, builds cumulative areas and divides every endpoint density by the
+total. Sampling uses the authenticated canonical draw and upper-bound search,
+then the SDK flat-density branch or inverse quadratic expression without
+contraction or reassociation.
+
+The typed IR unary `sqrt` operation requires `cpp-core-v2`, one operand, and
+identical float or double operand/result types. Its wire object permits only
+kind, type, operator, args and location. The NC emitter uses `__builtin_sqrtf`
+or `__builtin_sqrt`; the C23 backend owns their LLVM square-root lowering.
+The C++ frontend enables this proof dependency only while retaining the actual
+linear sampling body. It authenticates the selected builtin signature, SDK
+call site and all explicit redeclarations, and retains intervening SDK wrapper
+bodies. Source redeclarations or replacements are rejected. This adds no math
+mapping, external libm import or ordinary source builtin allowance.
