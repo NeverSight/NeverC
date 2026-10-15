@@ -1433,7 +1433,7 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
   }
-  Expression exponentialParameter(Expression Place, const ExponentialRecord &Info,
+  Expression scalarRealDistributionParameter(Expression Place, const ScalarRealDistributionRecord &Info,
                                SourceLocation L) {
     return Info.Record == Info.Distribution ? fieldStorage(std::move(Place), Info.Storage, L) : std::move(Place);
   }
@@ -3717,49 +3717,67 @@ class FunctionLowering {
       label(Done, L);
       return cast(Position, type(Info->ResultType, L), L);
     }
-    if (Operation >= UtilityOperation::ExponentialGenerate && Operation <= UtilityOperation::ExponentialAssign) {
+    if (Operation >= UtilityOperation::ScalarRealDistributionGenerate && Operation <= UtilityOperation::ScalarRealDistributionAssign) {
       const auto *F = Call->getDirectCallee();
       const auto *M = dyn_cast<CXXMethodDecl>(F);
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
       const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedExponentialRecord(A.S, A.Sources, R, A.Context);
-      if (!Info) reject(L, "Exponential distribution", "The checked distribution layout is unavailable.");
-      if (Operation == UtilityOperation::ExponentialEqual || Operation == UtilityOperation::ExponentialNotEqual) {
+      const auto Info = approvedScalarRealDistributionRecord(A.S, A.Sources, R, A.Context);
+      if (!Info) reject(L, "real distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::ScalarRealDistributionEqual || Operation == UtilityOperation::ScalarRealDistributionNotEqual) {
         auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
         auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        return binary(Operation == UtilityOperation::ExponentialEqual ? "==" : "!=",
-            fieldStorage(exponentialParameter(dereference(std::move(Left), L), *Info, L), Info->Rate, L),
-            fieldStorage(exponentialParameter(dereference(std::move(Right), L), *Info, L), Info->Rate, L), "bool", L);
+        auto LeftParameter = scalarRealDistributionParameter(dereference(std::move(Left), L), *Info, L);
+        auto RightParameter = scalarRealDistributionParameter(dereference(std::move(Right), L), *Info, L);
+        auto Equal = binary("==", fieldStorage(LeftParameter, Info->First, L),
+                            fieldStorage(RightParameter, Info->First, L), "bool", L);
+        if (Info->Second) {
+          auto Result = snapshot(std::move(Equal), L);
+          const auto CompareSecond = labelName(), Compared = labelName();
+          branch(Result, CompareSecond, Compared, L);
+          label(CompareSecond, L);
+          assign(Result, binary("==", fieldStorage(LeftParameter, Info->Second, L),
+                                fieldStorage(RightParameter, Info->Second, L), "bool", L), L);
+          jump(Compared, L);
+          label(Compared, L);
+          Equal = std::move(Result);
+        }
+        return Operation == UtilityOperation::ScalarRealDistributionEqual ? std::move(Equal)
+            : binary("==", std::move(Equal), quantity(0, "bool", L), "bool", L);
       }
       const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
       auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
       auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::ExponentialAssign) {
+      if (Operation == UtilityOperation::ScalarRealDistributionAssign) {
         auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
         assign(Place, snapshot(dereference(std::move(Source), L), L), L);
         return Place;
       }
-      auto Parameter = exponentialParameter(Place, *Info, L);
+      auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
       switch (Operation) {
-      case UtilityOperation::ExponentialRate:
-        return snapshot(fieldStorage(std::move(Parameter), Info->Rate, L), L);
-      case UtilityOperation::ExponentialMinimum: return A.zero(Info->ResultType, L);
-      case UtilityOperation::ExponentialMaximum: return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
-      case UtilityOperation::ExponentialReset: return {};
-      case UtilityOperation::ExponentialParamGet: {
+      case UtilityOperation::ScalarRealDistributionFirst:
+        return snapshot(fieldStorage(std::move(Parameter), Info->First, L), L);
+      case UtilityOperation::ScalarRealDistributionSecond:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Second, L), L);
+      case UtilityOperation::ScalarRealDistributionMinimum:
+        return Info->Second ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
+                            : A.zero(Info->ResultType, L);
+      case UtilityOperation::ScalarRealDistributionMaximum: return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
+      case UtilityOperation::ScalarRealDistributionReset: return {};
+      case UtilityOperation::ScalarRealDistributionParamGet: {
         auto Value = snapshot(std::move(Parameter), L);
         if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
         return Value;
       }
-      case UtilityOperation::ExponentialParamSet: {
+      case UtilityOperation::ScalarRealDistributionParamSet: {
         auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
         assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
         return {};
       }
       default: break;
       }
-      const auto Random = approvedExponentialRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Random) reject(L, "Exponential generator", "The selected generator source is unavailable.");
+      const auto Random = approvedScalarRealDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random) reject(L, "real distribution generator", "The selected generator source is unavailable.");
       const unsigned First = Operator ? 1 : 0;
       auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
       if (F->getNumParams() == 2) {
@@ -3778,8 +3796,17 @@ class FunctionLowering {
       Negative.push_back(std::move(Log));
       auto Numerator = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "-"},
           {"args", std::move(Negative)}, {"loc", A.loc(L)}}, L);
-      // The selected SDK expression reads lambda after its canonical draw.
-      auto Rate = snapshot(fieldStorage(std::move(Parameter), Info->Rate, L), L);
+      if (Info->Second) {
+        json::Array OuterArguments;
+        OuterArguments.push_back(std::move(Numerator));
+        auto OuterLog = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
+            {"args", std::move(OuterArguments)}, {"loc", A.loc(L)}}, L);
+        auto Location = snapshot(fieldStorage(Parameter, Info->First, L), L);
+        auto Scale = snapshot(fieldStorage(Parameter, Info->Second, L), L);
+        return snapshot(binary("-", std::move(Location),
+            binary("*", std::move(Scale), std::move(OuterLog), Real, L), Real, L), L);
+      }
+      auto Rate = snapshot(fieldStorage(std::move(Parameter), Info->First, L), L);
       return snapshot(binary("/", std::move(Numerator), std::move(Rate), Real, L), L);
     }
     if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
@@ -29158,18 +29185,26 @@ class FunctionLowering {
       initializeDiscreteThresholds(Storage, *Vector, Count, L);
       return;
     }
-    if (const auto Kind = approvedExponentialConstruction(A.S, A.Sources, C, A.Context)) {
-      const auto Info = approvedExponentialRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
-      if (*Kind == ExponentialConstruction::CopyOrMove) {
+    if (const auto Kind = approvedScalarRealDistributionConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedScalarRealDistributionRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (*Kind == ScalarRealDistributionConstruction::CopyOrMove) {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
         assign(std::move(Place), snapshot(dereference(std::move(Source), L), L), L);
-      } else if (*Kind == ExponentialConstruction::Parameter) {
+      } else if (*Kind == ScalarRealDistributionConstruction::Parameter) {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
         assign(fieldStorage(std::move(Place), Info->Storage, L), snapshot(dereference(std::move(Source), L), L), L);
       } else {
-        auto Rate = *Kind == ExponentialConstruction::Default ? one(type(Info->ResultType, L), L)
-            : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L);
-        assign(fieldStorage(exponentialParameter(std::move(Place), *Info, L), Info->Rate, L), std::move(Rate), L);
+        auto First = snapshot(*Kind == ScalarRealDistributionConstruction::Default
+            ? (Info->Second ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
+            : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L), L);
+        std::optional<Expression> Second;
+        if (Info->Second)
+          Second = snapshot(*Kind == ScalarRealDistributionConstruction::Default ? one(type(Info->ResultType, L), L)
+              : uniformDistributionArgument(C->getArg(1), Constructor->getParamDecl(1)->getType(), L), L);
+        auto Parameter = scalarRealDistributionParameter(std::move(Place), *Info, L);
+        assign(fieldStorage(Parameter, Info->First, L), std::move(First), L);
+        if (Second)
+          assign(fieldStorage(Parameter, Info->Second, L), std::move(*Second), L);
       }
       return;
     }

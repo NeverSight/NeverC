@@ -11167,7 +11167,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
-  if (approvedExponentialDefaultArgument(S, SM, Default, Function, Index, Context))
+  if (approvedScalarRealDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedBernoulliDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
@@ -74549,8 +74549,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return Piecewise;
   if (auto Discrete = approvedDiscreteDistributionOperation(S, SM, Call, Context))
     return Discrete;
-  if (auto Exponential = approvedExponentialOperation(S, SM, Call, Context))
-    return Exponential;
+  if (auto ScalarRealDistribution = approvedScalarRealDistributionOperation(S, SM, Call, Context))
+    return ScalarRealDistribution;
   if (auto Bernoulli = approvedBernoulliOperation(S, SM, Call, Context))
     return Bernoulli;
   if (approvedCanonicalRandomCall(S, SM, Call, Context))

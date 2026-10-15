@@ -23,7 +23,7 @@ bool randomWeightFunction(QualType T, const ASTContext &Context) {
          randomWeightScalar(P->getParamType(0).getNonReferenceType(), Context);
 }
 
-enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog };
+enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog };
 
 // The lowering implements the pinned libc++ loops. Follow the declarations
 // actually selected by those loops, including instantiated traits and helper
@@ -122,7 +122,8 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     const llvm::StringRef Helper = Root ? "__math/roots.h" : "__math/logarithms.h";
     const llvm::StringRef Distribution = Root ? "__random/piecewise_linear_distribution.h"
-                                              : "__random/exponential_distribution.h";
+                                              : Math == SelectedRandomMath::ExtremeValueLog ? "__random/extreme_value_distribution.h"
+                                                                                            : "__random/exponential_distribution.h";
     const auto CallFile = S.sdkFile(SM, Location);
     if (!CallFile || CallFile->Root != "libcxx" ||
         (CallFile->Path != Helper && CallFile->Path != Distribution))
@@ -1549,8 +1550,8 @@ approvedBernoulliOperation(const State &S, const SourceManager &SM,
   return Operation && Selection.retain(F) ? Operation : std::nullopt;
 }
 
-std::optional<ExponentialRecord>
-approvedExponentialRecord(const State &S, const SourceManager &SM,
+std::optional<ScalarRealDistributionRecord>
+approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
                          const CXXRecordDecl *Record, const ASTContext &Context) {
   const auto *R = Record ? Record->getDefinition() : nullptr;
   const auto *Outer = R && R->getName() == "param_type"
@@ -1558,9 +1559,10 @@ approvedExponentialRecord(const State &S, const SourceManager &SM,
       : dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
   const auto *Template = Outer ? Outer->getSpecializedTemplate() : nullptr;
   const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  const bool Extreme = Template && Template->getName() == "extreme_value_distribution";
   if (!S.coreV2() || !R || !Outer || !Template || !File || File->Root != "libcxx" ||
-      File->Path != "__random/exponential_distribution.h" ||
-      Template->getName() != "exponential_distribution" ||
+      File->Path != (Extreme ? "__random/extreme_value_distribution.h" : "__random/exponential_distribution.h") ||
+      (!Extreme && Template->getName() != "exponential_distribution") ||
       Outer->getSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !R->isStandardLayout() || !R->isTriviallyCopyable() ||
@@ -1574,7 +1576,7 @@ approvedExponentialRecord(const State &S, const SourceManager &SM,
        !Result->isSpecificBuiltinType(BuiltinType::Double)))
     return std::nullopt;
   const CXXRecordDecl *Parameter = nullptr;
-  const FieldDecl *Storage = nullptr, *Rate = nullptr;
+  const FieldDecl *Storage = nullptr, *First = nullptr, *Second = nullptr;
   for (const auto *D : Outer->decls())
     if (const auto *Nested = dyn_cast<CXXRecordDecl>(D);
         Nested && Nested->getName() == "param_type" && Nested->getDefinition())
@@ -1587,8 +1589,10 @@ approvedExponentialRecord(const State &S, const SourceManager &SM,
     if (!approvedStandardSDKDeclaration(S, SM, F) || F->isBitField() || F->isMutable() ||
         !Context.hasSameType(F->getType(), Result))
       return std::nullopt;
-    if (F->getName() == "__lambda_" && !Rate)
-      Rate = F;
+    if (F->getName() == (Extreme ? "__a_" : "__lambda_") && !First)
+      First = F;
+    else if (Extreme && F->getName() == "__b_" && !Second)
+      Second = F;
     else
       return std::nullopt;
   }
@@ -1600,58 +1604,62 @@ approvedExponentialRecord(const State &S, const SourceManager &SM,
     Storage = F;
   }
   RandomSelection Selection(S, SM, Context, Outer, Result, Result);
-  if (!Storage || !Rate || !Selection.retain(Outer) || !Selection.retain(Parameter))
+  if (!Storage || !First || (Extreme && !Second) || !Selection.retain(Outer) || !Selection.retain(Parameter))
     return std::nullopt;
-  return ExponentialRecord{R, Outer, Parameter, Result, Storage, Rate};
+  return ScalarRealDistributionRecord{R, Outer, Parameter, Result, Storage, First, Second,
+      Extreme ? ScalarRealDistributionKind::ExtremeValue : ScalarRealDistributionKind::Exponential};
 }
 
-std::optional<ExponentialConstruction>
-approvedExponentialConstruction(const State &S, const SourceManager &SM,
+std::optional<ScalarRealDistributionConstruction>
+approvedScalarRealDistributionConstruction(const State &S, const SourceManager &SM,
                              const CXXConstructExpr *Construction,
                              const ASTContext &Context) {
   const auto *C = Construction ? Construction->getConstructor() : nullptr;
-  const auto Info = C ? approvedExponentialRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  const auto Info = C ? approvedScalarRealDistributionRecord(S, SM, C->getParent(), Context) : std::nullopt;
   if (!Info || C->isVariadic() || C->getPrimaryTemplate() ||
       !approvedStandardSDKDeclaration(S, SM, C) || Construction->getNumArgs() != C->getNumParams())
     return std::nullopt;
   if (C->isCopyOrMoveConstructor())
-    return C->isImplicit() && C->isTrivial() ? std::optional<ExponentialConstruction>(ExponentialConstruction::CopyOrMove) : std::nullopt;
-  std::optional<ExponentialConstruction> Kind;
+    return C->isImplicit() && C->isTrivial() ? std::optional<ScalarRealDistributionConstruction>(ScalarRealDistributionConstruction::CopyOrMove) : std::nullopt;
+  std::optional<ScalarRealDistributionConstruction> Kind;
   if (!C->getNumParams() && Info->Record == Info->Distribution)
-    Kind = ExponentialConstruction::Default;
-  else if (C->getNumParams() == 1 && Context.hasSameType(C->getParamDecl(0)->getType(), Info->ResultType))
-    Kind = ExponentialConstruction::Rate;
+    Kind = ScalarRealDistributionConstruction::Default;
+  else if (C->getNumParams() == (Info->Second ? 2u : 1u) &&
+           Context.hasSameType(C->getParamDecl(0)->getType(), Info->ResultType) &&
+           (!Info->Second || Context.hasSameType(C->getParamDecl(1)->getType(), Info->ResultType)))
+    Kind = ScalarRealDistributionConstruction::Values;
   else if (C->getNumParams() == 1 && Info->Record == Info->Distribution &&
            Context.hasSameType(C->getParamDecl(0)->getType(),
                Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
-    Kind = ExponentialConstruction::Parameter;
+    Kind = ScalarRealDistributionConstruction::Parameter;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
 }
 
-bool approvedExponentialDefaultArgument(const State &S, const SourceManager &SM,
+bool approvedScalarRealDistributionDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function, unsigned Index,
                                     const ASTContext &Context) {
   const auto *C = dyn_cast_or_null<CXXConstructorDecl>(Function);
-  const auto Info = C ? approvedExponentialRecord(S, SM, C->getParent(), Context) : std::nullopt;
-  if (!Info || !Default || Index || C->getNumParams() != 1 ||
-      Default->getParam() != C->getParamDecl(0) ||
-      !Context.hasSameType(C->getParamDecl(0)->getType(), Info->ResultType))
+  const auto Info = C ? approvedScalarRealDistributionRecord(S, SM, C->getParent(), Context) : std::nullopt;
+  if (!Info || !Default || Index >= (Info->Second ? 2u : 1u) ||
+      C->getNumParams() != (Info->Second ? 2u : 1u) ||
+      Default->getParam() != C->getParamDecl(Index) ||
+      !Context.hasSameType(C->getParamDecl(Index)->getType(), Info->ResultType))
     return false;
   Expr::EvalResult Value;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Default->getExpr()->EvaluateAsRValue(Value, Context) && Value.Val.isFloat() &&
-      Value.Val.getFloat().isExactlyValue(1.0) && Selection.retain(C) &&
+      Value.Val.getFloat().isExactlyValue(Info->Kind == ScalarRealDistributionKind::ExtremeValue && !Index ? 0.0 : 1.0) && Selection.retain(C) &&
       Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr()));
 }
 
 std::optional<UtilityAlgorithmRandomCall>
-approvedExponentialRandomCall(const State &S, const SourceManager &SM,
+approvedScalarRealDistributionRandomCall(const State &S, const SourceManager &SM,
                           const CallExpr *Call, const ASTContext &Context) {
   const auto *M = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  const auto Info = M ? approvedExponentialRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  const auto Info = M ? approvedScalarRealDistributionRecord(S, SM, M->getParent(), Context) : std::nullopt;
   if (!Info || Info->Record != Info->Distribution || M->isStatic() || M->isConst() ||
       M->isVolatile() || M->isVariadic() || M->getOverloadedOperator() != OO_Call ||
       M->getNumParams() < 1 || M->getNumParams() > 2 ||
@@ -1662,56 +1670,62 @@ approvedExponentialRandomCall(const State &S, const SourceManager &SM,
           Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))))
     return std::nullopt;
   return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Info->ResultType,
-      UtilityOperation::ExponentialGenerate, Operator ? 1u : 0u, Context, SelectedRandomMath::ExponentialLog);
+      UtilityOperation::ScalarRealDistributionGenerate, Operator ? 1u : 0u, Context,
+      Info->Kind == ScalarRealDistributionKind::ExtremeValue ? SelectedRandomMath::ExtremeValueLog
+                                                            : SelectedRandomMath::ExponentialLog);
 }
 
 std::optional<UtilityOperation>
-approvedExponentialOperation(const State &S, const SourceManager &SM,
+approvedScalarRealDistributionOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *R = M ? M->getParent() : F && F->getNumParams() == 2
       ? F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
-  const auto Info = approvedExponentialRecord(S, SM, R, Context);
+  const auto Info = approvedScalarRealDistributionRecord(S, SM, R, Context);
   if (!Info || !F || F->isVariadic() || !approvedStandardSDKDeclaration(S, SM, F) ||
       Call->getNumArgs() != F->getNumParams() + (Operator && M ? 1u : 0u))
     return std::nullopt;
-  if (approvedExponentialRandomCall(S, SM, Call, Context))
-    return UtilityOperation::ExponentialGenerate;
+  if (approvedScalarRealDistributionRandomCall(S, SM, Call, Context))
+    return UtilityOperation::ScalarRealDistributionGenerate;
   std::optional<UtilityOperation> Operation;
   if (M && !M->isStatic() && !M->isVolatile()) {
     if (M->isConst() && M->getIdentifier() && !M->getNumParams()) {
-      if (M->getName() == "lambda" && Context.hasSameType(M->getReturnType(), Info->ResultType))
-        Operation = UtilityOperation::ExponentialRate;
+      if (Context.hasSameType(M->getReturnType(), Info->ResultType) &&
+          M->getName() == (Info->Second ? "a" : "lambda"))
+        Operation = UtilityOperation::ScalarRealDistributionFirst;
+      else if (Info->Second && M->getName() == "b" &&
+               Context.hasSameType(M->getReturnType(), Info->ResultType))
+        Operation = UtilityOperation::ScalarRealDistributionSecond;
       else if (Info->Record == Info->Distribution && Context.hasSameType(M->getReturnType(), Info->ResultType)) {
-        if (M->getName() == "min") Operation = UtilityOperation::ExponentialMinimum;
-        else if (M->getName() == "max") Operation = UtilityOperation::ExponentialMaximum;
+        if (M->getName() == "min") Operation = UtilityOperation::ScalarRealDistributionMinimum;
+        else if (M->getName() == "max") Operation = UtilityOperation::ScalarRealDistributionMaximum;
       } else if (M->getName() == "param" && Info->Record == Info->Distribution &&
                  Context.hasSameType(M->getReturnType(), Context.getRecordType(Info->Parameter)))
-        Operation = UtilityOperation::ExponentialParamGet;
+        Operation = UtilityOperation::ScalarRealDistributionParamGet;
     } else if (!M->isConst() && M->getIdentifier() && M->getReturnType()->isVoidType() &&
                Info->Record == Info->Distribution) {
       if (M->getName() == "reset" && !M->getNumParams())
-        Operation = UtilityOperation::ExponentialReset;
+        Operation = UtilityOperation::ScalarRealDistributionReset;
       else if (M->getName() == "param" && M->getNumParams() == 1 &&
           Context.hasSameType(M->getParamDecl(0)->getType(),
               Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
-        Operation = UtilityOperation::ExponentialParamSet;
+        Operation = UtilityOperation::ScalarRealDistributionParamSet;
     }
     if (M->getOverloadedOperator() == OO_Equal && M->isImplicit() && M->isTrivial() &&
         M->getNumParams() == 1 && M->getReturnType()->isLValueReferenceType() &&
         Context.hasSameType(M->getReturnType().getNonReferenceType(), Context.getRecordType(Info->Record)) &&
         M->getParamDecl(0)->getType()->isReferenceType() &&
         Context.hasSameUnqualifiedType(M->getParamDecl(0)->getType().getNonReferenceType(), Context.getRecordType(Info->Record)))
-      return UtilityOperation::ExponentialAssign;
+      return UtilityOperation::ScalarRealDistributionAssign;
   } else if (!M && F->getReturnType()->isBooleanType() && F->getNumParams() == 2 &&
              (F->getOverloadedOperator() == OO_EqualEqual || F->getOverloadedOperator() == OO_ExclaimEqual)) {
     for (const auto *P : F->parameters())
       if (!Context.hasSameType(P->getType(),
           Context.getLValueReferenceType(Context.getRecordType(Info->Record).withConst())))
         return std::nullopt;
-    Operation = F->getOverloadedOperator() == OO_EqualEqual ? UtilityOperation::ExponentialEqual : UtilityOperation::ExponentialNotEqual;
+    Operation = F->getOverloadedOperator() == OO_EqualEqual ? UtilityOperation::ScalarRealDistributionEqual : UtilityOperation::ScalarRealDistributionNotEqual;
   }
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Operation && Selection.retain(F) ? Operation : std::nullopt;

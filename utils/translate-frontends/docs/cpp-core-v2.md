@@ -16269,3 +16269,31 @@ values. Generated tests use small ULP tolerances for those platform math values,
 with exact parameter bits and next-generator states. Exact negative-zero,
 canonical upper-endpoint infinity and once-only rate evaluation edges complement
 the typed/protocol and source-provenance rejection tests.
+
+
+### Extreme-value distributions and shared scalar parameter storage
+
+`extreme_value_distribution<float/double>` and `param_type` admit default, location/scale, parameter, copy and move construction, assignment, a/b, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. The two RealType parameters retain independent value storage and defaults zero/one. Sampling preserves one canonical draw and the pinned RealType expression a-b*log(-log(1-u)), including both logarithm bodies, signed infinite bounds and canonical endpoint results. Default arguments, selected SDK declarations/bodies and every explicit logarithm/infinity redeclaration are checked; source replacements and ordinary core math calls remain restricted. Hosted CRT/libm last bits may differ, so independent native samples use small absolute/relative tolerances while parameter bits, argument effects and generator states remain exact. Long double and stream serialization remain separate work.
+
+The scalar-real distribution descriptor authenticates the exact exponential or
+extreme-value template/header, one or two RealType parameter fields and the sole
+outer parameter field. Exponential retains rate one; extreme-value retains
+location zero and scale one, including the single-location overload and omitted
+parameter defaults. Selected arithmetic arguments are captured before writing
+the destination fields. Copy/move, assignment, getter/setter and comparisons
+preserve independent scalar values and ordered field comparisons.
+
+The extreme-value sampling proof authenticates the selected default uniform-real
+delegation and both logarithm sites. Its capability is limited to the pinned
+extreme-value header and logarithm wrapper, with exact float/double signatures
+and checks on every explicit redeclaration. The existing exponential and linear
+distribution paths retain their separate selected-header capabilities. No new
+IR operation, SDK/catalog revision, heap allocation or C++ runtime is added.
+
+Native O0/O2 references cover 18 API/state cases with source, minstd and
+mt19937_64 generators and 288 independently collected sample values. Generated
+tests use small absolute/relative error bounds scaled by the location and scale
+to allow platform libm variation and cancellation near zero. Parameter bits,
+next-generator states, infinite bounds/endpoints and source argument evaluation
+remain exact. Source SDK replacements, unsupported argument bodies, ordinary
+core math calls and long double remain rejected.

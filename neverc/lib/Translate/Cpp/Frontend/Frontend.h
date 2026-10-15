@@ -985,16 +985,17 @@ enum class UtilityOperation {
   UniformNotEqual,
   UniformAssign,
   GenerateCanonical,
-  ExponentialGenerate,
-  ExponentialRate,
-  ExponentialMinimum,
-  ExponentialMaximum,
-  ExponentialParamGet,
-  ExponentialParamSet,
-  ExponentialReset,
-  ExponentialEqual,
-  ExponentialNotEqual,
-  ExponentialAssign,
+  ScalarRealDistributionGenerate,
+  ScalarRealDistributionFirst,
+  ScalarRealDistributionSecond,
+  ScalarRealDistributionMinimum,
+  ScalarRealDistributionMaximum,
+  ScalarRealDistributionParamGet,
+  ScalarRealDistributionParamSet,
+  ScalarRealDistributionReset,
+  ScalarRealDistributionEqual,
+  ScalarRealDistributionNotEqual,
+  ScalarRealDistributionAssign,
   BernoulliGenerate,
   BernoulliProbability,
   BernoulliMinimum,
@@ -1325,25 +1326,27 @@ struct CanonicalRandomCall {
 std::optional<CanonicalRandomCall> approvedCanonicalRandomCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-struct ExponentialRecord {
+enum class ScalarRealDistributionKind { Exponential, ExtremeValue };
+struct ScalarRealDistributionRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   clang::QualType ResultType;
-  const clang::FieldDecl *Storage, *Rate;
+  const clang::FieldDecl *Storage, *First, *Second;
+  ScalarRealDistributionKind Kind;
 };
-enum class ExponentialConstruction { Default, Rate, Parameter, CopyOrMove };
-std::optional<ExponentialRecord> approvedExponentialRecord(
+enum class ScalarRealDistributionConstruction { Default, Values, Parameter, CopyOrMove };
+std::optional<ScalarRealDistributionRecord> approvedScalarRealDistributionRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
-std::optional<ExponentialConstruction> approvedExponentialConstruction(
+std::optional<ScalarRealDistributionConstruction> approvedScalarRealDistributionConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
-bool approvedExponentialDefaultArgument(
+bool approvedScalarRealDistributionDefaultArgument(
     const State &S, const clang::SourceManager &SM, const clang::CXXDefaultArgExpr *Default,
     const clang::FunctionDecl *Function, unsigned Index, const clang::ASTContext &Context);
-std::optional<UtilityAlgorithmRandomCall> approvedExponentialRandomCall(
+std::optional<UtilityAlgorithmRandomCall> approvedScalarRealDistributionRandomCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-std::optional<UtilityOperation> approvedExponentialOperation(
+std::optional<UtilityOperation> approvedScalarRealDistributionOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 struct BernoulliRecord {
@@ -2181,7 +2184,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
-  std::set<const clang::CXXRecordDecl *> RequiredExponentialRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
