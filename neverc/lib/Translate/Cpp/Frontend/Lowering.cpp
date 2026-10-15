@@ -3910,6 +3910,12 @@ class FunctionLowering {
       Negative.push_back(std::move(Log));
       auto Numerator = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "-"},
           {"args", std::move(Negative)}, {"loc", A.loc(L)}}, L);
+      if (Info->Kind == ScalarRealDistributionKind::Weibull) {
+        auto Shape = snapshot(fieldStorage(Parameter, Info->First, L), L);
+        auto Scale = snapshot(fieldStorage(Parameter, Info->Second, L), L);
+        auto Power = binary("pow", std::move(Numerator), binary("/", one(Real, L), Shape, Real, L), Real, L);
+        return snapshot(binary("*", Scale, std::move(Power), Real, L), L);
+      }
       if (Info->Second) {
         json::Array OuterArguments;
         OuterArguments.push_back(std::move(Numerator));
@@ -29317,7 +29323,7 @@ class FunctionLowering {
           assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       } else {
         auto First = snapshot(*Kind == ScalarRealDistributionConstruction::Default
-            ? (Info->Second ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
+            ? (Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
             : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L), L);
         std::optional<Expression> Second;
         if (Info->Second)

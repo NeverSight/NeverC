@@ -34,6 +34,8 @@ Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersen
 
 `lognormal_distribution<float/double>` 及 `param_type` 支持构造、复制/移动、赋值、m/s、边界、参数接口、相等比较、reset，以及使用已验证源码或 SDK 生成器的两种采样形式。内嵌正态分布在复制/移动及参数替换时保留缓存，reset 清除缓存，冷缓存操作不读取未使用的备用值。采样对所选正态结果执行已验证的 RealType exp，保留临时参数和生成器消耗。布局、嵌套操作、所选 log/sqrt/exp 函数体及显式重声明均经过验证。原生对照允许较小的平台数学库容差；参数、缓存行为和生成器状态精确比较。核心 v2 的 exp 生成 C23 内建调用，其宿主 CRT/libm 导入由后端处理。long double 和流序列化仍待接入。
 
+`weibull_distribution<float/double>` 及 `param_type` 支持默认、形状/尺度、参数、复制/移动构造、赋值、a/b、边界、参数接口、相等比较、reset，以及使用已验证源码或 SDK 生成器的两种采样形式。形状和尺度均默认为一，边界为正零和正无穷；采样保留 b*pow(exponential(1),1/a)、RealType 运算和生成器消耗。所选 Weibull/指数分布函数体、默认值及 log/pow 声明均经过验证。核心 v2 的 pow 要求两个匹配的 float/double 参数并生成 C23 内建调用，宿主 CRT/libm 导入由后端处理。原生数值对照使用较小数学容差，参数和生成器状态精确比较。long double 和流序列化仍待接入。
+
 离散权重函数指针还支持算术类型的 const 左值引用、右值引用参数和引用返回值。转换后的实参临时对象在回调期间保留引用身份；引用结果沿用已检查的间接调用路径。double 引用在 SDK 元素构造时复制，即扩容分配后、旧缓冲释放前；其他算术结果在插入前转换为 double。O0/O2 对照覆盖参数修改、全局引用返回及可观察的分配器副作用。
 
 两个算法也接纳经校验的 `std::__wrap_iter<T*>` 范围，包括已支持的 vector 和 string 迭代器。Sample 的输入和输出可分别使用原始指针或包装迭代器，保留 const 输入及经校验的标量转换，并返回原输出迭代器类型。所选 SDK 迭代器操作仍须通过认证。

@@ -70,7 +70,8 @@ enum class BinaryOperator {
   Less,
   LessEqual,
   Greater,
-  GreaterEqual
+  GreaterEqual,
+  Power
 };
 struct Expr {
   ExprKind Kind = ExprKind::Literal;

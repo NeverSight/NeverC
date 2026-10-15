@@ -4140,3 +4140,93 @@ TEST(TranslateIR, CoreV2ExponentialWireRetainsProfileAndPayloadBoundary) {
       EXPECT_FALSE(parseModule(Wire(true, Arg, Extra), M, D));
   }
 }
+
+TEST(TranslateIR, CoreV2PowerRequiresMatchingFloatingTypes) {
+  for (auto Kind : {TypeKind::Float, TypeKind::Double}) {
+    const Type T{Kind, {}};
+    auto M = module(true);
+    M.Functions[0].Result = T;
+    M.Functions[0].Params.push_back({"nct_left", T, InputLoc});
+    M.Functions[0].Params.push_back({"nct_right", T, InputLoc});
+    auto Root = pointerExpr(ExprKind::Binary, T, {variable("nct_left", T), variable("nct_right", T)});
+    Root.BinaryOp = BinaryOperator::Power;
+    M.Functions[0].Body.back() = ret(Root);
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(Kind == TypeKind::Float ? "__builtin_powf(nct_left, nct_right)"
+                                                       : "__builtin_pow(nct_left, nct_right)"), std::string::npos);
+    EXPECT_NE(Output.Text.find("#pragma STDC FP_CONTRACT OFF"), std::string::npos);
+    EXPECT_TRUE(M.Mappings.empty());
+    for (unsigned Side : {0u, 1u})
+      for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(T),
+                               Type{Kind == TypeKind::Float ? TypeKind::Double : TypeKind::Float, {}}}) {
+        auto Bad = M;
+        Bad.Functions[0].Params[Side].ValueType = Wrong;
+        Bad.Functions[0].Body.back().Value->Args[Side].ValueType = Wrong;
+        invalid(Bad, "Power");
+      }
+    for (const auto &Wrong : {intType(), boolType(), pointerType(T),
+                             Type{Kind == TypeKind::Float ? TypeKind::Double : TypeKind::Float, {}}}) {
+      auto Bad = M;
+      Bad.Functions[0].Result = Wrong;
+      Bad.Functions[0].Body.back().Value->ValueType = Wrong;
+      invalid(Bad, "Power");
+    }
+    for (unsigned Count : {0u, 1u, 3u}) {
+      auto Bad = M;
+      Bad.Functions[0].Body.back().Value->Args.resize(Count, variable("nct_left", T));
+      invalid(Bad, "operand count");
+    }
+    auto Bad = M;
+    Bad.Functions[0].Body.back().Value->BinaryOp = static_cast<BinaryOperator>(255);
+    invalid(Bad);
+    Bad = M;
+    Bad.Profile = "cpp-core-v1";
+    Bad.Target.Carriers.reset();
+    invalid(Bad);
+  }
+  for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(intType())}) {
+    auto M = module(true);
+    M.Functions[0].Result = Wrong;
+    M.Functions[0].Params.push_back({"nct_input", Wrong, InputLoc});
+    auto Root = pointerExpr(ExprKind::Binary, Wrong, {variable("nct_input", Wrong), variable("nct_input", Wrong)});
+    Root.BinaryOp = BinaryOperator::Power;
+    M.Functions[0].Body.back() = ret(Root);
+    invalid(M, "Power");
+    if (Wrong.Kind != TypeKind::Pointer) {
+      M.Profile = "cpp-core-v1";
+      M.Target.Carriers.reset();
+      invalid(M, "Power");
+    }
+  }
+}
+
+TEST(TranslateIR, CoreV2PowerWireRetainsProfileAndPayloadBoundary) {
+  for (const std::string T : {"float", "double"}) {
+    const std::string Loc = R"json("loc":{"file":"input.cpp","line":2,"column":9})json";
+    const std::string Arg = "{\"kind\":\"literal\",\"type\":\"" + T +
+        "\",\"bits\":\"" + (T == "float" ? "40800000" : "4010000000000000") + "\"," + Loc + "}";
+    auto Wire = [&](bool V2, const std::string &Args, const std::string &Extra = "") {
+      auto JSON = wireModule(V2);
+      replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + T + "\"");
+      const auto Begin = JSON.find("{\"kind\": \"literal\"");
+      const auto End = JSON.find("}}", Begin) + 2;
+      JSON.replace(Begin, End - Begin, "{\"kind\":\"binary\",\"type\":\"" + T +
+          "\",\"operator\":\"pow\",\"args\":[" + Args + "]," + Loc + Extra + "}");
+      return JSON;
+    };
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(Wire(true, Arg + "," + Arg), M, D));
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    EXPECT_EQ(M.Functions[0].Body.back().Value->BinaryOp, BinaryOperator::Power);
+    for (const auto &Args : {std::string(), Arg, Arg + "," + Arg + "," + Arg}) {
+      ASSERT_TRUE(parseModule(Wire(true, Args), M, D));
+      invalid(M, "operand count");
+    }
+    EXPECT_FALSE(parseModule(Wire(false, Arg + "," + Arg), M, D));
+    for (const auto *Extra : {",\"name\":\"pow\"", ",\"value\":\"4\"", ",\"bits\":\"40800000\""})
+      EXPECT_FALSE(parseModule(Wire(true, Arg + "," + Arg, Extra), M, D));
+  }
+}

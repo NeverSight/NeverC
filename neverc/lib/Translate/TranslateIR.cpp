@@ -362,12 +362,15 @@ public:
           {"<", BinaryOperator::Less},
           {"<=", BinaryOperator::LessEqual},
           {">", BinaryOperator::Greater},
-          {">=", BinaryOperator::GreaterEqual}};
+          {">=", BinaryOperator::GreaterEqual},
+          {"pow", BinaryOperator::Power}};
       auto I = std::find_if(std::begin(Operators), std::end(Operators),
                             [&](const auto &P) { return Op == P.first; });
       if (I == std::end(Operators))
         return error("Unknown binary operator.");
       E.BinaryOp = I->second;
+      if (E.BinaryOp == BinaryOperator::Power && (!CoreV2 || O.size() != 5))
+        return error("Power requires core v2 and only kind, type, operator, args and location.");
     } else if (K == "cast")
       E.Kind = ExprKind::Cast;
     else if (K == "bit_cast")
@@ -1040,6 +1043,9 @@ class Verifier {
       if (!Arity(2))
         return false;
       const Type &A = E.Args[0].ValueType, &B = E.Args[1].ValueType;
+      if (E.BinaryOp == BinaryOperator::Power)
+        return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() && A == E.ValueType && B == E.ValueType) ||
+               error(E.Loc, "Power requires matching core v2 float/double operands and result type.");
       if (A.Kind == TypeKind::NullPtr || B.Kind == TypeKind::NullPtr)
         return ((E.BinaryOp == BinaryOperator::Equal ||
                  E.BinaryOp == BinaryOperator::NotEqual) &&

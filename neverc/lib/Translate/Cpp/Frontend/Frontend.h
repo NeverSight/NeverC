@@ -1326,7 +1326,7 @@ struct CanonicalRandomCall {
 std::optional<CanonicalRandomCall> approvedCanonicalRandomCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-enum class ScalarRealDistributionKind { Exponential, ExtremeValue, Normal, Lognormal };
+enum class ScalarRealDistributionKind { Exponential, ExtremeValue, Normal, Lognormal, Weibull };
 struct ScalarRealDistributionRecord {
   const clang::CXXRecordDecl *Record, *Distribution, *Parameter;
   clang::QualType ResultType;

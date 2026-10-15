@@ -148,6 +148,8 @@ const char *binarySpelling(BinaryOperator Op) {
     return ">";
   case BinaryOperator::GreaterEqual:
     return ">=";
+  case BinaryOperator::Power:
+    return "";
   }
   return "";
 }
@@ -352,6 +354,9 @@ class Emitter {
                                                     : Text;
     }
     case ExprKind::Binary: {
+      if (E.BinaryOp == BinaryOperator::Power)
+        return std::string(E.ValueType.Kind == TypeKind::Float ? "__builtin_powf(" : "__builtin_pow(") +
+               expression(E.Args[0]) + ", " + expression(E.Args[1]) + ")";
       if ((E.BinaryOp == BinaryOperator::Add ||
            E.BinaryOp == BinaryOperator::Subtract) &&
           (E.Args[0].ValueType.Kind == TypeKind::Pointer ||

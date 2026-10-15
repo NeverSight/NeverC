@@ -16363,3 +16363,35 @@ parameter replacement, reset, explicit sample parameters and exact next-generato
 states. Deterministic rejection and cache fixtures execute at O0/O2; malformed exp
 protocol cases, source guards, eight-target checks and sanitizer execution of
 unchanged managed NC remain required verification.
+
+
+### Weibull distributions and floating power
+
+`weibull_distribution<float/double>` and `param_type` admit default, shape/scale, parameter, copy/move construction, assignment, a/b, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. Shape and scale default to one, bounds are positive zero/infinity, and sampling preserves b*pow(exponential(1),1/a), RealType arithmetic and generator consumption. The selected Weibull/exponential bodies, defaults and log/pow declarations are authenticated. Core v2 pow requires two matching float/double arguments and emits the C23 builtin; hosted CRT/libm imports remain backend-owned. Native values use small math tolerances while parameters and generator states remain exact. Long double and stream serialization remain separate work.
+
+The exact outer layout owns one parameter record with shape a and scale b,
+both RealType and defaulting to one. Construction, copy/move, assignment,
+parameter operations and comparisons share the checked scalar distribution API.
+No cache or runtime ownership is introduced. Reset has the pinned empty body.
+Sampling follows the selected Weibull call through the temporary default-rate
+exponential distribution, preserving canonical draw count, logarithm order and
+the floating exponent 1/a. It computes the power in RealType and multiplies by b.
+Positive/negative zero and infinity behavior retain the selected SDK math rules.
+
+The typed binary pow expression is limited to core v2, exactly
+kind/type/operator/args/loc, two arguments, and matching float or double
+operand/result types. Integer, pointer, mixed-type, extra-payload and core-v1
+forms are rejected. NC emits __builtin_powf or __builtin_pow under the existing
+strict-FP contract. The C23 backend owns LLVM lowering and hosted CRT/libm
+imports. No SDK/catalog revision or math-mapping fingerprint changes.
+
+The selected SDK proof admits power only at the Weibull or exact exponential
+math wrapper call site, and logarithm only through the selected exponential
+sampling body and logarithm wrapper. Source replacements of either distribution
+layer, parameter defaults, getters, bounds and explicit math redeclarations stay
+checked; ordinary core pow remains restricted. Independent native O0/O2 references
+cover float/double source, minstd and mt19937_64 engines, three positive shape/
+scale pairs, 288 initial samples and exact next-generator states. Edge fixtures
+cover signed zero, infinity, canonical draw counts and argument effects. Both
+formal distribution suites, power protocol tests, affected regressions, eight
+targets and unchanged managed-source sanitizer runs remain required checks.

@@ -23,7 +23,7 @@ bool randomWeightFunction(QualType T, const ASTContext &Context) {
          randomWeightScalar(P->getParamType(0).getNonReferenceType(), Context);
 }
 
-enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog, Normal, Lognormal };
+enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog, Normal, Lognormal, Weibull };
 
 // The lowering implements the pinned libc++ loops. Follow the declarations
 // actually selected by those loops, including instantiated traits and helper
@@ -122,7 +122,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
                            : ID == Builtin::BIexp || ID == Builtin::BI__builtin_exp;
     const bool Polar = Math == SelectedRandomMath::Normal || Math == SelectedRandomMath::Lognormal;
     if (!(Root && (Math == SelectedRandomMath::LinearSquareRoot || Polar)) &&
-        !(Log && (Math == SelectedRandomMath::ExponentialLog || Math == SelectedRandomMath::ExtremeValueLog || Polar)) &&
+        !(Log && (Math == SelectedRandomMath::ExponentialLog || Math == SelectedRandomMath::ExtremeValueLog || Math == SelectedRandomMath::Weibull || Polar)) &&
         !(Exp && Math == SelectedRandomMath::Lognormal))
       return false;
     const llvm::StringRef Helper = Root ? "__math/roots.h" : Exp ? "__math/exponential_functions.h" : "__math/logarithms.h";
@@ -141,6 +141,33 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       if (!File || S.owns(SM, D->getLocation()) ||
           !((File->Root == "resource" && File->Path == "include/math.h") ||
             (File->Root == "libcxx" && File->Path == Helper)))
+        return false;
+    }
+    return true;
+  }
+  bool selectedPowerMath(const FunctionDecl *F, SourceLocation Location) const {
+    if (Math != SelectedRandomMath::Weibull || !F || F->isVariadic() || F->getNumParams() != 2 ||
+        (!DistanceType->isSpecificBuiltinType(BuiltinType::Float) &&
+         !DistanceType->isSpecificBuiltinType(BuiltinType::Double)) ||
+        !Context.hasSameType(F->getReturnType(), DistanceType) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(), DistanceType) ||
+        !Context.hasSameType(F->getParamDecl(1)->getType(), DistanceType))
+      return false;
+    const bool Float = DistanceType->isSpecificBuiltinType(BuiltinType::Float);
+    const auto ID = F->getBuiltinID();
+    if (Float ? ID != Builtin::BIpowf && ID != Builtin::BI__builtin_powf
+              : ID != Builtin::BIpow && ID != Builtin::BI__builtin_pow)
+      return false;
+    const auto CallFile = S.sdkFile(SM, Location);
+    if (!CallFile || CallFile->Root != "libcxx" ||
+        (CallFile->Path != "__random/weibull_distribution.h" && CallFile->Path != "__math/exponential_functions.h"))
+      return false;
+    for (const auto *D : F->redecls()) {
+      if (D->isImplicit() && D->getLocation().isInvalid()) continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || S.owns(SM, D->getLocation()) ||
+          !((File->Root == "resource" && File->Path == "include/math.h") ||
+            (File->Root == "libcxx" && File->Path == "__math/exponential_functions.h")))
         return false;
     }
     return true;
@@ -486,7 +513,7 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *F = dyn_cast<FunctionDecl>(E->getDecl());
     if (countLeadingZeros(F) || engineIntrinsic(F, E->getExprLoc()) ||
-        selectedUnaryMath(F, E->getExprLoc()) || selectedLimitInfinity(F, E->getExprLoc()) || allocatorHook(F))
+        selectedUnaryMath(F, E->getExprLoc()) || selectedPowerMath(F, E->getExprLoc()) || selectedLimitInfinity(F, E->getExprLoc()) || allocatorHook(F))
       return true;
     // Calls retain source methods with their actual selected receiver below.
     if (F && S.owns(SM, F->getLocation()))
@@ -531,6 +558,10 @@ public:
     if (selectedUnaryMath(F, E->getExprLoc()))
       return E->getNumArgs() == 1 && Context.hasSameType(E->getType(), DistanceType) &&
              Context.hasSameType(E->getArg(0)->getType(), DistanceType);
+    if (selectedPowerMath(F, E->getExprLoc()))
+      return E->getNumArgs() == 2 && Context.hasSameType(E->getType(), DistanceType) &&
+             Context.hasSameType(E->getArg(0)->getType(), DistanceType) &&
+             Context.hasSameType(E->getArg(1)->getType(), DistanceType);
     if (selectedLimitInfinity(F, E->getExprLoc()))
       return !E->getNumArgs() && Context.hasSameType(E->getType(), DistanceType);
     if (allocatorHook(F))
@@ -1566,12 +1597,13 @@ approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
   const auto *Template = Outer ? Outer->getSpecializedTemplate() : nullptr;
   const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
   const bool Extreme = Template && Template->getName() == "extreme_value_distribution";
+  const bool Weibull = Template && Template->getName() == "weibull_distribution";
   const bool Normal = Template && Template->getName() == "normal_distribution";
   const bool Lognormal = Template && Template->getName() == "lognormal_distribution";
   if (!S.coreV2() || !R || !Outer || !Template || !File || File->Root != "libcxx" ||
-      File->Path != (Lognormal ? "__random/lognormal_distribution.h" : Normal ? "__random/normal_distribution.h"
+      File->Path != (Weibull ? "__random/weibull_distribution.h" : Lognormal ? "__random/lognormal_distribution.h" : Normal ? "__random/normal_distribution.h"
                     : Extreme ? "__random/extreme_value_distribution.h" : "__random/exponential_distribution.h") ||
-      (!Extreme && !Normal && !Lognormal && Template->getName() != "exponential_distribution") ||
+      (!Extreme && !Normal && !Lognormal && !Weibull && Template->getName() != "exponential_distribution") ||
       Outer->getSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !R->isStandardLayout() || !R->isTriviallyCopyable() ||
@@ -1598,9 +1630,9 @@ approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
     if (!approvedStandardSDKDeclaration(S, SM, F) || F->isBitField() || F->isMutable() ||
         !Context.hasSameType(F->getType(), Result))
       return std::nullopt;
-    if (F->getName() == (Lognormal ? "__m_" : Normal ? "__mean_" : Extreme ? "__a_" : "__lambda_") && !First)
+    if (F->getName() == (Lognormal ? "__m_" : Normal ? "__mean_" : Extreme || Weibull ? "__a_" : "__lambda_") && !First)
       First = F;
-    else if ((Extreme || Normal || Lognormal) && F->getName() == (Lognormal ? "__s_" : Normal ? "__stddev_" : "__b_") && !Second)
+    else if ((Extreme || Normal || Lognormal || Weibull) && F->getName() == (Lognormal ? "__s_" : Normal ? "__stddev_" : "__b_") && !Second)
       Second = F;
     else
       return std::nullopt;
@@ -1636,10 +1668,10 @@ approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
       return std::nullopt;
   }
   RandomSelection Selection(S, SM, Context, Outer, Result, Result);
-  if (!Storage || !First || ((Extreme || Normal) && !Second) || (Normal && (!Cached || !CacheValid)) || !Selection.retain(Outer) || !Selection.retain(Parameter))
+  if (!Storage || !First || ((Extreme || Normal || Weibull) && !Second) || (Normal && (!Cached || !CacheValid)) || !Selection.retain(Outer) || !Selection.retain(Parameter))
     return std::nullopt;
   return ScalarRealDistributionRecord{R, Outer, Parameter, Result, Storage, First, Second, Cached, CacheValid,
-      Normal ? ScalarRealDistributionKind::Normal : Extreme ? ScalarRealDistributionKind::ExtremeValue : ScalarRealDistributionKind::Exponential};
+      Normal ? ScalarRealDistributionKind::Normal : Weibull ? ScalarRealDistributionKind::Weibull : Extreme ? ScalarRealDistributionKind::ExtremeValue : ScalarRealDistributionKind::Exponential};
 }
 
 std::optional<ScalarRealDistributionConstruction>
@@ -1682,7 +1714,7 @@ bool approvedScalarRealDistributionDefaultArgument(const State &S, const SourceM
   Expr::EvalResult Value;
   RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
   return Default->getExpr()->EvaluateAsRValue(Value, Context) && Value.Val.isFloat() &&
-      Value.Val.getFloat().isExactlyValue(Info->Second && !Index ? 0.0 : 1.0) && Selection.retain(C) &&
+      Value.Val.getFloat().isExactlyValue(Info->Second && !Index && Info->Kind != ScalarRealDistributionKind::Weibull ? 0.0 : 1.0) && Selection.retain(C) &&
       Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr()));
 }
 
@@ -1703,7 +1735,8 @@ approvedScalarRealDistributionRandomCall(const State &S, const SourceManager &SM
     return std::nullopt;
   return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Info->ResultType,
       UtilityOperation::ScalarRealDistributionGenerate, Operator ? 1u : 0u, Context,
-      Info->Kind == ScalarRealDistributionKind::Lognormal ? SelectedRandomMath::Lognormal
+      Info->Kind == ScalarRealDistributionKind::Weibull ? SelectedRandomMath::Weibull
+      : Info->Kind == ScalarRealDistributionKind::Lognormal ? SelectedRandomMath::Lognormal
       : Info->Kind == ScalarRealDistributionKind::Normal ? SelectedRandomMath::Normal
       : Info->Kind == ScalarRealDistributionKind::ExtremeValue ? SelectedRandomMath::ExtremeValueLog
                                                               : SelectedRandomMath::ExponentialLog);
