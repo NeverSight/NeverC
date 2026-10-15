@@ -16297,3 +16297,35 @@ to allow platform libm variation and cancellation near zero. Parameter bits,
 next-generator states, infinite bounds/endpoints and source argument evaluation
 remain exact. Source SDK replacements, unsupported argument bodies, ordinary
 core math calls and long double remain rejected.
+
+
+### Normal distributions and cached polar sampling
+
+`normal_distribution<float/double>` and `param_type` admit default, mean/deviation, parameter, copy and move construction, assignment, mean/stddev, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. Parameters default to zero/one; the distribution also retains its cached spare value and hot flag. Polar sampling preserves paired canonical draws, rejection order and the selected log/sqrt factor; a hot sample consumes no generator draws. Copy/move/assignment preserve cache state, parameter replacement keeps it, reset clears it, and cold-cache copying/comparison never reads the unused spare. Selected SDK layout, defaults, state operations, math bodies and explicit redeclarations are authenticated; source replacements and ordinary core math calls remain restricted. Independent native sampling comparisons allow small platform-math tolerances while cache/parameter behavior and generator states remain exact. Long double and stream serialization remain separate work.
+
+The checked normal layout adds one RealType spare and one bool hot flag to the
+outer parameter field. Its parameter owns mean/stddev RealType fields. Default,
+mean/deviation and parameter construction mark the cache cold. Copy/move and
+assignment preserve parameter/hot state and copy the spare only when valid;
+comparisons likewise read the spare only after matching parameters and hot flags.
+The setter copies parameters without dropping a hot spare; reset only clears
+the hot flag. The admitted source allocation and other distribution boundaries
+remain separate.
+
+A hot sample clears the flag and uses the spare without advancing the generator.
+A fresh sample retains the SDK uniform-real range [-1,1], two canonical draws
+per attempt and rejection for squared radius greater than one or equal to zero.
+The accepted factor is sqrt(-2*log(radius)/radius), computed in RealType without
+contraction. The v component is cached and the u component is transformed by
+the supplied deviation and mean. Logarithm and square-root proof capabilities
+are limited to the selected normal body and exact authenticated math wrappers.
+The existing typed IR and C23 backend own these operations and hosted math;
+no SDK/catalog revision or new primitive is added.
+
+Independent native O0/O2 references cover source, minstd and mt19937_64 engines,
+96 initial sample values and hot-state copy/move/assignment, parameter changes,
+reset and next-generator states. A deterministic source engine separately forces
+radius-too-large and zero-radius rejections, cached zero values, reset and
+parameter changes without extra draws, cold/hot equality and unequal parameter
+fields. Source replacements of defaults, getters, sampling, reset, setters,
+log/sqrt/infinity declarations and unsupported argument bodies remain rejected.
