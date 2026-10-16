@@ -16633,3 +16633,24 @@ next-engine state, conditional cache copies, effects and deterministic modal,
 lower, upper and tail paths. Formal compiler tests, exact wire validation,
 cross-target object/frontend checks, unchanged managed-NC ASan/UBSan and all
 locale checks remain publication requirements.
+
+## Unordered-map metadata from `<unordered_map>`
+
+The exact angled pinned C++17 header admits metadata for
+`std::unordered_map<int, int>` with its SDK default hash, equality and allocator.
+The primary templates, their forward declarations, specializations and argument
+records must all originate from the catalogued SDK files. User redeclarations
+and explicit or partial specializations retain source checks even when a query
+only observes type identity.
+
+Aliases, public `key_type`, `mapped_type`, `value_type`, `size_type`,
+`difference_type`, `hasher`, `key_equal`, `allocator_type`, pointer and reference
+members, and type identity queries require no runtime map record. `sizeof` and
+`alignof`, including array layout queries, use the selected target's SDK layout.
+The consumed header closure has 271 catalogued files on the eight core targets.
+No SDK payload or catalog changes are required.
+
+Runtime map objects, map methods and runtime pointers to map records remain
+outside this metadata admission. Custom hash/equality/allocator policies and
+other key or mapped types are rejected. Erased source types and expressions,
+volatile forms and source redeclarations retain their independent diagnostics.

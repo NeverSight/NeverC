@@ -360517,3 +360517,56 @@ int main(){
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2UnorderedMapMetadataRetainsTargetLayout) {
+  const auto Source = fixture("unordered-map-metadata.cpp");
+  const auto Output = tmpFile("unordered-map-metadata.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-map-metadata" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapMetadataRetainsSDKAndSourceChecks) {
+  const struct { const char *Name, *Source, *Profile, *Code; } Cases[] = {
+      {"key-width", R"cpp(using M=std::unordered_map<long,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"value-width", R"cpp(using M=std::unordered_map<int,long>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"floating-key", R"cpp(using M=std::unordered_map<double,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"long-double-value", R"cpp(using M=std::unordered_map<int,long double>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"custom-hash", R"cpp(struct H{unsigned operator()(int x)const{return unsigned(x);}};using M=std::unordered_map<int,int,H>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"custom-equality", R"cpp(struct E{bool operator()(int a,int b)const{return a==b;}};using M=std::unordered_map<int,int,std::hash<int>,E>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"map-friend-redeclaration", R"cpp(namespace std{inline namespace __1{struct Source{template<class K,class V,class H,class E,class A>friend class unordered_map;};}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"map-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class K,class V,class H,class E,class A>class unordered_map;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"map-explicit-forward", R"cpp(namespace std{inline namespace __1{template<>class unordered_map<int,int>;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"map-explicit-definition", R"cpp(namespace std{inline namespace __1{template<>class unordered_map<int,int>{public:int data;};}}using M=std::unordered_map<int,int>;static_assert(sizeof(M)==sizeof(int));)cpp", "cpp-core-v2", "TR0201"},
+      {"map-partial-definition", R"cpp(namespace std{inline namespace __1{template<class H,class E,class A>class unordered_map<int,int,H,E,A>{public:int data;};}}using M=std::unordered_map<int,int>;static_assert(sizeof(M)==sizeof(int));)cpp", "cpp-core-v2", "TR0201"},
+      {"hash-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class T>struct hash;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"hash-explicit-redeclaration", R"cpp(namespace std{inline namespace __1{template<>struct hash<int>;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"equality-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class T>struct equal_to;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"equality-explicit-definition", R"cpp(namespace std{inline namespace __1{template<>struct equal_to<int>{bool operator()(int a,int b)const{return a==b;}};}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"allocator-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class T>class allocator;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"pair-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class A,class B>struct pair;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"runtime-map", R"cpp(int f(){std::unordered_map<int,int> values;return int(values.size());})cpp", "cpp-core-v2", "TR0203"},
+      {"runtime-map-pointer", R"cpp(using M=std::unordered_map<int,int>;bool f(M*p){return p==nullptr;})cpp", "cpp-core-v2", "TR0201"},
+      {"runtime-map-size", R"cpp(using M=std::unordered_map<int,int>;int f(M const&r){return int(r.size());})cpp", "cpp-core-v2", "TR0203"},
+      {"volatile-map", R"cpp(using M=volatile std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"erased-source-type", R"cpp(template<class T>using I=int;using M=std::unordered_map<I<long double>,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"erased-source-expression", R"cpp(using M=std::unordered_map<decltype((sizeof(long double),0)),int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
+      {"core-v1", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v1", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unordered-map-metadata-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unordered-map-metadata-guard-") + Case.Name + ".nc");
+    writeFile(Source, "#include <unordered_map>\n" + std::string(Case.Source));
+    expectCode(translate(Source, {"--profile", Case.Profile, "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}

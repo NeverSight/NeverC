@@ -1,0 +1,32 @@
+#include <unordered_map>
+using Map=std::unordered_map<int,int>;
+using Same=std::unordered_map<int,int,std::hash<int>,std::equal_to<int>,std::allocator<std::pair<const int,int>>>;
+using Key=Map::key_type;
+using Value=Map::mapped_type;
+using Pair=Map::value_type;
+using Size=Map::size_type;
+using Difference=Map::difference_type;
+using Hash=Map::hasher;
+using Equal=Map::key_equal;
+using Allocator=Map::allocator_type;
+using Pointer=Map::pointer;
+using ConstPointer=Map::const_pointer;
+using Reference=Map::reference;
+using ConstReference=Map::const_reference;
+using MapPointer=Map*;
+using MapReference=Map&;
+using MapArray=Map[2];
+static_assert(__is_same(Map,Same));
+static_assert(__is_same(Key,int)&&__is_same(Value,int));
+static_assert(__is_same(Pair,std::pair<const int,int>));
+static_assert(__is_same(Hash,std::hash<int>)&&__is_same(Equal,std::equal_to<int>));
+static_assert(__is_same(Allocator,std::allocator<Pair>));
+static_assert(__is_same(Pointer,Pair*)&&__is_same(ConstPointer,const Pair*));
+static_assert(__is_same(Reference,Pair&)&&__is_same(ConstReference,const Pair&));
+static_assert(__is_class(Map)&&__is_class(const Map));
+static_assert(sizeof(Size)==sizeof(void*)&&sizeof(Difference)==sizeof(void*));
+static_assert(sizeof(Map)==sizeof(void*)*5);
+static_assert(alignof(Map)==alignof(void*));
+static_assert(sizeof(MapArray)==2*sizeof(Map));
+static_assert(__is_same(MapPointer,Map*)&&__is_same(MapReference,Map&));
+int main(){return int(sizeof(Map)/sizeof(void*))-5;}

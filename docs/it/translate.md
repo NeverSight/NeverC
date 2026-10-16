@@ -878,3 +878,7 @@ Usare `--check` al posto di un’opzione di output per eseguire la stessa analis
 Output e file accessori non vengono sovrascritti. `--out-dir` richiede una nuova directory con una directory padre esistente; `-o` richiede un nuovo percorso `.nc`. Il manifesto registra requisiti del target, hash di input e output e procedura di compilazione; la mappa sorgente collega le righe generate alle posizioni originali.
 
 I risultati CI, le verifiche di esecuzione e installazione e i test saltati sono documentati per piattaforma. macOS arm64 nativo e macOS x86_64 tramite Rosetta restano ambienti di convalida distinti. L’ambito dichiarato non comprende il supporto completo di C++/STL, né eccezioni, template senza restrizioni o il comportamento di stringhe e vettori oltre i sottoinsiemi documentati. Consultare la [matrice di supporto](../../utils/translate-frontends/docs/support-matrix.md), il [protocollo e le regole di ripristino](../../utils/translate-frontends/docs/protocol.md) e il [progetto di esempio](../../tests/neverc/Inputs/translate/cpp/project).
+
+## Metadati delle mappe non ordinate
+
+L’header C++17 fissato `<unordered_map>` ammette i metadati di `std::unordered_map<int, int>` con i tipi esatti dell’SDK `std::hash<int>`, `std::equal_to<int>` e `std::allocator<std::pair<const int, int>>`. Alias, identità dei tipi, tipi membro pubblici, `sizeof` e `alignof` conservano il layout della destinazione scelta. Oggetti e operazioni delle mappe in esecuzione, criteri personalizzati, altri tipi di elementi e ridichiarazioni dell’utente restano rifiutati.

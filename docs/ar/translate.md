@@ -882,3 +882,7 @@ neverc translate --from cpp --profile cpp-math-v1 \
 تُسجَّل نتائج CI وفحوص التنفيذ والتثبيت والاختبارات المتخطاة لكل منصة على حدة. يظل macOS arm64 الأصلي وmacOS x86_64 عبر Rosetta بيئتين مختلفتين للتحقق. لا يشمل النطاق المعلن دعم C++/STL الكامل أو الاستثناءات أو القوالب غير المقيدة أو سلوك السلاسل والمتجهات خارج المجموعات الفرعية الموضحة في التوثيق. راجع [مصفوفة الدعم](../../utils/translate-frontends/docs/support-matrix.md)، و[البروتوكول وقواعد الاستعادة](../../utils/translate-frontends/docs/protocol.md)، و[مثال المشروع](../../tests/neverc/Inputs/translate/cpp/project).
 
 </div>
+
+## بيانات الخرائط غير المرتبة الوصفية
+
+تدعم ترويسة C++17 المثبتة `<unordered_map>` البيانات الوصفية للنوع `std::unordered_map<int, int>` مع أنواع SDK الدقيقة `std::hash<int>` و`std::equal_to<int>` و`std::allocator<std::pair<const int, int>>`. تحتفظ الأسماء البديلة وهوية الأنواع وأنواع الأعضاء العامة و`sizeof` و`alignof` بتخطيط الهدف المحدد. تظل كائنات الخرائط وعمليات وقت التشغيل والسياسات المخصصة وأنواع العناصر الأخرى وإعادة التصريح من المستخدم مرفوضة.

@@ -2367,7 +2367,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
   for (unsigned Depth = 0; Depth <= 64 && !T.isNull(); ++Depth) {
     const auto *Raw = T.getCanonicalType().getTypePtr();
     if (const auto *Record = Raw->getAsCXXRecordDecl())
-      return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value();
+      return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
+             approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2521,6 +2522,13 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       const auto *Iterator =
           dyn_cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
       checkQueryType(Iterator->getTemplateArgs().get(0).getAsType(), L,
+                     AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUnorderedMapMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      const auto *Map = cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      checkQueryType(Map->getTemplateArgs().get(0).getAsType(), L,
+                     AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+      checkQueryType(Map->getTemplateArgs().get(1).getAsType(), L,
                      AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                approvedMemoryTemplateMetadata(S, Sources,
@@ -14581,6 +14589,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     } else if (Name == "array") {
       DefinitionPath = "array";
       ForwardPath = "__fwd/array.h";
+    } else if (Name == "unordered_map") {
+      DefinitionPath = "unordered_map";
+      ForwardPath = "__hash_table";
     }
     if (DefinitionPath.empty() ||
         !sdkUsingNamespace(Template->getDeclContext(), L))
@@ -15837,6 +15848,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  RecordType && NeedLayout) {
         const auto *Declaration =
             dyn_cast_or_null<CXXRecordDecl>(RecordType->getDecl());
+        if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
+          const auto *Map = cast<ClassTemplateSpecializationDecl>(Declaration);
+          Self(Self, Map->getTemplateArgs().get(0).getAsType(), true, Depth + 1);
+          Self(Self, Map->getTemplateArgs().get(1).getAsType(), true, Depth + 1);
+          return;
+        }
         if (approvedMemoryTemplateMetadata(A.S, A.Sources, Declaration)) {
           const auto *Metadata =
               cast<ClassTemplateSpecializationDecl>(Declaration);
@@ -23862,6 +23879,9 @@ public:
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
+                     A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context))
+          A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (!approvedCstddefTypeQuery(A.S, A.Sources, Query,
                                            A.Context))
           A.type(Operand, Query->getExprLoc());
@@ -25180,7 +25200,8 @@ public:
             Name != "numeric" && Name != "random" && Name != "initializer_list" &&
             Name != "optional" && Name != "memory" && Name != "new" &&
             Name != "functional" && Name != "ratio" && Name != "cstring" &&
-            Name != "string_view" && Name != "string" && Name != "vector"))) {
+            Name != "string_view" && Name != "string" && Name != "vector" &&
+            Name != "unordered_map"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
@@ -25190,7 +25211,7 @@ public:
                "#include <memory>, #include <new> and #include <functional> "
                "and #include <ratio>, #include <cstring> and "
                "#include <string_view>, #include <string> and #include "
-               "<vector> entries are "
+               "<vector> and <unordered_map> entries are "
                "admitted in cpp-core-v2.");
         return;
       }

@@ -86317,4 +86317,66 @@ std::string Adapter::mapping(const CallExpr *Call) {
                               {"column", Sources.getSpellingColumnNumber(L)}}}};
   return ID;
 }
+bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2()) return false;
+  auto StandardNamespace = [](const DeclContext *Context) {
+    for (unsigned Depth = 0; Context && Depth < 8; ++Depth) {
+      const auto *Namespace = dyn_cast<NamespaceDecl>(Context);
+      if (!Namespace) return false;
+      if (Namespace->isStdNamespace()) return true;
+      if (!Namespace->isInline()) return false;
+      Context = Namespace->getParent();
+    }
+    return false;
+  };
+  auto Specialization = [&](const CXXRecordDecl *Input, llvm::StringRef Name,
+                            llvm::StringRef Header, llvm::StringRef Forward,
+                            unsigned Count) -> const ClassTemplateSpecializationDecl * {
+    const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+    const auto *Template = R ? R->getSpecializedTemplate() : nullptr;
+    if (!Template || Template->getName() != Name || !StandardNamespace(Template->getDeclContext()) ||
+        R->isInvalidDecl() || R->getTemplateArgs().size() != Count) return nullptr;
+    auto Pinned = [&](const Decl *D) {
+      const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+      return File && File->Root == "libcxx" &&
+             (File->Path == Header || (!Forward.empty() && File->Path == Forward) ||
+              (Name == "allocator" && File->Path == "__memory/allocator_traits.h") ||
+              (Name == "hash" && (File->Path == "__memory/unique_ptr.h" ||
+                                  File->Path == "__memory/shared_ptr.h"))) &&
+             approvedStandardSDKDeclaration(S, SM, D);
+    };
+    for (const auto *D : Template->redecls()) {
+      if (!Pinned(D)) return nullptr;
+      for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+        if (!Pinned(Pattern)) return nullptr;
+    }
+    for (const auto *D : R->redecls()) if (!Pinned(D)) return nullptr;
+    if (R->getDefinition() && !Pinned(R->getDefinition())) return nullptr;
+    for (const auto &Argument : R->getTemplateArgs().asArray())
+      if (Argument.getKind() != TemplateArgument::Type) return nullptr;
+    return R;
+  };
+  const auto *Map = Specialization(Record, "unordered_map", "unordered_map",
+                                    "__hash_table", 5);
+  if (!Map || (Map->getSpecializationKind() != TSK_ImplicitInstantiation &&
+               Map->getSpecializationKind() != TSK_Undeclared)) return false;
+  const auto &Arguments = Map->getTemplateArgs();
+  if (!Context.hasSameType(Arguments[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+  const auto *Hash = Specialization(Arguments[2].getAsType()->getAsCXXRecordDecl(),
+      "hash", "__functional/hash.h", "__fwd/functional.h", 1);
+  const auto *Equal = Specialization(Arguments[3].getAsType()->getAsCXXRecordDecl(),
+      "equal_to", "__functional/operations.h", "__fwd/functional.h", 1);
+  const auto *Allocator = Specialization(Arguments[4].getAsType()->getAsCXXRecordDecl(),
+      "allocator", "__memory/allocator.h", "__fwd/memory.h", 1);
+  if (!Hash || !Equal || !Allocator ||
+      !Context.hasSameType(Hash->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Equal->getTemplateArgs()[0].getAsType(), Context.IntTy)) return false;
+  const auto *Pair = Specialization(Allocator->getTemplateArgs()[0].getAsType()->getAsCXXRecordDecl(),
+      "pair", "__utility/pair.h", "__fwd/pair.h", 2);
+  return Pair && Context.hasSameType(Pair->getTemplateArgs()[0].getAsType(), Context.IntTy.withConst()) &&
+         Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
+}
+
 } // namespace nct

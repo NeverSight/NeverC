@@ -878,3 +878,7 @@ neverc translate --from cpp --profile cpp-math-v1 \
 输出及附属文件不会覆盖已有文件。`--out-dir` 要求父目录已存在且目标目录不存在；`-o` 要求新的 `.nc` 路径。清单记录目标要求、输入／输出哈希和编译方式，源码映射将生成行关联到原始位置。
 
 CI 结果、运行与安装验证以及测试跳过项按平台分别记录。原生 macOS arm64 与通过 Rosetta 运行的 macOS x86_64 仍是不同的验证环境。完整 C++／STL、异常、不受限制的模板，以及超出文档所述子集的字符串／vector 行为，均不在已公布的支持范围内。详见[支持矩阵](../../utils/translate-frontends/docs/support-matrix.md)、[协议与恢复规则](../../utils/translate-frontends/docs/protocol.md)及[项目示例](../../tests/neverc/Inputs/translate/cpp/project)。
+
+## 无序映射元数据
+
+固定的 C++17 `<unordered_map>` 头文件支持 `std::unordered_map<int, int>` 的元数据，要求使用精确的 SDK `std::hash<int>`、`std::equal_to<int>` 和 `std::allocator<std::pair<const int, int>>`。类型别名、类型同一性、公开成员类型、`sizeof` 和 `alignof` 保留所选目标的布局。映射对象与运行时操作、自定义策略、其他元素类型及用户重声明仍被拒绝。

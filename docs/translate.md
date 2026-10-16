@@ -1314,3 +1314,7 @@ Use `--check` instead of an output option to run the same analysis, emission, sy
 Outputs and sidecars are never overwritten. `--out-dir` requires a new directory with an existing parent; `-o` requires a new `.nc` path. The manifest records target requirements, input/output hashes and the compilation recipe; the source map relates generated lines to original locations.
 
 CI results, execution and installation checks, and skipped tests are recorded by platform. Native macOS arm64 and macOS x86_64 under Rosetta remain distinct validation environments. General C++/STL support, exceptions, unrestricted templates, and string/vector behavior beyond the documented subsets are outside the advertised contract. See the [support matrix](../utils/translate-frontends/docs/support-matrix.md), [protocol and recovery rules](../utils/translate-frontends/docs/protocol.md), and [project fixture](../tests/neverc/Inputs/translate/cpp/project).
+
+## Unordered-map metadata
+
+The pinned C++17 `<unordered_map>` header admits metadata for `std::unordered_map<int, int>` with the exact SDK `std::hash<int>`, `std::equal_to<int>` and `std::allocator<std::pair<const int, int>>`. Aliases, type identity, public type members, `sizeof` and `alignof` retain the selected target layout. Runtime map objects and operations, custom policies, other element types and source redeclarations remain rejected.

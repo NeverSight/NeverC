@@ -878,3 +878,7 @@ neverc translate --from cpp --profile cpp-math-v1 \
 출력과 부속 파일은 덮어쓰지 않습니다. `--out-dir`는 기존 부모 디렉터리 아래 새 디렉터리를, `-o`는 새 `.nc` 경로를 요구합니다. 매니페스트는 대상 요구 사항, 입출력 해시와 컴파일 절차를 기록하며 소스 맵은 생성된 행을 원래 위치에 연결합니다.
 
 CI 결과, 실행 및 설치 검증, 건너뛴 테스트는 플랫폼별로 기록합니다. 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64는 서로 다른 검증 환경으로 구분합니다. 전체 C++／STL, 예외, 제한 없는 템플릿, 문서화된 하위 집합을 벗어나는 문자열·vector 동작은 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project)를 참고하세요.
+
+## 순서 없는 맵 메타데이터
+
+고정된 C++17 `<unordered_map>` 헤더는 정확한 SDK `std::hash<int>`, `std::equal_to<int>`, `std::allocator<std::pair<const int, int>>`를 사용하는 `std::unordered_map<int, int>`의 메타데이터를 허용합니다. 별칭, 타입 동일성, 공개 멤버 타입, `sizeof`, `alignof`는 대상의 레이아웃을 유지합니다. 런타임 맵 객체와 연산, 사용자 정의 정책, 다른 요소 타입, 사용자 재선언은 계속 거부됩니다.

@@ -878,3 +878,7 @@ Mit `--check` anstelle einer Ausgabeoption durchlaufen Sie dieselbe Analyse, Erz
 Ausgaben und Begleitdateien werden nicht überschrieben. `--out-dir` verlangt ein neues Verzeichnis unter einem vorhandenen Elternverzeichnis; `-o` einen neuen `.nc`-Pfad. Das Manifest enthält Zielanforderungen, Ein- und Ausgabehashes sowie die Kompilierungsanleitung; die Quellzuordnung verbindet erzeugte Zeilen mit ursprünglichen Positionen.
 
 CI-Ergebnisse, Ausführungs- und Installationsprüfungen sowie übersprungene Tests werden nach Plattform dokumentiert. Natives macOS arm64 und macOS x86_64 unter Rosetta bleiben getrennte Prüfungsumgebungen. Der angegebene Umfang umfasst weder vollständiges C++/STL noch Ausnahmen, uneingeschränkte Templates oder String- und Vector-Verhalten über die dokumentierten Teilmengen hinaus. Siehe [Unterstützungsmatrix](../../utils/translate-frontends/docs/support-matrix.md), [Protokoll und Wiederherstellungsregeln](../../utils/translate-frontends/docs/protocol.md) und [Beispielprojekt](../../tests/neverc/Inputs/translate/cpp/project).
+
+## Metadaten ungeordneter Maps
+
+Der festgelegte C++17-Header `<unordered_map>` unterstützt Metadaten für `std::unordered_map<int, int>` mit den exakten SDK-Typen `std::hash<int>`, `std::equal_to<int>` und `std::allocator<std::pair<const int, int>>`. Aliase, Typidentität, öffentliche Mitgliedstypen, `sizeof` und `alignof` behalten das Layout des gewählten Ziels. Map-Objekte und Laufzeitoperationen, eigene Richtlinien, andere Elementtypen und Neudeklarationen im Quelltext bleiben abgewiesen.

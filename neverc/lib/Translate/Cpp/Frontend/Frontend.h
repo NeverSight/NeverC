@@ -2003,6 +2003,8 @@ bool approvedUtilityConstant(const State &S, const clang::SourceManager &SM,
                              clang::APValue &Value);
 bool approvedCstddefNull(const State &S, const clang::SourceManager &SM,
                         const clang::Expr *Expression);
+bool approvedUnorderedMapMetadataRecord(const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 bool approvedCstddefTypeQuery(const State &S,
                              const clang::SourceManager &SM,
                              const clang::UnaryExprOrTypeTraitExpr *Query,

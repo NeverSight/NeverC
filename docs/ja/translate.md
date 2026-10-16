@@ -878,3 +878,7 @@ neverc translate --from cpp --profile cpp-math-v1 \
 出力と付随ファイルは上書きされません。`--out-dir` には既存の親ディレクトリ内の新しいディレクトリ、`-o` には新しい `.nc` パスが必要です。マニフェストはターゲット要件、入出力ハッシュ、コンパイル手順を記録し、ソースマップは生成行を元の位置に対応付けます。
 
 CI の結果、実行・インストールの検証、スキップされたテストはプラットフォーム別に記録しています。ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 は異なる検証環境として区別しています。完全な C++／STL、例外、制限のないテンプレート、文書化されたサブセットを超える文字列／vector の動作は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。
+
+## 順序なしマップのメタデータ
+
+固定された C++17 の `<unordered_map>` ヘッダーは、SDK の正確な `std::hash<int>`、`std::equal_to<int>`、`std::allocator<std::pair<const int, int>>` を使う `std::unordered_map<int, int>` のメタデータを受け入れます。別名、型の同一性、公開メンバー型、`sizeof`、`alignof` は対象環境のレイアウトを保持します。実行時のマップオブジェクトと操作、独自ポリシー、その他の要素型、ユーザーによる再宣言は引き続き拒否されます。
