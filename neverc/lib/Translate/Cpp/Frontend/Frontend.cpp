@@ -15539,6 +15539,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityStringConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
+         unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
          unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
@@ -15896,7 +15897,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               Query != A.S.UnevaluatedMemoryCalls.end())
             Result = Query->second;
         if (Result.isNull() &&
-            (unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
+            (unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedMapListAssignment(A.S, A.Sources, Call, A.Context) ||
+             unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
              functionalObjectCallSource(A, Call)))
@@ -16691,7 +16694,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 operationTypeDependency(Source);
             }
         }
-        if (unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
+        if (unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedMapListAssignment(A.S, A.Sources, Call, A.Context) ||
+             unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
             unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
             ReferenceInvoke || UserInvoke ||
@@ -17113,6 +17118,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               *UniqueConstruction !=
                   UtilityUniquePtrConstruction::PointerDeleter));
         bool SDKConstruction =
+            unorderedResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
             (functionalObjectStorageSource(
@@ -19121,6 +19127,7 @@ public:
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, Construction, A.Context) ||
+         unorderedResultConstruction(A.S, A.Sources, Construction, A.Context) ||
          unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
@@ -23677,7 +23684,9 @@ public:
           Leaf = scalarDestruction(Call, A.Context);
         if (Leaf) {
           const bool Utility =
-              unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
+              unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedMapListAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
@@ -24301,7 +24310,9 @@ public:
           approvedFunctionalOperation(A.S, A.Sources, C, A.Context))
         return true;
       if (A.S.coreV2() &&
-          (unorderedMapMerge(A.S, A.Sources, C, A.Context) ||
+          (unorderedResultCall(A.S, A.Sources, C, A.Context) ||
+             unorderedMapListAssignment(A.S, A.Sources, C, A.Context) ||
+             unorderedMapMerge(A.S, A.Sources, C, A.Context) ||
            unorderedNodeCall(A.S, A.Sources, C, A.Context) ||
            unorderedNodeTransfer(A.S, A.Sources, C, A.Context))) {
         A.type(C->getType(), L, true);
@@ -24601,6 +24612,7 @@ public:
                    approvedUtilityStringConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
+         unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
          unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,

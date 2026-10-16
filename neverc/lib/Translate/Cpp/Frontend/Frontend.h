@@ -2569,5 +2569,26 @@ bool unorderedNodeBaseCast(const State &S, const clang::SourceManager &SM,
 std::optional<UtilityUnorderedMapRecord> unorderedMapMerge(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UnorderedMapListAssignment {
+  UtilityUnorderedMapRangeInsertion Input;
+  const clang::Expr *Object;
+  unsigned Offset;
+  bool RightBeforeLeft;
+};
+std::optional<UnorderedMapListAssignment> unorderedMapListAssignment(
+    const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UnorderedResultCall {
+  UnorderedNodeInsertResult Result;
+  const clang::Expr *Object;
+  unsigned Offset;
+  bool Swap, RightBeforeLeft;
+};
+std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
+    const State &S,const clang::SourceManager &SM,const clang::CXXConstructExpr *C,
+    const clang::ASTContext &Context);
+std::optional<UnorderedResultCall> unorderedResultCall(
+    const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 } // namespace nct
 #endif

@@ -1832,6 +1832,107 @@ class FunctionLowering {
     assign(unorderedHandleEngaged(Right,L),Engaged,L);
   }
 
+  void moveUnorderedResult(Expression Destination, Expression Source,
+      const UnorderedNodeInsertResult &Info, bool Assignment, SourceLocation L) {
+    // Memberwise SDK order: position and bool precede node destruction/move.
+    assign(fieldStorage(Destination, Info.Position, L), fieldStorage(Source, Info.Position, L), L);
+    assign(fieldStorage(Destination, Info.Inserted, L), fieldStorage(Source, Info.Inserted, L), L);
+    moveUnorderedHandle(fieldStorage(Destination, Info.Handle, L),
+        fieldStorage(Source, Info.Handle, L), Info.Node, Assignment, L);
+  }
+  Expression unorderedResultOperation(const CallExpr *Call, const UnorderedResultCall &Info) {
+    auto L = Call->getExprLoc();
+    const auto *Function = Call->getDirectCallee();
+    if (Info.Swap) {
+      auto Left = dereference(snapshot(argument(Call->getArg(0), Function->getParamDecl(0)->getType()), L), L);
+      auto Right = dereference(snapshot(argument(Call->getArg(1), Function->getParamDecl(1)->getType()), L), L);
+      for (const auto *Field : {Info.Result.Position, Info.Result.Inserted}) {
+        auto Saved = snapshot(fieldStorage(Left, Field, L), L);
+        assign(fieldStorage(Left, Field, L), fieldStorage(Right, Field, L), L);
+        assign(fieldStorage(Right, Field, L), Saved, L);
+      }
+      swapUnorderedHandles(fieldStorage(Left, Info.Result.Handle, L),
+          fieldStorage(Right, Info.Result.Handle, L), Info.Result.Node, L);
+      return {};
+    }
+    std::optional<Expression> Source;
+    if (Info.RightBeforeLeft)
+      Source = snapshot(argument(Call->getArg(Info.Offset), Function->getParamDecl(0)->getType()), L);
+    auto Receiver = snapshot(Info.Object->getType()->isPointerType() ? expression(Info.Object)
+        : address(lvalue(Info.Object), Info.Object->getType(), L), L);
+    if (!Source) Source = snapshot(argument(Call->getArg(Info.Offset), Function->getParamDecl(0)->getType()), L);
+    auto Place = dereference(Receiver, L);
+    moveUnorderedResult(Place, dereference(*Source, L), Info.Result, true, L);
+    return Place;
+  }
+
+  Expression unorderedMapListAssignmentOperation(const CallExpr *Call,
+      const UnorderedMapListAssignment &Info) {
+    auto L = Call->getExprLoc();
+    const auto &Map = Info.Input.Map;
+    std::optional<Expression> List;
+    if (Info.RightBeforeLeft) List = snapshot(expression(Call->getArg(Info.Offset)), L);
+    auto Receiver = snapshot(Info.Object->getType()->isPointerType() ? expression(Info.Object)
+        : address(lvalue(Info.Object), Info.Object->getType(), L), L);
+    if (!List) List = snapshot(expression(Call->getArg(Info.Offset)), L);
+    auto Place = dereference(Receiver, L);
+    const auto Size = type(A.Context.getSizeType(), L), NodePointer = type(Map.NodePointerType, L);
+    auto Current = snapshot(fieldStorage(*List, Info.Input.List->Begin, L), L);
+    auto Length = snapshot(fieldStorage(*List, Info.Input.List->Size, L), L);
+    auto End = snapshot(Current, L);
+    const auto Nonempty = labelName(), Captured = labelName();
+    branch(binary("!=", Length, quantity(0, Size, L), "bool", L), Nonempty, Captured, L);
+    label(Nonempty, L);
+    assign(End, binary("+", Current, Length, type(Info.Input.List->Begin->getType(), L), L), L);
+    jump(Captured, L);label(Captured, L);
+    auto Cache = snapshot(unorderedMapMember(Place, Map, "nct_unordered_first", L), L);
+    auto Buckets = snapshot(unorderedMapMember(Place, Map, "nct_unordered_buckets", L), L);
+    auto Count = snapshot(unorderedMapMember(Place, Map, "nct_unordered_bucket_count", L), L);
+    auto Index = snapshot(quantity(0, Size, L), L);
+    const auto ClearCheck = labelName(), Clear = labelName(), Detached = labelName();
+    jump(ClearCheck, L);label(ClearCheck, L);
+    branch(binary("<", Index, Count, "bool", L), Clear, Detached, L);
+    label(Clear, L);
+    assign(index(Buckets, Index, NodePointer, L), A.zero(Map.NodePointerType, L), L);
+    assign(Index, binary("+", Index, one(Size, L), Size, L), L);
+    jump(ClearCheck, L);label(Detached, L);
+    assign(unorderedMapMember(Place, Map, "nct_unordered_first", L), A.zero(Map.NodePointerType, L), L);
+    assign(unorderedMapMember(Place, Map, "nct_unordered_size", L), quantity(0, Size, L), L);
+    const auto CheckCache = labelName(), CheckInput = labelName(), Reuse = labelName();
+    const auto ReleaseCheck = labelName(), Release = labelName(), InsertCheck = labelName();
+    const auto Insert = labelName(), Done = labelName();
+    jump(CheckCache, L);label(CheckCache, L);
+    branch(cast(Cache, "bool", L), CheckInput, InsertCheck, L);
+    label(CheckInput, L);
+    branch(binary("!=", Current, End, "bool", L), Reuse, ReleaseCheck, L);
+    label(Reuse, L);
+    auto Element = dereference(Current, L);
+    assign(unorderedNodeKey(Cache, Map, L), fieldStorage(Element, Info.Input.Pair.First, L), L);
+    assign(unorderedNodeValue(Cache, Map, L), fieldStorage(Element, Info.Input.Pair.Second, L), L);
+    auto Next = snapshot(unorderedNodeNext(Cache, Map, L), L);
+    // Release rejected cache candidates. The pinned SDK drops their ownership
+    // here on duplicate keys; retaining that leak would violate final cleanup.
+    unorderedInsertNode(Place, Map, unorderedNodeKey(Cache, Map, L), std::nullopt, false, L, Cache);
+    assign(Cache, Next, L);
+    assign(Current, binary("+", Current, one(Size, L), type(Info.Input.List->Begin->getType(), L), L), L);
+    jump(CheckCache, L);
+    label(ReleaseCheck, L);
+    branch(cast(Cache, "bool", L), Release, InsertCheck, L);
+    label(Release, L);
+    auto Remaining = snapshot(unorderedNodeNext(Cache, Map, L), L);
+    unorderedHeapRelease(Cache, Map.NodeType, quantity(Map.NodeBytes, Size, L), L);
+    assign(Cache, Remaining, L);jump(ReleaseCheck, L);
+    label(InsertCheck, L);
+    branch(binary("!=", Current, End, "bool", L), Insert, Done, L);
+    label(Insert, L);
+    auto Value = dereference(Current, L);
+    unorderedInsertNode(Place, Map, fieldStorage(Value, Info.Input.Pair.First, L),
+        fieldStorage(Value, Info.Input.Pair.Second, L), false, L);
+    assign(Current, binary("+", Current, one(Size, L), type(Info.Input.List->Begin->getType(), L), L), L);
+    jump(InsertCheck, L);label(Done, L);
+    return Place;
+  }
+
   Expression unorderedMapMergeOperation(const CallExpr *Call,
       const UtilityUnorderedMapRecord &Info) {
     auto L = Call->getExprLoc();
@@ -26959,6 +27060,10 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (auto Info = unorderedResultCall(A.S, A.Sources, Call, A.Context))
+        return unorderedResultOperation(Call, *Info);
+      if (auto Info = unorderedMapListAssignment(A.S, A.Sources, Call, A.Context))
+        return unorderedMapListAssignmentOperation(Call, *Info);
       if (auto Info = unorderedMapMerge(A.S, A.Sources, Call, A.Context))
         return unorderedMapMergeOperation(Call, *Info);
       if (auto Info = unorderedNodeCall(A.S, A.Sources, Call, A.Context))
@@ -32309,6 +32414,11 @@ class FunctionLowering {
       }
       constructStringBytes(std::move(Place), T, &*String, std::move(Input),
                            std::move(Length), std::move(FillCharacter), L);
+      return;
+    }
+    if (auto Info = unorderedResultConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+      moveUnorderedResult(Place, dereference(Source, L), *Info, false, L);
       return;
     }
     if (auto Kind = unorderedNodeConstruction(A.S, A.Sources, C, A.Context)) {

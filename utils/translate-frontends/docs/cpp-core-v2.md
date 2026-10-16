@@ -17030,3 +17030,56 @@ predecessors and size. Destination allocation callbacks observe the source node
 before unlinking and can change its mapped value; transfer preserves that value
 and the element address. The SDK allocator/iterator validity preconditions
 apply. Empty-source and same-object merge do not change contents or allocate.
+
+## Unordered-map initializer-list assignment
+
+The exact default-policy int/int map accepts `operator=(initializer_list<value_type>)`
+and returns a reference to the same map. Assignment notation captures its list
+argument before the receiver; named `operator=` evaluates the receiver first.
+Both expressions run once. The authenticated list view and exact const-int/int
+pair fields retain backing-array lifetime and source-origin checks.
+
+The operation detaches existing nodes and clears bucket heads and size while
+retaining capacity and the maximum load factor. It assigns cached keys and
+mapped values, snapshots the next cache node, and inserts each candidate in list
+order. Unused cache nodes are destroyed. Once the cache is exhausted, remaining
+elements use the existing key-extractable insertion path. Empty lists clear
+elements without null-pointer arithmetic or bucket allocation. Duplicate keys
+retain their first list value in this pinned path.
+
+### Fixed SDK duplicate-cache ownership defect
+
+The pinned libc++20 `__hash_table::__assign_unique` ignores rejection of a
+duplicate cached node and loses that node's ownership. A retained native
+reproducer allocates five blocks and frees only four after container destruction.
+The translator releases each rejected cache candidate. This is an explicit
+deviation from the defective SDK path: it adds the missing delete callback and
+preserves final allocation balance. It does not modify the SDK or its catalog.
+The [C++17 unordered assignment requirements](https://timsong-cpp.github.io/cppwp/n4659/unord.req)
+define the assigned range; the [general container requirements](https://timsong-cpp.github.io/cppwp/n4659/container.requirements.general)
+require container destruction to deallocate obtained memory.
+
+Ordinary and operand-effect fixtures retain native O0/O2/sanitizer references.
+The duplicate-cache native fixture is recorded as a known failure in all three
+configurations, never as a passing equivalence test. The unchanged managed source
+must pass its value, unique-key and complete lifetime assertions at O0/O2 and
+under ASan/UBSan. Source-owned method/template substitutions, other policies and
+missing global heap definitions remain rejected.
+
+## Unordered-map insertion-result lifecycle
+
+The exact SDK insert_return_type admits its implicit defaulted move constructor
+and move assignment, plus direct std::swap of two such records. All fields retain
+their authenticated SDK origins and layout. The selected SDK operation and its
+reachable node constructor/assignment bodies must remain unmodified.
+
+The iterator and inserted members are assigned in declaration order before the
+node operation. Move assignment therefore updates those two fields before the
+old node's delete callback. The source node is read after that callback, retaining
+callback changes without rereading the already copied iterator/bool. Move
+construction empties only source node ownership; source iterator/bool retain
+their moved-from scalar values. Self move consumes the owned node, matching the
+pinned node operation. Swap retains node addresses and performs no allocation or
+deletion, including self swap. Copying remains unavailable because node handles
+are move-only. Source-owned SDK specializations and indirect SDK swap addresses
+are outside the admitted operations.

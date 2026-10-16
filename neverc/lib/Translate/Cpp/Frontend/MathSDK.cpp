@@ -87887,4 +87887,120 @@ std::optional<UtilityUnorderedMapRecord> unorderedMapMerge(
   return Source && Source->Record->getCanonicalDecl() == Map->Record->getCanonicalDecl() ? Map : std::nullopt;
 }
 
+std::optional<UnorderedMapListAssignment> unorderedMapListAssignment(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const Expr *Object = Member ? Member->getImplicitObjectArgument() :
+      Operator && Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+  const unsigned Offset = Operator ? 1 : 0;
+  if (!Method || !Object || !Method->isOverloadedOperator() ||
+      Method->getOverloadedOperator() != OO_Equal || Method->isConst() ||
+      !unorderedMapPublicMethod(S, SM, Method) || Method->getNumParams() != 1 ||
+      Call->getNumArgs() != Offset + 1 || !Call->isLValue() ||
+      !S.owns(SM, Reference ? Reference->getExprLoc() : Operator ? Operator->getOperatorLoc() : SourceLocation())) return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  if (!Map || !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
+  auto Receiver = Object->getType();if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
+  const auto Type = Context.getRecordType(Map->Record), Parameter = Method->getParamDecl(0)->getType();
+  if (Receiver.hasQualifiers() || !Context.hasSameType(Receiver, Type) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
+      !Context.hasSameType(Call->getType(), Type) ||
+      !Context.hasSameType(Call->getArg(Offset)->getType(), Parameter)) return std::nullopt;
+  const auto Input = unorderedMapRangeParameter(S, SM, *Map, Parameter, true, Context);
+  if (!Input || !Input->List || !Input->Pair.First->getType().isConstQualified()) return std::nullopt;
+  return UnorderedMapListAssignment{*Input,Object,Offset,bool(Operator)};
+}
+
+static bool unorderedResultMethod(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const UnorderedNodeInsertResult &Info,
+    const ASTContext &Context) {
+  if (!Method || !Method->isImplicit() || !Method->isDefaulted() ||
+      Method->isInvalidDecl() || Method->isDeleted() || Method->isStatic() ||
+      Method->isVirtual() || Method->getAccess() != AS_public || !Method->hasBody() ||
+      Method->getParent()->getCanonicalDecl() != Info.Record->getCanonicalDecl()) return false;
+  for (const auto *D : Method->redecls()) {
+    const auto File = S.sdkFile(SM, D->getLocation());
+    if (!File || File->Root != "libcxx" || File->Path != "__node_handle" ||
+        S.owns(SM, D->getLocation()) || !approvedStandardSDKDeclaration(S, SM, D)) return false;
+  }
+  return approvedUnorderedMapMethodSource(S, SM, Method, Info.Node.Map.Record, Context);
+}
+
+std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *C,
+    const ASTContext &Context) {
+  if (!C || C->isTypeDependent() || C->isValueDependent() || C->isInstantiationDependent() ||
+      C->getConstructionKind() != CXXConstructionKind::Complete || C->getNumArgs() != 1) return std::nullopt;
+  const auto Info = unorderedNodeInsertResult(S, SM, C->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Method = C->getConstructor();
+  if (!Info || !Method || !Method->isMoveConstructor() || Method->getNumParams() != 1 ||
+      !unorderedResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
+  const auto Type = Context.getRecordType(Info->Record);
+  return Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) &&
+      Context.hasSameType(C->getArg(0)->getType(), Type) ? Info : std::nullopt;
+}
+
+std::optional<UnorderedResultCall> unorderedResultCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function) return std::nullopt;
+  const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+  const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+  const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+  if (!Method) {
+    if (!Function->getIdentifier() || Function->getName() != "swap" ||
+        Function->getNumParams() != 2 || Call->getNumArgs() != 2 ||
+        !Function->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
+        Function->isVariadic() || !Function->hasBody() ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+    const auto Info = unorderedNodeInsertResult(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (!Info) return std::nullopt;
+    const auto Type = Context.getRecordType(Info->Record), Reference = Context.getLValueReferenceType(Type);
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    const auto *Primary = Function->getPrimaryTemplate();
+    if (!Arguments || Arguments->size() != 1 || !Primary ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
+        !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
+        !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference) ||
+        !Context.hasSameType(Call->getArg(1)->getType(), Type)) return std::nullopt;
+    auto Pinned = [&](const Decl *D) {
+      const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+      return File && File->Root == "libcxx" &&
+          (File->Path == "__utility/swap.h" || File->Path == "__type_traits/is_swappable.h") &&
+          !S.owns(SM, D->getLocation()) && approvedStandardSDKDeclaration(S, SM, D);
+    };
+    const auto Definition = S.sdkFile(SM, Function->getDefinition()->getLocation());
+    if (!Definition || Definition->Root != "libcxx" || Definition->Path != "__utility/swap.h") return std::nullopt;
+    for (const auto *D : Function->redecls()) if (!Pinned(D)) return std::nullopt;
+    for (const auto *D : Primary->redecls()) {
+      if (!Pinned(D)) return std::nullopt;
+      for (const auto *Pattern : D->getTemplatedDecl()->redecls()) if (!Pinned(Pattern)) return std::nullopt;
+    }
+    if (!approvedUnorderedMapMethodSource(S, SM, Function, Info->Node.Map.Record, Context)) return std::nullopt;
+    return UnorderedResultCall{*Info,Call->getArg(0),1,true,false};
+  }
+  const unsigned Offset = Operator ? 1 : 0;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const Expr *Object = Member ? Member->getImplicitObjectArgument() :
+      Operator && Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+  if (!Object || !Method->isMoveAssignmentOperator() || Method->getNumParams() != 1 ||
+      Call->getNumArgs() != Offset + 1 || !Call->isLValue() ||
+      !S.owns(SM, Reference ? Reference->getExprLoc() : Operator ? Operator->getOperatorLoc() : SourceLocation())) return std::nullopt;
+  auto Receiver = Object->getType();if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
+  const auto Info = unorderedNodeInsertResult(S, SM, Receiver->getAsCXXRecordDecl(), Context);
+  if (!Info || Receiver.hasQualifiers() || !unorderedResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
+  const auto Type = Context.getRecordType(Info->Record);
+  if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) ||
+      !Context.hasSameType(Call->getArg(Offset)->getType(), Type) || !Context.hasSameType(Call->getType(), Type)) return std::nullopt;
+  return UnorderedResultCall{*Info,Object,Offset,false,bool(Operator)};
+}
+
 } // namespace nct

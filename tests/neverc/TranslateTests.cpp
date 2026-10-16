@@ -360612,7 +360612,7 @@ TEST_F(TranslateTest, CoreV2UnorderedMapDefaultRuntimeRetainsSourceBoundaries) {
       {"source-copy-with-allocator", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>::unordered_map(const unordered_map&,const allocator_type&){}}}int f(){M a;M b(a,M::allocator_type{});return int(b.size());})cpp"},
       {"source-move-with-allocator", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>::unordered_map(unordered_map&&,const allocator_type&){}}}int f(){M a;M b(static_cast<M&&>(a),M::allocator_type{});return int(b.size());})cpp"},
       {"source-initializer-constructor", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>::unordered_map(initializer_list<value_type>){}}}int f(){M m{{1,2}};return int(m.size());})cpp"},
-      {"initializer-list-assignment", R"cpp(void f(M&a){a={{1,2}};})cpp"},
+      {"source-list-assignment", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>&unordered_map<int,int>::operator=(initializer_list<value_type>){return *this;}}}void f(M&a){a={{1,2}};})cpp"},
       {"at", R"cpp(int f(M&m){return m.at(1);})cpp"},
       {"volatile", R"cpp(int f(){volatile M m;return sizeof(m);})cpp"},
       {"source-empty-specialization", R"cpp(namespace std{inline namespace __1{template<>bool unordered_map<int,int>::empty()const noexcept{return true;}}}bool f(const M&m){return m.empty();})cpp"},
@@ -363722,6 +363722,338 @@ void f(M&a,M&b){a.merge(b);}
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("unordered-map-merge-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("unordered-map-merge-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", Case.Profile, "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapListAssignmentPreservesReuseAndCapacity) {
+  const auto Source = fixture("unordered-map-initializer-assignment.cpp");
+  const auto Output = tmpFile("unordered-map-initializer-assignment.cpp.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unordered-map-initializer-assignment.cpp") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapListAssignmentPreservesEvaluationAndDeleteEffects) {
+  const auto Source = fixture("unordered-map-initializer-assignment-effects.cpp");
+  const auto Output = tmpFile("unordered-map-initializer-assignment-effects.cpp.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unordered-map-initializer-assignment-effects.cpp") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapListAssignmentDestroysRejectedReusedNodes) {
+  const auto Source = fixture("unordered-map-initializer-assignment-duplicate-cleanup.cpp");
+  const auto Output = tmpFile("unordered-map-initializer-assignment-duplicate-cleanup.cpp.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unordered-map-initializer-assignment-duplicate-cleanup.cpp") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapListAssignmentRetainsSDKAndHeapBoundaries) {
+  const struct { const char *Name, *Source, *Profile; } Cases[] = {
+      {"source-map-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class K,class V,class H,class P,class A>class unordered_map;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-node-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T,class V>struct __hash_node;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-table-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T,class H,class E,class A>class __hash_table;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-pair-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T,class U>struct pair;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-allocator-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T>class allocator;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-hash-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T>struct hash;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-equal-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T>struct equal_to;}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-list-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{template<class T>class initializer_list;}void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"source-list-assignment", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<>unordered_map<int,int>&unordered_map<int,int>::operator=(initializer_list<value_type>){return *this;}}}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"custom-policy", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+struct H{unsigned operator()(int n)const{return unsigned(n);}};void f(std::unordered_map<int,int,H>&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"long-mapped", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+void f(std::unordered_map<int,long>&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"missing-new", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"missing-delete", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v2"},
+      {"core-v1", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+void f(M&m){m={{1,2}};}
+)cpp", "cpp-core-v1"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unordered-map-list-assignment-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unordered-map-list-assignment-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", Case.Profile, "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapInsertResultsPreserveMovesSwapAndMemberOrder) {
+  const auto Source = fixture("unordered-map-node-result-lifecycle.cpp");
+  const auto Output = tmpFile("unordered-map-node-result-lifecycle.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unordered-map-node-result-lifecycle") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapInsertResultsRetainSDKAndOperationBoundaries) {
+  const struct { const char *Name, *Source, *Profile; } Cases[] = {
+      {"source-result-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class I,class T>struct __insert_return_type;}}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"source-node-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T,class V>struct __hash_node;}}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"source-handle-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T,class A,template<class,class>class S>class __basic_node_handle;}}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"source-specifics-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T,class D>struct __map_node_handle_specifics;}}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"source-allocator-primary", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<class T>class allocator;}}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"source-node-move-constructor", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+template<>N::__basic_node_handle(N&&)noexcept{}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"source-node-move-assignment", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+template<>N&N::operator=(N&&){return *this;}
+void f(R&a,R&b){a=static_cast<R&&>(b);}
+)cpp", "cpp-core-v2"},
+      {"source-std-swap", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<>void swap<R>(R&,R&){}}}
+void f(R&a,R&b){std::swap(a,b);}
+)cpp", "cpp-core-v2"},
+      {"swap-function-address", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+void f(R&a,R&b){void(*p)(R&,R&)=&std::swap<R>;p(a,b);}
+)cpp", "cpp-core-v2"},
+      {"long-mapped", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+using Other=std::unordered_map<int,long>::insert_return_type;void f(Other&r){Other moved(static_cast<Other&&>(r));}
+)cpp", "cpp-core-v2"},
+      {"core-v1", R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;using N=M::node_type;using R=M::insert_return_type;
+unsigned long long storage[128];
+void*operator new(std::size_t){return storage;}
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+void f(R&r){R moved(static_cast<R&&>(r));}
+)cpp", "cpp-core-v1"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unordered-map-result-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unordered-map-result-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     auto Result = translate(Source, {"--profile", Case.Profile, "-o", Output.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
