@@ -883,4 +883,4 @@ CI 결과, 실행 및 설치 검증, 건너뛴 테스트는 플랫폼별로 기�
 
 고정된 C++17 `<unordered_map>` 헤더는 정확한 SDK `std::hash<int>`, `std::equal_to<int>`, `std::allocator<std::pair<const int, int>>`를 사용하는 `std::unordered_map<int, int>`의 메타데이터를 허용합니다. 별칭, 타입 동일성, 공개 멤버 타입, `sizeof`, `alignof`는 대상의 레이아웃을 유지합니다.
 
-SDK 기본 정책을 사용하는 고정 `std::unordered_map<int, int>`는 기본 생성, 소멸, 런타임 포인터와 참조, `size`, `empty`, `bucket_count`, `load_factor`, 두 `max_load_factor` 오버로드도 지원합니다. 범위, 멤버, 배열 정리는 검증된 SDK 저장소 배치와 소스에 정의된 전역 해제 훅을 사용합니다. 복사, 이동, 삽입, 검색, 반복, 재해시, 다른 요소 타입, 사용자 정의 정책과 소스의 SDK 재선언은 계속 거부됩니다.
+SDK 기본 정책을 사용하는 고정 `std::unordered_map<int, int>`는 기본 생성, 소멸, 런타임 포인터와 참조, 크기와 부하 조회, 부하 상한 설정에 더해 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 및 멤버 `swap`을 지원합니다. 재해시와 교환은 삽입된 노드의 주소를 유지합니다. 할당과 해제는 소스에 정의된 전역 훅을 사용하며 입력은 SDK 사전 조건과 할당이 성공하고 오버플로하지 않는 범위를 충족해야 합니다. 복사, 이동, `insert`/`emplace`, `at`, `find`, 반복자, 다른 요소 타입, 사용자 정의 정책과 소스의 SDK 재선언은 계속 거부됩니다.

@@ -883,4 +883,4 @@ CI 结果、运行与安装验证以及测试跳过项按平台分别记录。�
 
 固定的 C++17 `<unordered_map>` 头文件支持 `std::unordered_map<int, int>` 的元数据，要求使用精确的 SDK `std::hash<int>`、`std::equal_to<int>` 和 `std::allocator<std::pair<const int, int>>`。类型别名、类型同一性、公开成员类型、`sizeof` 和 `alignof` 保留所选目标的布局。
 
-使用 SDK 默认策略的固定 `std::unordered_map<int, int>` 还支持默认构造、析构、运行时指针与引用、`size`、`empty`、`bucket_count`、`load_factor` 及两种 `max_load_factor` 重载。作用域、成员和数组清理使用经过认证的 SDK 存储布局与源码定义的全局释放钩子。复制、移动、插入、查找、迭代、重新散列、其他元素类型、自定义策略及源码对 SDK 的重声明仍被拒绝。
+使用 SDK 默认策略的固定 `std::unordered_map<int, int>` 支持默认构造、析构、运行时指针与引用、大小及负载观察器、负载上限设置，以及 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 和成员 `swap`。重新散列与交换保留已插入节点的地址。分配与释放使用源码定义的全局钩子；输入须满足 SDK 前置条件及分配成功且不溢出的范围。复制、移动、`insert`/`emplace`、`at`、`find`、迭代器、其他元素类型、自定义策略及源码对 SDK 的重声明仍被拒绝。

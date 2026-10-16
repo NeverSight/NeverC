@@ -107,6 +107,22 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
     if (!F || !F->isImplicit())
       return false;
+    if (F->getBuiltinID() == Builtin::BI__builtin_ceilf) {
+      const auto Site = S.sdkFile(SM, Location);
+      if (!SDKGenerator || Generator->getName() != "unordered_map" || !Site ||
+          Site->Root != "libcxx" || Site->Path != "__math/rounding_functions.h" ||
+          F->isVariadic() || F->getNumParams() != 1 ||
+          !Context.hasSameType(F->getReturnType(), Context.FloatTy) ||
+          !Context.hasSameType(F->getParamDecl(0)->getType(), Context.FloatTy)) return false;
+      for (const auto *D : F->redecls()) {
+        if (!D->isImplicit()) return false;
+        if (D->getLocation().isInvalid()) continue;
+        const auto File = S.sdkFile(SM, D->getLocation());
+        if (!File || File->Root != "libcxx" || File->Path != "__math/rounding_functions.h" ||
+            S.owns(SM, D->getLocation())) return false;
+      }
+      return true;
+    }
     if (F->getBuiltinID() == Builtin::BI__builtin_launder) {
       const auto Site = S.sdkFile(SM, Location);
       if (!SDKGenerator || Generator->getName() != "unordered_map" || !Site ||
@@ -548,7 +564,9 @@ public:
     }
     if (const auto *Builtin = dyn_cast<BuiltinTemplateDecl>(D))
       return Builtin->isImplicit() && Builtin->getLocation().isInvalid() &&
-             Builtin->getBuiltinTemplateKind() == BTK__builtin_common_type;
+             (Builtin->getBuiltinTemplateKind() == BTK__builtin_common_type ||
+              (SDKGenerator && Generator->getName() == "unordered_map" &&
+               Builtin->getBuiltinTemplateKind() == BTK__type_pack_element));
     if (++Nodes > 4096 || !origin(D))
       return false;
     if (const auto *T = dyn_cast<TemplateDecl>(D)) {
@@ -732,6 +750,9 @@ public:
              E->getNumArgs() >= 1 && E->getNumArgs() <= 2;
     if (engineIntrinsic(F, E->getExprLoc())) {
       switch (F->getBuiltinID()) {
+      case Builtin::BI__builtin_ceilf:
+        return E->getNumArgs() == 1 && Context.hasSameType(E->getType(), Context.FloatTy) &&
+               Context.hasSameType(E->getArg(0)->getType(), Context.FloatTy);
       case Builtin::BI__builtin_launder:
         return E->getNumArgs() == 1 && E->getType()->isPointerType() &&
                Context.hasSameType(E->getType(), E->getArg(0)->getType());

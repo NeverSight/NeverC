@@ -883,4 +883,4 @@ CI の結果、実行・インストールの検証、スキップされたテ�
 
 固定された C++17 の `<unordered_map>` ヘッダーは、SDK の正確な `std::hash<int>`、`std::equal_to<int>`、`std::allocator<std::pair<const int, int>>` を使う `std::unordered_map<int, int>` のメタデータを受け入れます。別名、型の同一性、公開メンバー型、`sizeof`、`alignof` は対象環境のレイアウトを保持します。
 
-SDK の既定ポリシーを使う固定の `std::unordered_map<int, int>` は、既定構築、破棄、実行時のポインターと参照、`size`、`empty`、`bucket_count`、`load_factor`、両方の `max_load_factor` オーバーロードも受け入れます。スコープ、メンバー、配列の破棄には検証済み SDK ストレージ配置とソース定義のグローバル解放フックを使います。コピー、移動、挿入、検索、反復、再ハッシュ、他の要素型、独自ポリシー、ソースからの SDK 再宣言は引き続き拒否されます。
+SDK の既定ポリシーを使う固定の `std::unordered_map<int, int>` は、既定構築、破棄、実行時のポインターと参照、サイズと負荷の取得、負荷上限の設定に加えて `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` とメンバー `swap` を受け入れます。再ハッシュと交換でも挿入済みノードのアドレスを保持します。確保と解放はソース定義のグローバルフックを使い、入力は SDK の事前条件と、確保が成功してオーバーフローしない範囲を満たす必要があります。コピー、移動、`insert`/`emplace`、`at`、`find`、イテレーター、他の要素型、独自ポリシー、ソースからの SDK 再宣言は引き続き拒否されます。

@@ -16671,8 +16671,8 @@ source-defined global deallocation operators. Internal node size, alignment,
 payload offsets and embedded destructor chains are authenticated separately.
 Missing source deallocation definitions retain TR0203, including empty maps.
 
-This stage does not admit copy/move construction, assignment, insertion, lookup,
-iteration, clear, reserve or rehash. Every public SDK method and selected private
+Copy/move construction, assignment, `insert`/`emplace`, `at`, `find` and
+iterators remain outside this admission. Every public SDK method and selected private
 helper retains its body and redeclaration checks. Source specializations of
 methods, constructors, destructors or private storage cannot borrow admission.
 No SDK/catalog, source frontend or floating-point policy changes are required.
@@ -16680,3 +16680,39 @@ No SDK/catalog, source frontend or floating-point policy changes are required.
 Pointer/reference-only translation units complete the exact authenticated map
 and private node layouts when needed. This completion does not instantiate SDK
 method bodies; source and specialization checks run again after completion.
+
+## Unordered-map modification and capacity
+
+The exact default-policy int/int specialization also admits both `operator[]`
+overloads (including named calls), `count`, key `erase`, `clear`, `rehash`,
+`reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` and member
+`swap`. Pointer/reference-only queries and swapping require no heap hook bodies.
+Operations which can allocate or release storage require admitted source-owned
+global new/delete definitions, even when one execution takes an empty branch.
+Inputs retain SDK preconditions and the successful, nonoverflowing allocation
+domain; throwing allocation/overflow paths are not translated.
+
+Nodes retain the pinned next/hash/int-pair layout and stable heap addresses.
+Rehash follows the SDK prime/power-of-two policy, float arithmetic and bucket
+predecessor relinking. Clear releases nodes while keeping buckets and the load
+limit. Swap repairs sentinel bucket heads and preserves node references, including
+self swap. Key erase updates predecessor heads and detaches the node before its
+selected deletion. Capacity limits use the selected target's SDK node size.
+
+Receiver and argument evaluation retain source order. Subscript hashes the key
+before node allocation and constructs its int key/value after the selected new
+hook; load-limit changes by that hook affect subsequent growth. Bucket storage
+installs a replacement before deleting the old array. Destructor release keeps
+SDK-observable state through the selected source delete hooks.
+
+Selected SDK tuple packing and float ceil helpers retain exact source checks.
+The compiler-owned implicit pack-element template and map-only ceilf proof
+permission do not create new source intrinsics or wire operations. SDK/catalog,
+cpp-math-v1 fingerprints and strict floating-point policy remain unchanged.
+
+Native O0/O2 fixtures and ASan/UBSan cover insertion, duplicates, signed keys,
+exact bucket/allocation traces on native64, stable references, shrink/grow,
+load clamping, clear/refill, self/empty swaps and source hook effects. Managed
+O0/O2, source-boundary guards, unchanged generated-NC sanitizers and eight-target
+object/frontend checks are publication requirements. i686 checks are frontend
+semantics only; all test widths retain value and lifetime assertions.

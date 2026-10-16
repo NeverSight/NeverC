@@ -86616,18 +86616,20 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
-  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
-  const auto Info = Method ? approvedUtilityUnorderedMapRecord(
-      S, SM, Method->getParent(), Context) : std::nullopt;
-  const auto *Reference = Member ? dyn_cast<MemberExpr>(
-      Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
-  const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto Info = Method ? approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context) : std::nullopt;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Object = Member ? Member->getImplicitObjectArgument()
+      : Operator && Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+  const auto Site = Reference ? Reference->getExprLoc()
+      : Operator ? Operator->getOperatorLoc() : SourceLocation();
   const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
-  if (!Info || !Reference || !Object || !Prototype || !Method->getIdentifier() ||
-      !S.owns(SM, Reference->getExprLoc()) ||
-      !unorderedMapPublicMethod(S, SM, Method) ||
-      Call->getNumArgs() != Method->getNumParams() ||
-      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+  const unsigned Offset = Operator ? 1 : 0;
+  if (!Info || !Object || !Prototype || (!Reference && !Operator) ||
+      !S.owns(SM, Site) || !unorderedMapPublicMethod(S, SM, Method) ||
+      Call->getNumArgs() != Method->getNumParams() + Offset ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       !approvedUnorderedMapMethodSource(S, SM, Method, Info->Record, Context))
     return std::nullopt;
   auto ObjectType = Object->getType();
@@ -86636,24 +86638,62 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
       ObjectType.getAddressSpace() != LangAS::Default ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Info->Record)))
     return std::nullopt;
-  const auto Name = Method->getName();
+  const auto Name = Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+  const auto Result = Method->getReturnType();
+  const bool Mutable = !Method->isConst() && !ObjectType.isConstQualified();
+  const auto Size = Context.getSizeType();
   if (Method->isConst() && !Method->getNumParams() && Call->isPRValue() && Prototype->isNothrow()) {
-    if (Context.hasSameType(Method->getReturnType(), Context.getSizeType())) {
+    if (Context.hasSameType(Result, Size)) {
       if (Name == "size") return UtilityOperation::UnorderedMapSize;
       if (Name == "bucket_count") return UtilityOperation::UnorderedMapBucketCount;
+      if (Name == "max_size") return UtilityOperation::UnorderedMapMaxSize;
+      if (Name == "max_bucket_count") return UtilityOperation::UnorderedMapMaxBucketCount;
     }
-    if (Method->getReturnType()->isBooleanType() && Name == "empty")
-      return UtilityOperation::UnorderedMapEmpty;
-    if (Context.hasSameType(Method->getReturnType(), Context.FloatTy)) {
+    if (Result->isBooleanType() && Name == "empty") return UtilityOperation::UnorderedMapEmpty;
+    if (Context.hasSameType(Result, Context.FloatTy)) {
       if (Name == "load_factor") return UtilityOperation::UnorderedMapLoadFactor;
       if (Name == "max_load_factor") return UtilityOperation::UnorderedMapMaxLoadFactor;
     }
   }
-  if (!Method->isConst() && !ObjectType.isConstQualified() && Name == "max_load_factor" &&
-      Method->getNumParams() == 1 && Method->getReturnType()->isVoidType() &&
-      Context.hasSameType(Method->getParamDecl(0)->getType(), Context.FloatTy) &&
-      Context.hasSameType(Call->getArg(0)->getType(), Context.FloatTy))
-    return UtilityOperation::UnorderedMapSetMaxLoadFactor;
+  if (Mutable && Result->isVoidType()) {
+    if (Name == "clear" && !Method->getNumParams() && Prototype->isNothrow())
+      return UtilityOperation::UnorderedMapClear;
+    if (Method->getNumParams() == 1) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      if (Name == "max_load_factor" && Context.hasSameType(Parameter, Context.FloatTy) &&
+          Context.hasSameType(Call->getArg(Offset)->getType(), Context.FloatTy))
+        return UtilityOperation::UnorderedMapSetMaxLoadFactor;
+      if (Context.hasSameType(Parameter, Size) && Context.hasSameType(Call->getArg(Offset)->getType(), Size)) {
+        // The operation contract excludes the SDK's throwing allocation domain.
+        if (Name == "rehash") return UtilityOperation::UnorderedMapRehash;
+        if (Name == "reserve") return UtilityOperation::UnorderedMapReserve;
+      }
+      if (Name == "swap" && Prototype->isNothrow() &&
+          Context.hasSameType(Parameter, Context.getLValueReferenceType(Context.getRecordType(Info->Record))) &&
+          Context.hasSameType(Call->getArg(Offset)->getType(), Context.getRecordType(Info->Record)) &&
+          Call->getArg(Offset)->isLValue())
+        return UtilityOperation::UnorderedMapSwap;
+    }
+  }
+  if (Method->getNumParams() != 1) return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Method->isConst() && Name == "bucket_size" && Context.hasSameType(Result, Size) &&
+      Context.hasSameType(Parameter, Size) && Context.hasSameType(Call->getArg(Offset)->getType(), Size))
+    return UtilityOperation::UnorderedMapBucketSize;
+  const auto ConstKeyReference = Context.getLValueReferenceType(Context.getConstType(Context.IntTy));
+  const bool Key = Context.hasSameType(Parameter, ConstKeyReference) &&
+      Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Context.IntTy);
+  if (Key && Context.hasSameType(Result, Size)) {
+    if (Method->isConst() && Name == "count") return UtilityOperation::UnorderedMapCount;
+    if (Method->isConst() && Name == "bucket") return UtilityOperation::UnorderedMapBucket;
+    if (Mutable && Name == "erase") return UtilityOperation::UnorderedMapEraseKey;
+  }
+  if (Mutable && Method->isOverloadedOperator() && Method->getOverloadedOperator() == OO_Subscript &&
+      Context.hasSameType(Result, Context.getLValueReferenceType(Context.IntTy)) && Call->isLValue() &&
+      (Key || (Context.hasSameType(Parameter, Context.getRValueReferenceType(Context.IntTy)) &&
+               Context.hasSameType(Call->getArg(Offset)->getType(), Context.IntTy) &&
+               Call->getArg(Offset)->isXValue())))
+    return UtilityOperation::UnorderedMapSubscript;
   return std::nullopt;
 }
 
