@@ -211,6 +211,9 @@ struct State {
   std::map<const clang::CXXDefaultArgExpr *, const clang::CallExpr *>
       UnevaluatedMemoryDefaults;
   mutable std::map<std::string, std::string> PathCache;
+  // File-entry names and identities are stable within one isolated request.
+  mutable std::map<const void *, std::pair<llvm::sys::fs::UniqueID, SDKFile>>
+      SDKFileCache;
   std::vector<std::string> Arguments;
   json::Array Diagnostics;
   json::Object Module;
@@ -2060,6 +2063,8 @@ struct UtilityUnorderedMapIteratorRecord {
   UtilityUnorderedMapRecord Owner;
   clang::QualType ValueType;
   bool Const;
+  bool Local = false;
+  const clang::FieldDecl *Bucket = nullptr, *BucketCount = nullptr;
 };
 std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIteratorRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
@@ -2326,6 +2331,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMaps;
+  std::set<const clang::CXXRecordDecl *> RequiredUnorderedNodes;
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
@@ -2384,6 +2390,8 @@ public:
       clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityUnorderedMap(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth = 0);
+  bool requireUnorderedNode(const clang::CXXRecordDecl *Record,
+      clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
@@ -2506,5 +2514,60 @@ public:
            llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies = {},
            llvm::ArrayRef<FriendClassTemplateSource> FriendClasses = {});
 };
+struct UtilityUnorderedNodeRecord {
+  const clang::CXXRecordDecl *Record, *Specifics;
+  UtilityUnorderedMapRecord Map;
+  clang::QualType AllocatorType;
+  const clang::FieldDecl *Pointer, *Allocator;
+  uint64_t AllocatorValueOffset, EngagedOffset;
+};
+std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
+    const State &S,const clang::SourceManager &SM,const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context,
+    const std::function<bool(clang::QualType)> &Complete = {});
+enum class UnorderedNodeOperation { Empty, Boolean, Key, Mapped, Allocator, Swap, MoveAssign };
+struct UnorderedNodeCall {
+  UtilityUnorderedNodeRecord Info;
+  UnorderedNodeOperation Operation;
+  const clang::Expr *Object;
+  unsigned Offset;
+};
+std::optional<UnorderedNodeCall> unorderedNodeCall(
+    const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+enum class UnorderedNodeConstruction { Default, Move };
+std::optional<UnorderedNodeConstruction> unorderedNodeConstruction(
+    const State &S,const clang::SourceManager &SM,const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool unorderedNodeDestructor(const State &S,const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor,const clang::ASTContext &Context);
+struct UnorderedNodeInsertResult {
+  const clang::CXXRecordDecl *Record;
+  UtilityUnorderedMapIteratorRecord Iterator;
+  UtilityUnorderedNodeRecord Node;
+  const clang::FieldDecl *Position,*Inserted,*Handle;
+};
+std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
+    const State &S,const clang::SourceManager &SM,const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context,
+    const std::function<bool(clang::QualType)> &Complete = {});
+enum class UnorderedNodeTransferKind { ExtractKey,ExtractIterator,Insert,HintInsert };
+struct UnorderedNodeTransfer {
+  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedNodeRecord Node;
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+  std::optional<UnorderedNodeInsertResult> Result;
+  UnorderedNodeTransferKind Kind;
+  unsigned Offset;
+};
+std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
+    const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+bool unorderedNodeBaseCast(const State &S, const clang::SourceManager &SM,
+    const clang::CastExpr *Cast, const clang::ASTContext &Context);
+std::optional<UtilityUnorderedMapRecord> unorderedMapMerge(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 } // namespace nct
 #endif

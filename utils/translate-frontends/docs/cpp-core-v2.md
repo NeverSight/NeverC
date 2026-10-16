@@ -16718,7 +16718,7 @@ semantics only; all test widths retain value and lifetime assertions.
 
 ## Unordered-map iterator values
 
-The exact default-policy int/int map admits mutable and const iterator values,
+The exact default-policy int/int map admits mutable and const global iterator values,
 default/copy/move construction and assignment, and mutable-to-const conversion.
 The authenticated outer and inner SDK iterator specializations must have their
 single pointer at offset zero and retain the same authenticated map node type.
@@ -16908,8 +16908,7 @@ the existing SDK `rehash` rounding: powers of two remain powers of two, other
 positive requests select the SDK prime count, and zero allocates no bucket array.
 Member/array lifetimes and factory returns compose with existing map behavior.
 The existing source heap definitions and successful allocation domain apply.
-Custom policies, other key/value types and node-handle/local-iterator behavior
-require separate support.
+Custom policies and other key/value types require separate support.
 
 ## Unordered-map range and initializer-list constructors
 
@@ -16955,3 +16954,79 @@ still apply wherever a program constructs or destroys a map.
 The selected public methods, their SDK body closures, exact result policy types
 and the map storage graph remain authenticated. Source getter/template
 replacements, custom policies and other key/value types remain rejected.
+
+## Unordered-map local iterator values
+
+The exact default int/int map admits `local_iterator` and `const_local_iterator`
+values with default/copy/move construction, assignment, mutable-to-const
+conversion, dereference/arrow, equality and prefix/postfix increment. Bucket
+`begin(n)`, `end(n)`, `cbegin(n)` and `cend(n)` return the matching local type.
+Arrays, source fields and returned initialized iterators retain all iterator
+state. Dereference preserves the const key and mutable/const mapped reference.
+
+Authenticated local storage contains a node pointer, bucket index and captured
+bucket count at offsets 0, one and two pointer widths. This is distinct from the
+existing one-word global iterator. Increment advances once then ends when the
+next node's constrained hash belongs to another bucket. Copies, conversions and
+postincrement preserve the bucket metadata; equality compares node identity.
+Default singular iterators compare through their null node. Increment and
+dereference require an appropriate live element.
+
+Receiver and bucket arguments are evaluated once before reading current bucket
+storage and count. Argument callbacks can rehash before the returned iterator is
+constructed. Valid bucket indices, live dereferenceable cursors and the SDK's
+rehash invalidation rules remain required. Source template/method substitutions
+are rejected. Range insertion and constructors also accept local iterators:
+they capture the first endpoint and its bucket metadata before later arguments,
+then advance within that captured bucket. A last-endpoint callback can change
+the original first iterator without changing its already copied argument.
+Empty ranges do not read a node; the existing source range/lifetime rules apply.
+
+## Unordered-map node ownership
+
+The default-policy `unordered_map<int,int>` admits its exact `node_type` and
+`insert_return_type`. Handles support default/empty and move construction, move
+assignment, destruction, explicit bool, empty, get_allocator, member/ADL swap,
+and key/mapped references. The SDK returns mutable int references even through
+a const handle. Key/mapped and allocator access require a nonempty handle.
+Extraction accepts a key or a live global const iterator; iterator conversion
+retains the existing mutable-to-const authentication. Extraction allocates and
+deletes no nodes and preserves element addresses.
+
+Ordinary node insertion returns position, inserted and an owning node. Success
+empties the incoming handle. A duplicate moves the incoming ownership to
+result.node, while hinted duplicate insertion leaves the incoming handle
+unchanged. Empty input returns end/false/empty. Successful insertion reuses the
+node and preserves pointers to its elements. Bucket growth follows the same
+authenticated default map path. Map and allocator validity preconditions apply.
+
+Two-word handle storage retains the node pointer and optional stateless
+allocator engagement. Insert results retain the global iterator, bool and owned
+handle at offsets zero, one and two pointer widths, with total size four pointer
+widths. Reference-only use completes only these authenticated SDK layouts.
+Direct structured bindings by value or reference authenticate the three actual
+public SDK fields. The hidden owning result retains its normal destruction;
+reference bindings alias the existing result. Source substitutions of the
+storage, methods, policy, result template or allocator are rejected.
+An owning handle retains the source unit's exact global delete boundary even if
+its runtime pointer is empty. Deletion callbacks observe the pointer before it
+is cleared; move assignment reads the source after deleting the old destination.
+The pinned SDK's self-move consumes its node and leaves an empty handle.
+
+## Unordered-map node merge
+
+The exact default int/int map accepts `merge(map&)` and `merge(map&&)` from the
+same admitted map type. The selected public SDK function template, policy and
+allocator arguments, reachable method bodies and both storage graphs retain
+their existing source checks. Custom source/destination policies and
+unordered_multimap sources require separate support.
+
+The loop follows source iteration order. It computes the destination hash and
+performs duplicate lookup and any required rehash before advancing the source
+cursor. A duplicate remains owned by the source. A successful transfer unlinks
+the source node, updates its hash and links it into the destination without
+allocating a replacement node. The shared unlink path repairs source bucket
+predecessors and size. Destination allocation callbacks observe the source node
+before unlinking and can change its mapped value; transfer preserves that value
+and the element address. The SDK allocator/iterator validity preconditions
+apply. Empty-source and same-object merge do not change contents or allocate.

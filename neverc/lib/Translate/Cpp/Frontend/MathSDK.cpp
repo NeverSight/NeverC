@@ -50,6 +50,7 @@ static std::string virtualRoot() {
 }
 
 bool State::configureSDK(const json::Object &SDK) {
+  SDKFileCache.clear();
   auto fail = [&](llvm::StringRef Why) {
     diagnose("TR0203", "C++ SDK", Why,
              "Use the approved embedded C++ SDK in a compatible NeverC build; "
@@ -123,6 +124,7 @@ bool State::configureSDK(const json::Object &SDK) {
 }
 
 llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> State::createFileSystem() {
+  SDKFileCache.clear();
   auto fail = [&]() -> llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> {
     diagnose("TR0203", "frontend filesystem",
              "Cannot create the isolated source and embedded SDK filesystem.",
@@ -173,12 +175,21 @@ std::optional<SDKFile> State::sdkFile(llvm::StringRef Path) const {
 }
 
 std::optional<SDKFile> State::sdkFile(FileEntryRef File) const {
+  const auto *Key = &File.getMapEntry();
+  if (const auto Cached = SDKFileCache.find(Key); Cached != SDKFileCache.end()) {
+    // Keep the filesystem identity proof even on a cached name lookup. No
+    // declaration, redeclaration, namespace or storage-graph approval is cached.
+    if (Cached->second.first != File.getUniqueID()) return std::nullopt;
+    return Cached->second.second;
+  }
   auto Path = virtualPath(File.getName());
   auto Identity = SDKVirtualFiles.find(Path);
   if (Identity == SDKVirtualFiles.end() ||
       Identity->second != File.getUniqueID())
     return std::nullopt;
-  return sdkFile(Path);
+  auto Result = sdkFile(Path);
+  if (Result) SDKFileCache.emplace(Key, std::make_pair(File.getUniqueID(), *Result));
+  return Result;
 }
 
 std::optional<SDKFile> State::sdkFile(const SourceManager &SM,
@@ -86607,6 +86618,9 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
   if (InnerType.hasQualifiers()) return std::nullopt;
   const auto *Inner = Specialization(InnerType->getAsCXXRecordDecl(),
       Const ? "__hash_const_iterator" : "__hash_iterator");
+  const bool Local = !Inner;
+  if (Local) Inner = Specialization(InnerType->getAsCXXRecordDecl(),
+      Const ? "__hash_const_local_iterator" : "__hash_local_iterator");
   if (!Inner) return std::nullopt;
   const auto Pointer = Inner->getTemplateArgs().get(0).getAsType();
   if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
@@ -86631,28 +86645,40 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
     if (!Type->getAsCXXRecordDecl()->getDefinition() &&
         (!Complete || !Complete(Type))) return std::nullopt;
   const auto *R = Outer->getDefinition(), *I = Inner->getDefinition();
-  auto Field = [&](const CXXRecordDecl *D, llvm::StringRef Name) -> const FieldDecl * {
+  const unsigned Words = Local ? 3 : 1;
+  auto Field = [&](const CXXRecordDecl *D, llvm::StringRef Name,
+                   unsigned Fields, unsigned WordIndex) -> const FieldDecl * {
     if (!D || !Pinned(D) || D->isUnion() || D->isDynamicClass() ||
-        D->getNumBases() || !D->isStandardLayout() || !D->isTriviallyCopyable() || !D->hasTrivialDestructor())
-      return nullptr;
+        D->getNumBases() || !D->isStandardLayout() || !D->isTriviallyCopyable() ||
+        !D->hasTrivialDestructor()) return nullptr;
     const FieldDecl *Result = nullptr;
+    unsigned Count = 0;
     for (const auto *F : D->fields()) {
-      if (Result || !Pinned(F) || F->isBitField() || F->isMutable() ||
-          F->hasAttrs() || F->getAccess() != AS_private || F->getName() != Name) return nullptr;
-      Result = F;
+      if (!Pinned(F) || F->isBitField() || F->isMutable() || F->hasAttrs() ||
+          F->getAccess() != AS_private) return nullptr;
+      if (F->getName() == Name) {
+        if (Result) return nullptr;
+        Result = F;
+      }
+      ++Count;
     }
     const auto &Layout = Context.getASTRecordLayout(D);
     const auto P = Context.getTypeSize(Context.VoidPtrTy);
-    if (!Result || Layout.getFieldOffset(Result->getFieldIndex()) ||
-        Context.getTypeSize(Context.getRecordType(D)) != P ||
+    if (!Result || Count != Fields || Layout.getFieldOffset(Result->getFieldIndex()) != WordIndex * P ||
+        Context.getTypeSize(Context.getRecordType(D)) != Words * P ||
         Context.getTypeAlign(Context.getRecordType(D)) != Context.getTypeAlign(Context.VoidPtrTy))
       return nullptr;
     return Result;
   };
-  const auto *Storage = Field(R, "__i_"), *Node = Field(I, "__node_");
+  const auto *Storage = Field(R, "__i_", 1, 0), *Node = Field(I, "__node_", Words, 0);
+  const auto *Bucket = Local ? Field(I, "__bucket_", 3, 1) : nullptr;
+  const auto *BucketCount = Local ? Field(I, "__bucket_count_", 3, 2) : nullptr;
   const auto *N = NodeType->getAsCXXRecordDecl();
   N = N ? N->getDefinition() : nullptr;
   if (!Storage || !Node || !Context.hasSameType(Storage->getType(), InnerType) ||
+      (Local && (!Bucket || !BucketCount ||
+          !Context.hasSameType(Bucket->getType(), Context.getSizeType()) ||
+          !Context.hasSameType(BucketCount->getType(), Context.getSizeType()))) ||
       !N || N->getNumBases() != 1 ||
       !Context.hasSameType(Node->getType(), Context.getPointerType(N->bases_begin()->getType())))
     return std::nullopt;
@@ -86662,7 +86688,7 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
   if (!A || A->getTemplateArgs().size() != 1 ||
       A->getTemplateArgs().get(0).getKind() != TemplateArgument::Type) return std::nullopt;
   return UtilityUnorderedMapIteratorRecord{R, I, Storage, Node, *Owner,
-      A->getTemplateArgs().get(0).getAsType(), Const};
+      A->getTemplateArgs().get(0).getAsType(), Const, Local, Bucket, BucketCount};
 }
 
 static bool unorderedMapPublicMethod(const State &S, const SourceManager &SM,
@@ -86913,7 +86939,7 @@ approvedUtilityUnorderedMapIteratorConstruction(const State &S, const SourceMana
   if (!Info->Const || Construction->getNumArgs() != 1) return std::nullopt;
   const auto Other = approvedUtilityUnorderedMapIteratorRecord(S, SM,
       Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
-  return Other && !Other->Const &&
+  return Other && !Other->Const && Other->Local == Info->Local &&
       Other->Owner.Record->getCanonicalDecl() == Info->Owner.Record->getCanonicalDecl() &&
       Context.hasSameType(C->getParamDecl(0)->getType(), Context.getRecordType(Other->Record))
       ? std::optional<UtilityUnorderedMapIteratorConstruction>(UtilityUnorderedMapIteratorConstruction::Converting)
@@ -87052,13 +87078,16 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
       Iterator && Call->isPRValue() && !Result.hasQualifiers() &&
       Iterator->Owner.Record->getCanonicalDecl() == Info->Record->getCanonicalDecl() &&
       Iterator->Const == Method->isConst()) {
-    if (!Method->getNumParams() && Prototype->isNothrow()) {
+    if ((!Iterator->Local && !Method->getNumParams() && Prototype->isNothrow()) ||
+        (Iterator->Local && Method->getNumParams() == 1 &&
+         Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getSizeType()) &&
+         Context.hasSameType(Call->getArg(Offset)->getType(), Context.getSizeType()))) {
       if (Name == "begin" || (Method->isConst() && Name == "cbegin"))
         return UtilityOperation::UnorderedMapBegin;
       if (Name == "end" || (Method->isConst() && Name == "cend"))
         return UtilityOperation::UnorderedMapEnd;
     }
-    if (Name == "find" && Method->getNumParams() == 1 &&
+    if (!Iterator->Local && Name == "find" && Method->getNumParams() == 1 &&
         Context.hasSameType(Method->getParamDecl(0)->getType(),
             Context.getLValueReferenceType(Context.getConstType(Context.IntTy))) &&
         Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Context.IntTy))
@@ -87533,6 +87562,329 @@ std::optional<FunctionalObjectRecord> approvedUtilityUnorderedMapPolicyQuery(
       !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
     return std::nullopt;
   return Result;
+}
+
+
+
+std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context, const std::function<bool(QualType)> &Complete) {
+  auto SDK = [&](const Decl *D, llvm::StringRef Header = {}) {
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return File && File->Root == "libcxx" && (Header.empty() || File->Path == Header) &&
+        !S.owns(SM, D->getLocation()) && approvedStandardSDKDeclaration(S, SM, D);
+  };
+  auto PinnedRecord = [&](const CXXRecordDecl *R) {
+    if (!R || !SDK(R) || R->isInvalidDecl()) return false;
+    for (const auto *D : R->redecls()) if (!SDK(D)) return false;
+    if (const auto *Spec = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      const auto *Primary = Spec->getSpecializedTemplate();
+      for (const auto *T : Primary->redecls()) {
+        if (!SDK(T)) return false;
+        for (const auto *D : T->getTemplatedDecl()->redecls()) if (!SDK(D)) return false;
+      }
+    }
+    return true;
+  };
+  const auto *Declaration = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!Declaration || !Declaration->getSpecializedTemplate() ||
+      Declaration->getSpecializedTemplate()->getName() != "__basic_node_handle" ||
+      !PinnedRecord(Declaration) || !SDK(Declaration,"__node_handle")) return std::nullopt;
+  if (!Record->getDefinition() && (!Complete || !Complete(Context.getRecordType(Record)))) return std::nullopt;
+  const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record->getDefinition());
+  const auto *Primary = R ? R->getSpecializedTemplate() : nullptr;
+  if (!S.coreV2() || !R || !Primary || Primary->getName() != "__basic_node_handle" ||
+      !SDK(R,"__node_handle") || !SDK(Primary,"__node_handle") || !PinnedRecord(R) ||
+      R->getSpecializationKind() != TSK_ImplicitInstantiation || R->isUnion() ||
+      R->isDynamicClass() || R->getNumBases()!=1 || !R->isStandardLayout() ||
+      R->getTemplateArgs().size()!=3) return std::nullopt;
+  const auto &Arguments=R->getTemplateArgs();
+  if (Arguments[0].getKind()!=TemplateArgument::Type || Arguments[1].getKind()!=TemplateArgument::Type ||
+      Arguments[2].getKind()!=TemplateArgument::Template) return std::nullopt;
+  const auto Node=Arguments[0].getAsType(), Allocator=Arguments[1].getAsType();
+  const auto *SpecificTemplate=dyn_cast_or_null<ClassTemplateDecl>(Arguments[2].getAsTemplate().getAsTemplateDecl());
+  if (!SpecificTemplate || SpecificTemplate->getName()!="__map_node_handle_specifics" ||
+      !SDK(SpecificTemplate,"__node_handle")) return std::nullopt;
+  for (const auto *T:SpecificTemplate->redecls()) {
+    if (!SDK(T,"__node_handle")) return std::nullopt;
+    for (const auto *D:T->getTemplatedDecl()->redecls()) if (!SDK(D,"__node_handle")) return std::nullopt;
+  }
+  const auto *Specifics=dyn_cast_or_null<ClassTemplateSpecializationDecl>(R->bases_begin()->getType()->getAsCXXRecordDecl());
+  if (!Specifics || !PinnedRecord(Specifics) || !Specifics->isEmpty() ||
+      Specifics->getSpecializedTemplate()->getCanonicalDecl()!=SpecificTemplate->getCanonicalDecl() ||
+      Specifics->getTemplateArgs().size()!=2 ||
+      !Context.hasSameType(Specifics->getTemplateArgs()[0].getAsType(),Node) ||
+      !Context.hasSameType(Specifics->getTemplateArgs()[1].getAsType(),Context.getRecordType(R))) return std::nullopt;
+  std::optional<UtilityUnorderedMapRecord> Map;
+  const auto Name=DeclarationName(&Context.Idents.get("unordered_map"));
+  for (const auto *D:R->getDeclContext()->lookup(Name)) {
+    const auto *T=dyn_cast<ClassTemplateDecl>(D);if(!T)continue;
+    for (const auto *Candidate:T->specializations()) {
+      auto Info=approvedUtilityUnorderedMapRecord(S,SM,Candidate,Context,Complete);
+      if (!Info || !Context.hasSameType(Info->NodeType,Node) ||
+          !Context.hasSameType(Candidate->getTemplateArgs()[4].getAsType(),Allocator)) continue;
+      if (Map && Map->Record->getCanonicalDecl()!=Info->Record->getCanonicalDecl()) return std::nullopt;
+      Map=Info;
+    }
+  }
+  if (!Map) return std::nullopt;
+  const FieldDecl *Pointer=nullptr,*Optional=nullptr;unsigned Fields=0;
+  for(const auto *F:R->fields()) {
+    if (!SDK(F,"__node_handle") || F->isBitField() || F->isMutable() || F->hasAttrs() || F->getAccess()!=AS_private) return std::nullopt;
+    if (F->getName()=="__ptr_")Pointer=F;else if(F->getName()=="__alloc_")Optional=F;else return std::nullopt;
+    ++Fields;
+  }
+  const auto P=Context.getTypeSize(Context.VoidPtrTy),B=Context.getCharWidth();
+  const auto &Layout=Context.getASTRecordLayout(R);
+  if (Fields!=2 || !Pointer || !Optional || !Context.hasSameType(Pointer->getType(),Context.getPointerType(Node)) ||
+      Layout.getFieldOffset(Pointer->getFieldIndex()) || Layout.getFieldOffset(Optional->getFieldIndex())!=P ||
+      Context.getTypeSize(Context.getRecordType(R))!=2*P || Context.getTypeAlign(Context.getRecordType(R))!=Context.getTypeAlign(Context.VoidPtrTy) ||
+      Layout.getBaseClassOffset(Specifics).getQuantity()!=0) return std::nullopt;
+  const auto *OptionalRecord=dyn_cast_or_null<ClassTemplateSpecializationDecl>(Optional->getType()->getAsCXXRecordDecl());
+  if (!OptionalRecord || OptionalRecord->getSpecializedTemplate()->getName()!="optional" ||
+      OptionalRecord->getTemplateArgs().size()!=1 || !Context.hasSameType(OptionalRecord->getTemplateArgs()[0].getAsType(),Allocator) ||
+      !SDK(OptionalRecord,"optional")) return std::nullopt;
+  llvm::DenseSet<const CXXRecordDecl*> Seen;unsigned Nodes=0;int64_t Value=-1,Engaged=-1;
+  auto Storage=[&](auto&&Self,const CXXRecordDecl *Input,uint64_t Offset,unsigned Depth)->bool {
+    const auto *D=Input?Input->getDefinition():nullptr;
+    if (!D || Depth>64 || ++Nodes>4096 || !PinnedRecord(D) || D->isDynamicClass())return false;
+    if (!Seen.insert(D).second)return true;
+    const auto &L=Context.getASTRecordLayout(D);
+    for (const auto &Base:D->bases()) {
+      const auto *C=Base.getType()->getAsCXXRecordDecl();
+      if (Base.isVirtual() || !C || !Self(Self,C,Offset+L.getBaseClassOffset(C).getQuantity(),Depth+1))return false;
+    }
+    for (const auto *F:D->fields()) {
+      if (!SDK(F) || F->isBitField() || F->isMutable())return false;
+      const auto At=Offset+L.getFieldOffset(F->getFieldIndex())/B;
+      if (F->getName()=="__val_") {if(Value>=0 || !Context.hasSameType(F->getType(),Allocator))return false;Value=At;}
+      if (F->getName()=="__engaged_") {if(Engaged>=0 || !Context.hasSameType(F->getType(),Context.BoolTy))return false;Engaged=At;}
+      if (const auto *Child=F->getType()->getAsCXXRecordDecl())if(!Self(Self,Child,At,Depth+1))return false;
+    }
+    return true;
+  };
+  if (!Storage(Storage,OptionalRecord,P/B,0) || Value!=int64_t(P/B) || Engaged!=int64_t(P/B+1))return std::nullopt;
+  return UtilityUnorderedNodeRecord{R,Specifics,*Map,Allocator,Pointer,Optional,uint64_t(Value),uint64_t(Engaged)};
+}
+
+
+
+std::optional<UnorderedNodeCall> unorderedNodeCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (Function && !isa<CXXMethodDecl>(Function) && Function->getIdentifier() &&
+      Function->getName() == "swap" && Function->getNumParams() == 2 &&
+      Call->getNumArgs() == 2 && Function->getReturnType()->isVoidType() &&
+      !Function->isVariadic() && Function->hasBody() &&
+      S.owns(SM, Call->getExprLoc()) &&
+      Function->getTemplateSpecializationKind() != TSK_ExplicitSpecialization) {
+    const auto Info = unorderedNodeRecord(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (Info) {
+      const auto Reference = Context.getLValueReferenceType(Context.getRecordType(Info->Record));
+      bool Pinned = Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) &&
+          Context.hasSameType(Function->getParamDecl(1)->getType(), Reference) &&
+          Context.hasSameType(Call->getArg(1)->getType(), Context.getRecordType(Info->Record));
+      for (const auto *D : Function->redecls()) {
+        const auto File = S.sdkFile(SM, D->getLocation());
+        Pinned &= File && File->Root == "libcxx" && File->Path == "__node_handle" &&
+            !S.owns(SM, D->getLocation()) && approvedStandardSDKDeclaration(S, SM, D);
+      }
+      if (Pinned && approvedUnorderedMapMethodSource(S, SM, Function, Info->Map.Record, Context))
+        return UnorderedNodeCall{*Info, UnorderedNodeOperation::Swap, Call->getArg(0), 1};
+    }
+  }
+  const auto *Member=dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Operator=dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method=Call?dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()):nullptr;
+  const auto *Reference=Member?dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()):nullptr;
+  const Expr *Object=Member?Member->getImplicitObjectArgument():Operator&&Operator->getNumArgs()?Operator->getArg(0):nullptr;
+  const bool Source = Method && Object &&
+      (S.owns(SM,Reference?Reference->getExprLoc():Operator?Operator->getOperatorLoc():SourceLocation()) ||
+       (isa<CXXConversionDecl>(Method) && S.owns(SM,Call->getExprLoc()) && S.owns(SM,Object->getExprLoc())));
+  if (!Method||!Object||!Source||
+      Method->isStatic()||Method->isVirtual()||Method->isVolatile()||Method->isVariadic()||
+      Method->getAccess()!=AS_public||Method->getRefQualifier()!=RQ_None||
+      Method->getTemplateSpecializationKind()==TSK_ExplicitSpecialization||!Method->hasBody())return std::nullopt;
+  const unsigned Offset=Operator?1:0;
+  if (Call->getNumArgs()!=Method->getNumParams()+Offset)return std::nullopt;
+  const Expr *Root=Object->IgnoreParens();
+  while (const auto *Cast=dyn_cast<ImplicitCastExpr>(Root)) {
+    if (Cast->getCastKind()!=CK_DerivedToBase && Cast->getCastKind()!=CK_UncheckedDerivedToBase &&
+        Cast->getCastKind()!=CK_NoOp)break;
+    Root=Cast->getSubExpr()->IgnoreParens();
+  }
+  auto ObjectType=Root->getType();if(ObjectType->isPointerType())ObjectType=ObjectType->getPointeeType();
+  if (ObjectType.isVolatileQualified()||ObjectType.isRestrictQualified()||ObjectType.getAddressSpace()!=LangAS::Default)return std::nullopt;
+  const auto Info=unorderedNodeRecord(S,SM,ObjectType->getAsCXXRecordDecl(),Context);
+  if (!Info)return std::nullopt;
+  const auto *Parent=Method->getParent()->getCanonicalDecl();
+  if (Parent!=Info->Record->getCanonicalDecl() && Parent!=Info->Specifics->getCanonicalDecl())return std::nullopt;
+  for (const auto *D:Method->redecls()) {
+    const auto File=S.sdkFile(SM,D->getLocation());
+    if (!File||File->Root!="libcxx"||File->Path!="__node_handle"||S.owns(SM,D->getLocation())||!approvedStandardSDKDeclaration(S,SM,D))return std::nullopt;
+  }
+  if (!approvedUnorderedMapMethodSource(S,SM,Method,Info->Map.Record,Context))return std::nullopt;
+  const auto Type=Context.getRecordType(Info->Record),Result=Method->getReturnType();
+  if (!Context.hasSameType(Call->getType(),Result.getNonReferenceType()))return std::nullopt;
+  const auto Name=Method->getIdentifier()?Method->getName():llvm::StringRef();
+  auto Return=[&](UnorderedNodeOperation Op){return std::optional<UnorderedNodeCall>(UnorderedNodeCall{*Info,Op,Root,Offset});};
+  if (Method->isConst()&&!Method->getNumParams()) {
+    if (Name=="empty"&&Context.hasSameType(Result,Context.BoolTy)&&Call->isPRValue())return Return(UnorderedNodeOperation::Empty);
+    if (const auto *Conversion=dyn_cast<CXXConversionDecl>(Method);
+        Conversion&&Context.hasSameType(Conversion->getConversionType(),Context.BoolTy)&&Call->isPRValue())return Return(UnorderedNodeOperation::Boolean);
+    if ((Name=="key"||Name=="mapped")&&Parent==Info->Specifics->getCanonicalDecl()&&
+        Context.hasSameType(Result,Context.getLValueReferenceType(Context.IntTy))&&Call->isLValue())
+      return Return(Name=="key"?UnorderedNodeOperation::Key:UnorderedNodeOperation::Mapped);
+    if (Name=="get_allocator"&&Context.hasSameType(Result,Info->AllocatorType)&&Call->isPRValue()&&
+        approvedUtilityAllocatorRecord(S,SM,Result->getAsCXXRecordDecl(),Context))return Return(UnorderedNodeOperation::Allocator);
+  }
+  if (Method->isConst()||ObjectType.isConstQualified()||Method->getNumParams()!=1||
+      !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(),Type))return std::nullopt;
+  if (Name=="swap"&&Result->isVoidType()&&
+      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getLValueReferenceType(Type)))return Return(UnorderedNodeOperation::Swap);
+  if (Method->isMoveAssignmentOperator()&&Context.hasSameType(Result,Context.getLValueReferenceType(Type))&&Call->isLValue()&&
+      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getRValueReferenceType(Type)))return Return(UnorderedNodeOperation::MoveAssign);
+  return std::nullopt;
+}
+
+
+static bool unorderedNodeMethod(const State &S,const SourceManager &SM,
+    const CXXMethodDecl *Method,const UtilityUnorderedNodeRecord &Info,const ASTContext &Context) {
+  if (!Method||Method->getParent()->getCanonicalDecl()!=Info.Record->getCanonicalDecl()||
+      Method->isInvalidDecl()||Method->isDeleted()||Method->isStatic()||Method->isVirtual()||
+      Method->isVolatile()||Method->isVariadic()||Method->getAccess()!=AS_public||
+      Method->getTemplateSpecializationKind()==TSK_ExplicitSpecialization||!Method->hasBody())return false;
+  for(const auto *D:Method->redecls()) {
+    const auto File=S.sdkFile(SM,D->getLocation());
+    if (!File||File->Root!="libcxx"||File->Path!="__node_handle"||S.owns(SM,D->getLocation())||!approvedStandardSDKDeclaration(S,SM,D))return false;
+  }
+  return approvedUnorderedMapMethodSource(S,SM,Method,Info.Map.Record,Context);
+}
+std::optional<UnorderedNodeConstruction> unorderedNodeConstruction(
+    const State &S,const SourceManager &SM,const CXXConstructExpr *C,const ASTContext &Context) {
+  if (!C||C->isTypeDependent()||C->isValueDependent()||C->isInstantiationDependent()||
+      C->getConstructionKind()!=CXXConstructionKind::Complete)return std::nullopt;
+  const auto Info=unorderedNodeRecord(S,SM,Context.getBaseElementType(C->getType())->getAsCXXRecordDecl(),Context);
+  const auto *Method=C->getConstructor();
+  if (!Info||!unorderedNodeMethod(S,SM,Method,*Info,Context)||C->getNumArgs()!=Method->getNumParams())return std::nullopt;
+  if (!C->getNumArgs()&&Method->isDefaultConstructor())return UnorderedNodeConstruction::Default;
+  if (C->getNumArgs()==1&&Method->isMoveConstructor()&&
+      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getRValueReferenceType(Context.getRecordType(Info->Record)))&&
+      Context.hasSameUnqualifiedType(C->getArg(0)->getType(),Context.getRecordType(Info->Record)))return UnorderedNodeConstruction::Move;
+  return std::nullopt;
+}
+bool unorderedNodeDestructor(const State &S,const SourceManager &SM,
+    const CXXDestructorDecl *D,const ASTContext &Context) {
+  const auto Info=D?unorderedNodeRecord(S,SM,D->getParent(),Context):std::nullopt;
+  const auto *P=D?D->getType()->getAs<FunctionProtoType>():nullptr;
+  return Info&&P&&P->isNothrow()&&!D->getNumParams()&&unorderedNodeMethod(S,SM,D,*Info,Context);
+}
+
+
+std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
+    const State &S,const SourceManager &SM,const CXXRecordDecl *Input,const ASTContext &Context,
+    const std::function<bool(QualType)> &Complete) {
+  auto SDK=[&](const Decl*D){const auto F=D?S.sdkFile(SM,D->getLocation()):std::nullopt;return F&&F->Root=="libcxx"&&F->Path=="__node_handle"&&!S.owns(SM,D->getLocation())&&approvedStandardSDKDeclaration(S,SM,D);};
+  const auto *Declaration=dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *T=Declaration?Declaration->getSpecializedTemplate():nullptr;
+  if (!Declaration||!T||T->getName()!="__insert_return_type"||!SDK(Declaration)||!SDK(T))return std::nullopt;
+  for(const auto*D:Declaration->redecls())if(!SDK(D))return std::nullopt;
+  for(const auto*D:T->redecls()){if(!SDK(D))return std::nullopt;for(const auto*P:D->getTemplatedDecl()->redecls())if(!SDK(P))return std::nullopt;}
+  if(!Input->getDefinition()&&(!Complete||!Complete(Context.getRecordType(Input))))return std::nullopt;
+  const auto *R=dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input->getDefinition());
+  if(!R||!T||T->getName()!="__insert_return_type"||!SDK(R)||!SDK(T)||R->getNumBases()||R->isUnion()||R->isDynamicClass()||!R->isStandardLayout()||R->getTemplateArgs().size()!=2)return std::nullopt;
+  for(const auto*D:R->redecls())if(!SDK(D))return std::nullopt;
+  for(const auto*D:T->redecls()){if(!SDK(D))return std::nullopt;for(const auto*P:D->getTemplatedDecl()->redecls())if(!SDK(P))return std::nullopt;}
+  const auto&A=R->getTemplateArgs();if(A[0].getKind()!=TemplateArgument::Type||A[1].getKind()!=TemplateArgument::Type)return std::nullopt;
+  const auto Iterator=approvedUtilityUnorderedMapIteratorRecord(S,SM,A[0].getAsType()->getAsCXXRecordDecl(),Context,Complete);
+  const auto Node=unorderedNodeRecord(S,SM,A[1].getAsType()->getAsCXXRecordDecl(),Context,Complete);
+  if(!Iterator||Iterator->Const||!Node||Iterator->Owner.Record->getCanonicalDecl()!=Node->Map.Record->getCanonicalDecl())return std::nullopt;
+  const auto P=Context.getTypeSize(Context.VoidPtrTy);const auto&L=Context.getASTRecordLayout(R);
+  const FieldDecl *Position=nullptr,*Inserted=nullptr,*Handle=nullptr;unsigned Count=0;
+  for(const auto*F:R->fields()){
+    if(!SDK(F)||F->getAccess()!=AS_public||F->isBitField()||F->isMutable()||F->hasAttrs())return std::nullopt;
+    if(F->getName()=="position")Position=F;else if(F->getName()=="inserted")Inserted=F;else if(F->getName()=="node")Handle=F;else return std::nullopt;++Count;
+  }
+  if(Count!=3||!Position||!Inserted||!Handle||!Context.hasSameType(Position->getType(),A[0].getAsType())||!Context.hasSameType(Inserted->getType(),Context.BoolTy)||!Context.hasSameType(Handle->getType(),A[1].getAsType())||
+     L.getFieldOffset(Position->getFieldIndex())||L.getFieldOffset(Inserted->getFieldIndex())!=P||L.getFieldOffset(Handle->getFieldIndex())!=2*P||
+     Context.getTypeSize(Context.getRecordType(R))!=4*P||Context.getTypeAlign(Context.getRecordType(R))!=Context.getTypeAlign(Context.VoidPtrTy))return std::nullopt;
+  return UnorderedNodeInsertResult{R,*Iterator,*Node,Position,Inserted,Handle};
+}
+
+
+std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
+    const State&S,const SourceManager&SM,const CallExpr*Call,const ASTContext&Context) {
+  const auto*Member=dyn_cast_or_null<CXXMemberCallExpr>(Call);const auto*M=Member?Member->getMethodDecl():nullptr;
+  const auto*Ref=Member?dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()):nullptr;
+  const auto*Object=Member?Member->getImplicitObjectArgument():nullptr;
+  const auto Name=M&&M->getIdentifier()?M->getName():llvm::StringRef();
+  if((Name!="extract"&&Name!="insert")||!Object||!Ref||!S.owns(SM,Ref->getExprLoc())||M->isConst()||!unorderedMapPublicMethod(S,SM,M)||
+     Call->getNumArgs()!=M->getNumParams()||!Call->isPRValue()||!Context.hasSameType(Call->getType(),M->getReturnType()))return std::nullopt;
+  const auto Map=approvedUtilityUnorderedMapRecord(S,SM,M->getParent(),Context);if(!Map)return std::nullopt;
+  auto OT=Object->getType();if(OT->isPointerType())OT=OT->getPointeeType();
+  if(OT.hasQualifiers()||!Context.hasSameType(OT,Context.getRecordType(Map->Record))||!approvedUnorderedMapMethodSource(S,SM,M,Map->Record,Context))return std::nullopt;
+  if(Name=="extract"&&M->getNumParams()==1){
+    const auto Node=unorderedNodeRecord(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);
+    if(!Node||Node->Map.Record->getCanonicalDecl()!=Map->Record->getCanonicalDecl())return std::nullopt;
+    const auto P=M->getParamDecl(0)->getType();
+    if(Context.hasSameType(P,Context.getLValueReferenceType(Context.IntTy.withConst()))&&Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),Context.IntTy))return UnorderedNodeTransfer{*Map,*Node,std::nullopt,std::nullopt,UnorderedNodeTransferKind::ExtractKey,0};
+    const auto I=approvedUtilityUnorderedMapIteratorRecord(S,SM,P->getAsCXXRecordDecl(),Context);
+    if(I&&I->Const&&I->Owner.Record->getCanonicalDecl()==Map->Record->getCanonicalDecl()&&Context.hasSameType(Call->getArg(0)->getType(),P))return UnorderedNodeTransfer{*Map,*Node,I,std::nullopt,UnorderedNodeTransferKind::ExtractIterator,0};
+  }
+  if(Name!="insert"||(M->getNumParams()!=1&&M->getNumParams()!=2))return std::nullopt;
+  const unsigned Offset=M->getNumParams()-1;const auto P=M->getParamDecl(Offset)->getType();
+  if(!P->isRValueReferenceType())return std::nullopt;
+  const auto Node=unorderedNodeRecord(S,SM,P->getPointeeType()->getAsCXXRecordDecl(),Context);
+  if(!Node||Node->Map.Record->getCanonicalDecl()!=Map->Record->getCanonicalDecl()||!Context.hasSameType(P,Context.getRValueReferenceType(Context.getRecordType(Node->Record)))||!Context.hasSameType(Call->getArg(Offset)->getType(),Context.getRecordType(Node->Record)))return std::nullopt;
+  if(!Offset){auto Result=unorderedNodeInsertResult(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);if(Result)return UnorderedNodeTransfer{*Map,*Node,Result->Iterator,Result,UnorderedNodeTransferKind::Insert,0};return std::nullopt;}
+  const auto Hint=approvedUtilityUnorderedMapIteratorRecord(S,SM,M->getParamDecl(0)->getType()->getAsCXXRecordDecl(),Context);
+  const auto I=approvedUtilityUnorderedMapIteratorRecord(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);
+  if(!Hint||!Hint->Const||!I||I->Const||I->Owner.Record->getCanonicalDecl()!=Map->Record->getCanonicalDecl()||Hint->Owner.Record->getCanonicalDecl()!=Map->Record->getCanonicalDecl()||!Context.hasSameType(Call->getArg(0)->getType(),Context.getRecordType(Hint->Record)))return std::nullopt;
+  return UnorderedNodeTransfer{*Map,*Node,I,std::nullopt,UnorderedNodeTransferKind::HintInsert,1};
+}
+
+bool unorderedNodeBaseCast(const State &S, const SourceManager &SM,
+    const CastExpr *Cast, const ASTContext &Context) {
+  if (!isa_and_nonnull<ImplicitCastExpr>(Cast) ||
+      (Cast->getCastKind() != CK_DerivedToBase &&
+       Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Cast->path_size() != 1) return false;
+  auto From = Cast->getSubExpr()->getType(), To = Cast->getType();
+  if (From->isPointerType() != To->isPointerType()) return false;
+  if (From->isPointerType()) { From = From->getPointeeType(); To = To->getPointeeType(); }
+  const auto Info = unorderedNodeRecord(S, SM, From->getAsCXXRecordDecl(), Context);
+  return Info && !From.isVolatileQualified() && !To.isVolatileQualified() &&
+      !From.isRestrictQualified() && !To.isRestrictQualified() &&
+      From.getAddressSpace() == LangAS::Default && To.getAddressSpace() == LangAS::Default &&
+      (!From.isConstQualified() || To.isConstQualified()) &&
+      To->getAsCXXRecordDecl() == Info->Specifics &&
+      *Cast->path_begin() == Info->Record->bases_begin();
+}
+
+std::optional<UtilityUnorderedMapRecord> unorderedMapMerge(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "merge" ||
+      !Object || !Reference || !S.owns(SM, Reference->getExprLoc()) ||
+      !unorderedMapPublicMethod(S, SM, Method) || Method->isConst() ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType()) return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  if (!Map || !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
+  auto Receiver = Object->getType();
+  if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
+  const auto Type = Context.getRecordType(Map->Record), Parameter = Method->getParamDecl(0)->getType();
+  if (Receiver.hasQualifiers() || !Context.hasSameType(Receiver, Type) ||
+      !Parameter->isReferenceType() || !Context.hasSameType(Parameter->getPointeeType(), Type) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Type)) return std::nullopt;
+  const auto Source = approvedUtilityUnorderedMapRecord(S, SM,
+      Parameter->getPointeeType()->getAsCXXRecordDecl(), Context);
+  return Source && Source->Record->getCanonicalDecl() == Map->Record->getCanonicalDecl() ? Map : std::nullopt;
 }
 
 } // namespace nct
