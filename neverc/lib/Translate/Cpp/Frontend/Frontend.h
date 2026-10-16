@@ -2057,7 +2057,7 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
-enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly };
+enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly, Default };
 struct UtilityUnorderedMapInsertion {
   UtilityUnorderedMapRecord Map;
   UtilityUnorderedMapIteratorRecord Iterator;

@@ -1353,12 +1353,14 @@ class FunctionLowering {
   struct UnorderedInsertion { Expression Node, Inserted; };
   UnorderedInsertion unorderedInsertNode(Expression Place,
       const UtilityUnorderedMapRecord &Info, Expression Key,
-      std::optional<Expression> Mapped, bool AssignExisting, SourceLocation L) {
+      std::optional<Expression> Mapped, bool AssignExisting, SourceLocation L,
+      std::optional<Expression> PreparedNode = std::nullopt) {
     // Key is a captured reference. The selected new hook runs after hashing and
     // before pair construction, so reread the referent when constructing the key.
     const auto Size = type(A.Context.getSizeType(), L);
     const auto NodePointer = type(Info.NodePointerType, L);
     auto Hash = snapshot(cast(Key, Size, L), L);
+    if (PreparedNode) assign(unorderedNodeHash(*PreparedNode, L), Hash, L);
     auto OldCount = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
     auto Result = snapshot(unorderedFindNode(Place, Info, Key, Hash, L), L);
     auto InsertedValue = snapshot(boolean(false, L), L);
@@ -1368,14 +1370,16 @@ class FunctionLowering {
     const auto Grow = labelName(), Desired = labelName(), SelectMinimum = labelName(), Rehash = labelName();
     const auto Insert = labelName(), EmptyBucket = labelName(), OccupiedBucket = labelName();
     const auto NextBucket = labelName(), Increment = labelName(), Done = labelName();
-    branch(cast(Result, "bool", L), AssignExisting ? Existing : Done, Allocate, L);
+    branch(cast(Result, "bool", L), (AssignExisting || PreparedNode) ? Existing : Done, Allocate, L);
     label(Allocate, L);
-    auto Node = snapshot(cast(unorderedHeapAllocate(Info.NodeType,
+    auto Node = PreparedNode ? *PreparedNode : snapshot(cast(unorderedHeapAllocate(Info.NodeType,
         quantity(Info.NodeBytes, Size, L), L), NodePointer, L), L);
     assign(unorderedNodeHash(Node, L), Hash, L);
-    assign(unorderedNodeKey(Node, Info, L), Key, L);
-    assign(unorderedNodeValue(Node, Info, L), InitialValue(), L);
-    assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
+    if (!PreparedNode) {
+      assign(unorderedNodeKey(Node, Info, L), Key, L);
+      assign(unorderedNodeValue(Node, Info, L), InitialValue(), L);
+      assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
+    }
     auto NewSize = snapshot(binary("+", unorderedMapMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
     jump(Capacity, L);
     label(Capacity, L);
@@ -1426,9 +1430,12 @@ class FunctionLowering {
     assign(Result, Node, L);
     assign(InsertedValue, boolean(true, L), L);
     jump(Done, L);
-    if (AssignExisting) {
+    if (AssignExisting || PreparedNode) {
       label(Existing, L);
-      assign(unorderedNodeValue(Result, Info, L), InitialValue(), L);
+      if (AssignExisting)
+        assign(unorderedNodeValue(Result, Info, L), InitialValue(), L);
+      if (PreparedNode)
+        unorderedHeapRelease(*PreparedNode, Info.NodeType, quantity(Info.NodeBytes, Size, L), L);
       jump(Done, L);
     }
     label(Done, L);
@@ -4945,8 +4952,17 @@ class FunctionLowering {
       if (Info->Offset)
         argument(Call->getArg(0), Method->getParamDecl(0)->getType());
       Expression Key;
-      std::optional<Expression> Mapped;
-      if (Info->Kind == UnorderedMapInsertionKind::Pair) {
+      std::optional<Expression> Mapped, PreparedNode;
+      if (Info->Kind == UnorderedMapInsertionKind::Default) {
+        PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
+            quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
+            type(Info->Map.NodePointerType, L), L), L);
+        assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
+        Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
+        Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
+      } else if (Info->Kind == UnorderedMapInsertionKind::Pair) {
         auto Pair = snapshot(argument(Call->getArg(Info->Offset),
             Method->getParamDecl(Info->Offset)->getType()), L);
         Key = fieldStorage(dereference(Pair, L), Info->ArgumentPair->First, L);
@@ -4961,7 +4977,7 @@ class FunctionLowering {
           Mapped = dereference(Reference, L);
         }
       }
-      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L);
+      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L, PreparedNode);
       if (!Info->ResultPair)
         return unorderedMakeIterator(Result.Node, Info->Iterator, std::move(Destination), L);
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);

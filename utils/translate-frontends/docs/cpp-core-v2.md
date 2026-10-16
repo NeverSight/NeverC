@@ -16761,7 +16761,7 @@ The exact default-policy int/int specialization admits const/rvalue value-type
 those pairs, `try_emplace(key)` and `try_emplace(key, value)`, and
 `insert_or_assign(key, value)`. The corresponding const-iterator hint overloads
 and `emplace_hint` are admitted. Forwarded key/value arguments are int references;
-zero-argument emplace, piecewise construction and other argument types remain
+piecewise construction and other argument types remain
 separate work. The SDK's successful, nonoverflowing allocation domain applies.
 
 Results are a mutable iterator for hint calls, or an authenticated
@@ -16827,3 +16827,20 @@ The existing successful allocation and valid object lifetime preconditions apply
 Allocator-extended overloads and other key/value/policy types remain separate
 work. SDK declaration/body authentication and source heap definitions are still
 required even for an execution that transfers or copies an empty map.
+
+## Unordered-map default emplace
+
+`emplace()` and `emplace_hint(hint)` value-initialize a default int/int pair,
+so an inserted node starts with key zero and mapped value zero. Unlike the
+key-extractable argument forms, the pinned SDK allocates and constructs a
+candidate node before it checks for an existing key. A duplicate still performs
+that allocation and deletes the unlinked candidate before returning the existing
+iterator; it preserves the existing mapped value and node address. Successful
+insertion uses the shared SDK-compatible capacity growth and linking path.
+
+Receiver and hint expressions are captured once before allocation. Source new
+hooks may change the load limit; its value at capacity selection is retained.
+Delete hooks observe the existing map state when a duplicate candidate is
+released. Heap definitions and the existing successful allocation/lifetime domain
+remain required. Piecewise and other key/value/policy types remain separate work.
+Source-defined SDK specializations remain rejected.

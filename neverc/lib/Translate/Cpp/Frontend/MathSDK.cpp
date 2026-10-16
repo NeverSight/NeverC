@@ -87042,7 +87042,9 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   };
   UnorderedMapInsertionKind Kind;
   std::optional<UtilityPairRecord> Argument;
-  if (Name == "insert" || ((Name == "emplace" || Name == "emplace_hint") && Count == 1)) {
+  if ((Name == "emplace" || Name == "emplace_hint") && Count == 0) {
+    Kind = UnorderedMapInsertionKind::Default;
+  } else if (Name == "insert" || ((Name == "emplace" || Name == "emplace_hint") && Count == 1)) {
     if (Count != 1 || !Method->getParamDecl(Offset)->getType()->isReferenceType())
       return std::nullopt;
     const auto Parameter = Method->getParamDecl(Offset)->getType().getNonReferenceType();
