@@ -989,6 +989,8 @@ enum class UtilityOperation {
   UnorderedMapInsertRange,
   UnorderedMapCopyAssign,
   UnorderedMapMoveAssign,
+  UnorderedMapGetAllocator,
+  UnorderedMapPolicy,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
   UnorderedIteratorPreIncrement,
@@ -1949,6 +1951,12 @@ bool approvedUtilityInPlaceExpression(const State &S,
 bool approvedUtilityInPlaceType(const State &S, const clang::SourceManager &SM,
                                 clang::QualType Type,
                                 const clang::ASTContext &Context);
+bool approvedUtilityPiecewiseConstructExpression(const State &S,
+    const clang::SourceManager &SM, const clang::Expr *Expression,
+    const clang::ASTContext &Context);
+bool approvedUtilityPiecewiseConstructType(const State &S,
+    const clang::SourceManager &SM, clang::QualType Type,
+    const clang::ASTContext &Context);
 bool approvedUtilityOptionalBaseCast(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CastExpr *Cast,
@@ -2057,7 +2065,7 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
-enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly, Default };
+enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly, Default, Piecewise };
 struct UtilityUnorderedMapInsertion {
   UtilityUnorderedMapRecord Map;
   UtilityUnorderedMapIteratorRecord Iterator;
@@ -2065,6 +2073,7 @@ struct UtilityUnorderedMapInsertion {
   UnorderedMapInsertionKind Kind;
   unsigned Offset;
   bool AssignExisting;
+  std::optional<UtilityTupleRecord> KeyTuple, ValueTuple;
 };
 std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -2104,7 +2113,26 @@ bool approvedUnorderedMapMethodSource(const State &S, const clang::SourceManager
 std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-bool approvedUtilityUnorderedMapConstruction(const State &S, const clang::SourceManager &SM,
+struct UtilityUnorderedMapRangeConstruction {
+  UtilityUnorderedMapRangeInsertion Input;
+  unsigned InputCount;
+  std::optional<unsigned> BucketIndex;
+};
+std::optional<UtilityUnorderedMapRangeConstruction>
+approvedUtilityUnorderedMapRangeConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+enum class UtilityUnorderedMapConstructionKind { Default, Allocator, Copy, Move, Buckets, Range };
+bool approvedUtilityUnorderedMapDefaultArgument(
+    const State &S, const clang::SourceManager &SM, const clang::CXXDefaultArgExpr *Default,
+    const clang::FunctionDecl *Function, unsigned Index, clang::ASTContext &Context);
+std::optional<FunctionalObjectRecord> approvedUtilityUnorderedMapPolicyQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedMapAllocatorQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityUnorderedMapConstructionKind>
+approvedUtilityUnorderedMapConstruction(const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 bool approvedUtilityUnorderedMapDestructor(const State &S, const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);

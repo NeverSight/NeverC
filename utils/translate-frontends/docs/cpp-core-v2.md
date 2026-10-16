@@ -16671,8 +16671,7 @@ source-defined global deallocation operators. Internal node size, alignment,
 payload offsets and embedded destructor chains are authenticated separately.
 Missing source deallocation definitions retain TR0203, including empty maps.
 
-Map copy/move construction, assignment and `at`
-remain outside this admission. Every public SDK method and selected private
+The `at` member remains outside this admission. Every public SDK method and selected private
 helper retains its body and redeclaration checks. Source specializations of
 methods, constructors, destructors or private storage cannot borrow admission.
 No SDK/catalog, source frontend or floating-point policy changes are required.
@@ -16761,12 +16760,13 @@ The exact default-policy int/int specialization admits const/rvalue value-type
 those pairs, `try_emplace(key)` and `try_emplace(key, value)`, and
 `insert_or_assign(key, value)`. The corresponding const-iterator hint overloads
 and `emplace_hint` are admitted. Forwarded key/value arguments are int references;
-piecewise construction and other argument types remain
+other argument types remain
 separate work. The SDK's successful, nonoverflowing allocation domain applies.
 
 Results are a mutable iterator for hint calls, or an authenticated
-`pair<iterator, bool>` whose flag reports a new insertion. Duplicate insert,
-emplace and try-emplace calls preserve the old value without allocating;
+`pair<iterator, bool>` whose flag reports a new insertion. For these
+key-extractable forms, duplicate insert, emplace and try-emplace calls preserve
+the old value without allocating;
 insert-or-assign writes its forwarded value when the key already exists.
 Receivers and all arguments are evaluated once, including otherwise unused
 hints. Lvalue aliases remain live through allocation: hashing and lookup precede
@@ -16824,8 +16824,7 @@ C++17 assignment notation evaluates its source operand before its receiver;
 named member notation evaluates the receiver before its source argument.
 
 The existing successful allocation and valid object lifetime preconditions apply.
-Allocator-extended overloads and other key/value/policy types remain separate
-work. SDK declaration/body authentication and source heap definitions are still
+Other key/value/policy types remain separate work. SDK declaration/body authentication and source heap definitions are still
 required even for an execution that transfers or copies an empty map.
 
 ## Unordered-map default emplace
@@ -16842,5 +16841,117 @@ Receiver and hint expressions are captured once before allocation. Source new
 hooks may change the load limit; its value at capacity selection is retained.
 Delete hooks observe the existing map state when a duplicate candidate is
 released. Heap definitions and the existing successful allocation/lifetime domain
-remain required. Piecewise and other key/value/policy types remain separate work.
+remain required. Other key/value/policy types remain separate work.
 Source-defined SDK specializations remain rejected.
+
+## Unordered-map piecewise emplace
+
+`emplace(piecewise_construct, key_tuple, value_tuple)` and its hinted form
+admit the pinned SDK tag variable or its direct trivial default construction.
+Each tuple has zero or one int value or compatible int reference, including
+const and rvalue references already admitted by the tuple profile. Empty tuples
+value-initialize their int field. Named value tuples, reference tuples,
+`make_tuple` and `forward_as_tuple` retain the existing tuple construction,
+forwarding and lifetime checks. Source-defined tag records, variables and SDK
+method specializations are rejected. Standalone tag objects remain outside the
+profile; the authenticated constructor operation erases this tag.
+
+Tuple arguments are captured once before allocation. Their element values and
+referents are copied while constructing the pair after node allocation, before
+bucket growth; hashing reads the constructed key. A new hook can therefore
+change a referenced key before duplicate lookup, while later bucket hooks cannot
+change the already copied node payload. Duplicate candidates still allocate,
+construct and delete, preserving the existing node and mapped value. Hints retain
+one evaluation and return the mutable iterator. This uses the same prepared-node
+insertion helper as default emplace and the shared capacity/linking path.
+
+The existing source heap definitions, successful allocation and valid tuple
+reference/lifetime preconditions apply. Other argument types, source tags and
+custom key/value/hash/equality/allocator policies remain separate work.
+
+## Unordered-map default allocator constructors and getter
+
+The exact default int/int map admits `Map(allocator)`,
+`Map(source, allocator)`, `Map(move(source), allocator)` and the const
+`get_allocator()` member. The allocator must be the original authenticated
+`allocator<pair<const int, int>>` policy type; its existing runtime construction,
+copying, returns and equality compose with these operations.
+
+Every provided allocator expression is evaluated once before reading or
+transferring source state, retaining its effects and full-expression lifetime.
+Allocator-only construction starts empty with zero buckets and load limit one.
+Extended copy construction retains ordinary independent-node copy behavior;
+extended move follows the SDK equal-allocator path, preserving node addresses,
+repairing the destination sentinel and leaving the source empty with zero
+buckets and its previous load limit. The getter evaluates its receiver and
+returns a stateless allocator value. Other policies remain outside this family.
+
+Source method and allocator declarations, selected SDK bodies and the existing
+successful allocation domain remain authenticated. Source heap definitions are
+still required by the selected copy/destruction paths. Constructor selection
+uses exact parameter shapes: an allocator-extended move constructor is not a
+language move constructor according to Clang’s `isMoveConstructor()` predicate.
+
+## Unordered-map bucket-count constructors
+
+The exact default int/int map accepts `Map(n)`, `Map(n, hash)`,
+`Map(n, hash, equal)`, `Map(n, hash, equal, allocator)`,
+`Map(n, allocator)` and `Map(n, hash, allocator)`. Hash, equality and allocator
+must retain their authenticated default SDK types. Omitted hash/equality
+arguments require the selected pinned constructor parameters and their original
+stateless default constructions; source method/default replacements are rejected.
+
+The bucket request is captured once, then every remaining argument is evaluated
+once before map initialization or allocation. Argument effects cannot replace
+the captured request. Construction starts empty with load limit one and follows
+the existing SDK `rehash` rounding: powers of two remain powers of two, other
+positive requests select the SDK prime count, and zero allocates no bucket array.
+Member/array lifetimes and factory returns compose with existing map behavior.
+The existing source heap definitions and successful allocation domain apply.
+Custom policies, other key/value types and node-handle/local-iterator behavior
+require separate support.
+
+## Unordered-map range and initializer-list constructors
+
+The exact default int/int map admits constructors from valid raw int-pair
+pointer ranges, its mutable/const map iterators and an authenticated
+`initializer_list<value_type>`. The selected range/list constructors compose with
+the SDK bucket count, omitted or explicit default hash/equality, and exact default
+allocator overloads, including allocator shorthand forms present in the SDK.
+Pointer elements may be the admitted mutable or const int/int pair types;
+initializer lists retain the map's exact `pair<const int, int>` value type.
+
+Endpoints, the bucket request and policy/allocator arguments are evaluated once
+before initialization and initial bucket allocation. The optional initial rehash
+precedes source element reads; heap hooks can therefore change a live source
+value before insertion starts. Each insertion uses the existing authenticated
+unique-key path, preserving source traversal order, the first inserted value for
+a duplicate key, allocation-time payload reads and SDK growth/linking behavior.
+The iterator advances after insertion. Empty lists avoid null pointer arithmetic,
+and a valid empty pointer range never dereferences its endpoint.
+
+Range type authentication and the insertion loop are shared with existing
+range/list insert operations. Original constructor/default declarations, selected
+SDK bodies, initializer-list/iterator storage and pair types remain authenticated.
+Valid input ranges, live backing storage, source heap definitions and the existing
+successful allocation/lifetime domain remain required. Other policies and element
+types remain outside this constructor family.
+
+## Unordered-map default policy observers
+
+`hash_function()` and `key_eq()` on the exact default int/int map return the
+authenticated `hash<int>` and `equal_to<int>` types. Both mutable and const map
+receivers are admitted. Returned objects compose with existing functional-object
+construction, copying, assignment, arrays and calls; integer hashing and equality
+retain their existing target-width behavior.
+
+Each receiver expression is evaluated once, including source calls returning a
+map pointer or reference. The observers allocate no storage and preserve the
+map's nodes, bucket count and load limit. Reference-only source functions use the
+existing private SDK type-completion path and require no local map object to
+establish the storage layout. Normal map lifetime and source heap requirements
+still apply wherever a program constructs or destroys a map.
+
+The selected public methods, their SDK body closures, exact result policy types
+and the map storage graph remain authenticated. Source getter/template
+replacements, custom policies and other key/value types remain rejected.

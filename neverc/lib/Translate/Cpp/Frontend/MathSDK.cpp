@@ -11167,6 +11167,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
+  if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
+    return true;
   if (approvedScalarRealDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedBernoulliDefaultArgument(S, SM, Default, Function, Index, Context))
@@ -74536,6 +74538,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (approvedUtilityUnorderedMapPolicyQuery(S, SM, Call, Context))
+    return UtilityOperation::UnorderedMapPolicy;
+  if (approvedUtilityUnorderedMapAllocatorQuery(S, SM, Call, Context))
+    return UtilityOperation::UnorderedMapGetAllocator;
   if (auto Assignment = approvedUtilityUnorderedMapAssignment(S, SM, Call, Context))
     return Assignment;
   if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
@@ -86680,8 +86686,108 @@ static bool unorderedMapPublicMethod(const State &S, const SourceManager &SM,
          Pinned(Method->getTemplateInstantiationPattern(/*ForDefinition=*/true));
 }
 
-bool approvedUtilityUnorderedMapConstruction(const State &S, const SourceManager &SM,
+static std::optional<UtilityUnorderedMapRangeInsertion> unorderedMapRangeParameter(
+    const State &S, const SourceManager &SM, const UtilityUnorderedMapRecord &Map,
+    QualType Parameter, bool IsList, const ASTContext &Context) {
+  if (Parameter.hasQualifiers() || Parameter->isReferenceType()) return std::nullopt;
+  std::optional<UtilityInitializerListRecord> List;
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+  QualType Element, Pointer;
+  UnorderedMapRangeKind Kind;
+  if (IsList) {
+    List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (!List) return std::nullopt;
+    const auto *Specialization = cast<ClassTemplateSpecializationDecl>(List->Record);
+    const auto *Primary = Specialization->getSpecializedTemplate();
+    auto Pinned = [&](const Decl *Declaration) {
+      return approvedStandardSDKDeclaration(S, SM, Declaration) &&
+          cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "initializer_list");
+    };
+    for (const auto *Declaration : Specialization->redecls())
+      if (!Pinned(Declaration)) return std::nullopt;
+    for (const auto *Declaration : Primary->redecls()) {
+      if (!Pinned(Declaration)) return std::nullopt;
+      for (const auto *Pattern : Declaration->getTemplatedDecl()->redecls())
+        if (!Pinned(Pattern)) return std::nullopt;
+    }
+    Element = List->ElementType;Pointer = List->Begin->getType();
+    Kind = UnorderedMapRangeKind::InitializerList;
+  } else if (Parameter->isPointerType()) {
+    Element = Parameter->getPointeeType();Pointer = Parameter;
+    Kind = UnorderedMapRangeKind::Pointer;
+  } else {
+    Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
+        Parameter->getAsCXXRecordDecl(), Context);
+    if (!Iterator || Iterator->Owner.Record->getCanonicalDecl() != Map.Record->getCanonicalDecl())
+      return std::nullopt;
+    Element = Iterator->Const ? Context.getConstType(Iterator->ValueType) : Iterator->ValueType;
+    Pointer = Iterator->Owner.NodePointerType;Kind = UnorderedMapRangeKind::Iterator;
+  }
+  if (Element.isNull() || Element.isVolatileQualified() || Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default) return std::nullopt;
+  const auto Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Pair || !Pair->Record->hasTrivialDestructor() ||
+      !Context.hasSameUnqualifiedType(Pair->First->getType(), Context.IntTy) ||
+      !Context.hasSameUnqualifiedType(Pair->Second->getType(), Context.IntTy) ||
+      Pair->First->getType().isVolatileQualified() || Pair->Second->getType().isVolatileQualified())
+    return std::nullopt;
+  return UtilityUnorderedMapRangeInsertion{Map, *Pair, Iterator, List, Pointer, Kind};
+}
+
+std::optional<UtilityUnorderedMapRangeConstruction> approvedUtilityUnorderedMapRangeConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  if (!Constructor || !Construction->getNumArgs()) return std::nullopt;
+  const auto Parameter = Constructor->getNumParams() ? Constructor->getParamDecl(0)->getType() : QualType();
+  const auto *FirstRecord = Parameter.isNull() ? nullptr : Parameter->getAsCXXRecordDecl();
+  const bool IsList = FirstRecord && FirstRecord->getName() == "initializer_list";
+  if (!IsList && !Constructor->getPrimaryTemplate()) return std::nullopt;
+  const unsigned Inputs = IsList ? 1 : 2, Count = Construction->getNumArgs();
+  if (Count < Inputs || Construction->isTypeDependent() || Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() || Constructor->getNumParams() != Count ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM,
+      Context.getBaseElementType(Construction->getType())->getAsCXXRecordDecl(), Context);
+  if (!Map || !unorderedMapPublicMethod(S, SM, Constructor)) return std::nullopt;
+  const auto Input = unorderedMapRangeParameter(S, SM, *Map, Parameter, IsList, Context);
+  if (!Input) return std::nullopt;
+  for (unsigned I = 0; I < Inputs; ++I)
+    if (!Context.hasSameType(Constructor->getParamDecl(I)->getType(), Parameter) ||
+        !Context.hasSameType(Construction->getArg(I)->getType(), Parameter)) return std::nullopt;
+  const auto *Specialization = cast<ClassTemplateSpecializationDecl>(Map->Record);
+  auto Policy = [&](unsigned Index, unsigned TemplateIndex) {
+    const auto Expected = Specialization->getTemplateArgs().get(TemplateIndex).getAsType();
+    return Context.hasSameType(Constructor->getParamDecl(Index)->getType(),
+               Context.getLValueReferenceType(Expected.withConst())) &&
+        Context.hasSameUnqualifiedType(Construction->getArg(Index)->getType(), Expected) &&
+        (TemplateIndex == 4
+             ? bool(approvedUtilityAllocatorRecord(S, SM, Expected->getAsCXXRecordDecl(), Context))
+             : bool(approvedFunctionalObjectRecord(S, SM, Expected->getAsCXXRecordDecl(), Context)));
+  };
+  std::optional<unsigned> BucketIndex;
+  if (Count != Inputs && !(Count == Inputs + 1 && Policy(Inputs, 4))) {
+    if (Count < Inputs + 2 || Count > Inputs + 4 ||
+        !Context.hasSameType(Constructor->getParamDecl(Inputs)->getType(), Context.getSizeType()) ||
+        !Context.hasSameType(Construction->getArg(Inputs)->getType(), Context.getSizeType()) ||
+        !((Count == Inputs + 2 && Policy(Inputs + 1, 4)) ||
+          (Count == Inputs + 3 && Policy(Inputs + 1, 2) &&
+           (Policy(Inputs + 2, 3) || Policy(Inputs + 2, 4))) ||
+          (Count == Inputs + 4 && Policy(Inputs + 1, 2) && Policy(Inputs + 2, 3) && Policy(Inputs + 3, 4))))
+      return std::nullopt;
+    BucketIndex = Inputs;
+  }
+  if (!approvedUnorderedMapMethodSource(S, SM, Constructor, Map->Record, Context))
+    return std::nullopt;
+  return UtilityUnorderedMapRangeConstruction{*Input, Inputs, BucketIndex};
+}
+
+std::optional<UtilityUnorderedMapConstructionKind>
+approvedUtilityUnorderedMapConstruction(const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
+  if (approvedUtilityUnorderedMapRangeConstruction(S, SM, Construction, Context))
+    return UtilityUnorderedMapConstructionKind::Range;
   const auto Info = Construction ? approvedUtilityUnorderedMapRecord(
       S, SM, Context.getBaseElementType(Construction->getType())->getAsCXXRecordDecl(),
       Context) : std::nullopt;
@@ -86692,15 +86798,47 @@ bool approvedUtilityUnorderedMapConstruction(const State &S, const SourceManager
       Constructor->getNumParams() != Construction->getNumArgs() ||
       !unorderedMapPublicMethod(S, SM, Constructor) ||
       !approvedUnorderedMapMethodSource(S, SM, Constructor, Info->Record, Context))
-    return false;
-  if (!Construction->getNumArgs()) return Constructor->isDefaultConstructor();
-  if (Construction->getNumArgs() != 1 || !Constructor->isCopyOrMoveConstructor()) return false;
+    return std::nullopt;
+  if (!Construction->getNumArgs()) return Constructor->isDefaultConstructor()
+      ? std::optional<UtilityUnorderedMapConstructionKind>(UtilityUnorderedMapConstructionKind::Default)
+      : std::nullopt;
   const auto RecordType = Context.getRecordType(Info->Record);
-  const auto Parameter = Constructor->isMoveConstructor()
-      ? Context.getRValueReferenceType(RecordType)
-      : Context.getLValueReferenceType(RecordType.withConst());
-  return Context.hasSameType(Constructor->getParamDecl(0)->getType(), Parameter) &&
-      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), RecordType);
+  const auto ExpectedAllocator = cast<ClassTemplateSpecializationDecl>(Info->Record)->getTemplateArgs().get(4).getAsType();
+  auto AllocatorArgument = [&](unsigned Index) {
+    return Context.hasSameType(Constructor->getParamDecl(Index)->getType(),
+               Context.getLValueReferenceType(ExpectedAllocator.withConst())) &&
+        Context.hasSameUnqualifiedType(Construction->getArg(Index)->getType(), ExpectedAllocator) &&
+        bool(approvedUtilityAllocatorRecord(S, SM, ExpectedAllocator->getAsCXXRecordDecl(), Context));
+  };
+  if (Construction->getNumArgs() == 1 && AllocatorArgument(0))
+    return UtilityUnorderedMapConstructionKind::Allocator;
+  const unsigned Count = Construction->getNumArgs();
+  const auto *Specialization = cast<ClassTemplateSpecializationDecl>(Info->Record);
+  auto PolicyArgument = [&](unsigned Index, unsigned TemplateIndex) {
+    const auto Expected = Specialization->getTemplateArgs().get(TemplateIndex).getAsType();
+    return Context.hasSameType(Constructor->getParamDecl(Index)->getType(),
+               Context.getLValueReferenceType(Expected.withConst())) &&
+        Context.hasSameUnqualifiedType(Construction->getArg(Index)->getType(), Expected) &&
+        bool(approvedFunctionalObjectRecord(S, SM, Expected->getAsCXXRecordDecl(), Context));
+  };
+  if (Count >= 2 && Count <= 4 &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(Construction->getArg(0)->getType(), Context.getSizeType()) &&
+      ((Count == 2 && AllocatorArgument(1)) ||
+       (Count == 3 && PolicyArgument(1, 2) &&
+        (PolicyArgument(2, 3) || AllocatorArgument(2))) ||
+       (Count == 4 && PolicyArgument(1, 2) && PolicyArgument(2, 3) && AllocatorArgument(3))))
+    return UtilityUnorderedMapConstructionKind::Buckets;
+  if (Construction->getNumArgs() > 2 ||
+      (Construction->getNumArgs() == 2 && !AllocatorArgument(1)) ||
+      !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), RecordType))
+    return std::nullopt;
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  if (Context.hasSameType(Parameter, Context.getRValueReferenceType(RecordType)))
+    return UtilityUnorderedMapConstructionKind::Move;
+  if (Context.hasSameType(Parameter, Context.getLValueReferenceType(RecordType.withConst())))
+    return UtilityUnorderedMapConstructionKind::Copy;
+  return std::nullopt;
 }
 
 bool approvedUtilityUnorderedMapDestructor(const State &S, const SourceManager &SM,
@@ -86998,6 +87136,71 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
   return std::nullopt;
 }
 
+static const CXXRecordDecl *piecewiseConstructRecord(const State &S,
+    const SourceManager &SM, QualType Type, const ASTContext &Context) {
+  const auto *Record = definedRecord(Type.getUnqualifiedType());
+  auto Pinned = [&](const Decl *Declaration) {
+    return Declaration && approvedStandardSDKDeclaration(S, SM, Declaration) &&
+        cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                      "__utility/piecewise_construct.h");
+  };
+  if (!Record || Record->getName() != "piecewise_construct_t" ||
+      Record->isUnion() || Record->isDependentContext() ||
+      Record->getNumBases() || !Record->field_empty() || !Record->isEmpty() ||
+      !Record->isStandardLayout() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor()) return nullptr;
+  for (const auto *Declaration : Record->redecls())
+    if (!Pinned(Declaration)) return nullptr;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  return Layout.getSize().getQuantity() == 1 && Layout.getAlignment().getQuantity() == 1
+      ? Record : nullptr;
+}
+bool approvedUtilityPiecewiseConstructType(const State &S,
+    const SourceManager &SM, QualType Type, const ASTContext &Context) {
+  return piecewiseConstructRecord(S, SM, Type, Context) != nullptr;
+}
+bool approvedUtilityPiecewiseConstructExpression(const State &S,
+    const SourceManager &SM, const Expr *Expression, const ASTContext &Context) {
+  if (!Expression || Expression->isTypeDependent() || Expression->isValueDependent() ||
+      Expression->isInstantiationDependent()) return false;
+  if (const auto *Reference = dyn_cast<DeclRefExpr>(Expression)) {
+    const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+    if (!Variable || Variable->getName() != "piecewise_construct" ||
+        !Variable->isInline() || !Variable->isConstexpr() ||
+        !Variable->getType().isConstQualified() ||
+        !piecewiseConstructRecord(S, SM, Variable->getType(), Context) ||
+        !S.owns(SM, Reference->getExprLoc())) return false;
+    for (const auto *Declaration : Variable->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                        "__utility/piecewise_construct.h")) return false;
+    return true;
+  }
+  if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Expression))
+    return approvedUtilityPiecewiseConstructExpression(S, SM, Wrapper->getSubExpr(), Context);
+  if (const auto *Wrapper = dyn_cast<MaterializeTemporaryExpr>(Expression))
+    return approvedUtilityPiecewiseConstructExpression(S, SM, Wrapper->getSubExpr(), Context);
+  if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+    return Cast->getCastKind() == CK_NoOp &&
+        approvedUtilityPiecewiseConstructExpression(S, SM, Cast->getSubExpr(), Context);
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Expression);
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Record = Construction
+      ? piecewiseConstructRecord(S, SM, Construction->getType(), Context) : nullptr;
+  if (!Constructor || !Record || Constructor->isDeleted() ||
+      !Constructor->isTrivial() || Constructor->getAccess() != AS_public ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+  for (const auto *Declaration : Constructor->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                      "__utility/piecewise_construct.h")) return false;
+  if (!Construction->getNumArgs())
+    return Constructor->isDefaulted() && Constructor->isDefaultConstructor();
+  return Construction->getNumArgs() == 1 && Constructor->isCopyOrMoveConstructor() &&
+      approvedUtilityPiecewiseConstructExpression(S, SM, Construction->getArg(0), Context);
+}
+
 std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -87041,9 +87244,39 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
         Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Context.IntTy);
   };
   UnorderedMapInsertionKind Kind;
+  std::optional<UtilityTupleRecord> KeyTuple, ValueTuple;
   std::optional<UtilityPairRecord> Argument;
   if ((Name == "emplace" || Name == "emplace_hint") && Count == 0) {
     Kind = UnorderedMapInsertionKind::Default;
+  } else if ((Name == "emplace" || Name == "emplace_hint") && Count == 3) {
+    if (!Method->getParamDecl(Offset)->getType()->isReferenceType() ||
+        !approvedUtilityPiecewiseConstructType(S, SM,
+            Method->getParamDecl(Offset)->getType().getNonReferenceType(), Context) ||
+        !approvedUtilityPiecewiseConstructExpression(S, SM, Call->getArg(Offset), Context))
+      return std::nullopt;
+    auto TupleArgument = [&](unsigned Index) -> std::optional<UtilityTupleRecord> {
+      const auto Parameter = Method->getParamDecl(Index)->getType();
+      const auto Value = Parameter.getNonReferenceType();
+      if (!Parameter->isReferenceType() || Value.isVolatileQualified() ||
+          Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
+          !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Value))
+        return std::nullopt;
+      auto Tuple = approvedUtilityTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+      if (!Tuple) Tuple = approvedUtilityReferenceTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+      if (!Tuple || !Tuple->Record->hasTrivialDestructor() || Tuple->Elements.size() > 1)
+        return std::nullopt;
+      if (!Tuple->Elements.empty()) {
+        const auto Element = Tuple->Elements.front().getType().getNonReferenceType();
+        if (Element.isVolatileQualified() || Element.isRestrictQualified() ||
+            Element.getAddressSpace() != LangAS::Default ||
+            !Context.hasSameUnqualifiedType(Element, Context.IntTy)) return std::nullopt;
+      }
+      return Tuple;
+    };
+    KeyTuple = TupleArgument(Offset + 1);
+    ValueTuple = TupleArgument(Offset + 2);
+    if (!KeyTuple || !ValueTuple) return std::nullopt;
+    Kind = UnorderedMapInsertionKind::Piecewise;
   } else if (Name == "insert" || ((Name == "emplace" || Name == "emplace_hint") && Count == 1)) {
     if (Count != 1 || !Method->getParamDecl(Offset)->getType()->isReferenceType())
       return std::nullopt;
@@ -87086,7 +87319,7 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   }
   if (!approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
   return UtilityUnorderedMapInsertion{*Map, *Iterator, ResultPair, Argument, Kind,
-      Offset, Name == "insert_or_assign"};
+      Offset, Name == "insert_or_assign", KeyTuple, ValueTuple};
 }
 
 std::optional<UtilityUnorderedMapEqualRange> approvedUtilityUnorderedMapEqualRange(
@@ -87143,57 +87376,13 @@ std::optional<UtilityUnorderedMapRangeInsertion> approvedUtilityUnorderedMapRang
   if (ObjectType.hasQualifiers() ||
       !Context.hasSameType(ObjectType, Context.getRecordType(Map->Record))) return std::nullopt;
   const auto Parameter = Method->getParamDecl(0)->getType();
-  if (Parameter.hasQualifiers() || Parameter->isReferenceType()) return std::nullopt;
-  std::optional<UtilityInitializerListRecord> List;
-  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
-  QualType Element, Pointer;
-  UnorderedMapRangeKind Kind;
-  if (Method->getNumParams() == 1) {
-    List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
-    if (!List || !Context.hasSameType(Call->getArg(0)->getType(), Parameter)) return std::nullopt;
-    const auto *Specialization = cast<ClassTemplateSpecializationDecl>(List->Record);
-    const auto *Primary = Specialization->getSpecializedTemplate();
-    auto Pinned = [&](const Decl *Declaration) {
-      return approvedStandardSDKDeclaration(S, SM, Declaration) &&
-          cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "initializer_list");
-    };
-    for (const auto *Declaration : Specialization->redecls())
-      if (!Pinned(Declaration)) return std::nullopt;
-    for (const auto *Declaration : Primary->redecls()) {
-      if (!Pinned(Declaration)) return std::nullopt;
-      for (const auto *Pattern : Declaration->getTemplatedDecl()->redecls())
-        if (!Pinned(Pattern)) return std::nullopt;
-    }
-    Element = List->ElementType;
-    Pointer = List->Begin->getType();
-    Kind = UnorderedMapRangeKind::InitializerList;
-  } else {
-    if (!Context.hasSameType(Parameter, Method->getParamDecl(1)->getType())) return std::nullopt;
-    for (unsigned I = 0; I != 2; ++I)
-      if (!Context.hasSameType(Call->getArg(I)->getType(), Parameter)) return std::nullopt;
-    if (Parameter->isPointerType()) {
-      Element = Parameter->getPointeeType();
-      Pointer = Parameter;
-      Kind = UnorderedMapRangeKind::Pointer;
-    } else {
-      Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
-          Parameter->getAsCXXRecordDecl(), Context);
-      if (!Iterator || Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl())
-        return std::nullopt;
-      Element = Iterator->Const ? Context.getConstType(Iterator->ValueType) : Iterator->ValueType;
-      Pointer = Iterator->Owner.NodePointerType;
-      Kind = UnorderedMapRangeKind::Iterator;
-    }
-  }
-  if (Element.isNull() || Element.isVolatileQualified() || Element.isRestrictQualified() ||
-      Element.getAddressSpace() != LangAS::Default) return std::nullopt;
-  const auto Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
-  if (!Pair || !Pair->Record->hasTrivialDestructor() ||
-      !Context.hasSameUnqualifiedType(Pair->First->getType(), Context.IntTy) ||
-      !Context.hasSameUnqualifiedType(Pair->Second->getType(), Context.IntTy) ||
-      Pair->First->getType().isVolatileQualified() || Pair->Second->getType().isVolatileQualified() ||
-      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
-  return UtilityUnorderedMapRangeInsertion{*Map, *Pair, Iterator, List, Pointer, Kind};
+  for (unsigned I = 0; I < Method->getNumParams(); ++I)
+    if (!Context.hasSameType(Call->getArg(I)->getType(), Parameter) ||
+        !Context.hasSameType(Method->getParamDecl(I)->getType(), Parameter)) return std::nullopt;
+  auto Input = unorderedMapRangeParameter(S, SM, *Map, Parameter, Method->getNumParams() == 1, Context);
+  if (!Input || !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+    return std::nullopt;
+  return Input;
 }
 
 std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
@@ -87230,6 +87419,120 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
       !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
     return std::nullopt;
   return Move ? UtilityOperation::UnorderedMapMoveAssign : UtilityOperation::UnorderedMapCopyAssign;
+}
+
+std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedMapAllocatorQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "get_allocator" ||
+      !Method->isConst() || Method->getNumParams() || Call->getNumArgs() ||
+      !Prototype || !Prototype->isNothrow() || !Object || !Reference ||
+      !S.owns(SM, Reference->getExprLoc()) || !Call->isPRValue() ||
+      !unorderedMapPublicMethod(S, SM, Method)) return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
+      Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Map || !Allocator || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  const auto Expected = cast<ClassTemplateSpecializationDecl>(Map->Record)->getTemplateArgs().get(4).getAsType();
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  if (ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Map->Record)) ||
+      !Context.hasSameType(Call->getType(), Expected) ||
+      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+    return std::nullopt;
+  return Allocator;
+}
+
+bool approvedUtilityUnorderedMapDefaultArgument(
+    const State &S, const SourceManager &SM, const CXXDefaultArgExpr *Default,
+    const FunctionDecl *Function, unsigned Index, ASTContext &Context) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  const auto *Parameter = Default ? Default->getParam() : nullptr;
+  const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  const auto Map = Constructor ? approvedUtilityUnorderedMapRecord(
+      S, SM, Constructor->getParent(), Context) : std::nullopt;
+  if (!Map || !Default || !Parameter || !Owner || !Constructor->getNumParams() ||
+      Index >= Constructor->getNumParams() || Parameter != Constructor->getParamDecl(Index) ||
+      Parameter->getFunctionScopeIndex() != Index ||
+      Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
+      !unorderedMapPublicMethod(S, SM, Constructor) ||
+      !approvedUnorderedMapMethodSource(S, SM, Constructor, Map->Record, Context))
+    return false;
+  unsigned CountIndex = 0;
+  if (!Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())) {
+    const auto First = Constructor->getParamDecl(0)->getType();
+    const auto *Record = First->getAsCXXRecordDecl();
+    const bool List = Record && Record->getName() == "initializer_list";
+    if ((!List && !Constructor->getPrimaryTemplate()) ||
+        !unorderedMapRangeParameter(S, SM, *Map, First, List, Context)) return false;
+    CountIndex = List ? 1 : 2;
+    if (!List && (Constructor->getNumParams() < 2 ||
+        !Context.hasSameType(Constructor->getParamDecl(1)->getType(), First))) return false;
+  }
+  if (Constructor->getNumParams() != CountIndex + 3 || Index <= CountIndex ||
+      Index > CountIndex + 2 ||
+      !Context.hasSameType(Constructor->getParamDecl(CountIndex)->getType(), Context.getSizeType()))
+    return false;
+  const auto *Specialization = cast<ClassTemplateSpecializationDecl>(Map->Record);
+  for (unsigned I = 1; I <= 2; ++I) {
+    const auto Type = Specialization->getTemplateArgs().get(I + 1).getAsType();
+    if (!Context.hasSameType(Constructor->getParamDecl(CountIndex + I)->getType(),
+            Context.getLValueReferenceType(Type.withConst())) ||
+        !approvedFunctionalObjectRecord(S, SM, Type->getAsCXXRecordDecl(), Context)) return false;
+  }
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  if (!Init || !cstddefOrigin(S, SM, Init->getExprLoc(), "libcxx", "unordered_map")) return false;
+  const Expr *Value = Init->IgnoreParenImpCasts();
+  if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
+    Value = Temporary->getSubExpr()->IgnoreParenImpCasts();
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Value))
+    Value = Cleanup->getSubExpr()->IgnoreParenImpCasts();
+  if (const auto *Bind = dyn_cast<CXXBindTemporaryExpr>(Value))
+    Value = Bind->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Value);
+  const auto Kind = Construction ? approvedFunctionalObjectConstruction(
+      S, SM, Construction, Context) : std::nullopt;
+  const auto Expected = Specialization->getTemplateArgs().get(Index - CountIndex + 1).getAsType();
+  return Kind && *Kind == FunctionalObjectConstruction::Default &&
+      !Construction->getNumArgs() && Context.hasSameType(Construction->getType(), Expected);
+}
+
+std::optional<FunctionalObjectRecord> approvedUtilityUnorderedMapPolicyQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+  const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if ((Name != "hash_function" && Name != "key_eq") || !Method->isConst() ||
+      Method->getNumParams() || Call->getNumArgs() || !Call->isPRValue() ||
+      !Object || !Reference || !S.owns(SM, Reference->getExprLoc()) ||
+      !unorderedMapPublicMethod(S, SM, Method)) return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  const auto Result = approvedFunctionalObjectRecord(S, SM,
+      Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Map || !Result || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  const auto Expected = cast<ClassTemplateSpecializationDecl>(Map->Record)->getTemplateArgs()
+      .get(Name == "hash_function" ? 2 : 3).getAsType();
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  if (ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Map->Record)) ||
+      !Context.hasSameType(Call->getType(), Expected) ||
+      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+    return std::nullopt;
+  return Result;
 }
 
 } // namespace nct

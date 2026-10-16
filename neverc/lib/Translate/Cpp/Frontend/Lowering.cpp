@@ -1350,6 +1350,24 @@ class FunctionLowering {
     label(Done, L);
     return Result;
   }
+  void unorderedInsertRange(Expression Place, const UtilityUnorderedMapRangeInsertion &Info,
+                            Expression Current, Expression End, SourceLocation L) {
+    const auto Check = labelName(), Insert = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Insert, Done, L);
+    label(Insert, L);
+    auto Element = Info.Iterator
+        ? dereference(unorderedIteratorValue(Current, *Info.Iterator, L), L)
+        : dereference(Current, L);
+    unorderedInsertNode(Place, Info.Map, fieldStorage(Element, Info.Pair.First, L),
+        fieldStorage(Element, Info.Pair.Second, L), false, L);
+    assign(Current, Info.Iterator ? unorderedNodeNext(Current, Info.Iterator->Owner, L)
+        : binary("+", Current, one(type(A.Context.getSizeType(), L), L), type(Info.PointerType, L), L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   struct UnorderedInsertion { Expression Node, Inserted; };
   UnorderedInsertion unorderedInsertNode(Expression Place,
       const UtilityUnorderedMapRecord &Info, Expression Key,
@@ -4842,6 +4860,20 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
+        Operation == UtilityOperation::UnorderedMapPolicy) {
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const bool Valid = Operation == UtilityOperation::UnorderedMapGetAllocator
+          ? bool(approvedUtilityUnorderedMapAllocatorQuery(A.S, A.Sources, Call, A.Context))
+          : bool(approvedUtilityUnorderedMapPolicyQuery(A.S, A.Sources, Call, A.Context));
+      if (!Member || !Valid) reject(L, "unordered map observer", "The authenticated stateless result is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      if (Object->getType()->isPointerType()) expression(Object);
+      else lvalue(Object);
+      auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      assign(Result, A.zero(Call->getType(), L), L);
+      return Result;
+    }
     if (Operation == UtilityOperation::UnorderedMapCopyAssign ||
         Operation == UtilityOperation::UnorderedMapMoveAssign) {
       const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
@@ -4924,20 +4956,7 @@ class FunctionLowering {
         End = snapshot(Info->Iterator
             ? unorderedIteratorNode(dereference(Last, L), *Info->Iterator, L) : Last, L);
       }
-      const auto Check = labelName(), Insert = labelName(), Done = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("!=", Current, End, "bool", L), Insert, Done, L);
-      label(Insert, L);
-      auto Element = Info->Iterator
-          ? dereference(unorderedIteratorValue(Current, *Info->Iterator, L), L)
-          : dereference(Current, L);
-      unorderedInsertNode(Place, Info->Map, fieldStorage(Element, Info->Pair.First, L),
-          fieldStorage(Element, Info->Pair.Second, L), false, L);
-      assign(Current, Info->Iterator ? unorderedNodeNext(Current, Info->Iterator->Owner, L)
-          : binary("+", Current, one(type(A.Context.getSizeType(), L), L), type(Info->PointerType, L), L), L);
-      jump(Check, L);
-      label(Done, L);
+      unorderedInsertRange(Place, *Info, Current, End, L);
       return {};
     }
     if (Operation == UtilityOperation::UnorderedMapInsertValue) {
@@ -4953,7 +4972,31 @@ class FunctionLowering {
         argument(Call->getArg(0), Method->getParamDecl(0)->getType());
       Expression Key;
       std::optional<Expression> Mapped, PreparedNode;
-      if (Info->Kind == UnorderedMapInsertionKind::Default) {
+      if (Info->Kind == UnorderedMapInsertionKind::Piecewise) {
+        if (!Info->KeyTuple || !Info->ValueTuple)
+          reject(L, "unordered map piecewise construction", "Authenticated tuple shapes are required.");
+        auto Keys = snapshot(argument(Call->getArg(Info->Offset + 1),
+            Method->getParamDecl(Info->Offset + 1)->getType()), L);
+        auto Values = snapshot(argument(Call->getArg(Info->Offset + 2),
+            Method->getParamDecl(Info->Offset + 2)->getType()), L);
+        PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
+            quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
+            type(Info->Map.NodePointerType, L), L), L);
+        auto Read = [&](Expression Tuple, const UtilityTupleRecord &Shape) {
+          if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
+          const auto &Element = Shape.Elements.front();
+          auto Value = fieldStorage(dereference(Tuple, L), Element, L);
+          return Element.getType()->isReferenceType() ? dereference(Value, L) : Value;
+        };
+        // The SDK copies tuple parameters while constructing the pair, after
+        // node allocation. Reference elements still read their live referents.
+        assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), Read(Keys, *Info->KeyTuple), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), Read(Values, *Info->ValueTuple), L);
+        Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
+        Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
+      } else if (Info->Kind == UnorderedMapInsertionKind::Default) {
+
         PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
             quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
             type(Info->Map.NodePointerType, L), L), L);
@@ -32031,16 +32074,58 @@ class FunctionLowering {
       }
       return;
     }
-    if (approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context)) {
+    if (auto Kind = approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources,
           T->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "unordered map construction", "The authenticated storage layout is unavailable.");
-      if (!C->getNumArgs()) {
+      if (*Kind == UtilityUnorderedMapConstructionKind::Range) {
+        const auto Range = approvedUtilityUnorderedMapRangeConstruction(A.S, A.Sources, C, A.Context);
+        if (!Range) reject(L, "unordered map range construction", "The authenticated input range is unavailable.");
+        const auto &Input = Range->Input;
+        Expression Current, End;
+        if (Input.List) {
+          auto List = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+          Current = snapshot(fieldStorage(dereference(List, L), Input.List->Begin, L), L);
+          auto Count = snapshot(fieldStorage(dereference(List, L), Input.List->Size, L), L);
+          End = snapshot(Current, L);
+          const auto Advance = labelName(), Ready = labelName();
+          branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L), Advance, Ready, L);
+          label(Advance, L);
+          assign(End, binary("+", Current, Count, type(Input.PointerType, L), L), L);
+          jump(Ready, L);label(Ready, L);
+        } else {
+          auto First = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+          Current = snapshot(Input.Iterator
+              ? unorderedIteratorNode(dereference(First, L), *Input.Iterator, L) : First, L);
+          auto Last = snapshot(argument(C->getArg(1), C->getConstructor()->getParamDecl(1)->getType()), L);
+          End = snapshot(Input.Iterator
+              ? unorderedIteratorNode(dereference(Last, L), *Input.Iterator, L) : Last, L);
+        }
+        std::optional<Expression> Buckets;
+        for (unsigned I = Range->InputCount; I < C->getNumArgs(); ++I) {
+          auto Value = argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType());
+          if (Range->BucketIndex && I == *Range->BucketIndex) Buckets = snapshot(Value, L);
+        }
+        initializeUnorderedMap(Place, *Info, L);
+        if (Buckets) unorderedRehash(Place, *Info, *Buckets, L);
+        unorderedInsertRange(Place, Input, Current, End, L);
+      } else if (*Kind == UtilityUnorderedMapConstructionKind::Buckets) {
+        auto Count = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+        for (unsigned I = 1; I < C->getNumArgs(); ++I)
+          argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType());
+        initializeUnorderedMap(Place, *Info, L);
+        unorderedRehash(Place, *Info, Count, L);
+      } else if (*Kind == UtilityUnorderedMapConstructionKind::Default ||
+          *Kind == UtilityUnorderedMapConstructionKind::Allocator) {
+        if (*Kind == UtilityUnorderedMapConstructionKind::Allocator)
+          argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType());
         initializeUnorderedMap(std::move(Place), *Info, L);
       } else {
         auto SourceAddress = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+        if (C->getNumArgs() == 2)
+          argument(C->getArg(1), C->getConstructor()->getParamDecl(1)->getType());
         auto Source = dereference(SourceAddress, L);
-        if (C->getConstructor()->isMoveConstructor())
+        if (*Kind == UtilityUnorderedMapConstructionKind::Move)
           unorderedMoveMap(Place, Source, *Info, false, L);
         else {
           initializeUnorderedMap(Place, *Info, L);

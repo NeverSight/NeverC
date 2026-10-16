@@ -23032,6 +23032,11 @@ public:
         }
         return true;
       }
+    if (A.S.coreV2() && approvedUtilityPiecewiseConstructType(A.S, A.Sources, D->getType(), A.Context)) {
+      A.reject(D->getLocation(), "standalone piecewise construction tag",
+               "std::piecewise_construct_t is admitted only as an authenticated constructor argument.", "TR0203");
+      return true;
+    }
     if (A.S.coreV2() &&
         approvedUtilityInPlaceType(A.S, A.Sources, D->getType(), A.Context)) {
       A.reject(D->getLocation(), "standalone in-place tag",
@@ -23812,6 +23817,8 @@ public:
                                          A.S, A.Sources, E, A.Context)) &&
                    !(A.S.coreV2() && approvedUtilityInPlaceExpression(
                                          A.S, A.Sources, E, A.Context)) &&
+                   !(A.S.coreV2() && approvedUtilityPiecewiseConstructExpression(
+                                         A.S, A.Sources, E, A.Context)) &&
                    !(A.S.coreV2() &&
                      approvedUtilityOptionalBaseCast(
                          A.S, A.Sources, dyn_cast<CastExpr>(E), A.Context)) &&
@@ -24475,9 +24482,9 @@ public:
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor())) {
         if (approvedUtilityNulloptExpression(A.S, A.Sources, C, A.Context) ||
-            approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
-          // std::nullopt_t and std::in_place_t are erased tags consumed only
-          // by authenticated optional operations.
+            approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context) ||
+            approvedUtilityPiecewiseConstructExpression(A.S, A.Sources, C, A.Context)) {
+          // Authenticated SDK tags are erased by their selected library operations.
         } else if (approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedScalarRealDistributionConstruction(A.S, A.Sources, C, A.Context) ||
