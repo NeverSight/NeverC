@@ -1350,8 +1350,10 @@ class FunctionLowering {
     label(Done, L);
     return Result;
   }
-  Expression unorderedSubscript(Expression Place, const UtilityUnorderedMapRecord &Info,
-                                  Expression Key, SourceLocation L) {
+  struct UnorderedInsertion { Expression Node, Inserted; };
+  UnorderedInsertion unorderedInsertNode(Expression Place,
+      const UtilityUnorderedMapRecord &Info, Expression Key,
+      std::optional<Expression> Mapped, bool AssignExisting, SourceLocation L) {
     // Key is a captured reference. The selected new hook runs after hashing and
     // before pair construction, so reread the referent when constructing the key.
     const auto Size = type(A.Context.getSizeType(), L);
@@ -1359,17 +1361,20 @@ class FunctionLowering {
     auto Hash = snapshot(cast(Key, Size, L), L);
     auto OldCount = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
     auto Result = snapshot(unorderedFindNode(Place, Info, Key, Hash, L), L);
+    auto InsertedValue = snapshot(boolean(false, L), L);
+    auto InitialValue = [&] { return Mapped ? Expression(*Mapped) : A.zero(A.Context.IntTy, L); };
+    const auto Existing = labelName();
     const auto Allocate = labelName(), Capacity = labelName(), NeedCapacity = labelName();
     const auto Grow = labelName(), Desired = labelName(), SelectMinimum = labelName(), Rehash = labelName();
     const auto Insert = labelName(), EmptyBucket = labelName(), OccupiedBucket = labelName();
     const auto NextBucket = labelName(), Increment = labelName(), Done = labelName();
-    branch(cast(Result, "bool", L), Done, Allocate, L);
+    branch(cast(Result, "bool", L), AssignExisting ? Existing : Done, Allocate, L);
     label(Allocate, L);
     auto Node = snapshot(cast(unorderedHeapAllocate(Info.NodeType,
         quantity(Info.NodeBytes, Size, L), L), NodePointer, L), L);
     assign(unorderedNodeHash(Node, L), Hash, L);
     assign(unorderedNodeKey(Node, Info, L), Key, L);
-    assign(unorderedNodeValue(Node, Info, L), A.zero(A.Context.IntTy, L), L);
+    assign(unorderedNodeValue(Node, Info, L), InitialValue(), L);
     assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
     auto NewSize = snapshot(binary("+", unorderedMapMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
     jump(Capacity, L);
@@ -1419,9 +1424,22 @@ class FunctionLowering {
     assign(unorderedMapMember(Place, Info, "nct_unordered_size", L),
         binary("+", unorderedMapMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
     assign(Result, Node, L);
+    assign(InsertedValue, boolean(true, L), L);
     jump(Done, L);
+    if (AssignExisting) {
+      label(Existing, L);
+      assign(unorderedNodeValue(Result, Info, L), InitialValue(), L);
+      jump(Done, L);
+    }
     label(Done, L);
-    return unorderedNodeValue(Result, Info, L);
+    return {Result, InsertedValue};
+  }
+
+  Expression unorderedSubscript(Expression Place, const UtilityUnorderedMapRecord &Info,
+                                  Expression Key, SourceLocation L) {
+    auto Result = unorderedInsertNode(std::move(Place), Info, std::move(Key),
+                                     std::nullopt, false, L);
+    return unorderedNodeValue(std::move(Result.Node), Info, L);
   }
 
   Expression unorderedEraseKey(Expression Place, const UtilityUnorderedMapRecord &Info,
@@ -4623,6 +4641,43 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::UnorderedMapInsertValue) {
+      const auto Info = approvedUtilityUnorderedMapInsertion(A.S, A.Sources, Call, A.Context);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      if (!Info || !Member) reject(L, "unordered map insertion", "The authenticated operation is unavailable.");
+      const auto *Method = Member->getMethodDecl();
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Info->Offset)
+        argument(Call->getArg(0), Method->getParamDecl(0)->getType());
+      Expression Key;
+      std::optional<Expression> Mapped;
+      if (Info->Kind == UnorderedMapInsertionKind::Pair) {
+        auto Pair = snapshot(argument(Call->getArg(Info->Offset),
+            Method->getParamDecl(Info->Offset)->getType()), L);
+        Key = fieldStorage(dereference(Pair, L), Info->ArgumentPair->First, L);
+        Mapped = fieldStorage(dereference(Pair, L), Info->ArgumentPair->Second, L);
+      } else {
+        auto KeyReference = snapshot(argument(Call->getArg(Info->Offset),
+            Method->getParamDecl(Info->Offset)->getType()), L);
+        Key = dereference(KeyReference, L);
+        if (Info->Kind == UnorderedMapInsertionKind::KeyValue) {
+          auto Reference = snapshot(argument(Call->getArg(Info->Offset + 1),
+              Method->getParamDecl(Info->Offset + 1)->getType()), L);
+          Mapped = dereference(Reference, L);
+        }
+      }
+      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L);
+      if (!Info->ResultPair)
+        return unorderedMakeIterator(Result.Node, Info->Iterator, std::move(Destination), L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      unorderedMakeIterator(Result.Node, Info->Iterator,
+          fieldStorage(Output, Info->ResultPair->First, L), L);
+      assign(fieldStorage(Output, Info->ResultPair->Second, L), Result.Inserted, L);
+      return Output;
+    }
     if (Operation >= UtilityOperation::UnorderedMapBegin &&
         Operation <= UtilityOperation::UnorderedMapFind) {
       const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);

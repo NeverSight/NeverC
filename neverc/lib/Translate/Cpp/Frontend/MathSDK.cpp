@@ -74536,6 +74536,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (approvedUtilityUnorderedMapInsertion(S, SM, Call, Context))
+    return UtilityOperation::UnorderedMapInsertValue;
   if (auto Iterator = approvedUtilityUnorderedMapIteratorOperation(S, SM, Call, Context))
     return Iterator;
   if (auto Map = approvedUtilityUnorderedMapOperation(S, SM, Call, Context))
@@ -86979,6 +86981,95 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
                Call->getArg(Offset)->isXValue())))
     return UtilityOperation::UnorderedMapSubscript;
   return std::nullopt;
+}
+
+std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+  if (Name != "insert" && Name != "emplace" && Name != "try_emplace" &&
+      Name != "insert_or_assign" && Name != "emplace_hint") return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  const auto *Reference = dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+  const auto *Object = Member->getImplicitObjectArgument();
+  if (!Map || !Reference || !Object || !S.owns(SM, Reference->getExprLoc()) ||
+      Method->isConst() || !unorderedMapPublicMethod(S, SM, Method) ||
+      Call->getNumArgs() != Method->getNumParams() || !Call->isPRValue() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType())) return std::nullopt;
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  if (ObjectType.hasQualifiers() ||
+      !Context.hasSameType(ObjectType, Context.getRecordType(Map->Record))) return std::nullopt;
+  unsigned Offset = 0;
+  if (Method->getNumParams()) {
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto Hint = approvedUtilityUnorderedMapIteratorRecord(
+        S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (Hint) {
+      if (!Hint->Const || Parameter.hasQualifiers() ||
+          Hint->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl() ||
+          !Context.hasSameType(Call->getArg(0)->getType(), Parameter)) return std::nullopt;
+      Offset = 1;
+    }
+  }
+  if ((Name == "emplace_hint") != bool(Offset) &&
+      (Name == "emplace" || Name == "emplace_hint")) return std::nullopt;
+  const unsigned Count = Method->getNumParams() - Offset;
+  auto IntReference = [&](unsigned Index) {
+    const auto Parameter = Method->getParamDecl(Index)->getType();
+    const auto Value = Parameter.getNonReferenceType();
+    return Parameter->isReferenceType() && !Value.isVolatileQualified() &&
+        !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
+        Context.hasSameUnqualifiedType(Value, Context.IntTy) &&
+        Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Context.IntTy);
+  };
+  UnorderedMapInsertionKind Kind;
+  std::optional<UtilityPairRecord> Argument;
+  if (Name == "insert" || ((Name == "emplace" || Name == "emplace_hint") && Count == 1)) {
+    if (Count != 1 || !Method->getParamDecl(Offset)->getType()->isReferenceType())
+      return std::nullopt;
+    const auto Parameter = Method->getParamDecl(Offset)->getType().getNonReferenceType();
+    Argument = approvedUtilityPairRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (!Argument || Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
+        Parameter.getAddressSpace() != LangAS::Default ||
+        !Argument->Record->hasTrivialDestructor() ||
+        !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Parameter) ||
+        !Context.hasSameUnqualifiedType(Argument->First->getType(), Context.IntTy) ||
+        !Context.hasSameUnqualifiedType(Argument->Second->getType(), Context.IntTy) ||
+        Argument->First->getType().isVolatileQualified() ||
+        Argument->Second->getType().isVolatileQualified()) return std::nullopt;
+    Kind = UnorderedMapInsertionKind::Pair;
+  } else {
+    if (Count != 2 && !(Count == 1 && Name == "try_emplace")) return std::nullopt;
+    for (unsigned I = Offset; I != Method->getNumParams(); ++I)
+      if (!IntReference(I)) return std::nullopt;
+    if (Name == "try_emplace" || Name == "insert_or_assign") {
+      const auto Key = Method->getParamDecl(Offset)->getType();
+      if (!Context.hasSameType(Key, Context.getLValueReferenceType(Context.getConstType(Context.IntTy))) &&
+          !Context.hasSameType(Key, Context.getRValueReferenceType(Context.IntTy))) return std::nullopt;
+    }
+    Kind = Count == 1 ? UnorderedMapInsertionKind::KeyOnly : UnorderedMapInsertionKind::KeyValue;
+  }
+  std::optional<UtilityPairRecord> ResultPair;
+  const auto Result = Method->getReturnType();
+  auto Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM, Result->getAsCXXRecordDecl(), Context);
+  if (Offset) {
+    if (!Iterator || Iterator->Const ||
+        Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl()) return std::nullopt;
+  } else {
+    ResultPair = approvedUtilityPairRecord(S, SM, Result->getAsCXXRecordDecl(), Context);
+    if (!ResultPair || !Context.hasSameType(ResultPair->Second->getType(), Context.BoolTy))
+      return std::nullopt;
+    Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
+        ResultPair->First->getType()->getAsCXXRecordDecl(), Context);
+    if (!Iterator || Iterator->Const ||
+        Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl()) return std::nullopt;
+  }
+  if (!approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
+  return UtilityUnorderedMapInsertion{*Map, *Iterator, ResultPair, Argument, Kind,
+      Offset, Name == "insert_or_assign"};
 }
 
 } // namespace nct

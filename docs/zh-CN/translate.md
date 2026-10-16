@@ -883,6 +883,8 @@ CI 结果、运行与安装验证以及测试跳过项按平台分别记录。�
 
 固定的 C++17 `<unordered_map>` 头文件支持 `std::unordered_map<int, int>` 的元数据，要求使用精确的 SDK `std::hash<int>`、`std::equal_to<int>` 和 `std::allocator<std::pair<const int, int>>`。类型别名、类型同一性、公开成员类型、`sizeof` 和 `alignof` 保留所选目标的布局。
 
-使用 SDK 默认策略的固定 `std::unordered_map<int, int>` 支持默认构造、析构、运行时指针与引用、大小及负载观察器、负载上限设置，以及 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 和成员 `swap`。重新散列与交换保留已插入节点的地址。分配与释放使用源码定义的全局钩子；输入须满足 SDK 前置条件及分配成功且不溢出的范围。复制、移动、`insert`/`emplace`、`at`、其他元素类型、自定义策略及源码对 SDK 的重声明仍被拒绝。
+使用 SDK 默认策略的固定 `std::unordered_map<int, int>` 支持默认构造、析构、运行时指针与引用、大小及负载观察器、负载上限设置，以及 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 和成员 `swap`。重新散列与交换保留已插入节点的地址。分配与释放使用源码定义的全局钩子；输入须满足 SDK 前置条件及分配成功且不溢出的范围。复制、移动、`at`、其他元素类型、自定义策略及源码对 SDK 的重声明仍被拒绝。
 
 可变和只读迭代器支持默认、复制及移动构造与赋值、可变到只读转换、解引用、箭头、递增和相等比较。`begin`/`end`、`cbegin`/`cend`、`find`、范围循环和结构化绑定保留 SDK 节点顺序与键的只读引用。 迭代器及迭代器范围的 `erase` 返回下一个可变迭代器。
+
+同一 int/int 映射还支持 `insert`, `emplace`, `emplace_hint`, `try_emplace`, `insert_or_assign`，参数为 int 键值引用或 int/int 二元组，并支持相应的只读迭代器提示重载。返回值为可变迭代器或迭代器与插入标志的二元组。重复插入保留原映射值，插入或赋值操作则替换它。参数仅捕获一次，节点构造在分配后、桶增长前读取引用值。无参数、分段构造及其他参数类型的 emplace 仍需继续补齐。

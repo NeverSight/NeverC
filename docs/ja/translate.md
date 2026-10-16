@@ -883,6 +883,8 @@ CI の結果、実行・インストールの検証、スキップされたテ�
 
 固定された C++17 の `<unordered_map>` ヘッダーは、SDK の正確な `std::hash<int>`、`std::equal_to<int>`、`std::allocator<std::pair<const int, int>>` を使う `std::unordered_map<int, int>` のメタデータを受け入れます。別名、型の同一性、公開メンバー型、`sizeof`、`alignof` は対象環境のレイアウトを保持します。
 
-SDK の既定ポリシーを使う固定の `std::unordered_map<int, int>` は、既定構築、破棄、実行時のポインターと参照、サイズと負荷の取得、負荷上限の設定に加えて `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` とメンバー `swap` を受け入れます。再ハッシュと交換でも挿入済みノードのアドレスを保持します。確保と解放はソース定義のグローバルフックを使い、入力は SDK の事前条件と、確保が成功してオーバーフローしない範囲を満たす必要があります。コピー、移動、`insert`/`emplace`、`at`、他の要素型、独自ポリシー、ソースからの SDK 再宣言は引き続き拒否されます。
+SDK の既定ポリシーを使う固定の `std::unordered_map<int, int>` は、既定構築、破棄、実行時のポインターと参照、サイズと負荷の取得、負荷上限の設定に加えて `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` とメンバー `swap` を受け入れます。再ハッシュと交換でも挿入済みノードのアドレスを保持します。確保と解放はソース定義のグローバルフックを使い、入力は SDK の事前条件と、確保が成功してオーバーフローしない範囲を満たす必要があります。コピー、移動、`at`、他の要素型、独自ポリシー、ソースからの SDK 再宣言は引き続き拒否されます。
 
 可変・読み取り専用イテレーターは、既定・コピー・移動構築と代入、可変から読み取り専用への変換、参照外し、矢印、インクリメント、等値比較を受け入れます。`begin`/`end`、`cbegin`/`cend`、`find`、範囲 for と構造化束縛は SDK のノード順とキーの const 参照を保持します。 イテレーターとイテレーター範囲の `erase` は、次の可変イテレーターを返します。
+
+同じ int/int マップは、int のキーと値の参照、int/int のペアを引数とする `insert`, `emplace`, `emplace_hint`, `try_emplace`, `insert_or_assign` と、対応する const イテレーターのヒント付きオーバーロードを受け入れます。結果は可変イテレーター、またはイテレーターと挿入フラグのペアです。重複挿入は値を保持し、insert-or-assign は置き換えます。引数は一度だけ取得し、ノード構築は確保後、バケット拡張前に参照先を読みます。引数なし・piecewise 構築と他の引数型は別途対応が必要です。

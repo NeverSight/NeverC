@@ -984,6 +984,7 @@ enum class UtilityOperation {
   UnorderedMapFind,
   UnorderedMapEraseIterator,
   UnorderedMapEraseRange,
+  UnorderedMapInsertValue,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
   UnorderedIteratorPreIncrement,
@@ -2052,6 +2053,18 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
+enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly };
+struct UtilityUnorderedMapInsertion {
+  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedMapIteratorRecord Iterator;
+  std::optional<UtilityPairRecord> ResultPair, ArgumentPair;
+  UnorderedMapInsertionKind Kind;
+  unsigned Offset;
+  bool AssignExisting;
+};
+std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool approvedUtilityUnorderedMapIteratorMetadata(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
 enum class UtilityUnorderedMapIteratorConstruction { Default, CopyOrMove, Converting };

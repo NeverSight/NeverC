@@ -883,6 +883,8 @@ CI 결과, 실행 및 설치 검증, 건너뛴 테스트는 플랫폼별로 기�
 
 고정된 C++17 `<unordered_map>` 헤더는 정확한 SDK `std::hash<int>`, `std::equal_to<int>`, `std::allocator<std::pair<const int, int>>`를 사용하는 `std::unordered_map<int, int>`의 메타데이터를 허용합니다. 별칭, 타입 동일성, 공개 멤버 타입, `sizeof`, `alignof`는 대상의 레이아웃을 유지합니다.
 
-SDK 기본 정책을 사용하는 고정 `std::unordered_map<int, int>`는 기본 생성, 소멸, 런타임 포인터와 참조, 크기와 부하 조회, 부하 상한 설정에 더해 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 및 멤버 `swap`을 지원합니다. 재해시와 교환은 삽입된 노드의 주소를 유지합니다. 할당과 해제는 소스에 정의된 전역 훅을 사용하며 입력은 SDK 사전 조건과 할당이 성공하고 오버플로하지 않는 범위를 충족해야 합니다. 복사, 이동, `insert`/`emplace`, `at`, 다른 요소 타입, 사용자 정의 정책과 소스의 SDK 재선언은 계속 거부됩니다.
+SDK 기본 정책을 사용하는 고정 `std::unordered_map<int, int>`는 기본 생성, 소멸, 런타임 포인터와 참조, 크기와 부하 조회, 부하 상한 설정에 더해 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 및 멤버 `swap`을 지원합니다. 재해시와 교환은 삽입된 노드의 주소를 유지합니다. 할당과 해제는 소스에 정의된 전역 훅을 사용하며 입력은 SDK 사전 조건과 할당이 성공하고 오버플로하지 않는 범위를 충족해야 합니다. 복사, 이동, `at`, 다른 요소 타입, 사용자 정의 정책과 소스의 SDK 재선언은 계속 거부됩니다.
 
 가변 및 읽기 전용 반복자는 기본·복사·이동 생성과 대입, 가변에서 읽기 전용으로의 변환, 역참조, 화살표, 증가와 동등 비교를 지원합니다. `begin`/`end`, `cbegin`/`cend`, `find`, 범위 반복문과 구조적 바인딩은 SDK 노드 순서와 키의 const 참조를 유지합니다. 반복자 및 반복자 범위의 `erase`는 다음 가변 반복자를 반환합니다.
+
+같은 int/int 맵은 int 키·값 참조 또는 int/int 쌍을 받는 `insert`, `emplace`, `emplace_hint`, `try_emplace`, `insert_or_assign`와 해당 const 반복자 힌트 오버로드를 지원합니다. 결과는 가변 반복자 또는 반복자와 삽입 여부의 쌍입니다. 중복 삽입은 값을 유지하고 insert-or-assign은 값을 교체합니다. 인수는 한 번만 캡처하며 노드 생성은 할당 후 버킷 확장 전에 참조 값을 읽습니다. 인수 없는 생성, piecewise 생성과 다른 인수 타입은 별도 작업입니다.

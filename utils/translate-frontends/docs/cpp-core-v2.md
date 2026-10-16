@@ -16671,7 +16671,7 @@ source-defined global deallocation operators. Internal node size, alignment,
 payload offsets and embedded destructor chains are authenticated separately.
 Missing source deallocation definitions retain TR0203, including empty maps.
 
-Map copy/move construction, assignment, `insert`/`emplace` and `at`
+Map copy/move construction, assignment and `at`
 remain outside this admission. Every public SDK method and selected private
 helper retains its body and redeclaration checks. Source specializations of
 methods, constructors, destructors or private storage cannot borrow admission.
@@ -16753,3 +16753,27 @@ insertion/erasure/swap, renewed lookup after rehash and source-visible effects.
 Direct replaceable `new` expressions may be elided by native optimization, so
 their lifetime fixtures assert values and balanced cleanup rather than a fixed
 allocation-event hash. Map-operation traces retain their native64 goldens.
+
+## Unordered-map insertion results
+
+The exact default-policy int/int specialization admits const/rvalue value-type
+`insert`, insertion from int/int pairs, `emplace(key, value)` and emplace from
+those pairs, `try_emplace(key)` and `try_emplace(key, value)`, and
+`insert_or_assign(key, value)`. The corresponding const-iterator hint overloads
+and `emplace_hint` are admitted. Forwarded key/value arguments are int references;
+zero-argument emplace, piecewise construction and other argument types remain
+separate work. The SDK's successful, nonoverflowing allocation domain applies.
+
+Results are a mutable iterator for hint calls, or an authenticated
+`pair<iterator, bool>` whose flag reports a new insertion. Duplicate insert,
+emplace and try-emplace calls preserve the old value without allocating;
+insert-or-assign writes its forwarded value when the key already exists.
+Receivers and all arguments are evaluated once, including otherwise unused
+hints. Lvalue aliases remain live through allocation: hashing and lookup precede
+node allocation, key/value construction reads them after allocation, and bucket
+growth follows construction. Source allocation hooks can therefore change the
+stored forwarded values or the load limit at the SDK-defined points.
+
+The shared node helper also implements subscript's value initialization. Source
+SDK method and constructor specializations, iterator/result-pair substitutions,
+custom policies and missing heap definitions retain their separate boundaries.
