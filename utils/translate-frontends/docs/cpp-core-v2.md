@@ -16799,3 +16799,31 @@ preconditions still apply. Range insertion requires source heap definitions
 even when one execution observes an empty range. Other iterator families and
 pair element types remain separate work. Node growth and value-copy timing use
 the same insertion helper as subscript, insert and try-emplace.
+
+## Unordered-map copy and move lifecycle
+
+The authenticated default int/int map admits its one-source copy and move
+constructors, copy/move assignment in operator and named-member notation,
+record members, arrays, return values and by-value parameters. Copy construction
+copies the load limit, allocates the source bucket count, and inserts independent
+nodes in the pinned SDK traversal order. Copy assignment skips self assignment,
+retains its bucket storage, detaches and reuses old nodes, releases unused nodes,
+and allocates additional nodes as needed. Its SDK multi-insertion path places
+distinct source keys at their bucket tails; ordinary insert places them at the
+front. Reused nodes are assigned before any bucket-growth hook, while new copy
+assignment nodes are allocated and constructed before hashing and growth.
+
+Move construction and assignment transfer bucket and node storage and repair
+any first-bucket predecessor that pointed into the old object. An ordinary
+moved-from map has zero size and bucket count and retains its previous maximum
+load factor. Assignment releases destination nodes and buckets in SDK order;
+source heap hooks observe the same intermediate size, count and load state.
+Copy self assignment performs no allocation or deletion. Self move follows the
+pinned SDK state transitions, and the resulting empty object remains usable.
+C++17 assignment notation evaluates its source operand before its receiver;
+named member notation evaluates the receiver before its source argument.
+
+The existing successful allocation and valid object lifetime preconditions apply.
+Allocator-extended overloads and other key/value/policy types remain separate
+work. SDK declaration/body authentication and source heap definitions are still
+required even for an execution that transfers or copies an empty map.

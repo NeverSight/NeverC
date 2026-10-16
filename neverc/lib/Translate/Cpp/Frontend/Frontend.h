@@ -987,6 +987,8 @@ enum class UtilityOperation {
   UnorderedMapInsertValue,
   UnorderedMapEqualRange,
   UnorderedMapInsertRange,
+  UnorderedMapCopyAssign,
+  UnorderedMapMoveAssign,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
   UnorderedIteratorPreIncrement,
@@ -2098,6 +2100,9 @@ bool approvedUtilityUnorderedMapIteratorDestructor(const State &S, const clang::
 enum class UtilityOperation;
 bool approvedUnorderedMapMethodSource(const State &S, const clang::SourceManager &SM,
     const clang::FunctionDecl *Function, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 bool approvedUtilityUnorderedMapConstruction(const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);

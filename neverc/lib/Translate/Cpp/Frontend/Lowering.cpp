@@ -1435,6 +1435,200 @@ class FunctionLowering {
     return {Result, InsertedValue};
   }
 
+  void unorderedAppendCopiedNode(Expression Place, const UtilityUnorderedMapRecord &Info,
+      Expression Node, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto NodePointer = type(Info.NodePointerType, L);
+    auto Hash = snapshot(cast(unorderedNodeKey(Node, Info, L), Size, L), L);
+    assign(unorderedNodeHash(Node, L), Hash, L);
+    auto OldCount = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    const auto Capacity = labelName(), NeedCapacity = labelName(), Grow = labelName();
+    const auto Desired = labelName(), SelectMinimum = labelName(), Rehash = labelName();
+    const auto Insert = labelName(), EmptyBucket = labelName(), OccupiedBucket = labelName();
+    const auto NextBucket = labelName(), Increment = labelName(), Done = labelName();
+    auto NewSize = snapshot(binary("+", unorderedMapMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
+    jump(Capacity, L);
+    label(Capacity, L);
+    branch(binary(">", cast(NewSize, "float", L),
+        binary("*", cast(OldCount, "float", L), unorderedMapMember(Place, Info, "nct_unordered_max_load", L), "float", L), "bool", L), Grow, NeedCapacity, L);
+    label(NeedCapacity, L);
+    branch(binary("==", OldCount, quantity(0, Size, L), "bool", L), Grow, Insert, L);
+    label(Grow, L);
+    auto Limit = snapshot(unorderedMapMember(Place, Info, "nct_unordered_max_load", L), L);
+    auto Wanted = snapshot(binary("*", OldCount, quantity(2, Size, L), Size, L), L);
+    const auto Extra = labelName();
+    branch(unorderedHashPower2(OldCount, L), Desired, Extra, L);
+    label(Extra, L);
+    assign(Wanted, binary("+", Wanted, one(Size, L), Size, L), L);
+    jump(Desired, L);
+    label(Desired, L);
+    auto Minimum = snapshot(unorderedCeilCount(NewSize, Limit, L), L);
+    branch(binary("<", Wanted, Minimum, "bool", L), SelectMinimum, Rehash, L);
+    label(SelectMinimum, L);
+    assign(Wanted, Minimum, L);
+    jump(Rehash, L);
+    label(Rehash, L);
+    unorderedRehash(Place, Info, Wanted, L);
+    jump(Insert, L);
+    label(Insert, L);
+    auto Count = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    auto BucketIndex = snapshot(unorderedConstrainHash(Hash, Count, L), L);
+    auto Buckets = snapshot(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), L);
+    auto Previous = snapshot(index(Buckets, BucketIndex, NodePointer, L), L);
+    branch(cast(Previous, "bool", L), OccupiedBucket, EmptyBucket, L);
+    label(EmptyBucket, L);
+    assign(Previous, unorderedSentinel(Place, Info, L), L);
+    assign(unorderedNodeNext(Node, Info, L), unorderedNodeNext(Previous, Info, L), L);
+    assign(unorderedNodeNext(Previous, Info, L), Node, L);
+    assign(index(Buckets, BucketIndex, NodePointer, L), Previous, L);
+    auto Next = snapshot(unorderedNodeNext(Node, Info, L), L);
+    branch(cast(Next, "bool", L), NextBucket, Increment, L);
+    label(NextBucket, L);
+    assign(index(Buckets, unorderedConstrainHash(unorderedNodeHash(Next, L), Count, L), NodePointer, L), Node, L);
+    jump(Increment, L);
+    label(OccupiedBucket, L);
+    const auto Scan = labelName(), Same = labelName(), Advance = labelName(), Link = labelName(), FixNext = labelName();
+    auto Following = snapshot(unorderedNodeNext(Previous, Info, L), L);
+    jump(Scan, L);
+    label(Scan, L);
+    branch(cast(Following, "bool", L), Same, Link, L);
+    label(Same, L);
+    branch(binary("==", unorderedConstrainHash(unorderedNodeHash(Following, L), Count, L), BucketIndex, "bool", L), Advance, Link, L);
+    label(Advance, L);
+    assign(Previous, Following, L);
+    assign(Following, unorderedNodeNext(Following, Info, L), L);
+    jump(Scan, L);
+    label(Link, L);
+    assign(unorderedNodeNext(Node, Info, L), Following, L);
+    assign(unorderedNodeNext(Previous, Info, L), Node, L);
+    branch(cast(Following, "bool", L), FixNext, Increment, L);
+    label(FixNext, L);
+    assign(index(Buckets, unorderedConstrainHash(unorderedNodeHash(Following, L), Count, L), NodePointer, L), Node, L);
+    jump(Increment, L);
+    label(Increment, L);
+    assign(unorderedMapMember(Place, Info, "nct_unordered_size", L),
+        binary("+", unorderedMapMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  void unorderedCopyMap(Expression Place, Expression Source,
+      const UtilityUnorderedMapRecord &Info, bool Assignment, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto NodePointer = type(Info.NodePointerType, L);
+    auto Current = snapshot(unorderedMapMember(Source, Info, "nct_unordered_first", L), L);
+    if (Assignment) {
+      assign(unorderedMapMember(Place, Info, "nct_unordered_max_load", L),
+          unorderedMapMember(Source, Info, "nct_unordered_max_load", L), L);
+      auto Cache = snapshot(unorderedMapMember(Place, Info, "nct_unordered_first", L), L);
+      auto Buckets = snapshot(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), L);
+      auto Count = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto ZeroCheck = labelName(), Zero = labelName(), Detached = labelName();
+      jump(ZeroCheck, L);
+      label(ZeroCheck, L);
+      branch(binary("<", I, Count, "bool", L), Zero, Detached, L);
+      label(Zero, L);
+      assign(index(Buckets, I, NodePointer, L), A.zero(Info.NodePointerType, L), L);
+      assign(I, binary("+", I, one(Size, L), Size, L), L);
+      jump(ZeroCheck, L);
+      label(Detached, L);
+      assign(unorderedMapMember(Place, Info, "nct_unordered_size", L), quantity(0, Size, L), L);
+      assign(unorderedMapMember(Place, Info, "nct_unordered_first", L), A.zero(Info.NodePointerType, L), L);
+      const auto Check = labelName(), SourceCheck = labelName(), Reuse = labelName();
+      const auto ReleaseCheck = labelName(), Release = labelName(), Reused = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(cast(Cache, "bool", L), SourceCheck, Reused, L);
+      label(SourceCheck, L);
+      branch(cast(Current, "bool", L), Reuse, ReleaseCheck, L);
+      label(Reuse, L);
+      assign(unorderedNodeKey(Cache, Info, L), unorderedNodeKey(Current, Info, L), L);
+      assign(unorderedNodeValue(Cache, Info, L), unorderedNodeValue(Current, Info, L), L);
+      auto Next = snapshot(unorderedNodeNext(Cache, Info, L), L);
+      unorderedAppendCopiedNode(Place, Info, Cache, L);
+      assign(Cache, Next, L);
+      assign(Current, unorderedNodeNext(Current, Info, L), L);
+      jump(Check, L);
+      label(ReleaseCheck, L);
+      branch(cast(Cache, "bool", L), Release, Reused, L);
+      label(Release, L);
+      auto Remaining = snapshot(unorderedNodeNext(Cache, Info, L), L);
+      unorderedHeapRelease(Cache, Info.NodeType, quantity(Info.NodeBytes, Size, L), L);
+      assign(Cache, Remaining, L);
+      jump(ReleaseCheck, L);
+      label(Reused, L);
+    }
+    const auto Check = labelName(), Insert = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(cast(Current, "bool", L), Insert, Done, L);
+    label(Insert, L);
+    if (Assignment) {
+      // SDK copy assignment constructs a node before hashing it, unlike insert(value).
+      auto Node = snapshot(cast(unorderedHeapAllocate(Info.NodeType,
+          quantity(Info.NodeBytes, Size, L), L), NodePointer, L), L);
+      assign(unorderedNodeKey(Node, Info, L), unorderedNodeKey(Current, Info, L), L);
+      assign(unorderedNodeValue(Node, Info, L), unorderedNodeValue(Current, Info, L), L);
+      assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
+      unorderedAppendCopiedNode(Place, Info, Node, L);
+    } else {
+      unorderedInsertNode(Place, Info, unorderedNodeKey(Current, Info, L),
+          unorderedNodeValue(Current, Info, L), false, L);
+    }
+    assign(Current, unorderedNodeNext(Current, Info, L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+  void unorderedRepairSentinel(Expression Place, const UtilityUnorderedMapRecord &Info,
+                                SourceLocation L) {
+    auto Node = snapshot(unorderedMapMember(Place, Info, "nct_unordered_first", L), L);
+    const auto Fix = labelName(), Done = labelName();
+    branch(cast(Node, "bool", L), Fix, Done, L);
+    label(Fix, L);
+    auto Count = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    assign(index(unorderedMapMember(Place, Info, "nct_unordered_buckets", L),
+        unorderedConstrainHash(unorderedNodeHash(Node, L), Count, L),
+        type(Info.NodePointerType, L), L), unorderedSentinel(Place, Info, L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  void unorderedMoveMap(Expression Place, Expression Source,
+      const UtilityUnorderedMapRecord &Info, bool Assignment, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    if (Assignment) {
+      releaseUnorderedMap(Place, Info, false, L);
+      auto Incoming = snapshot(unorderedMapMember(Source, Info, "nct_unordered_buckets", L), L);
+      assign(unorderedMapMember(Source, Info, "nct_unordered_buckets", L), A.zero(Info.BucketPointerType, L), L);
+      auto Old = snapshot(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), L);
+      assign(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), Incoming, L);
+      const auto Release = labelName(), Done = labelName();
+      branch(cast(Old, "bool", L), Release, Done, L);
+      label(Release, L);
+      unorderedHeapRelease(Old, Info.NodePointerType,
+          binary("*", unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L),
+              quantity(A.Context.getTypeSizeInChars(Info.NodePointerType).getQuantity(), Size, L), Size, L), L);
+      jump(Done, L);
+      label(Done, L);
+    } else {
+      assign(unorderedMapMember(Place, Info, "nct_unordered_buckets", L),
+          unorderedMapMember(Source, Info, "nct_unordered_buckets", L), L);
+      assign(unorderedMapMember(Source, Info, "nct_unordered_buckets", L), A.zero(Info.BucketPointerType, L), L);
+    }
+    assign(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L),
+        unorderedMapMember(Source, Info, "nct_unordered_bucket_count", L), L);
+    assign(unorderedMapMember(Source, Info, "nct_unordered_bucket_count", L), quantity(0, Size, L), L);
+    // The SDK leaves the source load limit unchanged and transfers even reserved empty maps.
+    for (const auto *Name : {"nct_unordered_size", "nct_unordered_max_load", "nct_unordered_first"})
+      assign(unorderedMapMember(Place, Info, Name, L), unorderedMapMember(Source, Info, Name, L), L);
+    const auto Reset = labelName(), Done = labelName();
+    branch(binary("!=", unorderedMapMember(Place, Info, "nct_unordered_size", L), quantity(0, Size, L), "bool", L), Reset, Done, L);
+    label(Reset, L);
+    unorderedRepairSentinel(Place, Info, L);
+    assign(unorderedMapMember(Source, Info, "nct_unordered_first", L), A.zero(Info.NodePointerType, L), L);
+    assign(unorderedMapMember(Source, Info, "nct_unordered_size", L), quantity(0, Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
   Expression unorderedSubscript(Expression Place, const UtilityUnorderedMapRecord &Info,
                                   Expression Key, SourceLocation L) {
     auto Result = unorderedInsertNode(std::move(Place), Info, std::move(Key),
@@ -4641,6 +4835,37 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::UnorderedMapCopyAssign ||
+        Operation == UtilityOperation::UnorderedMapMoveAssign) {
+      const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
+      const unsigned Offset = Operator ? 1 : 0;
+      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info) reject(L, "unordered map assignment", "The authenticated storage layout is unavailable.");
+      std::optional<Expression> SourceAddress;
+      // Assignment notation evaluates its right operand before its left in C++17.
+      if (Operator)
+        SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      if (!SourceAddress)
+        SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+      auto Place = dereference(Receiver, L), Source = dereference(*SourceAddress, L);
+      if (Operation == UtilityOperation::UnorderedMapMoveAssign) {
+        unorderedMoveMap(Place, Source, *Info, true, L);
+      } else {
+        const auto Copy = labelName(), Done = labelName();
+        branch(binary("!=", cast(Receiver, type(A.Context.VoidPtrTy, L), L),
+            cast(*SourceAddress, type(A.Context.VoidPtrTy, L), L), "bool", L), Copy, Done, L);
+        label(Copy, L);
+        unorderedCopyMap(Place, Source, *Info, true, L);
+        jump(Done, L);
+        label(Done, L);
+      }
+      return Place;
+    }
     if (Operation == UtilityOperation::UnorderedMapEqualRange) {
       const auto Info = approvedUtilityUnorderedMapEqualRange(A.S, A.Sources, Call, A.Context);
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
@@ -31794,7 +32019,21 @@ class FunctionLowering {
       const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources,
           T->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "unordered map construction", "The authenticated storage layout is unavailable.");
-      initializeUnorderedMap(std::move(Place), *Info, L);
+      if (!C->getNumArgs()) {
+        initializeUnorderedMap(std::move(Place), *Info, L);
+      } else {
+        auto SourceAddress = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+        auto Source = dereference(SourceAddress, L);
+        if (C->getConstructor()->isMoveConstructor())
+          unorderedMoveMap(Place, Source, *Info, false, L);
+        else {
+          initializeUnorderedMap(Place, *Info, L);
+          assign(unorderedMapMember(Place, *Info, "nct_unordered_max_load", L),
+              unorderedMapMember(Source, *Info, "nct_unordered_max_load", L), L);
+          unorderedRehash(Place, *Info, unorderedMapMember(Source, *Info, "nct_unordered_bucket_count", L), L);
+          unorderedCopyMap(Place, Source, *Info, false, L);
+        }
+      }
       return;
     }
     if (auto Kind = approvedUtilityVectorConstruction(A.S, A.Sources, C,

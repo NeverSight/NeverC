@@ -74536,6 +74536,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (auto Assignment = approvedUtilityUnorderedMapAssignment(S, SM, Call, Context))
+    return Assignment;
   if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapInsertRange;
   if (approvedUtilityUnorderedMapEqualRange(S, SM, Call, Context))
@@ -86684,12 +86686,21 @@ bool approvedUtilityUnorderedMapConstruction(const State &S, const SourceManager
       S, SM, Context.getBaseElementType(Construction->getType())->getAsCXXRecordDecl(),
       Context) : std::nullopt;
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
-  return Info && Constructor && !Construction->isTypeDependent() &&
-      !Construction->isValueDependent() && !Construction->isInstantiationDependent() &&
-      Construction->getConstructionKind() == CXXConstructionKind::Complete &&
-      !Construction->getNumArgs() && !Constructor->getNumParams() &&
-      Constructor->isDefaultConstructor() && unorderedMapPublicMethod(S, SM, Constructor) &&
-      approvedUnorderedMapMethodSource(S, SM, Constructor, Info->Record, Context);
+  if (!Info || !Constructor || Construction->isTypeDependent() ||
+      Construction->isValueDependent() || Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Constructor->getNumParams() != Construction->getNumArgs() ||
+      !unorderedMapPublicMethod(S, SM, Constructor) ||
+      !approvedUnorderedMapMethodSource(S, SM, Constructor, Info->Record, Context))
+    return false;
+  if (!Construction->getNumArgs()) return Constructor->isDefaultConstructor();
+  if (Construction->getNumArgs() != 1 || !Constructor->isCopyOrMoveConstructor()) return false;
+  const auto RecordType = Context.getRecordType(Info->Record);
+  const auto Parameter = Constructor->isMoveConstructor()
+      ? Context.getRValueReferenceType(RecordType)
+      : Context.getLValueReferenceType(RecordType.withConst());
+  return Context.hasSameType(Constructor->getParamDecl(0)->getType(), Parameter) &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), RecordType);
 }
 
 bool approvedUtilityUnorderedMapDestructor(const State &S, const SourceManager &SM,
@@ -87181,6 +87192,42 @@ std::optional<UtilityUnorderedMapRangeInsertion> approvedUtilityUnorderedMapRang
       Pair->First->getType().isVolatileQualified() || Pair->Second->getType().isVolatileQualified() ||
       !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
   return UtilityUnorderedMapRangeInsertion{*Map, *Pair, Iterator, List, Pointer, Kind};
+}
+
+std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Object = Member ? Member->getImplicitObjectArgument()
+      : Operator && Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+  const auto Site = Reference ? Reference->getExprLoc()
+      : Operator ? Operator->getOperatorLoc() : SourceLocation();
+  const unsigned Offset = Operator ? 1 : 0;
+  if (!Method || !Object || !S.owns(SM, Site) ||
+      !Method->isOverloadedOperator() || Method->getOverloadedOperator() != OO_Equal ||
+      Method->isConst() || Method->getNumParams() != 1 ||
+      Call->getNumArgs() != 1 + Offset || !Call->isLValue() ||
+      (!Method->isCopyAssignmentOperator() && !Method->isMoveAssignmentOperator()) ||
+      !unorderedMapPublicMethod(S, SM, Method)) return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  if (!Map) return std::nullopt;
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  const auto RecordType = Context.getRecordType(Map->Record);
+  const bool Move = Method->isMoveAssignmentOperator();
+  const auto Parameter = Move ? Context.getRValueReferenceType(RecordType)
+      : Context.getLValueReferenceType(RecordType.withConst());
+  if (ObjectType.hasQualifiers() || !Context.hasSameType(ObjectType, RecordType) ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(RecordType)) ||
+      !Context.hasSameType(Call->getType(), RecordType) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), RecordType) ||
+      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+    return std::nullopt;
+  return Move ? UtilityOperation::UnorderedMapMoveAssign : UtilityOperation::UnorderedMapCopyAssign;
 }
 
 } // namespace nct
