@@ -360252,3 +360252,268 @@ int main(){
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2PoissonPreservesIntegerStateParametersAndSamples) {
+  for (const std::string &Name : {"random-poisson-minstd", "random-poisson-mt32", "random-poisson-mt64", "random-poisson-edges"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2PoissonRetainsCachedParametersMathAndNestedBodies) {
+  struct Case {const char *Name; const char *Declarations; const char *Body;};
+  const Case Cases[] = {
+      {"outer-default", R"cpp(namespace std{template<>poisson_distribution<int>::poisson_distribution(){}})cpp", R"cpp(D d;return d.mean()!=1.;)cpp"},
+      {"parameter-constructor", R"cpp(namespace std{template<>poisson_distribution<int>::param_type::param_type(double){}})cpp", R"cpp(D::param_type p;return p.mean()!=1.;)cpp"},
+      {"mean-getter", R"cpp(namespace std{template<>double poisson_distribution<int>::mean()const{return 2.;}})cpp", R"cpp(D d;return d.mean()!=2.;)cpp"},
+      {"parameter-mean-getter", R"cpp(namespace std{template<>double poisson_distribution<int>::param_type::mean()const{return 2.;}})cpp", R"cpp(D d;return d.mean()!=2.;)cpp"},
+      {"minimum", R"cpp(namespace std{template<>int poisson_distribution<int>::min()const{return 2;}})cpp", R"cpp(D d;return d.min()!=2;)cpp"},
+      {"maximum", R"cpp(namespace std{template<>int poisson_distribution<int>::max()const{return 2;}})cpp", R"cpp(D d;return d.max()!=2;)cpp"},
+      {"reset", R"cpp(namespace std{template<>void poisson_distribution<int>::reset(){}})cpp", R"cpp(D d;d.reset();return 0;)cpp"},
+      {"parameter-setter", R"cpp(namespace std{template<>void poisson_distribution<int>::param(const param_type&){}})cpp", R"cpp(D d;D::param_type p(2.);d.param(p);return d.mean()!=2.;)cpp"},
+      {"sampling", R"cpp(namespace std{template<>template<>int poisson_distribution<int>::operator()<G>(G&,const param_type&){return 0;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"one-arg-sampling", R"cpp(namespace std{template<>template<>int poisson_distribution<int>::operator()<G>(G&){return 0;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"source-mean-body", R"cpp(double mean(){asm("");return 2.;})cpp", R"cpp(D d(mean());return d.mean()!=2.;)cpp"},
+      {"clamp-helper", R"cpp(namespace std{template<>int __clamp_to_integral<int,double>(double)noexcept{return 0;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"maximum-representable-helper", R"cpp(namespace std{template<>constexpr int __max_representable_int_for_float<int,double>()noexcept{return 0;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-infinity-declaration", R"cpp(extern "C" float __builtin_inff();)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"isinf-wrapper-declaration", R"cpp(namespace std{namespace __math{bool isinf(double)noexcept;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"sqrt-declaration", R"cpp(extern "C" double sqrt(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-sqrt-declaration", R"cpp(extern "C" double __builtin_sqrt(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"log-declaration", R"cpp(extern "C" double log(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-log-declaration", R"cpp(extern "C" double __builtin_log(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"exp-declaration", R"cpp(extern "C" double exp(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-exp-declaration", R"cpp(extern "C" double __builtin_exp(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"trunc-declaration", R"cpp(extern "C" double trunc(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-trunc-declaration", R"cpp(extern "C" double __builtin_trunc(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"fabs-declaration", R"cpp(extern "C" double fabs(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"abs-wrapper-redeclaration", R"cpp(double abs(double)noexcept;)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-fabs-declaration", R"cpp(extern "C" double __builtin_fabs(double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nextafter-declaration", R"cpp(extern "C" double nextafter(double,double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-nextafter-declaration", R"cpp(extern "C" double __builtin_nextafter(double,double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"pow-declaration", R"cpp(extern "C" double pow(double,double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"builtin-pow-declaration", R"cpp(extern "C" double __builtin_pow(double,double);)cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"raw-log", R"cpp()cpp", R"cpp(return __builtin_log(2.)<0.;)cpp"},
+      {"standalone-std-log", R"cpp()cpp", R"cpp(return std::log(2.)<0.;)cpp"},
+      {"raw-exp", R"cpp()cpp", R"cpp(return __builtin_exp(2.)<0.;)cpp"},
+      {"standalone-std-exp", R"cpp()cpp", R"cpp(return std::exp(2.)<0.;)cpp"},
+      {"raw-trunc", R"cpp()cpp", R"cpp(return __builtin_trunc(2.)<0.;)cpp"},
+      {"standalone-std-trunc", R"cpp()cpp", R"cpp(return std::trunc(2.)<0.;)cpp"},
+      {"raw-pow", R"cpp()cpp", R"cpp(return __builtin_pow(2.,3.)<0.;)cpp"},
+      {"standalone-std-pow", R"cpp()cpp", R"cpp(return std::pow(2.,3.)<0.;)cpp"},
+      {"raw-nextafter", R"cpp()cpp", R"cpp(return __builtin_nextafter(2.,3.)<0.;)cpp"},
+      {"standalone-std-nextafter", R"cpp()cpp", R"cpp(return std::nextafter(2.,3.)<0.;)cpp"},
+      {"nested-normal-default", R"cpp(namespace std{template<>normal_distribution<double>::normal_distribution(){}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-parameter-constructor", R"cpp(namespace std{template<>normal_distribution<double>::param_type::param_type(double,double){}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-mean-getter", R"cpp(namespace std{template<>double normal_distribution<double>::param_type::mean()const{return 2.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-deviation-getter", R"cpp(namespace std{template<>double normal_distribution<double>::param_type::stddev()const{return 2.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-one-arg-sampling", R"cpp(namespace std{template<>template<>double normal_distribution<double>::operator()<G>(G&){return 0.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-sampling", R"cpp(namespace std{template<>template<>double normal_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-default", R"cpp(namespace std{template<>exponential_distribution<double>::exponential_distribution(){}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-parameter-constructor", R"cpp(namespace std{template<>exponential_distribution<double>::param_type::param_type(double){}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-rate-getter", R"cpp(namespace std{template<>double exponential_distribution<double>::param_type::lambda()const{return 2.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-one-arg-sampling", R"cpp(namespace std{template<>template<>double exponential_distribution<double>::operator()<G>(G&){return 0.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-sampling", R"cpp(namespace std{template<>template<>double exponential_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d(12.);G g;return d(g)!=0;)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("poisson-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("poisson-guard-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <random>
+struct G{using result_type=unsigned;unsigned state=17,calls=0;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+)cpp") + Case.Declarations + R"cpp(
+using D=std::poisson_distribution<int>;
+int main(){
+)cpp" + Case.Body + "}\n");
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NegativeBinomialAndGeometricPreserveMixtureStateAndSamples) {
+  for (const std::string &Name : {"random-negative-binomial-minstd", "random-negative-binomial-mt32", "random-negative-binomial-mt64", "random-negative-binomial-edges"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2NegativeBinomialAndGeometricRetainNestedSDKAndParameters) {
+  struct Case {const char *Name; const char *Declarations; const char *Body;};
+  const Case Cases[] = {
+      {"negative-default", R"cpp(namespace std{template<>negative_binomial_distribution<int>::negative_binomial_distribution(){}})cpp", R"cpp(D d;return d.k()!=1;)cpp"},
+      {"negative-parameter-constructor", R"cpp(namespace std{template<>negative_binomial_distribution<int>::param_type::param_type(int,double){}})cpp", R"cpp(D::param_type p;return p.k()!=1;)cpp"},
+      {"negative-count-getter", R"cpp(namespace std{template<>int negative_binomial_distribution<int>::k()const{return 2;}})cpp", R"cpp(D d;return d.k()!=2;)cpp"},
+      {"negative-probability-getter", R"cpp(namespace std{template<>double negative_binomial_distribution<int>::p()const{return .2;}})cpp", R"cpp(D d;return d.p()!=.2;)cpp"},
+      {"negative-parameter-count-getter", R"cpp(namespace std{template<>int negative_binomial_distribution<int>::param_type::k()const{return 2;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"negative-parameter-probability-getter", R"cpp(namespace std{template<>double negative_binomial_distribution<int>::param_type::p()const{return .2;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"negative-minimum", R"cpp(namespace std{template<>int negative_binomial_distribution<int>::min()const{return 2;}})cpp", R"cpp(D d;return d.min()!=2;)cpp"},
+      {"negative-maximum", R"cpp(namespace std{template<>int negative_binomial_distribution<int>::max()const{return 2;}})cpp", R"cpp(D d;return d.max()!=2;)cpp"},
+      {"negative-reset", R"cpp(namespace std{template<>void negative_binomial_distribution<int>::reset(){}})cpp", R"cpp(D d;d.reset();return 0;)cpp"},
+      {"negative-parameter-setter", R"cpp(namespace std{template<>void negative_binomial_distribution<int>::param(const param_type&){}})cpp", R"cpp(D d;D::param_type p;d.param(p);return 0;)cpp"},
+      {"negative-sampling", R"cpp(namespace std{template<>template<>int negative_binomial_distribution<int>::operator()<G>(G&,const param_type&){return 0;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"negative-one-arg-sampling", R"cpp(namespace std{template<>template<>int negative_binomial_distribution<int>::operator()<G>(G&){return 0;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"geometric-default", R"cpp(namespace std{template<>geometric_distribution<int>::geometric_distribution(){}})cpp", R"cpp(std::geometric_distribution<int>d;return d.p()!=.5;)cpp"},
+      {"geometric-parameter-constructor", R"cpp(namespace std{template<>geometric_distribution<int>::param_type::param_type(double){}})cpp", R"cpp(std::geometric_distribution<int>::param_type p;return p.p()!=.5;)cpp"},
+      {"geometric-probability-getter", R"cpp(namespace std{template<>double geometric_distribution<int>::p()const{return .2;}})cpp", R"cpp(std::geometric_distribution<int>d;return d.p()!=.2;)cpp"},
+      {"geometric-parameter-probability-getter", R"cpp(namespace std{template<>double geometric_distribution<int>::param_type::p()const{return .2;}})cpp", R"cpp(std::geometric_distribution<int>d(.01);G g;return d(g)!=0;)cpp"},
+      {"geometric-sampling", R"cpp(namespace std{template<>template<>int geometric_distribution<int>::operator()<G>(G&,const param_type&){return 0;}})cpp", R"cpp(std::geometric_distribution<int>d(.01);G g;return d(g)!=0;)cpp"},
+      {"geometric-one-arg-sampling", R"cpp(namespace std{template<>template<>int geometric_distribution<int>::operator()<G>(G&){return 0;}})cpp", R"cpp(std::geometric_distribution<int>d(.01);G g;return d(g)!=0;)cpp"},
+      {"geometric-minimum", R"cpp(namespace std{template<>int geometric_distribution<int>::min()const{return 2;}})cpp", R"cpp(std::geometric_distribution<int>d;return d.min()!=2;)cpp"},
+      {"geometric-maximum", R"cpp(namespace std{template<>int geometric_distribution<int>::max()const{return 2;}})cpp", R"cpp(std::geometric_distribution<int>d;return d.max()!=2;)cpp"},
+      {"geometric-reset", R"cpp(namespace std{template<>void geometric_distribution<int>::reset(){}})cpp", R"cpp(std::geometric_distribution<int>d;d.reset();return 0;)cpp"},
+      {"geometric-parameter-setter", R"cpp(namespace std{template<>void geometric_distribution<int>::param(const param_type&){}})cpp", R"cpp(std::geometric_distribution<int>d;std::geometric_distribution<int>::param_type p;d.param(p);return 0;)cpp"},
+      {"source-count", R"cpp(int count(){asm("");return 2;})cpp", R"cpp(D d(count());return d.k()!=2;)cpp"},
+      {"source-probability", R"cpp(double probability(){asm("");return .2;})cpp", R"cpp(D d(2,probability());return d.p()!=.2;)cpp"},
+      {"geometric-nested-negative-sampling", R"cpp(namespace std{template<>template<>int negative_binomial_distribution<int>::operator()<G>(G&,const param_type&){return 0;}})cpp", R"cpp(std::geometric_distribution<int>d(.01);G g;return d(g)!=0;)cpp"},
+      {"geometric-nested-negative-value", R"cpp(namespace std{template<>negative_binomial_distribution<int>::negative_binomial_distribution(int,double){}})cpp", R"cpp(std::geometric_distribution<int>d(.01);G g;return d(g)!=0;)cpp"},
+      {"nested-bernoulli-sampling", R"cpp(namespace std{template<>bool bernoulli_distribution::operator()<G>(G&,const param_type&){return false;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-bernoulli-one-arg-sampling", R"cpp(namespace std{template<>bool bernoulli_distribution::operator()<G>(G&){return false;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-gamma-value", R"cpp(namespace std{template<>gamma_distribution<double>::gamma_distribution(double,double){}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-gamma-parameter", R"cpp(namespace std{template<>gamma_distribution<double>::param_type::param_type(double,double){}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-gamma-alpha", R"cpp(namespace std{template<>double gamma_distribution<double>::param_type::alpha()const{return 2.;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-gamma-beta", R"cpp(namespace std{template<>double gamma_distribution<double>::param_type::beta()const{return 2.;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-gamma-sampling", R"cpp(namespace std{template<>template<>double gamma_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-gamma-one-arg-sampling", R"cpp(namespace std{template<>template<>double gamma_distribution<double>::operator()<G>(G&){return 0.;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-poisson-value", R"cpp(namespace std{template<>poisson_distribution<int>::poisson_distribution(double){}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-poisson-parameter", R"cpp(namespace std{template<>poisson_distribution<int>::param_type::param_type(double){}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-poisson-sampling", R"cpp(namespace std{template<>template<>int poisson_distribution<int>::operator()<G>(G&,const param_type&){return 0;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-poisson-one-arg-sampling", R"cpp(namespace std{template<>template<>int poisson_distribution<int>::operator()<G>(G&){return 0;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-default", R"cpp(namespace std{template<>normal_distribution<double>::normal_distribution(){}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-normal-sampling", R"cpp(namespace std{template<>template<>double normal_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-default", R"cpp(namespace std{template<>exponential_distribution<double>::exponential_distribution(){}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nested-exponential-sampling", R"cpp(namespace std{template<>template<>double exponential_distribution<double>::operator()<G>(G&,const param_type&){return 0.;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"sqrt-declaration", R"cpp(extern "C" double sqrt(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-sqrt-declaration", R"cpp(extern "C" double __builtin_sqrt(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"log-declaration", R"cpp(extern "C" double log(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-log-declaration", R"cpp(extern "C" double __builtin_log(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"exp-declaration", R"cpp(extern "C" double exp(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-exp-declaration", R"cpp(extern "C" double __builtin_exp(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"trunc-declaration", R"cpp(extern "C" double trunc(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-trunc-declaration", R"cpp(extern "C" double __builtin_trunc(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"fabs-declaration", R"cpp(extern "C" double fabs(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"abs-wrapper-redeclaration", R"cpp(double abs(double)noexcept;)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-fabs-declaration", R"cpp(extern "C" double __builtin_fabs(double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"nextafter-declaration", R"cpp(extern "C" double nextafter(double,double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-nextafter-declaration", R"cpp(extern "C" double __builtin_nextafter(double,double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"pow-declaration", R"cpp(extern "C" double pow(double,double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-pow-declaration", R"cpp(extern "C" double __builtin_pow(double,double);)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"clamp-helper", R"cpp(namespace std{template<>int __clamp_to_integral<int,double>(double)noexcept{return 0;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"maximum-representable-helper", R"cpp(namespace std{template<>constexpr int __max_representable_int_for_float<int,double>()noexcept{return 0;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"builtin-infinity-declaration", R"cpp(extern "C" float __builtin_inff();)cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+      {"isinf-wrapper-declaration", R"cpp(namespace std{namespace __math{bool isinf(double)noexcept;}})cpp", R"cpp(D d(8,.05);G g;return d(g)!=0;)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("negative-binomial-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("negative-binomial-guard-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <random>
+struct G{using result_type=unsigned;unsigned state=17,calls=0;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+)cpp") + Case.Declarations + R"cpp(
+using D=std::negative_binomial_distribution<int>;
+int main(){
+)cpp" + Case.Body + "}\n");
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BinomialPreservesModalParametersEndpointsAndSamples) {
+  for (const std::string &Name : {"random-binomial-minstd", "random-binomial-mt32", "random-binomial-mt64", "random-binomial-edges"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    const auto Result = translate(fixture(Name + ".cpp"),
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2BinomialRetainsCachedParametersAndLogGammaBodies) {
+  struct Case {const char *Name; const char *Declarations; const char *Body;};
+  const Case Cases[] = {
+      {"outer-default", R"cpp(namespace std{template<>binomial_distribution<int>::binomial_distribution(){}})cpp", R"cpp(D d;return d.t()!=1;)cpp"},
+      {"value-constructor", R"cpp(namespace std{template<>binomial_distribution<int>::binomial_distribution(int,double){}})cpp", R"cpp(D d(10,.2);return d.t()!=10;)cpp"},
+      {"parameter-constructor", R"cpp(namespace std{template<>binomial_distribution<int>::param_type::param_type(int,double){}})cpp", R"cpp(D::param_type p;return p.t()!=1;)cpp"},
+      {"trials-getter", R"cpp(namespace std{template<>int binomial_distribution<int>::t()const{return 2;}})cpp", R"cpp(D d;return d.t()!=2;)cpp"},
+      {"probability-getter", R"cpp(namespace std{template<>double binomial_distribution<int>::p()const{return .2;}})cpp", R"cpp(D d;return d.p()!=.2;)cpp"},
+      {"parameter-trials-getter", R"cpp(namespace std{template<>int binomial_distribution<int>::param_type::t()const{return 2;}})cpp", R"cpp(D d;return d.t()!=2;)cpp"},
+      {"parameter-probability-getter", R"cpp(namespace std{template<>double binomial_distribution<int>::param_type::p()const{return .2;}})cpp", R"cpp(D d;return d.p()!=.2;)cpp"},
+      {"minimum", R"cpp(namespace std{template<>int binomial_distribution<int>::min()const{return 2;}})cpp", R"cpp(D d;return d.min()!=2;)cpp"},
+      {"maximum", R"cpp(namespace std{template<>int binomial_distribution<int>::max()const{return 2;}})cpp", R"cpp(D d;return d.max()!=2;)cpp"},
+      {"reset", R"cpp(namespace std{template<>void binomial_distribution<int>::reset(){}})cpp", R"cpp(D d;d.reset();return 0;)cpp"},
+      {"parameter-setter", R"cpp(namespace std{template<>void binomial_distribution<int>::param(const param_type&){}})cpp", R"cpp(D d;D::param_type p;d.param(p);return 0;)cpp"},
+      {"sampling", R"cpp(namespace std{template<>template<>int binomial_distribution<int>::operator()<G>(G&,const param_type&){return 0;}})cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"one-arg-sampling", R"cpp(namespace std{template<>template<>int binomial_distribution<int>::operator()<G>(G&){return 0;}})cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"source-trials", R"cpp(int trials(){asm("");return 2;})cpp", R"cpp(D d(trials());return d.t()!=2;)cpp"},
+      {"source-probability", R"cpp(double probability(){asm("");return .2;})cpp", R"cpp(D d(2,probability());return d.p()!=.2;)cpp"},
+      {"selected-lgamma-declaration", R"cpp(#if defined(_WIN32)
+extern "C" double lgamma(double);
+#else
+extern "C" double lgamma_r(double,int*);
+#endif
+)cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"sdk-lgamma-helper-declaration", R"cpp(namespace std{double __libcpp_lgamma(double);})cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"log-declaration", R"cpp(extern "C" double log(double);)cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"builtin-log-declaration", R"cpp(extern "C" double __builtin_log(double);)cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"exp-declaration", R"cpp(extern "C" double exp(double);)cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"builtin-exp-declaration", R"cpp(extern "C" double __builtin_exp(double);)cpp", R"cpp(D d(10,.2);G g;return d(g)!=0;)cpp"},
+      {"raw-log", R"cpp()cpp", R"cpp(return __builtin_log(2.)<0.;)cpp"},
+      {"standalone-std-log", R"cpp()cpp", R"cpp(return std::log(2.)<0.;)cpp"},
+      {"raw-exp", R"cpp()cpp", R"cpp(return __builtin_exp(2.)<0.;)cpp"},
+      {"standalone-std-exp", R"cpp()cpp", R"cpp(return std::exp(2.)<0.;)cpp"},
+      {"raw-lgamma", R"cpp()cpp", R"cpp(return __builtin_lgamma(2.)<0.;)cpp"},
+      {"standalone-std-lgamma", R"cpp()cpp", R"cpp(return std::lgamma(2.)<0.;)cpp"},
+      {"source-lgamma-r-call", R"cpp(extern "C" double lgamma_r(double,int*);)cpp", R"cpp(int sign;return lgamma_r(2.,&sign)<0.;)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("binomial-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("binomial-guard-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <random>
+struct G{using result_type=unsigned;unsigned state=17,calls=0;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+)cpp") + Case.Declarations + R"cpp(
+using D=std::binomial_distribution<int>;
+int main(){
+)cpp" + Case.Body + "}\n");
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

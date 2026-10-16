@@ -23,7 +23,7 @@ bool randomWeightFunction(QualType T, const ASTContext &Context) {
          randomWeightScalar(P->getParamType(0).getNonReferenceType(), Context);
 }
 
-enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog, Normal, Lognormal, Weibull, Gamma, Student, Cauchy };
+enum class SelectedRandomMath { None, LinearSquareRoot, ExponentialLog, ExtremeValueLog, Normal, Lognormal, Weibull, Gamma, Student, Cauchy, Poisson, NegativeBinomial, Binomial };
 
 // The lowering implements the pinned libc++ loops. Follow the declarations
 // actually selected by those loops, including instantiated traits and helper
@@ -42,8 +42,32 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   llvm::DenseSet<const Type *> Types;
   unsigned Nodes = 0;
 
+  bool poissonAbsoluteWrapper(const Decl *D) const {
+    if (const auto *P = dyn_cast_or_null<ParmVarDecl>(D)) {
+      const auto *F = dyn_cast<FunctionDecl>(P->getDeclContext());
+      const auto File = S.sdkFile(SM, P->getLocation());
+      return F && F->getNumParams() == 1 && P == F->getParamDecl(0) &&
+             File && File->Root == "libcxx" && File->Path == "stdlib.h" &&
+             !S.owns(SM, P->getLocation()) && poissonAbsoluteWrapper(F);
+    }
+    const auto *F = dyn_cast_or_null<FunctionDecl>(D);
+    if ((Math != SelectedRandomMath::Poisson && Math != SelectedRandomMath::NegativeBinomial) ||
+        !F || !F->getIdentifier() || F->getName() != "abs" || F->isExternC() ||
+        F->isVariadic() || F->getNumParams() != 1 || F->getPrimaryTemplate() ||
+        !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+        !Context.hasSameType(F->getReturnType(), Context.DoubleTy) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(), Context.DoubleTy))
+      return false;
+    for (const auto *R : F->redecls()) {
+      const auto File = S.sdkFile(SM, R->getLocation());
+      if (!File || S.owns(SM, R->getLocation()) || File->Root != "libcxx" ||
+          File->Path != "stdlib.h")
+        return false;
+    }
+    return true;
+  }
   bool origin(const Decl *D) const {
-    if (approvedStandardSDKDeclaration(S, SM, D))
+    if (approvedStandardSDKDeclaration(S, SM, D) || poissonAbsoluteWrapper(D))
       return true;
     // libc++'s cstdint/cstddef aliases refer to the pinned Clang resource
     // typedefs in the global namespace.
@@ -120,15 +144,20 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
                            : ID == Builtin::BIlog || ID == Builtin::BI__builtin_log;
     const bool Exp = Float ? ID == Builtin::BIexpf || ID == Builtin::BI__builtin_expf
                            : ID == Builtin::BIexp || ID == Builtin::BI__builtin_exp;
+    const bool Binomial = Math == SelectedRandomMath::Binomial;
     const bool Student = Math == SelectedRandomMath::Student;
-    const bool Gamma = Math == SelectedRandomMath::Gamma || Student;
+    const bool Trunc = !Float && (ID == Builtin::BItrunc || ID == Builtin::BI__builtin_trunc);
+    const bool Abs = !Float && (ID == Builtin::BIfabs || ID == Builtin::BI__builtin_fabs);
+    const bool Poisson = Math == SelectedRandomMath::Poisson || Math == SelectedRandomMath::NegativeBinomial;
+    const bool Gamma = Math == SelectedRandomMath::Gamma || Student || Math == SelectedRandomMath::NegativeBinomial;
     const bool Polar = Math == SelectedRandomMath::Normal || Math == SelectedRandomMath::Lognormal || Student;
-    if (!(Root && (Math == SelectedRandomMath::LinearSquareRoot || Polar || Gamma)) &&
-        !(Log && (Math == SelectedRandomMath::ExponentialLog || Math == SelectedRandomMath::ExtremeValueLog || Math == SelectedRandomMath::Weibull || Polar || Gamma)) &&
-        !(Exp && Math == SelectedRandomMath::Lognormal))
+    if (!(Root && (Math == SelectedRandomMath::LinearSquareRoot || Polar || Gamma || Poisson)) &&
+        !(Log && (Math == SelectedRandomMath::ExponentialLog || Math == SelectedRandomMath::ExtremeValueLog || Math == SelectedRandomMath::Weibull || Polar || Gamma || Poisson || Binomial)) &&
+        !(Exp && (Math == SelectedRandomMath::Lognormal || Poisson || Binomial)) &&
+        !(Trunc && Poisson) && !(Abs && Poisson))
       return false;
-    const llvm::StringRef Helper = Root ? "__math/roots.h" : Exp ? "__math/exponential_functions.h" : "__math/logarithms.h";
-    const llvm::StringRef Distribution = Gamma ? "__random/gamma_distribution.h" : Polar ? (Exp ? "__random/lognormal_distribution.h" : "__random/normal_distribution.h")
+    const llvm::StringRef Helper = Abs ? "stdlib.h" : Trunc ? "__math/rounding_functions.h" : Root ? "__math/roots.h" : Exp ? "__math/exponential_functions.h" : "__math/logarithms.h";
+    const llvm::StringRef Distribution = Binomial ? "__random/binomial_distribution.h" : Poisson ? "__random/poisson_distribution.h" : Gamma ? "__random/gamma_distribution.h" : Polar ? (Exp ? "__random/lognormal_distribution.h" : "__random/normal_distribution.h")
         : Root ? "__random/piecewise_linear_distribution.h"
         : Math == SelectedRandomMath::ExtremeValueLog ? "__random/extreme_value_distribution.h"
                                                      : "__random/exponential_distribution.h";
@@ -136,6 +165,9 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     if (!CallFile || CallFile->Root != "libcxx" ||
         (CallFile->Path != Helper && CallFile->Path != Distribution &&
          !(Gamma && Log && CallFile->Path == "__random/exponential_distribution.h") &&
+         !(Math == SelectedRandomMath::NegativeBinomial && (Root || Log) && CallFile->Path == "__random/gamma_distribution.h") &&
+         !(Poisson && ((Log && CallFile->Path == "__random/exponential_distribution.h") ||
+                       ((Log || Root) && CallFile->Path == "__random/normal_distribution.h"))) &&
          !(Student && CallFile->Path == "__random/normal_distribution.h") &&
          !(Student && Root && CallFile->Path == "__random/student_t_distribution.h")))
       return false;
@@ -145,8 +177,64 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       const auto File = S.sdkFile(SM, D->getLocation());
       if (!File || S.owns(SM, D->getLocation()) ||
           !((File->Root == "resource" && File->Path == "include/math.h") ||
-            (File->Root == "libcxx" && File->Path == Helper)))
+            (File->Root == "libcxx" &&
+             (File->Path == Helper || (Abs && File->Path == "__math/abs.h")))))
         return false;
+    }
+    return true;
+  }
+  bool selectedBinomialGamma(const FunctionDecl *F, SourceLocation Location) const {
+    if (Math != SelectedRandomMath::Binomial || !F || F->isVariadic() ||
+        !Context.hasSameType(F->getReturnType(), Context.DoubleTy)) return false;
+    const bool Reentrant = F->getIdentifier() && F->getName() == "lgamma_r" && F->isExternC();
+    if (Reentrant) {
+      if (F->getNumParams() != 2 || !Context.hasSameType(F->getParamDecl(0)->getType(), Context.DoubleTy) ||
+          !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getPointerType(Context.IntTy))) return false;
+    } else if ((F->getBuiltinID() != Builtin::BIlgamma && F->getBuiltinID() != Builtin::BI__builtin_lgamma) ||
+               F->getNumParams() != 1 || !Context.hasSameType(F->getParamDecl(0)->getType(), Context.DoubleTy)) return false;
+    const auto Site = S.sdkFile(SM, Location);
+    if (!Site || Site->Root != "libcxx" ||
+        (Site->Path != "__random/binomial_distribution.h" &&
+         (Reentrant || Site->Path != "__math/gamma.h"))) return false;
+    for (const auto *D : F->redecls()) {
+      if (D->isImplicit() && D->getLocation().isInvalid()) continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || S.owns(SM, D->getLocation()) ||
+          !(Reentrant ? File->Root == "libcxx" && File->Path == "__random/binomial_distribution.h"
+                       : (File->Root == "resource" && File->Path == "include/math.h") ||
+                         (File->Root == "libcxx" && File->Path == "__math/gamma.h"))) return false;
+    }
+    return true;
+  }
+  bool selectedPoissonIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
+    if ((Math != SelectedRandomMath::Poisson && Math != SelectedRandomMath::NegativeBinomial) || !F) return false;
+    const auto ID = F->getBuiltinID();
+    const bool Classify = ID == Builtin::BI__builtin_isinf;
+    const bool Infinity = ID == Builtin::BI__builtin_inff;
+    const bool Next = ID == Builtin::BInextafter || ID == Builtin::BI__builtin_nextafter;
+    if (!Classify && !Infinity && !Next) return false;
+    if ((Classify || Infinity) && !F->isImplicit()) return false;
+    if (Infinity && (F->getNumParams() || !Context.hasSameType(F->getReturnType(), Context.FloatTy))) return false;
+    if (Next && (F->isVariadic() || F->getNumParams() != 2 ||
+        !Context.hasSameType(F->getReturnType(), Context.DoubleTy) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(), Context.DoubleTy) ||
+        !Context.hasSameType(F->getParamDecl(1)->getType(), Context.DoubleTy))) return false;
+    const auto Site = S.sdkFile(SM, Location);
+    const auto Expansion = S.sdkFile(SM, SM.getExpansionLoc(Location));
+    // INFINITY is spelled in the pinned resource math shim, but only its
+    // expansion in the selected clamp helper belongs to this proof.
+    const bool ClampInfinity = Infinity && Site && Site->Root == "resource" &&
+        Site->Path == "include/math.h" && Expansion && Expansion->Root == "libcxx" &&
+        Expansion->Path == "__random/clamp_to_integral.h";
+    if (!ClampInfinity && (!Site || Site->Root != "libcxx" ||
+        (Site->Path != "__random/clamp_to_integral.h" &&
+         Site->Path != (Classify ? "__math/traits.h" : "__math/rounding_functions.h")))) return false;
+    for (const auto *D : F->redecls()) {
+      if (D->isImplicit() && D->getLocation().isInvalid()) continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || S.owns(SM, D->getLocation()) ||
+          !((File->Root == "resource" && File->Path == "include/math.h") ||
+            (File->Root == "libcxx" && File->Path == (Classify ? "__math/traits.h" : "__math/rounding_functions.h")))) return false;
     }
     return true;
   }
@@ -172,7 +260,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     return true;
   }
   bool selectedPowerMath(const FunctionDecl *F, SourceLocation Location) const {
-    if ((Math != SelectedRandomMath::Weibull && Math != SelectedRandomMath::Gamma && Math != SelectedRandomMath::Student) || !F || F->isVariadic() || F->getNumParams() != 2 ||
+    if ((Math != SelectedRandomMath::Weibull && Math != SelectedRandomMath::Gamma && Math != SelectedRandomMath::Student && Math != SelectedRandomMath::Poisson && Math != SelectedRandomMath::NegativeBinomial) || !F || F->isVariadic() || F->getNumParams() != 2 ||
         (!DistanceType->isSpecificBuiltinType(BuiltinType::Float) &&
          !DistanceType->isSpecificBuiltinType(BuiltinType::Double)) ||
         !Context.hasSameType(F->getReturnType(), DistanceType) ||
@@ -186,8 +274,9 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     const auto CallFile = S.sdkFile(SM, Location);
     if (!CallFile || CallFile->Root != "libcxx" ||
-        (CallFile->Path != (Math != SelectedRandomMath::Weibull ? "__random/gamma_distribution.h" : "__random/weibull_distribution.h") &&
-         CallFile->Path != "__math/exponential_functions.h"))
+        (CallFile->Path != (Math == SelectedRandomMath::Poisson ? "__random/poisson_distribution.h" : Math != SelectedRandomMath::Weibull ? "__random/gamma_distribution.h" : "__random/weibull_distribution.h") &&
+         CallFile->Path != "__math/exponential_functions.h" &&
+         !(Math == SelectedRandomMath::NegativeBinomial && CallFile->Path == "__random/poisson_distribution.h")))
       return false;
     for (const auto *D : F->redecls()) {
       if (D->isImplicit() && D->getLocation().isInvalid()) continue;
@@ -540,7 +629,7 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *F = dyn_cast<FunctionDecl>(E->getDecl());
     if (countLeadingZeros(F) || engineIntrinsic(F, E->getExprLoc()) ||
-        selectedUnaryMath(F, E->getExprLoc()) || selectedTangentMath(F, E->getExprLoc()) || selectedPowerMath(F, E->getExprLoc()) || selectedLimitInfinity(F, E->getExprLoc()) || allocatorHook(F))
+        selectedBinomialGamma(F, E->getExprLoc()) || selectedPoissonIntrinsic(F, E->getExprLoc()) || selectedUnaryMath(F, E->getExprLoc()) || selectedTangentMath(F, E->getExprLoc()) || selectedPowerMath(F, E->getExprLoc()) || selectedLimitInfinity(F, E->getExprLoc()) || allocatorHook(F))
       return true;
     // Calls retain source methods with their actual selected receiver below.
     if (F && S.owns(SM, F->getLocation()))
@@ -581,6 +670,21 @@ public:
               Destructor->getBase()->getType()->getPointeeType()))
         return true;
       return false;
+    }
+    if (selectedBinomialGamma(F, E->getExprLoc()))
+      return Context.hasSameType(E->getType(), Context.DoubleTy) &&
+             E->getNumArgs() == F->getNumParams() &&
+             Context.hasSameType(E->getArg(0)->getType(), Context.DoubleTy) &&
+             (E->getNumArgs() == 1 || Context.hasSameType(E->getArg(1)->getType(), Context.getPointerType(Context.IntTy)));
+    if (selectedPoissonIntrinsic(F, E->getExprLoc())) {
+      if (F->getBuiltinID() == Builtin::BI__builtin_inff)
+        return !E->getNumArgs() && Context.hasSameType(E->getType(), Context.FloatTy);
+      const bool Classify = F->getBuiltinID() == Builtin::BI__builtin_isinf;
+      return E->getNumArgs() == (Classify ? 1u : 2u) &&
+             (Classify ? E->getType()->isSpecificBuiltinType(BuiltinType::Int)
+                       : Context.hasSameType(E->getType(), Context.DoubleTy)) &&
+             Context.hasSameType(E->getArg(0)->getType(), Context.DoubleTy) &&
+             (Classify || Context.hasSameType(E->getArg(1)->getType(), Context.DoubleTy));
     }
     if (selectedUnaryMath(F, E->getExprLoc()))
       return E->getNumArgs() == 1 && Context.hasSameType(E->getType(), DistanceType) &&
@@ -1626,6 +1730,63 @@ approvedScalarRealDistributionRecord(const State &S, const SourceManager &SM,
       : dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
   const auto *Template = Outer ? Outer->getSpecializedTemplate() : nullptr;
   const auto File = R ? S.sdkFile(SM, R->getLocation()) : std::nullopt;
+  const bool Binomial = Template && Template->getName() == "binomial_distribution";
+  const bool Negative = Template && Template->getName() == "negative_binomial_distribution";
+  const bool Geometric = Template && Template->getName() == "geometric_distribution";
+  const bool Poisson = Template && Template->getName() == "poisson_distribution";
+  if (Poisson || Negative || Geometric || Binomial) {
+    if (!S.coreV2() || !R || !Outer || !File || File->Root != "libcxx" ||
+        File->Path != (Binomial ? "__random/binomial_distribution.h" : Negative ? "__random/negative_binomial_distribution.h" : Geometric ? "__random/geometric_distribution.h" : "__random/poisson_distribution.h") ||
+        Outer->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !approvedStandardSDKDeclaration(S, SM, Template) ||
+        !R->isStandardLayout() || !R->isTriviallyCopyable() ||
+        !R->hasTrivialDestructor() || R->getNumBases() || R->isUnion() ||
+        Outer->getTemplateArgs().size() != 1 ||
+        Outer->getTemplateArgs().get(0).getKind() != TemplateArgument::Type)
+      return std::nullopt;
+    const auto Result = Outer->getTemplateArgs().get(0).getAsType();
+    const auto *Builtin = Result->getAs<BuiltinType>();
+    if (Result.hasLocalQualifiers() || !Builtin ||
+        (Builtin->getKind() != BuiltinType::Short && Builtin->getKind() != BuiltinType::UShort &&
+         Builtin->getKind() != BuiltinType::Int && Builtin->getKind() != BuiltinType::UInt &&
+         Builtin->getKind() != BuiltinType::Long && Builtin->getKind() != BuiltinType::ULong &&
+         Builtin->getKind() != BuiltinType::LongLong && Builtin->getKind() != BuiltinType::ULongLong))
+      return std::nullopt;
+    const CXXRecordDecl *Parameter = nullptr;
+    for (const auto *D : Outer->decls())
+      if (const auto *Nested = dyn_cast<CXXRecordDecl>(D);
+          Nested && Nested->getName() == "param_type" && Nested->getDefinition())
+        Parameter = Nested->getDefinition();
+    if (!Parameter || (R != Outer && R != Parameter) ||
+        !Parameter->isStandardLayout() || !Parameter->isTriviallyCopyable() ||
+        !Parameter->hasTrivialDestructor() || Parameter->getNumBases()) return std::nullopt;
+    const char *Names[] = {"__mean_", "__s_", "__d_", "__l_", "__omega_", "__c0_", "__c1_", "__c2_", "__c3_", "__c_"};
+    const unsigned Count = Binomial ? 5u : Negative ? 2u : Geometric ? 1u : 10u;
+    if (Binomial) { Names[0] = "__t_"; Names[1] = "__p_"; Names[2] = "__pr_"; Names[3] = "__odds_ratio_"; Names[4] = "__r0_"; }
+    if (Negative) { Names[0] = "__k_"; Names[1] = "__p_"; }
+    if (Geometric) Names[0] = "__p_";
+    llvm::SmallVector<const FieldDecl *, 10> Fields;
+    for (const auto *F : Parameter->fields()) {
+      if (Fields.size() >= Count || F->getName() != Names[Fields.size()] ||
+          F->isBitField() || F->isMutable() || !approvedStandardSDKDeclaration(S, SM, F) ||
+          !Context.hasSameType(F->getType(), ((Negative && Fields.empty()) || (Binomial && (Fields.empty() || Fields.size() == 4))) ? Result : Context.DoubleTy)) return std::nullopt;
+      Fields.push_back(F);
+    }
+    const FieldDecl *Storage = nullptr;
+    for (const auto *F : Outer->fields()) {
+      if (Storage || F->getName() != "__p_" || F->isBitField() || F->isMutable() ||
+          !approvedStandardSDKDeclaration(S, SM, F) ||
+          !Context.hasSameType(F->getType(), Context.getRecordType(Parameter))) return std::nullopt;
+      Storage = F;
+    }
+    RandomSelection Selection(S, SM, Context, Outer, Result, Context.DoubleTy,
+                              false, nullptr, Binomial ? SelectedRandomMath::Binomial : Poisson ? SelectedRandomMath::Poisson : SelectedRandomMath::NegativeBinomial);
+    if (!Storage || Fields.size() != Count || !Selection.retain(Outer) || !Selection.retain(Parameter)) return std::nullopt;
+    auto Info = ScalarRealDistributionRecord{R, Outer, Parameter, Result, Storage, Fields[0], (Negative || Binomial) ? Fields[1] : nullptr,
+                                           nullptr, nullptr, Binomial ? ScalarRealDistributionKind::Binomial : Negative ? ScalarRealDistributionKind::NegativeBinomial : Geometric ? ScalarRealDistributionKind::Geometric : ScalarRealDistributionKind::Poisson};
+    if (Poisson || Binomial) Info.Derived.append(Fields.begin() + (Binomial ? 2 : 1), Fields.end());
+    return Info;
+  }
   const bool Extreme = Template && Template->getName() == "extreme_value_distribution";
   const bool Weibull = Template && Template->getName() == "weibull_distribution";
   const bool Gamma = Template && Template->getName() == "gamma_distribution";
@@ -1747,14 +1908,14 @@ approvedScalarRealDistributionConstruction(const State &S, const SourceManager &
   if (!C->getNumParams() && Info->Record == Info->Distribution)
     Kind = ScalarRealDistributionConstruction::Default;
   else if (C->getNumParams() == (Info->Second ? 2u : 1u) &&
-           Context.hasSameType(C->getParamDecl(0)->getType(), Info->ResultType) &&
-           (!Info->Second || Context.hasSameType(C->getParamDecl(1)->getType(), Info->ResultType)))
+           Context.hasSameType(C->getParamDecl(0)->getType(), Info->First->getType()) &&
+           (!Info->Second || Context.hasSameType(C->getParamDecl(1)->getType(), Info->Second->getType())))
     Kind = ScalarRealDistributionConstruction::Values;
   else if (C->getNumParams() == 1 && Info->Record == Info->Distribution &&
            Context.hasSameType(C->getParamDecl(0)->getType(),
                Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst())))
     Kind = ScalarRealDistributionConstruction::Parameter;
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric || Info->Kind == ScalarRealDistributionKind::Binomial) ? Context.DoubleTy : Info->ResultType, false, nullptr, Info->Kind == ScalarRealDistributionKind::Binomial ? SelectedRandomMath::Binomial : Info->Kind == ScalarRealDistributionKind::Poisson ? SelectedRandomMath::Poisson : Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric ? SelectedRandomMath::NegativeBinomial : SelectedRandomMath::None);
   return Kind && C->hasBody() && Selection.retain(C) ? Kind : std::nullopt;
 }
 
@@ -1767,13 +1928,21 @@ bool approvedScalarRealDistributionDefaultArgument(const State &S, const SourceM
   if (!Info || !Default || Index >= (Info->Second ? 2u : 1u) ||
       C->getNumParams() != (Info->Second ? 2u : 1u) ||
       Default->getParam() != C->getParamDecl(Index) ||
-      !Context.hasSameType(C->getParamDecl(Index)->getType(), Info->ResultType))
+      !Context.hasSameType(C->getParamDecl(Index)->getType(), (Index ? Info->Second : Info->First)->getType()))
     return false;
   Expr::EvalResult Value;
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
-  return Default->getExpr()->EvaluateAsRValue(Value, Context) && Value.Val.isFloat() &&
-      Value.Val.getFloat().isExactlyValue(Info->Second && !Index && Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma && Info->Kind != ScalarRealDistributionKind::FisherF ? 0.0 : 1.0) && Selection.retain(C) &&
-      Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr()));
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric || Info->Kind == ScalarRealDistributionKind::Binomial) ? Context.DoubleTy : Info->ResultType, false, nullptr, Info->Kind == ScalarRealDistributionKind::Binomial ? SelectedRandomMath::Binomial : Info->Kind == ScalarRealDistributionKind::Poisson ? SelectedRandomMath::Poisson : Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric ? SelectedRandomMath::NegativeBinomial : SelectedRandomMath::None);
+  if (!Default->getExpr()->EvaluateAsRValue(Value, Context)) return false;
+  bool Matches = false;
+  if (Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric || Info->Kind == ScalarRealDistributionKind::Binomial)
+    Matches = (Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Binomial) && !Index
+        ? Value.Val.isInt() && Value.Val.getInt() == 1
+        : Value.Val.isFloat() && Value.Val.getFloat().isExactlyValue(0.5);
+  else
+    Matches = Value.Val.isFloat() && Value.Val.getFloat().isExactlyValue(Info->Second && !Index &&
+        Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma &&
+        Info->Kind != ScalarRealDistributionKind::FisherF ? 0.0 : 1.0);
+  return Matches && Selection.retain(C) && Selection.TraverseStmt(const_cast<Expr *>(Default->getExpr()));
 }
 
 std::optional<UtilityAlgorithmRandomCall>
@@ -1791,9 +1960,11 @@ approvedScalarRealDistributionRandomCall(const State &S, const SourceManager &SM
       (M->getNumParams() == 2 && !Context.hasSameType(M->getParamDecl(1)->getType(),
           Context.getLValueReferenceType(Context.getRecordType(Info->Parameter).withConst()))))
     return std::nullopt;
-  return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), Info->ResultType,
+  return selectedRandomGenerator(S, SM, M, M->getParamDecl(0)->getType(), (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric || Info->Kind == ScalarRealDistributionKind::Binomial) ? Context.DoubleTy : Info->ResultType,
       UtilityOperation::ScalarRealDistributionGenerate, Operator ? 1u : 0u, Context,
-      Info->Kind == ScalarRealDistributionKind::Cauchy ? SelectedRandomMath::Cauchy
+      Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric ? SelectedRandomMath::NegativeBinomial
+      : Info->Kind == ScalarRealDistributionKind::Binomial ? SelectedRandomMath::Binomial : Info->Kind == ScalarRealDistributionKind::Poisson ? SelectedRandomMath::Poisson
+      : Info->Kind == ScalarRealDistributionKind::Cauchy ? SelectedRandomMath::Cauchy
       : Info->Kind == ScalarRealDistributionKind::StudentT ? SelectedRandomMath::Student
       : Info->Kind == ScalarRealDistributionKind::FisherF || Info->Kind == ScalarRealDistributionKind::ChiSquared || Info->Kind == ScalarRealDistributionKind::Gamma ? SelectedRandomMath::Gamma
       : Info->Kind == ScalarRealDistributionKind::Weibull ? SelectedRandomMath::Weibull
@@ -1820,11 +1991,11 @@ approvedScalarRealDistributionOperation(const State &S, const SourceManager &SM,
   std::optional<UtilityOperation> Operation;
   if (M && !M->isStatic() && !M->isVolatile()) {
     if (M->isConst() && M->getIdentifier() && !M->getNumParams()) {
-      if (Context.hasSameType(M->getReturnType(), Info->ResultType) &&
-          M->getName() == (Info->Kind == ScalarRealDistributionKind::StudentT ? "n" : Info->Kind == ScalarRealDistributionKind::FisherF ? "m" : Info->Kind == ScalarRealDistributionKind::ChiSquared ? "n" : Info->Kind == ScalarRealDistributionKind::Gamma ? "alpha" : Info->Kind == ScalarRealDistributionKind::Lognormal ? "m" : Info->Kind == ScalarRealDistributionKind::Normal ? "mean" : Info->Second ? "a" : "lambda"))
+      if (Context.hasSameType(M->getReturnType(), Info->First->getType()) &&
+          M->getName() == (Info->Kind == ScalarRealDistributionKind::Binomial ? "t" : Info->Kind == ScalarRealDistributionKind::NegativeBinomial ? "k" : Info->Kind == ScalarRealDistributionKind::Geometric ? "p" : Info->Kind == ScalarRealDistributionKind::StudentT ? "n" : Info->Kind == ScalarRealDistributionKind::FisherF ? "m" : Info->Kind == ScalarRealDistributionKind::ChiSquared ? "n" : Info->Kind == ScalarRealDistributionKind::Gamma ? "alpha" : Info->Kind == ScalarRealDistributionKind::Lognormal ? "m" : Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::Poisson ? "mean" : Info->Second ? "a" : "lambda"))
         Operation = UtilityOperation::ScalarRealDistributionFirst;
-      else if (Info->Second && M->getName() == (Info->Kind == ScalarRealDistributionKind::FisherF ? "n" : Info->Kind == ScalarRealDistributionKind::Gamma ? "beta" : Info->Kind == ScalarRealDistributionKind::Lognormal ? "s" : Info->Kind == ScalarRealDistributionKind::Normal ? "stddev" : "b") &&
-               Context.hasSameType(M->getReturnType(), Info->ResultType))
+      else if (Info->Second && M->getName() == (Info->Kind == ScalarRealDistributionKind::Binomial || Info->Kind == ScalarRealDistributionKind::NegativeBinomial ? "p" : Info->Kind == ScalarRealDistributionKind::FisherF ? "n" : Info->Kind == ScalarRealDistributionKind::Gamma ? "beta" : Info->Kind == ScalarRealDistributionKind::Lognormal ? "s" : Info->Kind == ScalarRealDistributionKind::Normal ? "stddev" : "b") &&
+               Context.hasSameType(M->getReturnType(), Info->Second->getType()))
         Operation = UtilityOperation::ScalarRealDistributionSecond;
       else if (Info->Record == Info->Distribution && Context.hasSameType(M->getReturnType(), Info->ResultType)) {
         if (M->getName() == "min") Operation = UtilityOperation::ScalarRealDistributionMinimum;
@@ -1855,7 +2026,7 @@ approvedScalarRealDistributionOperation(const State &S, const SourceManager &SM,
         return std::nullopt;
     Operation = F->getOverloadedOperator() == OO_EqualEqual ? UtilityOperation::ScalarRealDistributionEqual : UtilityOperation::ScalarRealDistributionNotEqual;
   }
-  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, Info->ResultType);
+  RandomSelection Selection(S, SM, Context, Info->Distribution, Info->ResultType, (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric || Info->Kind == ScalarRealDistributionKind::Binomial) ? Context.DoubleTy : Info->ResultType, false, nullptr, Info->Kind == ScalarRealDistributionKind::Binomial ? SelectedRandomMath::Binomial : Info->Kind == ScalarRealDistributionKind::Poisson ? SelectedRandomMath::Poisson : Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric ? SelectedRandomMath::NegativeBinomial : SelectedRandomMath::None);
   return Operation && Selection.retain(F) ? Operation : std::nullopt;
 }
 

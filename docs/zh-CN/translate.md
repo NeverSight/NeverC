@@ -46,6 +46,12 @@ Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersen
 
 `cauchy_distribution<float/double>` 及 `param_type` 支持默认、位置/尺度、参数、复制/移动构造、赋值、a/b、边界、参数接口、相等比较、reset，以及使用已验证源码或 SDK 生成器的两种采样形式。默认值为零和一，边界为负无穷和正无穷，不保存缓存。固定 SDK 使用无后缀的 double 圆周率字面量：即使规范随机值为 float，乘圆周率、tan、乘尺度和加位置也使用 double，最后才缩窄结果；实现保留这条路径及一种合法参数读取顺序，不改成 float 圆周率/tanf 或平移后的随机值。所选 SDK 函数体、实际 double 正切签名和显式重声明均经过验证。严格核心 v2 的 tan 要求一个匹配的 float/double 操作数并生成 C23 内建调用，宿主 CRT/libm 导入由后端处理。原生数值对照使用较小数学容差，参数和生成器状态精确比较。long double 和流序列化仍待接入。
 
+`poisson_distribution<IntType>` 及 `param_type` 支持 short、int、long、long long 的有符号和无符号共八种标准结果类型，支持默认、均值、参数、复制/移动构造、赋值、mean、边界、参数接口、相等比较、reset，以及使用已验证源码或 SDK 生成器的两种采样形式。均值默认为一；与固定 SDK 一致，正负无穷均替换为最大的 double。十个 double 参数字段全部初始化并复制。采样保留小均值乘积循环，以及大均值的临时无缓存正态、快速判定、指数候选和接受表达式，精确保持生成器消耗。结果在转换前按 SDK 阈值钳制，包括 64 位整数边界。严格 core-v2 trunc 只接受一个同类型 float/double 参数并生成 C23 builtin。正态、指数、数学及钳制辅助函数体和显式重声明均经过验证；宿主数学导入由 C23 后端负责。流序列化仍待接入。
+
+`negative_binomial_distribution<IntType>`、`geometric_distribution<IntType>` 及各自的 `param_type` 支持八种标准整数结果类型，提供默认、数值、参数、复制/移动构造、赋值、属性、边界、参数接口、相等比较、reset 和两种采样形式。负二项分布在任何取样前保存 k/p；k <= 21*p 时保留 SDK 的重复 Bernoulli 路径，否则使用 Gamma<double>→Poisson<IntType> 混合。几何分布以 k=1 走相同路径，概率阈值及引擎消耗与 SDK 一致。嵌套分布均为临时对象，不新增持久缓存；整数提升、参数变更、嵌套 SDK 函数体和数学/钳制重声明均经过验证。不新增原语或 SDK/目录版本，流序列化仍待接入。
+
+`binomial_distribution<IntType>` 及 `param_type` 支持八种标准整数结果类型，提供默认、试验次数、概率、参数、复制/移动构造、赋值、t/p、边界、参数接口、相等比较、reset 和两种采样形式。默认试验一次、概率 .5，max 返回当前试验次数。仅在内部概率区间缓存 SDK 的众数概率、比值和众数；端点复制及参数操作避免读取未初始化缓存，端点采样不消耗引擎。内部区间保留 SDK 单次取样的众数递推、先下后上顺序、整数提升和实时参数读取。严格 double log-gamma 保留目标 ABI：非 Windows 使用带局部符号变量的 lgamma_r，Windows 使用 lgamma。SDK 辅助函数、exp/log/log-gamma 声明、导入和完整函数体均经过验证。不修改 SDK/目录版本；流序列化仍待接入。
+
 离散权重函数指针还支持算术类型的 const 左值引用、右值引用参数和引用返回值。转换后的实参临时对象在回调期间保留引用身份；引用结果沿用已检查的间接调用路径。double 引用在 SDK 元素构造时复制，即扩容分配后、旧缓冲释放前；其他算术结果在插入前转换为 double。O0/O2 对照覆盖参数修改、全局引用返回及可观察的分配器副作用。
 
 两个算法也接纳经校验的 `std::__wrap_iter<T*>` 范围，包括已支持的 vector 和 string 迭代器。Sample 的输入和输出可分别使用原始指针或包装迭代器，保留 const 输入及经校验的标量转换，并返回原输出迭代器类型。所选 SDK 迭代器操作仍须通过认证。

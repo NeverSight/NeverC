@@ -168,7 +168,7 @@ class Emitter {
   };
   std::vector<PointerHelper> PointerHelpers;
   std::map<std::string, size_t> PointerHelperIndices;
-  bool HasPointerDifference = false, HasPointerOrdering = false;
+  bool HasPointerDifference = false, HasPointerOrdering = false, HasLogGamma = false;
   std::map<std::string, std::string> StaticGuards, StaticDestructors;
   StaticDestructionABI DestructionABI = StaticDestructionABI::None;
   std::set<std::string> NativeHeapSymbols;
@@ -260,6 +260,7 @@ class Emitter {
   void inspect(const Expr &E) {
     inspectType(E.ValueType);
     HasPointerOrdering |= pointerOrdering(E);
+    HasLogGamma |= E.Kind == ExprKind::Unary && E.UnaryOp == UnaryOperator::LogGamma;
     if (E.Kind == ExprKind::Binary &&
         (E.BinaryOp == BinaryOperator::Add ||
          E.BinaryOp == BinaryOperator::Subtract) &&
@@ -347,6 +348,11 @@ class Emitter {
       if (E.UnaryOp == UnaryOperator::Tan)
         return std::string(E.ValueType.Kind == TypeKind::Float ? "__builtin_tanf(" : "__builtin_tan(") +
                expression(E.Args[0]) + ")";
+      if (E.UnaryOp == UnaryOperator::Trunc)
+        return std::string(E.ValueType.Kind == TypeKind::Float ? "__builtin_truncf(" : "__builtin_trunc(") +
+               expression(E.Args[0]) + ")";
+      if (E.UnaryOp == UnaryOperator::LogGamma)
+        return "nct_emit_log_gamma(" + expression(E.Args[0]) + ")";
       const char *Op = E.UnaryOp == UnaryOperator::Plus     ? "+"
                        : E.UnaryOp == UnaryOperator::Minus  ? "-"
                        : E.UnaryOp == UnaryOperator::BitNot ? "~"
@@ -580,6 +586,20 @@ class Emitter {
     line("");
   }
   void helpers() {
+    if (HasLogGamma) {
+      if (llvm::Triple(M.Target.Triple).isOSWindows()) {
+        line("extern double lgamma(double);");
+        line("static double nct_emit_log_gamma(double nct_emit_value) {");
+        line("  return lgamma(nct_emit_value);");
+      } else {
+        line("extern double lgamma_r(double, int *);");
+        line("static double nct_emit_log_gamma(double nct_emit_value) {");
+        line("  int nct_emit_sign;");
+        line("  return lgamma_r(nct_emit_value, &nct_emit_sign);");
+      }
+      line("}");
+      line("");
+    }
     if (!StaticGuards.empty()) {
       line("/* Acquire initialization ownership or wait for release publication. */");
       line("#if defined(__aarch64__) || defined(_M_ARM64)");

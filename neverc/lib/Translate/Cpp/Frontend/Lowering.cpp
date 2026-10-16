@@ -1448,6 +1448,11 @@ class FunctionLowering {
   }
   void copyScalarRealDistribution(Expression Target, Expression Source,
                                   const ScalarRealDistributionRecord &Info, SourceLocation L) {
+    if (Info.Kind == ScalarRealDistributionKind::Binomial) {
+      copyBinomialParameters(scalarRealDistributionParameter(Target, Info, L),
+                             scalarRealDistributionParameter(Source, Info, L), Info, L);
+      return;
+    }
     if (!Info.CacheValid || Info.Record != Info.Distribution) {
       assign(std::move(Target), snapshot(std::move(Source), L), L);
       return;
@@ -2312,13 +2317,21 @@ class FunctionLowering {
                               const UtilityAlgorithmRandomCall &Random, QualType ResultType,
                               Expression State, const FieldDecl *SpareField, const FieldDecl *HotField,
                               Expression MeanInput, Expression DeviationInput, SourceLocation L) {
+    return emitNormalRandomValues(Generator, Random, ResultType,
+        fieldStorage(State, SpareField, L), fieldStorage(State, HotField, L),
+        std::move(MeanInput), std::move(DeviationInput), L);
+  }
+  Expression emitNormalRandomValues(const CapturedAlgorithmPredicate &Generator,
+                              const UtilityAlgorithmRandomCall &Random, QualType ResultType,
+                              Expression Spare, Expression Hot,
+                              Expression MeanInput, Expression DeviationInput, SourceLocation L) {
     const auto Real = type(ResultType, L);
     auto Up = temporary(Real, L);
     const auto UseSpare = labelName(), Fresh = labelName(), Retry = labelName(), CheckZero = labelName(), Accepted = labelName(), Sampled = labelName();
-    branch(fieldStorage(State, HotField, L), UseSpare, Fresh, L);
+    branch(Hot, UseSpare, Fresh, L);
     label(UseSpare, L);
-    assign(fieldStorage(State, HotField, L), quantity(0, "bool", L), L);
-    assign(Up, fieldStorage(State, SpareField, L), L);
+    assign(Hot, quantity(0, "bool", L), L);
+    assign(Up, Spare, L);
     jump(Sampled, L);
     label(Fresh, L);
     jump(Retry, L);
@@ -2344,8 +2357,8 @@ class FunctionLowering {
     RootArguments.push_back(std::move(Quotient));
     auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
         {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
-    assign(fieldStorage(State, SpareField, L), binary("*", V, Factor, Real, L), L);
-    assign(fieldStorage(State, HotField, L), quantity(1, "bool", L), L);
+    assign(Spare, binary("*", V, Factor, Real, L), L);
+    assign(Hot, quantity(1, "bool", L), L);
     assign(Up, binary("*", U, Factor, Real, L), L);
     jump(Sampled, L);
     label(Sampled, L);
@@ -2427,6 +2440,448 @@ class FunctionLowering {
     label(Done, L);
     auto Scale = snapshot(std::move(ScaleInput), L);
     return snapshot(binary("*", Value, Scale, Real, L), L);
+  }
+  // Poisson's logical mean and all nine derived fields are initialized together.
+  Expression binomialField(Expression Parameter, const ScalarRealDistributionRecord &Info,
+                           llvm::StringRef Name, SourceLocation L) {
+    if (Info.First->getName() == Name) return fieldStorage(std::move(Parameter), Info.First, L);
+    if (Info.Second->getName() == Name) return fieldStorage(std::move(Parameter), Info.Second, L);
+    for (const auto *Field : Info.Derived)
+      if (Field->getName() == Name) return fieldStorage(std::move(Parameter), Field, L);
+    llvm_unreachable("authenticated binomial parameter field is missing");
+  }
+  void copyBinomialParameters(Expression Target, Expression Source,
+                              const ScalarRealDistributionRecord &Info, SourceLocation L) {
+    auto Trials = snapshot(fieldStorage(Source, Info.First, L), L);
+    auto Probability = snapshot(fieldStorage(Source, Info.Second, L), L);
+    assign(fieldStorage(Target, Info.First, L), Trials, L);
+    assign(fieldStorage(Target, Info.Second, L), Probability, L);
+    const auto Positive = labelName(), Interior = labelName(), Done = labelName();
+    branch(binary(">", Probability, A.floatingLiteral(llvm::APFloat(0.), L), "bool", L), Positive, Done, L);
+    label(Positive, L);
+    branch(binary("<", Probability, A.floatingLiteral(llvm::APFloat(1.), L), "bool", L), Interior, Done, L);
+    label(Interior, L);
+    for (const auto *Field : Info.Derived)
+      assign(fieldStorage(Target, Field, L), snapshot(fieldStorage(Source, Field, L), L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  void initializeBinomialParameters(Expression Parameter, const ScalarRealDistributionRecord &Info,
+                                    Expression TrialsInput, Expression ProbabilityInput, SourceLocation L) {
+    const auto ResultName = type(Info.ResultType, L);
+    const auto PromotedType = A.Context.isPromotableIntegerType(Info.ResultType)
+        ? A.Context.getPromotedIntegerType(Info.ResultType) : Info.ResultType;
+    const auto Promoted = type(PromotedType, L);
+    auto Number = [&](double Value) { return A.floatingLiteral(llvm::APFloat(Value), L); };
+    auto Field = [&](llvm::StringRef Name) { return binomialField(Parameter, Info, Name, L); };
+    auto Math = [&](llvm::StringRef Operator, Expression Value) {
+      json::Array Args;
+      Args.push_back(std::move(Value));
+      return snapshot(Expression{{"kind", "unary"}, {"type", "double"}, {"operator", Operator.str()},
+                                 {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+    };
+    auto Trials = snapshot(std::move(TrialsInput), L);
+    auto Probability = snapshot(std::move(ProbabilityInput), L);
+    assign(Field("__t_"), Trials, L);
+    assign(Field("__p_"), Probability, L);
+    const auto Positive = labelName(), Interior = labelName(), Done = labelName();
+    branch(binary("<", Number(0.), Probability, "bool", L), Positive, Done, L);
+    label(Positive, L);
+    branch(binary("<", Probability, Number(1.), "bool", L), Interior, Done, L);
+    label(Interior, L);
+    auto Mode = snapshot(cast(binary("*", cast(binary("+", cast(Trials, Promoted, L), one(Promoted, L), Promoted, L), "double", L),
+        Probability, "double", L), ResultName, L), L);
+    assign(Field("__r0_"), Mode, L);
+    auto Remaining = binary("-", cast(Trials, Promoted, L), cast(Mode, Promoted, L), Promoted, L);
+    auto LogProbability = binary("+", binary("+", binary("-", binary("-",
+        Math("lgamma", binary("+", cast(Trials, "double", L), Number(1.), "double", L)),
+        Math("lgamma", binary("+", cast(Mode, "double", L), Number(1.), "double", L)), "double", L),
+        Math("lgamma", binary("+", cast(Remaining, "double", L), Number(1.), "double", L)), "double", L),
+        binary("*", cast(Mode, "double", L), Math("log", Probability), "double", L), "double", L),
+        binary("*", cast(Remaining, "double", L), Math("log", binary("-", Number(1.), Probability, "double", L)), "double", L), "double", L);
+    assign(Field("__pr_"), Math("exp", std::move(LogProbability)), L);
+    assign(Field("__odds_ratio_"), binary("/", Probability, binary("-", Number(1.), Probability, "double", L), "double", L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  Expression emitBinomialRandom(const CapturedAlgorithmPredicate &Generator,
+      const UtilityAlgorithmRandomCall &Random, Expression Parameter,
+      const ScalarRealDistributionRecord &Info, SourceLocation L) {
+    const auto ResultName = type(Info.ResultType, L);
+    const auto PromotedType = A.Context.isPromotableIntegerType(Info.ResultType)
+        ? A.Context.getPromotedIntegerType(Info.ResultType) : Info.ResultType;
+    const auto Promoted = type(PromotedType, L);
+    auto Number = [&](double Value) { return A.floatingLiteral(llvm::APFloat(Value), L); };
+    auto Field = [&](llvm::StringRef Name) { return binomialField(Parameter, Info, Name, L); };
+    auto Zero = quantity(0, ResultName, L);
+    auto Result = temporary(ResultName, L);
+    const auto ZeroResult = labelName(), ProbabilityCheck = labelName(), UnitCheck = labelName(), UnitResult = labelName();
+    const auto Sample = labelName(), Mode = labelName(), Walk = labelName(), Done = labelName();
+    branch(binary("==", Field("__t_"), Zero, "bool", L), ZeroResult, ProbabilityCheck, L);
+    label(ProbabilityCheck, L);
+    branch(binary("==", Field("__p_"), Number(0.), "bool", L), ZeroResult, UnitCheck, L);
+    label(UnitCheck, L);
+    branch(binary("==", Field("__p_"), Number(1.), "bool", L), UnitResult, Sample, L);
+    label(ZeroResult, L);
+    assign(Result, Zero, L);
+    jump(Done, L);
+    label(UnitResult, L);
+    assign(Result, Field("__t_"), L);
+    jump(Done, L);
+    label(Sample, L);
+    // Choose the SDK's permitted order where the generator precedes pr's read.
+    auto Draw = emitCanonicalRandom(Generator, Random, 53, L);
+    auto U = snapshot(binary("-", Draw, Field("__pr_"), "double", L), L);
+    branch(binary("<", U, Number(0.), "bool", L), Mode, Walk, L);
+    label(Mode, L);
+    assign(Result, Field("__r0_"), L);
+    jump(Done, L);
+    label(Walk, L);
+    auto Pu = snapshot(Field("__pr_"), L), Pd = snapshot(Pu, L);
+    auto Ru = snapshot(Field("__r0_"), L), Rd = snapshot(Ru, L);
+    auto Break = temporary("bool", L);
+    const auto Retry = labelName(), Lower = labelName(), LowerReturn = labelName(), DecrementCheck = labelName();
+    const auto Decrement = labelName(), UpperStep = labelName(), Upper = labelName(), UpperReturn = labelName(), BreakCheck = labelName();
+    jump(Retry, L);
+    label(Retry, L);
+    assign(Break, quantity(1, "bool", L), L);
+    branch(binary(">=", cast(Rd, Promoted, L), one(Promoted, L), "bool", L), Lower, DecrementCheck, L);
+    label(Lower, L);
+    auto LowerRemaining = binary("+", binary("-", cast(Field("__t_"), Promoted, L), cast(Rd, Promoted, L), Promoted, L), one(Promoted, L), Promoted, L);
+    assign(Pd, binary("*", Pd, binary("/", cast(Rd, "double", L),
+        binary("*", Field("__odds_ratio_"), cast(LowerRemaining, "double", L), "double", L), "double", L), "double", L), L);
+    assign(U, binary("-", U, Pd, "double", L), L);
+    assign(Break, quantity(0, "bool", L), L);
+    branch(binary("<", U, Number(0.), "bool", L), LowerReturn, DecrementCheck, L);
+    label(LowerReturn, L);
+    assign(Result, cast(binary("-", cast(Rd, Promoted, L), one(Promoted, L), Promoted, L), ResultName, L), L);
+    jump(Done, L);
+    label(DecrementCheck, L);
+    branch(binary("!=", Rd, Zero, "bool", L), Decrement, UpperStep, L);
+    label(Decrement, L);
+    assign(Rd, cast(binary("-", cast(Rd, Promoted, L), one(Promoted, L), Promoted, L), ResultName, L), L);
+    jump(UpperStep, L);
+    label(UpperStep, L);
+    assign(Ru, cast(binary("+", cast(Ru, Promoted, L), one(Promoted, L), Promoted, L), ResultName, L), L);
+    branch(binary("<=", Ru, Field("__t_"), "bool", L), Upper, BreakCheck, L);
+    label(Upper, L);
+    auto UpperRemaining = binary("+", binary("-", cast(Field("__t_"), Promoted, L), cast(Ru, Promoted, L), Promoted, L), one(Promoted, L), Promoted, L);
+    assign(Pu, binary("*", Pu, binary("/", binary("*", cast(UpperRemaining, "double", L),
+        Field("__odds_ratio_"), "double", L), cast(Ru, "double", L), "double", L), "double", L), L);
+    assign(U, binary("-", U, Pu, "double", L), L);
+    assign(Break, quantity(0, "bool", L), L);
+    branch(binary("<", U, Number(0.), "bool", L), UpperReturn, BreakCheck, L);
+    label(UpperReturn, L);
+    assign(Result, Ru, L);
+    jump(Done, L);
+    label(BreakCheck, L);
+    branch(Break, ZeroResult, Retry, L);
+    label(Done, L);
+    return Result;
+  }
+  Expression poissonField(Expression Parameter, const ScalarRealDistributionRecord &Info,
+                          llvm::StringRef Name, SourceLocation L) {
+    if (Info.First->getName() == Name) return fieldStorage(std::move(Parameter), Info.First, L);
+    for (const auto *Field : Info.Derived)
+      if (Field->getName() == Name) return fieldStorage(std::move(Parameter), Field, L);
+    llvm_unreachable("authenticated Poisson parameter field is missing");
+  }
+  Expression poissonValueField(const std::vector<Expression> &Fields, llvm::StringRef Name) {
+    const char *Names[] = {"__mean_", "__s_", "__d_", "__l_", "__omega_", "__c0_", "__c1_", "__c2_", "__c3_", "__c_"};
+    for (unsigned I = 0; I < 10; ++I)
+      if (Name == Names[I]) return Fields[I];
+    llvm_unreachable("authenticated Poisson value field is missing");
+  }
+  std::vector<Expression> poissonParameterValues(Expression Parameter,
+      const ScalarRealDistributionRecord &Info, SourceLocation L) {
+    std::vector<Expression> Fields;
+    Fields.push_back(fieldStorage(Parameter, Info.First, L));
+    for (const auto *Field : Info.Derived) Fields.push_back(fieldStorage(Parameter, Field, L));
+    return Fields;
+  }
+  void initializePoissonParameters(Expression Parameter, const ScalarRealDistributionRecord &Info,
+                                   Expression MeanInput, SourceLocation L) {
+    initializePoissonParameterValues(poissonParameterValues(Parameter, Info, L), std::move(MeanInput), L);
+  }
+  void initializePoissonParameterValues(const std::vector<Expression> &Fields,
+                                   Expression MeanInput, SourceLocation L) {
+    auto Number = [&](double Value) { return A.floatingLiteral(llvm::APFloat(Value), L); };
+    auto Field = [&](llvm::StringRef Name) { return poissonValueField(Fields, Name); };
+    auto Math = [&](llvm::StringRef Operator, Expression Value) {
+      json::Array Args;
+      Args.push_back(std::move(Value));
+      return snapshot(Expression{{"kind", "unary"}, {"type", "double"}, {"operator", Operator.str()},
+                                 {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+    };
+    auto Mean = snapshot(std::move(MeanInput), L);
+    const auto Negative = labelName(), Infinite = labelName(), Finite = labelName();
+    const auto Small = labelName(), Large = labelName(), Done = labelName();
+    branch(binary("==", Mean, A.floatingLiteral(llvm::APFloat::getInf(llvm::APFloat::IEEEdouble()), L), "bool", L), Infinite, Negative, L);
+    label(Negative, L);
+    branch(binary("==", Mean, A.floatingLiteral(llvm::APFloat::getInf(llvm::APFloat::IEEEdouble(), true), L), "bool", L), Infinite, Finite, L);
+    label(Infinite, L);
+    assign(Mean, A.floatingLiteral(llvm::APFloat::getLargest(llvm::APFloat::IEEEdouble()), L), L);
+    jump(Finite, L);
+    label(Finite, L);
+    assign(Field("__mean_"), Mean, L);
+    branch(binary("<", Mean, Number(10.), "bool", L), Small, Large, L);
+    label(Small, L);
+    assign(Field("__s_"), Number(0.), L);
+    assign(Field("__d_"), Number(0.), L);
+    assign(Field("__l_"), Math("exp", Math("-", Mean)), L);
+    for (const auto *Name : {"__omega_", "__c3_", "__c2_", "__c1_", "__c0_", "__c_"})
+      assign(Field(Name), Number(0.), L);
+    jump(Done, L);
+    label(Large, L);
+    assign(Field("__s_"), Math("sqrt", Mean), L);
+    assign(Field("__d_"), binary("*", binary("*", Number(6.), Mean, "double", L), Mean, "double", L), L);
+    assign(Field("__l_"), Math("trunc", binary("-", Mean, Number(1.1484), "double", L)), L);
+    assign(Field("__omega_"), binary("/", Number(.3989423), Field("__s_"), "double", L), L);
+    auto B1 = snapshot(binary("/", Number(.4166667E-1), Mean, "double", L), L);
+    auto B2 = snapshot(binary("*", binary("*", Number(.3), B1, "double", L), B1, "double", L), L);
+    assign(Field("__c3_"), binary("*", binary("*", Number(.1428571), B1, "double", L), B2, "double", L), L);
+    assign(Field("__c2_"), binary("-", B2, binary("*", Number(15.), Field("__c3_"), "double", L), "double", L), L);
+    assign(Field("__c1_"), binary("+", binary("-", B1, binary("*", Number(6.), B2, "double", L), "double", L),
+                                 binary("*", Number(45.), Field("__c3_"), "double", L), "double", L), L);
+    assign(Field("__c0_"), binary("-", binary("+", binary("-", Number(1.), B1, "double", L),
+                                 binary("*", Number(3.), B2, "double", L), "double", L),
+                                 binary("*", Number(15.), Field("__c3_"), "double", L), "double", L), L);
+    assign(Field("__c_"), binary("/", Number(.1069), Mean, "double", L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+  Expression clampRandomInteger(Expression Input, QualType ResultType, SourceLocation L) {
+    const unsigned Width = A.Context.getTypeSize(ResultType);
+    const bool Unsigned = ResultType->isUnsignedIntegerType();
+    const auto Maximum = Unsigned ? llvm::APInt::getAllOnes(Width) : llvm::APInt::getSignedMaxValue(Width);
+    const auto Minimum = Unsigned ? llvm::APInt(Width, 0) : llvm::APInt::getSignedMinValue(Width);
+    // The SDK rounds its maximum toward zero, then takes nextafter toward +inf.
+    // Doing this in APFloat preserves the exact threshold on LP64 and LLP64.
+    llvm::APFloat Threshold(llvm::APFloat::IEEEdouble());
+    Threshold.convertFromAPInt(Maximum, !Unsigned, llvm::APFloat::rmTowardZero);
+    Threshold.next(false);
+    llvm::APFloat Lowest(llvm::APFloat::IEEEdouble());
+    Lowest.convertFromAPInt(Minimum, !Unsigned, llvm::APFloat::rmNearestTiesToEven);
+    auto Value = snapshot(std::move(Input), L);
+    const auto ResultName = type(ResultType, L);
+    auto Result = temporary(ResultName, L);
+    const auto High = labelName(), LowCheck = labelName(), Low = labelName(), Convert = labelName(), Done = labelName();
+    branch(binary(">=", Value, A.floatingLiteral(Threshold, L), "bool", L), High, LowCheck, L);
+    label(High, L);
+    assign(Result, A.literal(llvm::APSInt(Maximum, Unsigned), ResultName, L), L);
+    jump(Done, L);
+    label(LowCheck, L);
+    branch(binary("<=", Value, A.floatingLiteral(Lowest, L), "bool", L), Low, Convert, L);
+    label(Low, L);
+    assign(Result, A.literal(llvm::APSInt(Minimum, Unsigned), ResultName, L), L);
+    jump(Done, L);
+    label(Convert, L);
+    assign(Result, cast(Value, ResultName, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
+  }
+  Expression emitPoissonRandom(const CapturedAlgorithmPredicate &Generator,
+                               const UtilityAlgorithmRandomCall &Random,
+                               Expression Parameter, const ScalarRealDistributionRecord &Info,
+                               SourceLocation L) {
+    return emitPoissonRandomValues(Generator, Random, poissonParameterValues(Parameter, Info, L), Info.ResultType, L);
+  }
+  Expression emitPoissonRandomValues(const CapturedAlgorithmPredicate &Generator,
+                               const UtilityAlgorithmRandomCall &Random,
+                               const std::vector<Expression> &Fields, QualType ResultType,
+                               SourceLocation L) {
+    auto Number = [&](double Value) { return A.floatingLiteral(llvm::APFloat(Value), L); };
+    auto Field = [&](llvm::StringRef Name) { return poissonValueField(Fields, Name); };
+    auto Draw = [&]() { return emitCanonicalRandom(Generator, Random, 53, L); };
+    auto Math = [&](llvm::StringRef Operator, Expression Value) {
+      json::Array Args;
+      Args.push_back(std::move(Value));
+      return snapshot(Expression{{"kind", "unary"}, {"type", "double"}, {"operator", Operator.str()},
+                                 {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+    };
+    auto Exponential = [&]() { return Math("-", Math("log", binary("-", Number(1.), Draw(), "double", L))); };
+    auto Tx = temporary("double", L);
+    const auto Small = labelName(), Large = labelName(), Done = labelName();
+    branch(binary("<", Field("__mean_"), Number(10.), "bool", L), Small, Large, L);
+    label(Small, L);
+    assign(Tx, Number(0.), L);
+    auto Product = snapshot(Draw(), L);
+    const auto ProductCheck = labelName(), ProductNext = labelName();
+    jump(ProductCheck, L);
+    label(ProductCheck, L);
+    branch(binary(">", Product, Field("__l_"), "bool", L), ProductNext, Done, L);
+    label(ProductNext, L);
+    assign(Product, binary("*", Product, Draw(), "double", L), L);
+    assign(Tx, binary("+", Tx, Number(1.), "double", L), L);
+    jump(ProductCheck, L);
+    label(Large, L);
+    // One permitted expression order reads mean and scale before the cold normal.
+    auto Mean = snapshot(Field("__mean_"), L);
+    auto Scale = snapshot(Field("__s_"), L);
+    auto Spare = temporary("double", L), Hot = temporary("bool", L);
+    assign(Hot, quantity(0, "bool", L), L);
+    auto Normal = emitNormalRandomValues(Generator, Random, A.Context.DoubleTy,
+        Spare, Hot, Number(0.), Number(1.), L);
+    auto G = snapshot(binary("+", Mean, binary("*", Scale, Normal, "double", L), "double", L), L);
+    auto Difference = temporary("double", L), U = temporary("double", L), E = temporary("double", L);
+    auto UsingExponential = temporary("bool", L);
+    assign(UsingExponential, quantity(0, "bool", L), L);
+    const auto Positive = labelName(), Squeeze = labelName(), Loop = labelName(), CheckG = labelName();
+    const auto Proposal = labelName(), Evaluate = labelName(), Retry = labelName();
+    branch(binary(">", G, Number(0.), "bool", L), Positive, Loop, L);
+    label(Positive, L);
+    assign(Tx, Math("trunc", G), L);
+    branch(binary(">=", Tx, Field("__l_"), "bool", L), Done, Squeeze, L);
+    label(Squeeze, L);
+    assign(Difference, binary("-", Field("__mean_"), Tx, "double", L), L);
+    assign(U, Draw(), L);
+    branch(binary(">=", binary("*", Field("__d_"), U, "double", L),
+        binary("*", binary("*", Difference, Difference, "double", L), Difference, "double", L), "bool", L), Done, Loop, L);
+    label(Loop, L);
+    branch(UsingExponential, Proposal, CheckG, L);
+    label(CheckG, L);
+    branch(binary("<=", G, Number(0.), "bool", L), Proposal, Evaluate, L);
+    label(Proposal, L);
+    const auto ProposalDraw = labelName(), NegativeU = labelName(), PositiveU = labelName(), ProposalCheck = labelName();
+    auto T = temporary("double", L);
+    jump(ProposalDraw, L);
+    label(ProposalDraw, L);
+    assign(E, Exponential(), L);
+    assign(U, Draw(), L);
+    assign(U, binary("+", U, binary("-", U, Number(1.), "double", L), "double", L), L);
+    branch(binary("<", U, Number(0.), "bool", L), NegativeU, PositiveU, L);
+    label(NegativeU, L);
+    assign(T, binary("+", Number(1.8), Math("-", E), "double", L), L);
+    jump(ProposalCheck, L);
+    label(PositiveU, L);
+    assign(T, binary("+", Number(1.8), E, "double", L), L);
+    jump(ProposalCheck, L);
+    label(ProposalCheck, L);
+    const auto Proposed = labelName();
+    branch(binary("<=", T, Number(-.6744), "bool", L), ProposalDraw, Proposed, L);
+    label(Proposed, L);
+    assign(Tx, Math("trunc", binary("+", Field("__mean_"), binary("*", Field("__s_"), T, "double", L), "double", L)), L);
+    assign(Difference, binary("-", Field("__mean_"), Tx, "double", L), L);
+    assign(UsingExponential, quantity(1, "bool", L), L);
+    jump(Evaluate, L);
+    label(Evaluate, L);
+    auto Px = temporary("double", L), Py = temporary("double", L);
+    const auto SmallCandidateCheck = labelName(), Factorial = labelName(), Asymptotic = labelName(), Density = labelName();
+    branch(binary("<", Tx, Number(10.), "bool", L), SmallCandidateCheck, Asymptotic, L);
+    label(SmallCandidateCheck, L);
+    branch(binary(">=", Tx, Number(0.), "bool", L), Factorial, Asymptotic, L);
+    label(Factorial, L);
+    auto Factor = temporary("double", L);
+    const double Factorials[] = {1., 1., 2., 6., 24., 120., 720., 5040., 40320., 362880.};
+    const auto HaveFactor = labelName();
+    for (unsigned I = 0; I < 9; ++I) {
+      const auto Match = labelName(), Next = labelName();
+      branch(binary("==", Tx, Number(I), "bool", L), Match, Next, L);
+      label(Match, L);
+      assign(Factor, Number(Factorials[I]), L);
+      jump(HaveFactor, L);
+      label(Next, L);
+    }
+    assign(Factor, Number(Factorials[9]), L);
+    jump(HaveFactor, L);
+    label(HaveFactor, L);
+    assign(Px, Math("-", Field("__mean_")), L);
+    assign(Py, binary("/", binary("pow", Field("__mean_"), Tx, "double", L), Factor, "double", L), L);
+    jump(Density, L);
+    label(Asymptotic, L);
+    auto Delta = snapshot(binary("/", Number(.8333333E-1), Tx, "double", L), L);
+    assign(Delta, binary("-", Delta, binary("*", binary("*", binary("*", Number(4.8), Delta, "double", L), Delta, "double", L), Delta, "double", L), "double", L), L);
+    auto V = snapshot(binary("/", Difference, Tx, "double", L), L);
+    const auto Logarithm = labelName(), NegativeV = labelName(), Polynomial = labelName(), HavePx = labelName();
+    branch(binary(">", V, Number(.25), "bool", L), Logarithm, NegativeV, L);
+    label(NegativeV, L);
+    branch(binary("<", V, Number(-.25), "bool", L), Logarithm, Polynomial, L);
+    label(Logarithm, L);
+    assign(Px, binary("-", binary("-", binary("*", Tx, Math("log", binary("+", Number(1.), V, "double", L)), "double", L), Difference, "double", L), Delta, "double", L), L);
+    jump(HavePx, L);
+    label(Polynomial, L);
+    Expression PolynomialValue = Number(.1250060);
+    for (double Coefficient : {-.1384794, .1421878, -.1661269, .2000118, -.2500068, .3333333, -.5})
+      PolynomialValue = binary("+", binary("*", std::move(PolynomialValue), V, "double", L), Number(Coefficient), "double", L);
+    assign(Px, binary("-", binary("*", binary("*", binary("*", Tx, V, "double", L), V, "double", L),
+        std::move(PolynomialValue), "double", L), Delta, "double", L), L);
+    jump(HavePx, L);
+    label(HavePx, L);
+    assign(Py, binary("/", Number(.3989423), Math("sqrt", Tx), "double", L), L);
+    jump(Density, L);
+    label(Density, L);
+    auto R = snapshot(binary("/", binary("-", Number(.5), Difference, "double", L), Field("__s_"), "double", L), L);
+    auto R2 = snapshot(binary("*", R, R, "double", L), L);
+    auto Fx = snapshot(binary("*", Number(-.5), R2, "double", L), L);
+    auto Fy = snapshot(binary("*", Field("__omega_"), binary("+", binary("*", binary("+", binary("*", binary("+", binary("*",
+        Field("__c3_"), R2, "double", L), Field("__c2_"), "double", L), R2, "double", L), Field("__c1_"), "double", L), R2, "double", L), Field("__c0_"), "double", L), "double", L), L);
+    const auto CheckExponential = labelName(), CheckNormal = labelName();
+    branch(UsingExponential, CheckExponential, CheckNormal, L);
+    label(CheckNormal, L);
+    branch(binary("<=", binary("-", Fy, binary("*", U, Fy, "double", L), "double", L),
+        binary("*", Py, Math("exp", binary("-", Px, Fx, "double", L)), "double", L), "bool", L), Done, Retry, L);
+    label(CheckExponential, L);
+    auto AbsU = temporary("double", L);
+    const auto AbsNegative = labelName(), AbsPositive = labelName(), AbsDone = labelName();
+    branch(binary("<", U, Number(0.), "bool", L), AbsNegative, AbsPositive, L);
+    label(AbsNegative, L);
+    assign(AbsU, Math("-", U), L);
+    jump(AbsDone, L);
+    label(AbsPositive, L);
+    assign(AbsU, U, L);
+    jump(AbsDone, L);
+    label(AbsDone, L);
+    branch(binary("<=", binary("*", Field("__c_"), AbsU, "double", L),
+        binary("-", binary("*", Py, Math("exp", binary("+", Px, E, "double", L)), "double", L),
+                    binary("*", Fy, Math("exp", binary("+", Fx, E, "double", L)), "double", L), "double", L), "bool", L), Done, Retry, L);
+    label(Retry, L);
+    assign(UsingExponential, quantity(1, "bool", L), L);
+    jump(Loop, L);
+    label(Done, L);
+    return clampRandomInteger(Tx, ResultType, L);
+  }
+  Expression emitNegativeBinomialRandom(const CapturedAlgorithmPredicate &Generator,
+      const UtilityAlgorithmRandomCall &Random, QualType ResultType,
+      Expression CountInput, Expression ProbabilityInput, SourceLocation L) {
+    const auto ResultName = type(ResultType, L);
+    auto Count = snapshot(std::move(CountInput), L);
+    auto Probability = snapshot(std::move(ProbabilityInput), L);
+    auto Result = temporary(ResultName, L);
+    const auto Bernoulli = labelName(), Mixture = labelName(), Done = labelName();
+    branch(binary("<=", cast(Count, "double", L),
+        binary("*", A.floatingLiteral(llvm::APFloat(21.), L), Probability, "double", L), "bool", L), Bernoulli, Mixture, L);
+    label(Bernoulli, L);
+    auto Successes = temporary(ResultName, L);
+    assign(Result, quantity(0, ResultName, L), L);
+    assign(Successes, quantity(0, ResultName, L), L);
+    const auto Check = labelName(), Draw = labelName(), Success = labelName(), Failure = labelName();
+    const auto PromotedType = A.Context.isPromotableIntegerType(ResultType) ? A.Context.getPromotedIntegerType(ResultType) : ResultType;
+    const auto Promoted = type(PromotedType, L);
+    auto Increment = [&](Expression Value) {
+      assign(Value, cast(binary("+", cast(Value, Promoted, L), one(Promoted, L), Promoted, L), ResultName, L), L);
+    };
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Successes, Count, "bool", L), Draw, Done, L);
+    label(Draw, L);
+    branch(binary("<", emitCanonicalRandom(Generator, Random, 53, L), Probability, "bool", L), Success, Failure, L);
+    label(Success, L);
+    Increment(Successes);
+    jump(Check, L);
+    label(Failure, L);
+    Increment(Result);
+    jump(Check, L);
+    label(Mixture, L);
+    auto Scale = snapshot(binary("/", binary("-", A.floatingLiteral(llvm::APFloat(1.), L), Probability, "double", L), Probability, "double", L), L);
+    auto Mean = emitGammaRandom(Generator, Random, A.Context.DoubleTy, cast(Count, "double", L), Scale, L);
+    std::vector<Expression> Fields;
+    for (unsigned I = 0; I < 10; ++I) Fields.push_back(temporary("double", L));
+    initializePoissonParameterValues(Fields, Mean, L);
+    assign(Result, emitPoissonRandomValues(Generator, Random, Fields, ResultType, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
   }
   Expression emitAlgorithmRandom(const CapturedAlgorithmPredicate &Generator,
                                  const UtilityAlgorithmRandomCall &Info,
@@ -3943,15 +4398,30 @@ class FunctionLowering {
       case UtilityOperation::ScalarRealDistributionSecond:
         return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, true, L), L);
       case UtilityOperation::ScalarRealDistributionMinimum:
+        if (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) return quantity(0, type(Info->ResultType, L), L);
         return Info->Kind == ScalarRealDistributionKind::Cauchy || Info->Kind == ScalarRealDistributionKind::StudentT || Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::ExtremeValue
             ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
                             : A.zero(Info->ResultType, L);
-      case UtilityOperation::ScalarRealDistributionMaximum: return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
+      case UtilityOperation::ScalarRealDistributionMaximum:
+        if (Info->Kind == ScalarRealDistributionKind::Binomial)
+          return snapshot(fieldStorage(Parameter, Info->First, L), L);
+        if (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) {
+          const unsigned Width = A.Context.getTypeSize(Info->ResultType);
+          const bool Unsigned = Info->ResultType->isUnsignedIntegerType();
+          return A.literal(llvm::APSInt(Unsigned ? llvm::APInt::getAllOnes(Width) : llvm::APInt::getSignedMaxValue(Width), Unsigned), type(Info->ResultType, L), L);
+        }
+        return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
       case UtilityOperation::ScalarRealDistributionReset:
         if (Info->CacheValid)
           assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
         return {};
       case UtilityOperation::ScalarRealDistributionParamGet: {
+        if (Info->Kind == ScalarRealDistributionKind::Binomial) {
+          auto Value = Destination ? json::Object(*Destination)
+                                  : temporary(type(A.Context.getRecordType(Info->Parameter), L), L);
+          copyBinomialParameters(Value, Parameter, *Info, L);
+          return Value;
+        }
         auto Value = Info->Kind == ScalarRealDistributionKind::Lognormal ? temporary(type(A.Context.getRecordType(Info->Parameter), L), L)
                                   : snapshot(Parameter, L);
         if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
@@ -3962,6 +4432,11 @@ class FunctionLowering {
         return Value;
       }
       case UtilityOperation::ScalarRealDistributionParamSet: {
+        if (Info->Kind == ScalarRealDistributionKind::Binomial) {
+          auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+          copyBinomialParameters(Parameter, dereference(std::move(Source), L), *Info, L);
+          return {};
+        }
         auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
         auto Value = snapshot(dereference(std::move(Source), L), L);
         if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
@@ -3986,6 +4461,15 @@ class FunctionLowering {
       }
       const auto Real = type(Info->ResultType, L);
       CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      if (Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) {
+        auto Count = Info->Second ? snapshot(fieldStorage(Parameter, Info->First, L), L) : one(type(Info->ResultType, L), L);
+        auto Probability = snapshot(fieldStorage(Parameter, Info->Second ? Info->Second : Info->First, L), L);
+        return emitNegativeBinomialRandom(Generator, *Random, Info->ResultType, Count, Probability, L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::Binomial)
+        return emitBinomialRandom(Generator, *Random, Parameter, *Info, L);
+      if (Info->Kind == ScalarRealDistributionKind::Poisson)
+        return emitPoissonRandom(Generator, *Random, Parameter, *Info, L);
       if (Info->Kind == ScalarRealDistributionKind::Cauchy) {
         auto Location = snapshot(cast(fieldStorage(Parameter, Info->First, L), "double", L), L);
         auto Scale = snapshot(cast(fieldStorage(Parameter, Info->Second, L), "double", L), L);
@@ -29452,6 +29936,27 @@ class FunctionLowering {
     }
     if (const auto Kind = approvedScalarRealDistributionConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedScalarRealDistributionRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (Info->Kind == ScalarRealDistributionKind::Binomial) {
+        if (*Kind == ScalarRealDistributionConstruction::CopyOrMove) {
+          auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+          copyScalarRealDistribution(Place, dereference(std::move(Source), L), *Info, L);
+        } else {
+          auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
+          if (*Kind == ScalarRealDistributionConstruction::Parameter) {
+            auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
+            copyBinomialParameters(Parameter, dereference(std::move(Source), L), *Info, L);
+          } else {
+            auto Trials = snapshot(*Kind == ScalarRealDistributionConstruction::Default
+                ? one(type(Info->ResultType, L), L)
+                : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L), L);
+            auto Probability = snapshot(*Kind == ScalarRealDistributionConstruction::Default
+                ? A.floatingLiteral(llvm::APFloat(0.5), L)
+                : uniformDistributionArgument(C->getArg(1), Constructor->getParamDecl(1)->getType(), L), L);
+            initializeBinomialParameters(Parameter, *Info, Trials, Probability, L);
+          }
+        }
+        return;
+      }
       if (*Kind == ScalarRealDistributionConstruction::CopyOrMove) {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
         copyScalarRealDistribution(Place, dereference(std::move(Source), L), *Info, L);
@@ -29470,14 +29975,19 @@ class FunctionLowering {
           assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       } else {
         auto First = snapshot(*Kind == ScalarRealDistributionConstruction::Default
-            ? (Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma && Info->Kind != ScalarRealDistributionKind::FisherF ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
+            ? (Info->Kind == ScalarRealDistributionKind::Geometric
+               ? A.floatingLiteral(llvm::APFloat(0.5), L)
+               : Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma && Info->Kind != ScalarRealDistributionKind::FisherF && Info->Kind != ScalarRealDistributionKind::NegativeBinomial ? A.zero(Info->First->getType(), L) : one(type(Info->First->getType(), L), L))
             : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L), L);
         std::optional<Expression> Second;
         if (Info->Second)
-          Second = snapshot(*Kind == ScalarRealDistributionConstruction::Default ? one(type(Info->ResultType, L), L)
+          Second = snapshot(*Kind == ScalarRealDistributionConstruction::Default ? (Info->Kind == ScalarRealDistributionKind::NegativeBinomial ? A.floatingLiteral(llvm::APFloat(0.5), L) : one(type(Info->Second->getType(), L), L))
               : uniformDistributionArgument(C->getArg(1), Constructor->getParamDecl(1)->getType(), L), L);
         auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
-        assign(scalarRealDistributionField(Parameter, *Info, false, L), std::move(First), L);
+        if (Info->Kind == ScalarRealDistributionKind::Poisson)
+          initializePoissonParameters(Parameter, *Info, std::move(First), L);
+        else
+          assign(scalarRealDistributionField(Parameter, *Info, false, L), std::move(First), L);
         if (Second)
           assign(scalarRealDistributionField(Parameter, *Info, true, L), std::move(*Second), L);
         if (Info->Kind == ScalarRealDistributionKind::StudentT && Info->Record == Info->Distribution)

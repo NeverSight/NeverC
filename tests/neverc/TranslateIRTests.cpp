@@ -4312,3 +4312,151 @@ TEST(TranslateIR, CoreV2TangentWireRetainsProfileAndPayloadBoundary) {
       EXPECT_FALSE(parseModule(Wire(true, Arg, Extra), M, D));
   }
 }
+
+TEST(TranslateIR, CoreV2TruncationRequiresMatchingFloatingTypes) {
+  for (auto Kind : {TypeKind::Float, TypeKind::Double}) {
+    const Type T{Kind, {}};
+    auto M = module(true);
+    M.Functions[0].Result = T;
+    M.Functions[0].Params.push_back({"nct_input", T, InputLoc});
+    auto Root = pointerExpr(ExprKind::Unary, T, {variable("nct_input", T)});
+    Root.UnaryOp = UnaryOperator::Trunc;
+    M.Functions[0].Body.back() = ret(Root);
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(Kind == TypeKind::Float ? "__builtin_truncf(nct_input)"
+                                                       : "__builtin_trunc(nct_input)"),
+              std::string::npos);
+    EXPECT_NE(Output.Text.find("#pragma STDC FP_CONTRACT OFF"), std::string::npos);
+    EXPECT_TRUE(M.Mappings.empty());
+    for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(T),
+                             Type{Kind == TypeKind::Float ? TypeKind::Double : TypeKind::Float, {}}}) {
+      auto Bad = M;
+      Bad.Functions[0].Params[0].ValueType = Wrong;
+      Bad.Functions[0].Body.back().Value->Args[0].ValueType = Wrong;
+      invalid(Bad, "Truncation");
+    }
+    for (unsigned Count : {0u, 2u}) {
+      auto Bad = M;
+      Bad.Functions[0].Body.back().Value->Args.resize(Count, variable("nct_input", T));
+      invalid(Bad, "operand count");
+    }
+    auto Bad = M;
+    Bad.Functions[0].Body.back().Value->UnaryOp = static_cast<UnaryOperator>(255);
+    invalid(Bad);
+    Bad = M;
+    Bad.Profile = "cpp-core-v1";
+    Bad.Target.Carriers.reset();
+    invalid(Bad);
+  }
+  for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(intType())}) {
+    auto M = module(true);
+    M.Functions[0].Result = Wrong;
+    M.Functions[0].Params.push_back({"nct_input", Wrong, InputLoc});
+    auto Root = pointerExpr(ExprKind::Unary, Wrong, {variable("nct_input", Wrong)});
+    Root.UnaryOp = UnaryOperator::Trunc;
+    M.Functions[0].Body.back() = ret(Root);
+    invalid(M, "Truncation");
+    if (Wrong.Kind != TypeKind::Pointer) {
+      M.Profile = "cpp-core-v1";
+      M.Target.Carriers.reset();
+      invalid(M, "Truncation");
+    }
+  }
+}
+
+TEST(TranslateIR, CoreV2TruncationWireRetainsProfileAndPayloadBoundary) {
+  for (const std::string T : {"float", "double"}) {
+    const std::string Loc = R"json("loc":{"file":"input.cpp","line":2,"column":9})json";
+    const std::string Arg = "{\"kind\":\"literal\",\"type\":\"" + T +
+        "\",\"bits\":\"" + (T == "float" ? "40800000" : "4010000000000000") + "\"," + Loc + "}";
+    auto Wire = [&](bool V2, const std::string &Args, const std::string &Extra = "") {
+      auto JSON = wireModule(V2);
+      replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + T + "\"");
+      const auto Begin = JSON.find("{\"kind\": \"literal\"");
+      const auto End = JSON.find("}}", Begin) + 2;
+      JSON.replace(Begin, End - Begin, "{\"kind\":\"unary\",\"type\":\"" + T +
+          "\",\"operator\":\"trunc\",\"args\":[" + Args + "]," + Loc + Extra + "}");
+      return JSON;
+    };
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(Wire(true, Arg), M, D));
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    EXPECT_EQ(M.Functions[0].Body.back().Value->UnaryOp, UnaryOperator::Trunc);
+    for (const auto &Args : {std::string(), Arg + "," + Arg}) {
+      ASSERT_TRUE(parseModule(Wire(true, Args), M, D));
+      invalid(M, "operand count");
+    }
+    EXPECT_FALSE(parseModule(Wire(false, Arg), M, D));
+    for (const auto *Extra : {",\"name\":\"trunc\"", ",\"value\":\"4\"", ",\"bits\":\"40800000\""})
+      EXPECT_FALSE(parseModule(Wire(true, Arg, Extra), M, D));
+  }
+}
+
+TEST(TranslateIR, CoreV2LogGammaRetainsDoubleAndTargetBoundary) {
+  const Type T{TypeKind::Double, {}};
+  for (const bool Windows : {false, true}) {
+    auto M = module(true);
+    if (Windows) {
+      M.Target.Triple = "x86_64-pc-windows-msvc";
+      M.Target.Carriers = x64CarrierLayout();
+    }
+    M.Functions[0].Result = T;
+    M.Functions[0].Params.push_back({"nct_input", T, InputLoc});
+    auto Root = pointerExpr(ExprKind::Unary, T, {variable("nct_input", T)});
+    Root.UnaryOp = UnaryOperator::LogGamma;
+    M.Functions[0].Body.back() = ret(Root);
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find("nct_emit_log_gamma(nct_input)"), std::string::npos);
+    EXPECT_NE(Output.Text.find(Windows ? "return lgamma(nct_emit_value)" : "return lgamma_r(nct_emit_value, &nct_emit_sign)"), std::string::npos);
+    EXPECT_EQ(Output.Text.find(Windows ? "lgamma_r" : "extern double lgamma(double)"), std::string::npos);
+    EXPECT_TRUE(M.Mappings.empty());
+    for (const auto &Wrong : {intType(), uintType(), boolType(), pointerType(T), Type{TypeKind::Float, {}}}) {
+      auto Bad = M;
+      Bad.Functions[0].Params[0].ValueType = Wrong;
+      Bad.Functions[0].Body.back().Value->Args[0].ValueType = Wrong;
+      invalid(Bad, "Log gamma");
+      Bad.Functions[0].Result = Wrong;
+      Bad.Functions[0].Body.back().Value->ValueType = Wrong;
+      invalid(Bad, "Log gamma");
+    }
+    for (unsigned Count : {0u, 2u}) {
+      auto Bad = M;
+      Bad.Functions[0].Body.back().Value->Args.resize(Count, variable("nct_input", T));
+      invalid(Bad, "operand count");
+    }
+    auto Bad = M;
+    Bad.Profile = "cpp-core-v1";
+    Bad.Target.Carriers.reset();
+    invalid(Bad);
+  }
+}
+
+TEST(TranslateIR, CoreV2LogGammaWireRetainsProfileAndPayloadBoundary) {
+  const std::string Loc = R"json("loc":{"file":"input.cpp","line":2,"column":9})json";
+  const std::string Arg = "{\"kind\":\"literal\",\"type\":\"double\",\"bits\":\"4010000000000000\"," + Loc + "}";
+  auto Wire = [&](bool V2, const std::string &Args, const std::string &Extra = "") {
+    auto JSON = wireModule(V2);
+    replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"double\"");
+    const auto Begin = JSON.find("{\"kind\": \"literal\"");
+    const auto End = JSON.find("}}", Begin) + 2;
+    JSON.replace(Begin, End - Begin, "{\"kind\":\"unary\",\"type\":\"double\",\"operator\":\"lgamma\",\"args\":[" + Args + "]," + Loc + Extra + "}");
+    return JSON;
+  };
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(Wire(true, Arg), M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  EXPECT_EQ(M.Functions[0].Body.back().Value->UnaryOp, UnaryOperator::LogGamma);
+  for (const auto &Args : {std::string(), Arg + "," + Arg}) {
+    ASSERT_TRUE(parseModule(Wire(true, Args), M, D));
+    invalid(M, "operand count");
+  }
+  EXPECT_FALSE(parseModule(Wire(false, Arg), M, D));
+  for (const auto *Extra : {",\"name\":\"lgamma\"", ",\"value\":\"4\"", ",\"bits\":\"4010000000000000\""})
+    EXPECT_FALSE(parseModule(Wire(true, Arg, Extra), M, D));
+}

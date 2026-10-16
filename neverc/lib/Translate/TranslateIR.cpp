@@ -343,6 +343,14 @@ public:
         if (!CoreV2 || O.size() != 5)
           return error("Tangent requires core v2 and only kind, type, operator, args and location.");
         E.UnaryOp = UnaryOperator::Tan;
+      } else if (Op == "trunc") {
+        if (!CoreV2 || O.size() != 5)
+          return error("Truncation requires core v2 and only kind, type, operator, args and location.");
+        E.UnaryOp = UnaryOperator::Trunc;
+      } else if (Op == "lgamma") {
+        if (!CoreV2 || O.size() != 5)
+          return error("Log gamma requires core v2 and only kind, type, operator, args and location.");
+        E.UnaryOp = UnaryOperator::LogGamma;
       } else
         return error("Unknown unary operator.");
     } else if (K == "binary") {
@@ -1027,6 +1035,14 @@ class Verifier {
         return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
                 E.Args[0].ValueType == E.ValueType) ||
                error(E.Loc, "Tangent requires matching core v2 float/double operand and result types.");
+      if (E.UnaryOp == UnaryOperator::Trunc)
+        return (M.Profile == "cpp-core-v2" && E.ValueType.isFloating() &&
+                E.Args[0].ValueType == E.ValueType) ||
+               error(E.Loc, "Truncation requires matching core v2 float/double operand and result types.");
+      if (E.UnaryOp == UnaryOperator::LogGamma)
+        return (M.Profile == "cpp-core-v2" && E.ValueType.Kind == TypeKind::Double &&
+                E.Args[0].ValueType == E.ValueType) ||
+               error(E.Loc, "Log gamma requires matching core v2 double operand and result types.");
       if (E.UnaryOp == UnaryOperator::LogicalNot)
         return (E.Args[0].ValueType.isScalar() &&
                 !E.Args[0].ValueType.isFloating() &&

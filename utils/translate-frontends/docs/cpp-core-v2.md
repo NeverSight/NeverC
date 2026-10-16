@@ -16541,3 +16541,95 @@ the half draw verifies the large positive double-tangent result for float as wel
 as double, catching a float-pi/tanf substitution. Parameter APIs, effects, source
 replacements, malformed tan protocol, target matrix and unchanged managed-NC
 sanitizers remain required verification before publication.
+
+### Poisson integer distributions and cached parameters
+
+`poisson_distribution<IntType>` and `param_type` support the eight standard short/int/long/long long signed and unsigned result types, default/mean/parameter/copy/move construction, assignment, mean, bounds, parameters, equality, reset and both sampling forms with checked source or SDK generators. The mean defaults to one; either infinity is replaced by the largest double as in the pinned SDK. All ten double parameter fields are initialized and copied. Sampling retains the small-mean product loop and the large-mean cold normal, squeeze, exponential proposals and acceptance expressions, with exact generator consumption. Results use the SDK integer saturation thresholds before conversion, including 64-bit boundaries. Strict core-v2 trunc requires one matching float/double argument and emits a C23 builtin. Normal, exponential, math and clamp helpers and their explicit redeclarations remain authenticated. The C23 backend owns hosted math imports. Stream serialization remains separate work.
+
+The parameter record contains mean, s, d, l, omega, c0, c1, c2, c3 and c.
+Initialization preserves the exact SDK constants and expression grouping;
+copy/move/assignment and param get/set retain all initialized fields. Sampling
+keeps live parameter reads, so a source URBG that replaces an explicit parameter
+can change subsequent loop thresholds. The large-mean normal state is local to
+one sample: its spare is never reused by a later Poisson call.
+
+The integer clamp constructs the SDK threshold exactly with APFloat: convert
+the maximum representable integral value toward zero, then take nextafter
+toward positive infinity. The low comparison precedes any float-to-integer cast.
+This preserves short/int/long/long long behavior under LP64 and LLP64 without
+emitting an out-of-range conversion. No SDK header or catalog revision changes.
+
+The strict trunc wire operation admits core v2 only, five fields, one argument,
+matching float/double operand and result, and no payload. NC emits
+__builtin_trunc[f], whose existing C23 backend lowering uses LLVM truncation.
+Ordinary core mathematical calls remain restricted. The selected Poisson proof
+authenticates exp/log/sqrt/pow/trunc/abs, isinf, nextafter, clamp helpers, cold
+normal and exponential calls and every explicit redeclaration actually reached.
+
+Native O0/O2 fixtures cover all eight integer types, three engines, means on
+both sides of ten, first samples, long-run hashes, next-engine state, parameter
+replacement during generation, copied state, rejection and acceptance branches,
+and exact 64-bit saturation thresholds. Managed execution, guards, cross-target
+objects/frontends, unchanged generated-NC sanitizers and all locales must pass
+before this support is published.
+
+### Negative binomial and geometric composition
+
+`negative_binomial_distribution<IntType>`, `geometric_distribution<IntType>` and their `param_type` support all eight standard integer result types, default/value/parameter/copy/move construction, assignment, getters, bounds, parameters, equality, reset and both sampling forms. Negative binomial snapshots k/p before draws, preserving the SDK repeated-Bernoulli path when k <= 21*p and its Gamma<double>→Poisson<IntType> mixture otherwise. Geometric constructs the same negative-binomial path with k=1, so its probability threshold also preserves the exact SDK engine consumption. Nested distributions are temporary; no persistent cache is introduced. Integer promotions, parameter mutation, nested SDK bodies and selected math/clamp redeclarations are checked. No new primitive or SDK/catalog revision is added. Stream serialization remains separate work.
+
+The checked parameter layout is an integer k and double p for negative binomial,
+or one double p for geometric. Defaults are k=1 and p=.5. Bounds are zero and
+the result type's maximum; reset is empty and equality uses logical parameters.
+The SDK snapshots k then p before any URBG call. For all eight admitted result
+types sizeof(IntType)>1, so the Bernoulli branch condition is exactly k<=21*p.
+Failure/success increments retain the result type's integer promotions and
+conversions. The other branch constructs Gamma<double>(double(k),(1-p)/p), then
+Poisson<IntType> from its sample, keeping the complete local cached parameter
+state and exact sampling expressions. Geometric constructs the same negative
+binomial with k=1 and its copied probability. It does not use an inverse-CDF
+substitute, which would change both results and generator consumption.
+
+Shared Poisson field-value helpers allow temporary nested state without inventing
+a source-visible record or persistent cache. Existing scalar Poisson wrappers
+use those same helpers. The proof retains the nested Bernoulli, Gamma, Poisson,
+normal and exponential bodies and selected math/clamp declarations. Native
+O0/O2 references cover all eight integer types, three engines, both sides of the
+probability threshold, long-run hashes, exact next-engine states, zero successes,
+probability one, the k=21/22 branch boundary and URBG parameter mutation.
+Managed tests, guards, cross-target checks, unchanged managed-NC sanitizers and
+all locale checks remain required before publication.
+
+### Binomial modal sampling and conditional cached state
+
+`binomial_distribution<IntType>` and `param_type` support all eight standard integer result types, default/trial-count/probability/parameter/copy/move construction, assignment, t/p, bounds, parameters, equality, reset and both sampling forms. Defaults are one trial and probability .5; max is the current trial count. The exact SDK modal probability, odds ratio and mode are cached only for interior probabilities. Endpoint copies and parameter operations avoid reading indeterminate cached fields, and endpoint sampling consumes no engine values. Interior sampling preserves the SDK one-draw modal recurrence, lower branch before upper branch, integer promotions and live parameter reads. Strict double log-gamma retains the selected target ABI: lgamma_r with a local sign on non-Windows targets, lgamma on Windows. SDK helpers, selected exp/log/log-gamma declarations, imports and complete bodies remain checked. No SDK/catalog revision changes; stream serialization remains separate work.
+
+The checked parameter record contains integral t and r0 plus double p, pr and
+odds_ratio, in the SDK field order. For 0<p<1 it computes r0 from (t+1)*p,
+preserving the integer addition before double conversion. It evaluates the
+three log-gamma terms, logarithmic probability terms, exponential and odds ratio
+with the SDK grouping. Endpoints leave derived values untouched. Copy/move,
+assignment, param get/set and construction copy logical fields and copy cached
+fields only when the source probability is interior; they never read a cold
+endpoint cache. Equality uses only t/p, reset is empty, min is zero and max is t.
+
+Sampling checks t==0 or p==0 before p==1 and consumes no generator values on
+those returns. Otherwise it draws once, subtracts modal probability and follows
+the SDK lower/upper recurrence without substituting Bernoulli trials. A checked
+source generator may replace an explicit interior parameter during that draw;
+lowering preserves one permitted order of subsequent live parameter reads.
+
+The strict core-v2 lgamma wire operation has exactly five fields, one double
+argument and a double result. It rejects float, mixed types, extra payload,
+wrong arity and core-v1. NC emission owns the target helper: non-Windows uses
+lgamma_r with a local int sign, Windows uses lgamma, matching the selected SDK
+helper. The existing C23 external-call/import path handles these declarations;
+there is no __builtin_lgamma_r. No SDK/catalog or cpp-math-v1 fingerprint changes.
+The source proof authenticates the complete SDK parameter/sampling helpers,
+their selected log/exp/log-gamma bodies and every explicit redeclaration.
+
+Native O0/O2 fixtures cover all eight integer result types, three engines,
+interior and endpoint configurations, first samples, long-run hashes, exact
+next-engine state, conditional cache copies, effects and deterministic modal,
+lower, upper and tail paths. Formal compiler tests, exact wire validation,
+cross-target object/frontend checks, unchanged managed-NC ASan/UBSan and all
+locale checks remain publication requirements.
