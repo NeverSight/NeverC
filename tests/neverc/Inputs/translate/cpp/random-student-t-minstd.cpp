@@ -1,0 +1,27 @@
+#include <random>
+struct G{using result_type=unsigned;unsigned state=17,calls=0;static constexpr unsigned min(){return 0;}static constexpr unsigned max(){return ~0u;}unsigned operator()(){++calls;state=state*1664525u+1013904223u;return state;}};
+template<class R>unsigned long long bits(R v){const auto*p=static_cast<const unsigned char*>(static_cast<const void*>(&v));unsigned long long n=0;for(unsigned i=0;i<sizeof(R);++i)n|=static_cast<unsigned long long>(p[i])<<(8*i);return n;}
+template<class R>R value(unsigned long long raw){R v{};auto*p=static_cast<unsigned char*>(static_cast<void*>(&v));for(unsigned i=0;i<sizeof(R);++i)p[i]=static_cast<unsigned char>(raw>>(8*i));return v;}
+template<class R>R magnitude(R x){return x<R(0)?-x:x;}
+
+template<class R>bool close(R x,unsigned long long raw){R expected=value<R>(raw);return magnitude(x-expected)<=(sizeof(R)==4?R(.000002):R(.00000000000002))*(magnitude(expected)+R(5));}
+template<class R,class Engine>int check(unsigned k,const unsigned long long*expected,unsigned long long degree,unsigned long long changed,unsigned long long cached,unsigned long long reset,unsigned long long next,unsigned long long nextCopy,unsigned long long nextReset){using D=std::student_t_distribution<R>;using P=typename D::param_type;R ns[]={R(1),R(2),R(7)};
+ P defaults,p(ns[k]),pc(p),pm(static_cast<P&&>(p));D initial,d(p);if(defaults.n()!=R(1)||initial.n()!=R(1)||p!=pc||pm!=p||bits(d.n())!=degree||bits(d.min())!=(sizeof(R)==4?0xff800000ULL:0xfff0000000000000ULL)||bits(d.max())!=(sizeof(R)==4?0x7f800000ULL:0x7ff0000000000000ULL))return 1;
+ Engine e;for(unsigned i=0;i<10003;++i){R x=d(e);if(!(x==x))return 2;if(i<16&&!close(x,expected[i]))return 3;}
+ D copied(d),moved(static_cast<D&&>(d)),assigned,resetter(d),cold(p);D*result=&(assigned=d);D*self=&(assigned=assigned);if(result!=&assigned||self!=&assigned||d!=copied||moved!=copied||assigned!=copied||cold!=copied)return 4;
+ Engine ec=e,em=e,ea=e,er=e;d.param(P(R(9)));R x=d(e),c=copied(ec),m=moved(em),a=assigned(ea);auto en=e(),cn=ec(),mn=em(),an=ea();if(!close(x,changed)||!close(c,cached)||bits(c)!=bits(m)||bits(m)!=bits(a)||cn!=mn||mn!=an||static_cast<unsigned long long>(en)!=next||static_cast<unsigned long long>(cn)!=nextCopy||d.n()!=R(9))return 5;
+ resetter.reset();R r=resetter(er);if(resetter!=copied||!close(r,reset)||static_cast<unsigned long long>(er())!=nextReset)return 6;return 0;}
+int main(){
+const unsigned long long s0[]={1050811036ULL,1075408232ULL,3213044808ULL,1041719940ULL,3211744890ULL,3199015322ULL,3184316408ULL,1035965293ULL,3227463178ULL,1041553046ULL,1046201466ULL,3212219475ULL,3202049671ULL,1084057011ULL,1070343996ULL,1073888791ULL};
+if(int r=check<float,std::minstd_rand>(0,s0,1065353216ULL,3192889542ULL,3194782843ULL,1081411597ULL,625820297ULL,625820297ULL,1240419114ULL))return 0+r;
+const unsigned long long s1[]={1040102198ULL,1073267684ULL,1059666841ULL,3221777715ULL,3211410727ULL,1036518358ULL,1071901602ULL,1041352599ULL,3213976736ULL,3206292913ULL,3187406500ULL,1051695438ULL,1066262740ULL,3189674830ULL,3202335799ULL,1069352808ULL};
+if(int r=check<float,std::minstd_rand>(1,s1,1073741824ULL,3197036265ULL,3197102295ULL,1066361753ULL,474828888ULL,492982145ULL,372288217ULL))return 16+r;
+const unsigned long long s2[]={1040613075ULL,1065650489ULL,3211714967ULL,1064489077ULL,3214927235ULL,3202699179ULL,1066588376ULL,3191499004ULL,1073809434ULL,1055738943ULL,1052982520ULL,1066593255ULL,1069026813ULL,3211826764ULL,1070120182ULL,3215618054ULL};
+if(int r=check<float,std::minstd_rand>(2,s2,1088421888ULL,1045250172ULL,1044967686ULL,1062288539ULL,822643628ULL,822643628ULL,990257538ULL))return 32+r;
+const unsigned long long s3[]={13830785974196499616ULL,13822325702541594312ULL,13823505213449069883ULL,4616751166379954993ULL,4593590105850636861ULL,4607924308042592180ULL,4603985759630717076ULL,13830748879803142185ULL,13844602333439066977ULL,13844623206985223728ULL,4600042486539553625ULL,13825725703305686947ULL,13839360706480824326ULL,4616422782532132010ULL,13820846032865328982ULL,13832457858210492471ULL};
+if(int r=check<double,std::minstd_rand>(0,s3,4607182418800017408ULL,4608490158815125983ULL,4604051148524080527ULL,4613020118758126995ULL,2118276557ULL,1805891284ULL,398243707ULL))return 48+r;
+const unsigned long long s4[]={13830837286174311339ULL,13825140514341767853ULL,4603577571178588103ULL,4583835972241113174ULL,13826059119127522211ULL,4608709010308812303ULL,13834843006004318097ULL,13826509971277558813ULL,4593823526488338129ULL,13827434714497786395ULL,4602229756518206640ULL,13832701410111945735ULL,4607288666612503213ULL,13828699210938476537ULL,13838273127050412376ULL,13830928139086149317ULL};
+if(int r=check<double,std::minstd_rand>(1,s4,4611686018427387904ULL,13823865054073326895ULL,13823631483062460068ULL,4590024950479000338ULL,1635830106ULL,1411782772ULL,853528442ULL))return 64+r;
+const unsigned long long s5[]={13831122854345890636ULL,13823208616427456656ULL,13833352965923077163ULL,4612076282567539595ULL,4593719387012096664ULL,13828609759315312696ULL,4603377313549455447ULL,13826900767063389003ULL,13823576360916407006ULL,13835552601696693296ULL,13830073384403048051ULL,4598592998666592667ULL,4607319935493658457ULL,4610413002148595783ULL,13828857640058503683ULL,4601686863892178804ULL};
+if(int r=check<double,std::minstd_rand>(2,s5,4619567317775286272ULL,13827012205976950864ULL,13827240188770824024ULL,4600990390303571785ULL,1294572565ULL,1294572565ULL,2032166346ULL))return 80+r;
+return 0;}

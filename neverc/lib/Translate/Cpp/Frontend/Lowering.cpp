@@ -1440,7 +1440,8 @@ class FunctionLowering {
   }
   Expression scalarRealDistributionField(Expression Parameter, const ScalarRealDistributionRecord &Info,
                                          bool Second, SourceLocation L, bool External = false) {
-    const bool Nested = Info.Nested && Info.Record == Info.Distribution && !External;
+    const bool Nested = Info.Nested && Info.Kind != ScalarRealDistributionKind::StudentT &&
+                        Info.Record == Info.Distribution && !External;
     const auto *Field = Second ? (Nested ? Info.NestedSecond : Info.Second)
                                : (Nested ? Info.NestedFirst : Info.First);
     return fieldStorage(std::move(Parameter), Field, L);
@@ -1451,11 +1452,14 @@ class FunctionLowering {
       assign(std::move(Target), snapshot(std::move(Source), L), L);
       return;
     }
+    if (Info.Kind == ScalarRealDistributionKind::StudentT)
+      assign(fieldStorage(Target, Info.Storage, L), snapshot(fieldStorage(Source, Info.Storage, L), L), L);
     Target = scalarRealDistributionState(std::move(Target), Info, L);
     Source = scalarRealDistributionState(std::move(Source), Info, L);
-    auto Parameter = snapshot(fieldStorage(Source, Info.Storage, L), L);
+    const auto *ParameterField = Info.NestedStorage ? Info.NestedStorage : Info.Storage;
+    auto Parameter = snapshot(fieldStorage(Source, ParameterField, L), L);
     auto Hot = snapshot(fieldStorage(Source, Info.CacheValid, L), L);
-    assign(fieldStorage(Target, Info.Storage, L), std::move(Parameter), L);
+    assign(fieldStorage(Target, ParameterField, L), std::move(Parameter), L);
     assign(fieldStorage(Target, Info.CacheValid, L), Hot, L);
     const auto CopySpare = labelName(), Copied = labelName();
     branch(Hot, CopySpare, Copied, L);
@@ -1467,7 +1471,15 @@ class FunctionLowering {
   Expression scalarRealDistributionParameter(Expression Place, const ScalarRealDistributionRecord &Info,
                                SourceLocation L) {
     return Info.Record == Info.Distribution
-        ? fieldStorage(scalarRealDistributionState(std::move(Place), Info, L), Info.Storage, L) : std::move(Place);
+        ? fieldStorage(Info.Kind == ScalarRealDistributionKind::StudentT ? std::move(Place)
+                       : scalarRealDistributionState(std::move(Place), Info, L), Info.Storage, L) : std::move(Place);
+  }
+  void initializeStudentNormal(Expression Place, const ScalarRealDistributionRecord &Info, SourceLocation L) {
+    auto State = scalarRealDistributionState(std::move(Place), Info, L);
+    auto Parameter = fieldStorage(State, Info.NestedStorage, L);
+    assign(fieldStorage(Parameter, Info.NestedFirst, L), A.zero(Info.ResultType, L), L);
+    assign(fieldStorage(Parameter, Info.NestedSecond, L), one(type(Info.ResultType, L), L), L);
+    assign(fieldStorage(State, Info.CacheValid, L), quantity(0, "bool", L), L);
   }
   Expression bernoulliParameter(Expression Place, const BernoulliRecord &Info,
                                SourceLocation L) {
@@ -2295,6 +2307,52 @@ class FunctionLowering {
     jump(Check, L);
     label(Done, L);
     return snapshot(binary("/", Sum, Base, Real, L), L);
+  }
+  Expression emitNormalRandom(const CapturedAlgorithmPredicate &Generator,
+                              const UtilityAlgorithmRandomCall &Random, QualType ResultType,
+                              Expression State, const FieldDecl *SpareField, const FieldDecl *HotField,
+                              Expression MeanInput, Expression DeviationInput, SourceLocation L) {
+    const auto Real = type(ResultType, L);
+    auto Up = temporary(Real, L);
+    const auto UseSpare = labelName(), Fresh = labelName(), Retry = labelName(), CheckZero = labelName(), Accepted = labelName(), Sampled = labelName();
+    branch(fieldStorage(State, HotField, L), UseSpare, Fresh, L);
+    label(UseSpare, L);
+    assign(fieldStorage(State, HotField, L), quantity(0, "bool", L), L);
+    assign(Up, fieldStorage(State, SpareField, L), L);
+    jump(Sampled, L);
+    label(Fresh, L);
+    jump(Retry, L);
+    label(Retry, L);
+    const auto Bits = ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53;
+    auto NegativeOne = cast(binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L), Real, L);
+    auto Two = cast(quantity(2, "int", L), Real, L);
+    auto U = snapshot(binary("+", binary("*", Two,
+        emitCanonicalRandom(Generator, Random, Bits, L), Real, L), NegativeOne, Real, L), L);
+    auto V = snapshot(binary("+", binary("*", Two,
+        emitCanonicalRandom(Generator, Random, Bits, L), Real, L), NegativeOne, Real, L), L);
+    auto Square = snapshot(binary("+", binary("*", U, U, Real, L), binary("*", V, V, Real, L), Real, L), L);
+    branch(binary(">", Square, one(Real, L), "bool", L), Retry, CheckZero, L);
+    label(CheckZero, L);
+    branch(binary("==", Square, A.zero(ResultType, L), "bool", L), Retry, Accepted, L);
+    label(Accepted, L);
+    json::Array LogArguments;
+    LogArguments.push_back(json::Object(Square));
+    auto Log = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
+        {"args", std::move(LogArguments)}, {"loc", A.loc(L)}}, L);
+    auto Quotient = binary("/", binary("*", cast(binary("-", quantity(0, "int", L), quantity(2, "int", L), "int", L), Real, L), Log, Real, L), Square, Real, L);
+    json::Array RootArguments;
+    RootArguments.push_back(std::move(Quotient));
+    auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
+        {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
+    assign(fieldStorage(State, SpareField, L), binary("*", V, Factor, Real, L), L);
+    assign(fieldStorage(State, HotField, L), quantity(1, "bool", L), L);
+    assign(Up, binary("*", U, Factor, Real, L), L);
+    jump(Sampled, L);
+    label(Sampled, L);
+    auto Deviation = snapshot(std::move(DeviationInput), L);
+    auto Mean = snapshot(std::move(MeanInput), L);
+    auto Value = snapshot(binary("+", binary("*", Up, Deviation, Real, L), Mean, Real, L), L);
+    return Value;
   }
   Expression emitGammaRandom(const CapturedAlgorithmPredicate &Generator,
                              const UtilityAlgorithmRandomCall &Random,
@@ -3848,7 +3906,7 @@ class FunctionLowering {
           label(Compared, L);
           Equal = std::move(Result);
         }
-        if (Info->CacheValid && Info->Record == Info->Distribution) {
+        if (Info->CacheValid && Info->Kind != ScalarRealDistributionKind::StudentT && Info->Record == Info->Distribution) {
           auto Result = snapshot(std::move(Equal), L);
           const auto CheckFlags = labelName(), CheckHot = labelName(), CheckSpare = labelName(), Compared = labelName();
           branch(Result, CheckFlags, Compared, L);
@@ -3885,7 +3943,7 @@ class FunctionLowering {
       case UtilityOperation::ScalarRealDistributionSecond:
         return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, true, L), L);
       case UtilityOperation::ScalarRealDistributionMinimum:
-        return Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::ExtremeValue
+        return Info->Kind == ScalarRealDistributionKind::Cauchy || Info->Kind == ScalarRealDistributionKind::StudentT || Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::ExtremeValue
             ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
                             : A.zero(Info->ResultType, L);
       case UtilityOperation::ScalarRealDistributionMaximum: return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
@@ -3894,9 +3952,9 @@ class FunctionLowering {
           assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
         return {};
       case UtilityOperation::ScalarRealDistributionParamGet: {
-        auto Value = Info->Nested ? temporary(type(A.Context.getRecordType(Info->Parameter), L), L)
+        auto Value = Info->Kind == ScalarRealDistributionKind::Lognormal ? temporary(type(A.Context.getRecordType(Info->Parameter), L), L)
                                   : snapshot(Parameter, L);
-        if (Info->Nested) {
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
           assign(fieldStorage(Value, Info->First, L), snapshot(scalarRealDistributionField(Parameter, *Info, false, L), L), L);
           assign(fieldStorage(Value, Info->Second, L), snapshot(scalarRealDistributionField(Parameter, *Info, true, L), L), L);
         }
@@ -3906,7 +3964,7 @@ class FunctionLowering {
       case UtilityOperation::ScalarRealDistributionParamSet: {
         auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
         auto Value = snapshot(dereference(std::move(Source), L), L);
-        if (Info->Nested) {
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
           assign(scalarRealDistributionField(Parameter, *Info, false, L), fieldStorage(Value, Info->First, L), L);
           assign(scalarRealDistributionField(Parameter, *Info, true, L), fieldStorage(Value, Info->Second, L), L);
         } else
@@ -3924,54 +3982,64 @@ class FunctionLowering {
         Parameter = dereference(std::move(Address), L);
         // The lognormal overload constructs a separate normal param_type
         // before it invokes the generator. Preserve that copy boundary.
-        if (Info->Nested) Parameter = snapshot(std::move(Parameter), L);
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) Parameter = snapshot(std::move(Parameter), L);
       }
       const auto Real = type(Info->ResultType, L);
       CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      if (Info->Kind == ScalarRealDistributionKind::Cauchy) {
+        auto Location = snapshot(cast(fieldStorage(Parameter, Info->First, L), "double", L), L);
+        auto Scale = snapshot(cast(fieldStorage(Parameter, Info->Second, L), "double", L), L);
+        auto Draw = emitCanonicalRandom(Generator, *Random,
+            Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
+        auto Pi = A.floatingLiteral(llvm::APFloat(llvm::APFloat::IEEEdouble(), llvm::APInt(64, 0x400921fb54442d18ULL)), L);
+        json::Array Args;
+        Args.push_back(binary("*", std::move(Pi), cast(std::move(Draw), "double", L), "double", L));
+        auto Tangent = snapshot(json::Object{{"kind", "unary"}, {"type", "double"}, {"operator", "tan"},
+            {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+        return snapshot(cast(binary("+", Location, binary("*", Scale, Tangent, "double", L), "double", L), Real, L), L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::StudentT) {
+        // The SDK constructs its local Gamma before sampling the persistent normal.
+        auto Degree = fieldStorage(Parameter, Info->First, L);
+        auto Shape = snapshot(cast(binary("*", cast(Degree, "double", L),
+            A.floatingLiteral(llvm::APFloat(0.5), L), "double", L), Real, L), L);
+        auto NormalParameter = fieldStorage(State, Info->NestedStorage, L);
+        auto Normal = emitNormalRandom(Generator, *Random, Info->ResultType, State, Info->Cached, Info->CacheValid,
+            fieldStorage(NormalParameter, Info->NestedFirst, L), fieldStorage(NormalParameter, Info->NestedSecond, L), L);
+        auto Numerator = snapshot(Degree, L);
+        auto Gamma = emitGammaRandom(Generator, *Random, Info->ResultType, Shape,
+            cast(quantity(2, "int", L), Real, L), L);
+        json::Array Args;
+        Args.push_back(binary("/", Numerator, Gamma, Real, L));
+        auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
+            {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+        return snapshot(binary("*", Normal, Factor, Real, L), L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::FisherF) {
+        auto Half = cast(A.floatingLiteral(llvm::APFloat(0.5), L), Real, L);
+        // Both local Gamma distributions are constructed before either draw.
+        auto MShape = snapshot(binary("*", fieldStorage(Parameter, Info->First, L), Half, Real, L), L);
+        auto NShape = snapshot(binary("*", fieldStorage(Parameter, Info->Second, L), Half, Real, L), L);
+        auto NumeratorDegree = snapshot(fieldStorage(Parameter, Info->Second, L), L);
+        auto X = emitGammaRandom(Generator, *Random, Info->ResultType, MShape, one(Real, L), L);
+        auto DenominatorDegree = snapshot(fieldStorage(Parameter, Info->First, L), L);
+        auto Y = emitGammaRandom(Generator, *Random, Info->ResultType, NShape, one(Real, L), L);
+        return snapshot(binary("/", binary("*", NumeratorDegree, X, Real, L),
+            binary("*", DenominatorDegree, Y, Real, L), Real, L), L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::ChiSquared) {
+        auto Two = cast(quantity(2, "int", L), Real, L);
+        return emitGammaRandom(Generator, *Random, Info->ResultType,
+            binary("/", fieldStorage(Parameter, Info->First, L), Two, Real, L), Two, L);
+      }
       if (Info->Kind == ScalarRealDistributionKind::Gamma)
         return emitGammaRandom(Generator, *Random, Info->ResultType,
             fieldStorage(Parameter, Info->First, L), fieldStorage(Parameter, Info->Second, L), L);
       if (Info->CacheValid) {
-        auto Up = temporary(Real, L);
-        const auto UseSpare = labelName(), Fresh = labelName(), Retry = labelName(), CheckZero = labelName(), Accepted = labelName(), Sampled = labelName();
-        branch(fieldStorage(State, Info->CacheValid, L), UseSpare, Fresh, L);
-        label(UseSpare, L);
-        assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
-        assign(Up, fieldStorage(State, Info->Cached, L), L);
-        jump(Sampled, L);
-        label(Fresh, L);
-        jump(Retry, L);
-        label(Retry, L);
-        const auto Bits = Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53;
-        auto NegativeOne = cast(binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L), Real, L);
-        auto Two = cast(quantity(2, "int", L), Real, L);
-        auto U = snapshot(binary("+", binary("*", Two,
-            emitCanonicalRandom(Generator, *Random, Bits, L), Real, L), NegativeOne, Real, L), L);
-        auto V = snapshot(binary("+", binary("*", Two,
-            emitCanonicalRandom(Generator, *Random, Bits, L), Real, L), NegativeOne, Real, L), L);
-        auto Square = snapshot(binary("+", binary("*", U, U, Real, L), binary("*", V, V, Real, L), Real, L), L);
-        branch(binary(">", Square, one(Real, L), "bool", L), Retry, CheckZero, L);
-        label(CheckZero, L);
-        branch(binary("==", Square, A.zero(Info->ResultType, L), "bool", L), Retry, Accepted, L);
-        label(Accepted, L);
-        json::Array LogArguments;
-        LogArguments.push_back(json::Object(Square));
-        auto Log = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
-            {"args", std::move(LogArguments)}, {"loc", A.loc(L)}}, L);
-        auto Quotient = binary("/", binary("*", cast(binary("-", quantity(0, "int", L), quantity(2, "int", L), "int", L), Real, L), Log, Real, L), Square, Real, L);
-        json::Array RootArguments;
-        RootArguments.push_back(std::move(Quotient));
-        auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
-            {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
-        assign(fieldStorage(State, Info->Cached, L), binary("*", V, Factor, Real, L), L);
-        assign(fieldStorage(State, Info->CacheValid, L), quantity(1, "bool", L), L);
-        assign(Up, binary("*", U, Factor, Real, L), L);
-        jump(Sampled, L);
-        label(Sampled, L);
-        auto Deviation = snapshot(scalarRealDistributionField(Parameter, *Info, true, L, F->getNumParams() == 2), L);
-        auto Mean = snapshot(scalarRealDistributionField(Parameter, *Info, false, L, F->getNumParams() == 2), L);
-        auto Value = snapshot(binary("+", binary("*", Up, Deviation, Real, L), Mean, Real, L), L);
-        if (!Info->Nested) return Value;
+        auto Value = emitNormalRandom(Generator, *Random, Info->ResultType, State, Info->Cached, Info->CacheValid,
+            scalarRealDistributionField(Parameter, *Info, false, L, F->getNumParams() == 2),
+            scalarRealDistributionField(Parameter, *Info, true, L, F->getNumParams() == 2), L);
+        if (Info->Kind != ScalarRealDistributionKind::Lognormal) return Value;
         json::Array Arguments;
         Arguments.push_back(std::move(Value));
         return snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "exp"},
@@ -29391,16 +29459,18 @@ class FunctionLowering {
         auto Source = argument(C->getArg(0), Constructor->getParamDecl(0)->getType());
         auto Value = snapshot(dereference(std::move(Source), L), L);
         auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
-        if (Info->Nested) {
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
           assign(scalarRealDistributionField(Parameter, *Info, false, L), fieldStorage(Value, Info->First, L), L);
           assign(scalarRealDistributionField(Parameter, *Info, true, L), fieldStorage(Value, Info->Second, L), L);
         } else
           assign(std::move(Parameter), std::move(Value), L);
-        if (Info->CacheValid)
+        if (Info->Kind == ScalarRealDistributionKind::StudentT)
+          initializeStudentNormal(Place, *Info, L);
+        else if (Info->CacheValid)
           assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       } else {
         auto First = snapshot(*Kind == ScalarRealDistributionConstruction::Default
-            ? (Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
+            ? (Info->Second && Info->Kind != ScalarRealDistributionKind::Weibull && Info->Kind != ScalarRealDistributionKind::Gamma && Info->Kind != ScalarRealDistributionKind::FisherF ? A.zero(Info->ResultType, L) : one(type(Info->ResultType, L), L))
             : uniformDistributionArgument(C->getArg(0), Constructor->getParamDecl(0)->getType(), L), L);
         std::optional<Expression> Second;
         if (Info->Second)
@@ -29410,7 +29480,9 @@ class FunctionLowering {
         assign(scalarRealDistributionField(Parameter, *Info, false, L), std::move(First), L);
         if (Second)
           assign(scalarRealDistributionField(Parameter, *Info, true, L), std::move(*Second), L);
-        if (Info->CacheValid && Info->Record == Info->Distribution)
+        if (Info->Kind == ScalarRealDistributionKind::StudentT && Info->Record == Info->Distribution)
+          initializeStudentNormal(Place, *Info, L);
+        else if (Info->CacheValid && Info->Record == Info->Distribution)
           assign(fieldStorage(scalarRealDistributionState(Place, *Info, L), Info->CacheValid, L), quantity(0, "bool", L), L);
       }
       return;

@@ -16428,3 +16428,116 @@ small-alpha power branches. A generator mutating an explicit parameter proves
 old-alpha/new-beta timing. Source replacements, math declarations, malformed
 existing math protocol cases, eight-target checks and unchanged managed-source
 sanitizers remain required verification before publication.
+
+
+### Chi-squared distributions and temporary Gamma parameters
+
+`chi_squared_distribution<float/double>` and `param_type` admit default, degree, parameter, copy/move construction, assignment, n, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. The exact layout owns one degree field, defaults to one and has no persistent gamma or cache; bounds are positive zero/infinity. Sampling snapshots the temporary gamma parameters n/2 and 2 before any generator call, then reuses the checked gamma rejection algorithm. Mutations of explicit or stored degrees during sampling remain visible afterwards while the current gamma retains its copied parameters. SDK constructors, getters, gamma/exponential bodies, math helpers and explicit redeclarations remain authenticated. Native values use small math tolerances with exact parameter effects and generator states. Existing math and SDK/catalog versions are unchanged. Long double and stream serialization remain separate work.
+
+The checked layout is exactly one parameter record with the degree field n.
+There is no persistent gamma object or cached state. Default degree is one,
+reset is empty, copy/move/assignment and comparisons retain the actual degree.
+Each sample constructs the logical gamma parameters n/2 and 2 before any URBG
+call. Lowering delegates to the shared Gamma sampler using that copied shape
+and constant scale; it does not reread the original degree after a callback.
+Both sample forms preserve later mutations of explicit or stored parameters.
+
+The selected SDK proof follows the Chi-squared constructor and n getter, the
+temporary Gamma and its parameter constructors/accessors, the complete Gamma
+and exponential sample bodies and exact sqrt/log/pow wrappers and redeclarations.
+No new primitive, mapping fingerprint or SDK/catalog revision is introduced.
+Independent native O0/O2 references cover three degrees corresponding to Gamma
+shapes below/equal/above one, both precisions, source/minstd/mt19937_64 engines,
+288 first samples and exact next-generator states. Signed-zero/infinity edges,
+argument effects and generators mutating explicit or stored degrees retain the
+temporary-Gamma copy boundary. Managed execution, source-replacement guards,
+eight-target checks and unchanged managed-NC sanitizers remain publication gates.
+
+
+### Fisher F distributions and two temporary Gamma objects
+
+`fisher_f_distribution<float/double>` and `param_type` admit default, m/n, parameter, copy/move construction, assignment, getters, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. Both degrees default to one, bounds are positive zero/infinity and no cache is stored. Sampling constructs both Gamma shapes m*RealType(.5) and n*RealType(.5) before any draw, with unit scales, then preserves the SDK expression n*x/(m*y) and one permitted operand evaluation order. Later degree reads remain distinct from those copied shapes. The shared Gamma sampler and complete selected SDK constructors, accessors, exponential/math bodies and explicit redeclarations remain authenticated. Native values use small math tolerances with exact generator states and parameter effects. Existing math and SDK/catalog versions are unchanged. Long double and stream serialization remain separate work.
+
+The parameter owns m/n RealType fields with defaults one/one. Reset is empty,
+copy/move/assignment preserve parameters, and bounds are +0/+infinity.
+Both local Gamma shapes are copied from m*RealType(.5) and n*RealType(.5)
+before either sample. Their scales use the pinned Gamma default one.
+Lowering preserves one allowed evaluation order of n*x/(m*y): it reads n,
+samples the first Gamma, reads m, then samples the second Gamma. It retains
+that expression's multiplication/division association. It does not rewrite
+it as another ratio or replace later degree reads with the earlier copies.
+
+The SDK proof follows both parameter getters, both Gamma constructors, all
+Gamma/exponential sampling branches and exact sqrt/log/pow wrappers and explicit
+redeclarations. The shared sampler preserves generator consumption across both
+calls. No additional primitive, fingerprint or SDK/catalog revision is added.
+Independent native O0/O2 oracles cover float/double, three parameter pairs,
+source/minstd/mt19937_64 engines, 288 first values and exact next states.
+Endpoint fixtures preserve the pinned signed-zero and negative-infinity results
+from zero Gamma draws. A mutating generator verifies copied local shapes and
+keeps the permitted degree-read outcomes, while argument effects remain exact.
+Managed execution, source guards, target checks, unchanged managed-NC sanitizers
+and multilingual documentation remain required publication checks.
+
+
+### Student t distributions and independent normal state
+
+`student_t_distribution<float/double>` and `param_type` admit default, degree, parameter, copy/move construction, assignment, n, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. The degree defaults to one and bounds are negative/positive infinity. The exact layout keeps its own degree and a separate persistent normal state: construction starts the normal cache cold, copy/move/assignment preserve it, parameter replacement keeps it and reset clears it. The pinned Student equality compares only degree parameters, even when normal caches differ. Sampling copies the temporary Gamma shape before any draws, retains the SDK double .5 promotion, normal cache behavior and one permitted order for normal*sqrt(n/gamma). Normal, Gamma, exponential and sqrt/log/pow bodies and explicit redeclarations remain authenticated. Native values use small math tolerances with exact cache effects and engine states. No new primitive or SDK/catalog revision is added. Long double and stream serialization remain separate work.
+
+The outer owns its logical degree parameter and a separate normal_distribution.
+The normal's parameters, spare and hot flag are independent of the Student
+parameter record. Default/value/parameter construction initializes logical n
+and normal mean0/stddev1/cold. Copy/move/assignment preserve the complete normal
+state while avoiding cold-spare reads. Parameter replacement does not reset it;
+reset clears the normal hot flag. Crucially the pinned Student equality compares
+only logical parameters; it does not borrow normal/lognormal cache equality.
+
+Sampling constructs the local Gamma shape before any URBG call, preserving
+n*.5 with its double literal and RealType conversion, with scale2. One permitted
+order samples the persistent normal, reads the live degree, samples Gamma and
+returns normal*sqrt(n/gamma). The shared normal helper preserves a cached draw
+without URBG consumption and reads actual internal normal parameters; the shared
+Gamma helper preserves the local shape and rejection order. Logical Student
+parameters are never projected into the normal parameter record.
+
+The SDK proof follows both layers, defaults, getters, reset and setters, complete
+normal/Gamma/exponential bodies and exact sqrt/log/pow signatures, call sites
+and explicit redeclarations. Ordinary core math remains restricted. Existing
+primitives, math fingerprints and SDK/catalog are unchanged. Independent native
+O0/O2 references cover18degree/engine/precision cases,288first samples, odd hot
+state copies with cloned engines, parameter changes, reset and exact subsequent
+engine states. Deterministic fixtures distinguish cached and fresh normal draws,
+check params-only equality, preserve cache on setters and validate copied Gamma
+shape under parameter mutation. Managed execution, source guards, target matrix,
+unchanged managed-NC sanitizers and multilingual docs remain publication gates.
+
+
+### Cauchy distributions and double tangent evaluation
+
+`cauchy_distribution<float/double>` and `param_type` admit default, location/scale, parameter, copy/move construction, assignment, a/b, bounds, parameters, equality, reset and both sample forms with checked source or SDK generators. Defaults are zero/one and bounds negative/positive infinity, with no cache. The pinned SDK uses an unsuffixed double pi literal: even float canonical draws promote to double for pi multiplication, tan, scale multiplication and location addition, then narrow only the final result. Lowering preserves that path and a permitted parameter-read order, rather than substituting float pi/tanf or a shifted draw. Selected SDK bodies, actual double tangent signature and explicit redeclarations remain authenticated. The strict core-v2 tan primitive requires one matching float/double operand and emits a C23 builtin; hosted CRT/libm imports belong to the backend. Native values use small math tolerances with exact parameters and generator states. Long double and stream serialization remain separate work.
+
+The exact scalar parameter owns a/b with defaults0/1; reset is empty and there
+is no cached state. The selected SDK expression is
+  a + b * tan(3.1415926535897932384626433832795 * uniform_real<RealType>(g)).
+The pi literal rounds to double bits0x400921fb54442d18. Even for float results,
+uniform_real<float> first generates its24-bit canonical value, which then promotes
+to double. Pi multiplication, tangent, b multiplication and a addition remain
+double until the final result conversion. Lowering preserves one permitted order
+by reading location/scale before the generator call. It does not change the
+uniform draw, use a float tangent or rearrange the expression.
+
+The selected proof admits only the actual double tan signature at the Cauchy or
+trigonometric wrapper sites and checks every explicit redeclaration. A general
+strict tan wire primitive admits core v2 only, exactly kind/type/operator/args/loc,
+one argument and matching float/double types. It rejects integer, pointer,
+mixed-type, extra-payload and core-v1 cases. NC emits __builtin_tan[f]; the C23
+backend owns the hosted math call and CRT/libm import. No mapping fingerprint or
+SDK/catalog revision changes. Ordinary core tangent calls remain restricted.
+
+Independent native O0/O2 references cover three parameter pairs, float/double,
+source/minstd/mt19937_64 engines,288first values and exact next-generator states.
+A full-range64-bit source generator supplies exact zero, half and maximum draws;
+the half draw verifies the large positive double-tangent result for float as well
+as double, catching a float-pi/tanf substitution. Parameter APIs, effects, source
+replacements, malformed tan protocol, target matrix and unchanged managed-NC
+sanitizers remain required verification before publication.
