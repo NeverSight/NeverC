@@ -985,6 +985,8 @@ enum class UtilityOperation {
   UnorderedMapEraseIterator,
   UnorderedMapEraseRange,
   UnorderedMapInsertValue,
+  UnorderedMapEqualRange,
+  UnorderedMapInsertRange,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
   UnorderedIteratorPreIncrement,
@@ -2063,6 +2065,26 @@ struct UtilityUnorderedMapInsertion {
   bool AssignExisting;
 };
 std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityUnorderedMapEqualRange {
+  UtilityUnorderedMapRecord Map;
+  UtilityPairRecord Pair;
+  UtilityUnorderedMapIteratorRecord Iterator;
+};
+std::optional<UtilityUnorderedMapEqualRange> approvedUtilityUnorderedMapEqualRange(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+enum class UnorderedMapRangeKind { Pointer, Iterator, InitializerList };
+struct UtilityUnorderedMapRangeInsertion {
+  UtilityUnorderedMapRecord Map;
+  UtilityPairRecord Pair;
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+  std::optional<UtilityInitializerListRecord> List;
+  clang::QualType PointerType;
+  UnorderedMapRangeKind Kind;
+};
+std::optional<UtilityUnorderedMapRangeInsertion> approvedUtilityUnorderedMapRangeInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 bool approvedUtilityUnorderedMapIteratorMetadata(const State &S,

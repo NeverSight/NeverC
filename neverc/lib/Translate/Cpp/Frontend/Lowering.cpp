@@ -4641,6 +4641,73 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::UnorderedMapEqualRange) {
+      const auto Info = approvedUtilityUnorderedMapEqualRange(A.S, A.Sources, Call, A.Context);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      if (!Info || !Member) reject(L, "unordered map equal range", "The authenticated operation is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Key = snapshot(argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType()), L);
+      auto Hash = snapshot(cast(dereference(Key, L), type(A.Context.getSizeType(), L), L), L);
+      auto First = unorderedFindNode(dereference(Receiver, L), Info->Map, dereference(Key, L), Hash, L);
+      auto Last = snapshot(A.zero(Info->Map.NodePointerType, L), L);
+      const auto Advance = labelName(), Ready = labelName();
+      branch(cast(First, "bool", L), Advance, Ready, L);
+      label(Advance, L);
+      assign(Last, unorderedNodeNext(First, Info->Map, L), L);
+      jump(Ready, L);
+      label(Ready, L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      unorderedMakeIterator(First, Info->Iterator, fieldStorage(Output, Info->Pair.First, L), L);
+      unorderedMakeIterator(Last, Info->Iterator, fieldStorage(Output, Info->Pair.Second, L), L);
+      return Output;
+    }
+    if (Operation == UtilityOperation::UnorderedMapInsertRange) {
+      const auto Info = approvedUtilityUnorderedMapRangeInsertion(A.S, A.Sources, Call, A.Context);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      if (!Info || !Member) reject(L, "unordered map range insertion", "The authenticated operation is unavailable.");
+      const auto *Method = Member->getMethodDecl();
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      Expression Current, End;
+      if (Info->List) {
+        auto List = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        Current = snapshot(fieldStorage(dereference(List, L), Info->List->Begin, L), L);
+        auto Count = snapshot(fieldStorage(dereference(List, L), Info->List->Size, L), L);
+        End = snapshot(Current, L);
+        const auto Advance = labelName(), Ready = labelName();
+        branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L), Advance, Ready, L);
+        label(Advance, L);
+        assign(End, binary("+", Current, Count, type(Info->PointerType, L), L), L);
+        jump(Ready, L);
+        label(Ready, L);
+      } else {
+        auto First = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+        Current = snapshot(Info->Iterator
+            ? unorderedIteratorNode(dereference(First, L), *Info->Iterator, L) : First, L);
+        End = snapshot(Info->Iterator
+            ? unorderedIteratorNode(dereference(Last, L), *Info->Iterator, L) : Last, L);
+      }
+      const auto Check = labelName(), Insert = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, End, "bool", L), Insert, Done, L);
+      label(Insert, L);
+      auto Element = Info->Iterator
+          ? dereference(unorderedIteratorValue(Current, *Info->Iterator, L), L)
+          : dereference(Current, L);
+      unorderedInsertNode(Place, Info->Map, fieldStorage(Element, Info->Pair.First, L),
+          fieldStorage(Element, Info->Pair.Second, L), false, L);
+      assign(Current, Info->Iterator ? unorderedNodeNext(Current, Info->Iterator->Owner, L)
+          : binary("+", Current, one(type(A.Context.getSizeType(), L), L), type(Info->PointerType, L), L), L);
+      jump(Check, L);
+      label(Done, L);
+      return {};
+    }
     if (Operation == UtilityOperation::UnorderedMapInsertValue) {
       const auto Info = approvedUtilityUnorderedMapInsertion(A.S, A.Sources, Call, A.Context);
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);

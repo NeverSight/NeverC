@@ -74536,6 +74536,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
+    return UtilityOperation::UnorderedMapInsertRange;
+  if (approvedUtilityUnorderedMapEqualRange(S, SM, Call, Context))
+    return UtilityOperation::UnorderedMapEqualRange;
   if (approvedUtilityUnorderedMapInsertion(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapInsertValue;
   if (auto Iterator = approvedUtilityUnorderedMapIteratorOperation(S, SM, Call, Context))
@@ -87070,6 +87074,113 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if (!approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
   return UtilityUnorderedMapInsertion{*Map, *Iterator, ResultPair, Argument, Kind,
       Offset, Name == "insert_or_assign"};
+}
+
+std::optional<UtilityUnorderedMapEqualRange> approvedUtilityUnorderedMapEqualRange(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "equal_range" ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Call->isPRValue() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getConstType(Context.IntTy))) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
+    return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  const auto Pair = approvedUtilityPairRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Reference = dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+  const auto *Object = Member->getImplicitObjectArgument();
+  if (!Map || !Pair || !Reference || !Object || !S.owns(SM, Reference->getExprLoc()) ||
+      !unorderedMapPublicMethod(S, SM, Method) ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+      !Context.hasSameType(Pair->First->getType(), Pair->Second->getType()))
+    return std::nullopt;
+  const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
+      Pair->First->getType()->getAsCXXRecordDecl(), Context);
+  if (!Iterator || Iterator->Const != Method->isConst() ||
+      Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl())
+    return std::nullopt;
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  if (ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Map->Record)) ||
+      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+    return std::nullopt;
+  return UtilityUnorderedMapEqualRange{*Map, *Pair, *Iterator};
+}
+std::optional<UtilityUnorderedMapRangeInsertion> approvedUtilityUnorderedMapRangeInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->isConst() || !Method->getReturnType()->isVoidType() ||
+      Call->getNumArgs() != Method->getNumParams() ||
+      (Method->getNumParams() != 1 && Method->getNumParams() != 2)) return std::nullopt;
+  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
+  const auto *Reference = dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+  const auto *Object = Member->getImplicitObjectArgument();
+  if (!Map || !Reference || !Object || !S.owns(SM, Reference->getExprLoc()) ||
+      !unorderedMapPublicMethod(S, SM, Method) || !Call->getType()->isVoidType()) return std::nullopt;
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  if (ObjectType.hasQualifiers() ||
+      !Context.hasSameType(ObjectType, Context.getRecordType(Map->Record))) return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Parameter.hasQualifiers() || Parameter->isReferenceType()) return std::nullopt;
+  std::optional<UtilityInitializerListRecord> List;
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+  QualType Element, Pointer;
+  UnorderedMapRangeKind Kind;
+  if (Method->getNumParams() == 1) {
+    List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (!List || !Context.hasSameType(Call->getArg(0)->getType(), Parameter)) return std::nullopt;
+    const auto *Specialization = cast<ClassTemplateSpecializationDecl>(List->Record);
+    const auto *Primary = Specialization->getSpecializedTemplate();
+    auto Pinned = [&](const Decl *Declaration) {
+      return approvedStandardSDKDeclaration(S, SM, Declaration) &&
+          cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "initializer_list");
+    };
+    for (const auto *Declaration : Specialization->redecls())
+      if (!Pinned(Declaration)) return std::nullopt;
+    for (const auto *Declaration : Primary->redecls()) {
+      if (!Pinned(Declaration)) return std::nullopt;
+      for (const auto *Pattern : Declaration->getTemplatedDecl()->redecls())
+        if (!Pinned(Pattern)) return std::nullopt;
+    }
+    Element = List->ElementType;
+    Pointer = List->Begin->getType();
+    Kind = UnorderedMapRangeKind::InitializerList;
+  } else {
+    if (!Context.hasSameType(Parameter, Method->getParamDecl(1)->getType())) return std::nullopt;
+    for (unsigned I = 0; I != 2; ++I)
+      if (!Context.hasSameType(Call->getArg(I)->getType(), Parameter)) return std::nullopt;
+    if (Parameter->isPointerType()) {
+      Element = Parameter->getPointeeType();
+      Pointer = Parameter;
+      Kind = UnorderedMapRangeKind::Pointer;
+    } else {
+      Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
+          Parameter->getAsCXXRecordDecl(), Context);
+      if (!Iterator || Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl())
+        return std::nullopt;
+      Element = Iterator->Const ? Context.getConstType(Iterator->ValueType) : Iterator->ValueType;
+      Pointer = Iterator->Owner.NodePointerType;
+      Kind = UnorderedMapRangeKind::Iterator;
+    }
+  }
+  if (Element.isNull() || Element.isVolatileQualified() || Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default) return std::nullopt;
+  const auto Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Pair || !Pair->Record->hasTrivialDestructor() ||
+      !Context.hasSameUnqualifiedType(Pair->First->getType(), Context.IntTy) ||
+      !Context.hasSameUnqualifiedType(Pair->Second->getType(), Context.IntTy) ||
+      Pair->First->getType().isVolatileQualified() || Pair->Second->getType().isVolatileQualified() ||
+      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
+  return UtilityUnorderedMapRangeInsertion{*Map, *Pair, Iterator, List, Pointer, Kind};
 }
 
 } // namespace nct

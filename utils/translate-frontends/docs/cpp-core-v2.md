@@ -16777,3 +16777,25 @@ stored forwarded values or the load limit at the SDK-defined points.
 The shared node helper also implements subscript's value initialization. Source
 SDK method and constructor specializations, iterator/result-pair substitutions,
 custom policies and missing heap definitions retain their separate boundaries.
+
+## Unordered-map equal and insertion ranges
+
+Mutable/const `equal_range(key)` uses the authenticated default int/int lookup
+and returns `pair<iterator, iterator>` or its const counterpart. A found range
+contains exactly its node and captured successor; an absent range contains two
+end iterators. Lookup neither allocates nor changes the map.
+
+Range `insert(first, last)` admits raw pointers to SDK int/int pairs (including
+const-key value-type pairs) and mutable/const iterators of the exact default
+int/int map type. `insert(initializer_list<value_type>)` uses its pinned
+pointer/count view. Every endpoint is captured once before the loop. Each input
+element retains a live reference through node allocation and is advanced after
+insertion. Duplicate keys keep their first stored value. Empty ranges, including
+null equal pointers and empty lists, do not access an element; empty list ends
+avoid arithmetic on a null carrier in generated C23.
+
+The SDK readable-range, iterator-validity, ownership and successful allocation
+preconditions still apply. Range insertion requires source heap definitions
+even when one execution observes an empty range. Other iterator families and
+pair element types remain separate work. Node growth and value-copy timing use
+the same insertion helper as subscript, insert and try-emplace.
