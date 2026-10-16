@@ -881,4 +881,6 @@ CI 結果、執行與安裝驗證以及測試跳過項目依平台分別記錄�
 
 ## 無序映射中繼資料
 
-固定的 C++17 `<unordered_map>` 標頭支援 `std::unordered_map<int, int>` 的中繼資料，要求使用精確的 SDK `std::hash<int>`、`std::equal_to<int>` 與 `std::allocator<std::pair<const int, int>>`。型別別名、型別同一性、公開成員型別、`sizeof` 與 `alignof` 保留所選目標的配置。映射物件與執行階段操作、自訂策略、其他元素型別及使用者重新宣告仍會遭拒。
+固定的 C++17 `<unordered_map>` 標頭支援 `std::unordered_map<int, int>` 的中繼資料，要求使用精確的 SDK `std::hash<int>`、`std::equal_to<int>` 與 `std::allocator<std::pair<const int, int>>`。型別別名、型別同一性、公開成員型別、`sizeof` 與 `alignof` 保留所選目標的配置。
+
+使用 SDK 預設策略的固定 `std::unordered_map<int, int>` 也支援預設建構、解構、執行階段指標與參考、`size`、`empty`、`bucket_count`、`load_factor` 及兩種 `max_load_factor` 多載。作用域、成員與陣列清理使用經過驗證的 SDK 儲存配置及原始碼定義的全域釋放鉤子。複製、移動、插入、查找、迭代、重新雜湊、其他元素型別、自訂策略及原始碼對 SDK 的重新宣告仍會遭拒。

@@ -107,6 +107,23 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
     if (!F || !F->isImplicit())
       return false;
+    if (F->getBuiltinID() == Builtin::BI__builtin_launder) {
+      const auto Site = S.sdkFile(SM, Location);
+      if (!SDKGenerator || Generator->getName() != "unordered_map" || !Site ||
+          Site->Root != "libcxx" || Site->Path != "__new/launder.h" ||
+          F->isVariadic() || F->getNumParams() != 1 ||
+          !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
+          !Context.hasSameType(F->getParamDecl(0)->getType(), Context.VoidPtrTy))
+        return false;
+      for (const auto *D : F->redecls()) {
+        if (!D->isImplicit()) return false;
+        if (D->getLocation().isInvalid()) continue;
+        const auto File = S.sdkFile(SM, D->getLocation());
+        if (!File || File->Root != "libcxx" || File->Path != "__new/launder.h" ||
+            S.owns(SM, D->getLocation())) return false;
+      }
+      return true;
+    }
     if (!SDKGenerator) {
       // A source generator can still be called by a pinned vector algorithm.
       // Its iterator alignment/constant-evaluation helpers are SDK proof
@@ -547,6 +564,16 @@ public:
         if (!origin(Redeclaration))
           return false;
       const auto *Definition = R->getDefinition();
+      // pointer_traits keeps an intentionally incomplete tag in an unselected
+      // conditional type. It is a proof dependency, never runtime storage.
+      if (!Definition && SDKGenerator && Generator->getName() == "unordered_map" &&
+          R->getName() == "__nat") {
+        const auto *Parent = dyn_cast<CXXRecordDecl>(R->getDeclContext());
+        const auto File = S.sdkFile(SM, R->getLocation());
+        if (Parent && Parent->getName() == "pointer_traits" && File &&
+            File->Root == "libcxx" && File->Path == "__memory/pointer_traits.h")
+          return true;
+      }
       if (!Definition || !origin(Definition))
         return false;
       if (const auto *Specialization =
@@ -705,6 +732,9 @@ public:
              E->getNumArgs() >= 1 && E->getNumArgs() <= 2;
     if (engineIntrinsic(F, E->getExprLoc())) {
       switch (F->getBuiltinID()) {
+      case Builtin::BI__builtin_launder:
+        return E->getNumArgs() == 1 && E->getType()->isPointerType() &&
+               Context.hasSameType(E->getType(), E->getArg(0)->getType());
       case Builtin::BI__builtin_is_constant_evaluated:
         return E->getNumArgs() == 0 && E->getType()->isBooleanType();
       case Builtin::BI__builtin_constant_p:
@@ -2574,4 +2604,16 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedUnorderedMapMethodSource(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  if (!Function || !Record || !approvedUnorderedMapMetadataRecord(S, SM, Record, Context))
+    return false;
+  // The same selected-body traversal used for random adapters retains SDK
+  // helper specializations, typed compiler intrinsics and allocation hooks.
+  // No random math calls or source callback methods are authorized here.
+  RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
+  return Selection.retain(Function);
+}
+
 } // namespace nct

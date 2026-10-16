@@ -881,4 +881,6 @@ Les résultats de CI, les vérifications d’exécution et d’installation ains
 
 ## Métadonnées des tables non ordonnées
 
-L’en-tête C++17 fixé `<unordered_map>` admet les métadonnées de `std::unordered_map<int, int>` avec les types exacts du SDK `std::hash<int>`, `std::equal_to<int>` et `std::allocator<std::pair<const int, int>>`. Les alias, l’identité des types, les types membres publics, `sizeof` et `alignof` conservent la disposition de la cible choisie. Les objets et opérations de table à l’exécution, les politiques personnalisées, les autres types d’éléments et les redéclarations utilisateur restent refusés.
+L’en-tête C++17 fixé `<unordered_map>` admet les métadonnées de `std::unordered_map<int, int>` avec les types exacts du SDK `std::hash<int>`, `std::equal_to<int>` et `std::allocator<std::pair<const int, int>>`. Les alias, l’identité des types, les types membres publics, `sizeof` et `alignof` conservent la disposition de la cible choisie.
+
+Le `std::unordered_map<int, int>` fixé avec les politiques SDK par défaut admet aussi la construction par défaut, la destruction, les pointeurs et références à l’exécution, `size`, `empty`, `bucket_count`, `load_factor` et les deux surcharges de `max_load_factor`. Le nettoyage des portées, membres et tableaux utilise la disposition SDK authentifiée et les fonctions globales de libération définies dans le source. Copie, déplacement, insertion, recherche, itération, rehachage, autres types d’éléments, politiques personnalisées et redéclarations SDK dans le source restent refusés.

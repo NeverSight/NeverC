@@ -3076,6 +3076,19 @@ static bool utilitySDKFunctionSource(Adapter &A, const FunctionDecl *Function,
   return true;
 }
 
+static bool utilityUnorderedMapQueryLayout(Adapter &A, const CXXRecordDecl *Record,
+                                            SourceLocation Location) {
+  if (!approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context))
+    return true;
+  // Pointer/reference-only source need not instantiate the private node.
+  // Complete exact authenticated storage types, never SDK method bodies.
+  return bool(approvedUtilityUnorderedMapRecord(A.S, A.Sources, Record, A.Context,
+      [&](QualType Type) {
+        A.chargeExpansion(1, Location);
+        return A.CompleteSDKRecord && A.CompleteSDKRecord(Type, Location);
+      }));
+}
+
 static bool utilityMemoryElementQueryLayout(Adapter &A, QualType ElementType,
                                             SourceLocation Location) {
   const auto *Element = ElementType->getAsCXXRecordDecl();
@@ -8891,6 +8904,12 @@ static bool utilityStringDestructionSource(Adapter &A,
          utilityStringOperationSource(A, Destructor);
 }
 
+static bool utilityUnorderedMapDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Record, A.Context);
+  return Map && approvedUtilityUnorderedMapDestructor(A.S, A.Sources,
+                                                      Map->Record->getDestructor(), A.Context);
+}
+
 static std::optional<UtilityVectorRecord>
 utilityVectorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Vector =
@@ -9596,6 +9615,7 @@ public:
         return false;
       return destruction(Seq->Storage->getType()->getAsCXXRecordDecl(), Depth + 1);
     }
+    if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
         return destruction(Element, Depth + 1);
@@ -11349,6 +11369,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     }
   if (const auto *R = C->getAs<RecordType>()) {
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
+    if (D && !utilityUnorderedMapQueryLayout(*this, D, L)) {
+      reject(L, "unordered map layout", "The authenticated SDK storage layout is required.", "TR0203");
+      return {};
+    }
     if (D && D->getDefinition() && !D->isUnion()) {
       D = D->getDefinition();
       if (const auto Engine = approvedRandomEngineRecord(S, Sources, D, Context)) {
@@ -11437,6 +11461,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
         return {};
       } else if (approvedUtilityStringRecord(S, Sources, D, Context) &&
                  !requireUtilityString(D, L, Depth + 1)) {
+        return {};
+      } else if (approvedUtilityUnorderedMapRecord(S, Sources, D, Context) &&
+                 !requireUtilityUnorderedMap(D, L, Depth + 1)) {
         return {};
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
@@ -11616,6 +11643,27 @@ bool Adapter::requireUtilityString(const CXXRecordDecl *Record,
     return false;
   S.Module["memory_lifetimes"] = true;
   Records.push_back(const_cast<CXXRecordDecl *>(String->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityUnorderedMap(const CXXRecordDecl *Record,
+                                         SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "unordered map type", "Nested types exceed the protocol limit.");
+    return false;
+  }
+  const auto Map = approvedUtilityUnorderedMapRecord(S, Sources, Record, Context);
+  if (!Map) {
+    reject(Location, "standard library record", "The pinned default int/int unordered-map layout is required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityUnorderedMaps.insert(Map->Record->getCanonicalDecl()).second)
+    return true;
+  if (type(Map->BucketPointerType, Location, false, Depth + 1).empty() ||
+      type(Map->NodePointerType, Location, false, Depth + 1).empty() ||
+      type(Context.getSizeType(), Location, false, Depth + 1).empty()) return false;
+  S.Module["memory_lifetimes"] = true;
+  Records.push_back(const_cast<CXXRecordDecl *>(Map->Record));
   return true;
 }
 
@@ -11907,6 +11955,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
         Args.push_back(zero((String->AlternateLayout ? I == 0 : I == 2)
                                 ? String->PointerType
                                 : Context.getSizeType(), L));
+    } else if (auto Map = approvedUtilityUnorderedMapRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Map->BucketPointerType, L));
+      Args.push_back(zero(Context.getSizeType(), L));
+      Args.push_back(zero(Map->NodePointerType, L));
+      Args.push_back(zero(Context.getSizeType(), L));
+      Args.push_back(zero(Context.FloatTy, L));
     } else if (auto Vector = approvedUtilityVectorRecord(S, Sources, R,
                                                         Context)) {
       for (unsigned I = 0; I != 3; ++I)
@@ -15390,6 +15444,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                  A.Context) ||
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityStringConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
@@ -16753,6 +16808,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                      Destructor->getParent()) ||
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
+             utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
              approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              approvedDiscreteDistributionRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -18932,6 +18988,7 @@ public:
                                                 A.Context) ||
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
+           approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
@@ -23261,6 +23318,11 @@ public:
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
     if (A.S.coreV2()) {
+      if (const auto *Call = dyn_cast<CXXMemberCallExpr>(S))
+        if (const auto *Method = Call->getMethodDecl())
+          if (!utilityUnorderedMapQueryLayout(A, Method->getParent(), L))
+            A.reject(L, "unordered map layout",
+                     "The authenticated SDK storage layout is required.", "TR0203");
       const VarDecl *ConditionVariable = nullptr;
       if (const auto *If = dyn_cast<IfStmt>(S))
         ConditionVariable = If->getConditionVariable();
@@ -24381,6 +24443,7 @@ public:
                                                         A.Context) ||
                    approvedUtilityStringConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
+                   approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -24599,6 +24662,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityStringRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityVector =
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityUnorderedMap =
+        approvedUtilityUnorderedMapRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDefaultDelete =
         approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
@@ -24612,7 +24677,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityVector ||
+                                   UtilityVector || UtilityUnorderedMap ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
                                : A.emptyBase(R)) {
@@ -24650,6 +24715,9 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityString->Record->getLocation());
       DependencyTypes.emplace_back(UtilityString->PointerType,
                                    UtilityString->Record->getLocation());
+    } else if (UtilityUnorderedMap) {
+      DependencyTypes.emplace_back(UtilityUnorderedMap->BucketPointerType, R->getLocation());
+      DependencyTypes.emplace_back(UtilityUnorderedMap->NodePointerType, R->getLocation());
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
@@ -24792,6 +24860,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityVector =
         S.coreV2() ? approvedUtilityVectorRecord(S, Sources, R, Context)
                    : std::optional<UtilityVectorRecord>();
+    const auto UtilityUnorderedMap =
+        approvedUtilityUnorderedMapRecord(S, Sources, R, Context);
     const auto UtilityDefaultDelete =
         S.coreV2() ? approvedUtilityDefaultDeleteRecord(S, Sources, R, Context)
                    : std::optional<UtilityDefaultDeleteRecord>();
@@ -24809,7 +24879,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityVector &&
+                               !UtilityVector && !UtilityUnorderedMap &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
                            ? emptyBase(R)
@@ -24842,6 +24912,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
             {"type", type((UtilityString->AlternateLayout ? I == 0 : I == 2)
                               ? UtilityString->PointerType
                               : Context.getSizeType(), R->getLocation())}});
+    } else if (UtilityUnorderedMap) {
+      for (const auto &Field : std::initializer_list<std::pair<const char *, QualType>>{
+               {"nct_unordered_buckets", UtilityUnorderedMap->BucketPointerType},
+               {"nct_unordered_bucket_count", Context.getSizeType()},
+               {"nct_unordered_first", UtilityUnorderedMap->NodePointerType},
+               {"nct_unordered_size", Context.getSizeType()},
+               {"nct_unordered_max_load", Context.FloatTy}})
+        Fields.push_back(json::Object{{"name", Field.first},
+            {"type", type(Field.second, R->getLocation())}});
     } else if (UtilityVector) {
       for (const char *Name : {"nct_vector_begin", "nct_vector_end",
                                "nct_vector_capacity"})
@@ -24891,6 +24970,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         if (FunctionalReference->PaddedBase)
           Offsets.push_back(uint64_t(0));
         Offsets.push_back(Layout.getFieldOffset(0));
+      } else if (UtilityUnorderedMap) {
+        const auto PointerBits = Context.getTypeSize(Context.VoidPtrTy);
+        for (unsigned I = 0; I != 5; ++I)
+          Offsets.push_back(I * PointerBits);
       } else if (UtilityString || UtilityVector) {
         const auto PointerBits = UtilityString
                                      ? Context.getTypeSize(Context.getSizeType())

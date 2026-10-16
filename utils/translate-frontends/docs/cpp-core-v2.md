@@ -16650,7 +16650,33 @@ members, and type identity queries require no runtime map record. `sizeof` and
 The consumed header closure has 271 catalogued files on the eight core targets.
 No SDK payload or catalog changes are required.
 
-Runtime map objects, map methods and runtime pointers to map records remain
-outside this metadata admission. Custom hash/equality/allocator policies and
-other key or mapped types are rejected. Erased source types and expressions,
-volatile forms and source redeclarations retain their independent diagnostics.
+Custom hash/equality/allocator policies and other key or mapped types are
+rejected. Erased source types and expressions, volatile forms and source
+redeclarations retain their independent diagnostics.
+
+## Default unordered-map runtime
+
+The same exact `std::unordered_map<int, int>` admits default construction and
+destruction, source-owned member and array lifetimes, runtime pointers and
+references, `size`, `empty`, `bucket_count`, `load_factor` and the getter/setter
+`max_load_factor` overloads. The setter evaluates the receiver before its
+argument, once each, and preserves the SDK maximum of the requested factor and
+current load. Only the SDK-defined input domain is admitted.
+
+The storage adapter checks the physical five-word SDK record on each target:
+bucket pointer, bucket count, first node, element count and float load limit.
+It initializes the empty state without allocation. Cleanup follows verified
+node links before releasing each node and the bucket array through admitted
+source-defined global deallocation operators. Internal node size, alignment,
+payload offsets and embedded destructor chains are authenticated separately.
+Missing source deallocation definitions retain TR0203, including empty maps.
+
+This stage does not admit copy/move construction, assignment, insertion, lookup,
+iteration, clear, reserve or rehash. Every public SDK method and selected private
+helper retains its body and redeclaration checks. Source specializations of
+methods, constructors, destructors or private storage cannot borrow admission.
+No SDK/catalog, source frontend or floating-point policy changes are required.
+
+Pointer/reference-only translation units complete the exact authenticated map
+and private node layouts when needed. This completion does not instantiate SDK
+method bodies; source and specialization checks run again after completion.

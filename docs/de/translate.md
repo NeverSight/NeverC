@@ -881,4 +881,6 @@ CI-Ergebnisse, Ausführungs- und Installationsprüfungen sowie übersprungene Te
 
 ## Metadaten ungeordneter Maps
 
-Der festgelegte C++17-Header `<unordered_map>` unterstützt Metadaten für `std::unordered_map<int, int>` mit den exakten SDK-Typen `std::hash<int>`, `std::equal_to<int>` und `std::allocator<std::pair<const int, int>>`. Aliase, Typidentität, öffentliche Mitgliedstypen, `sizeof` und `alignof` behalten das Layout des gewählten Ziels. Map-Objekte und Laufzeitoperationen, eigene Richtlinien, andere Elementtypen und Neudeklarationen im Quelltext bleiben abgewiesen.
+Der festgelegte C++17-Header `<unordered_map>` unterstützt Metadaten für `std::unordered_map<int, int>` mit den exakten SDK-Typen `std::hash<int>`, `std::equal_to<int>` und `std::allocator<std::pair<const int, int>>`. Aliase, Typidentität, öffentliche Mitgliedstypen, `sizeof` und `alignof` behalten das Layout des gewählten Ziels.
+
+Das festgelegte `std::unordered_map<int, int>` mit SDK-Standardrichtlinien unterstützt außerdem Standardkonstruktion, Zerstörung, Laufzeitzeiger und Referenzen, `size`, `empty`, `bucket_count`, `load_factor` und beide `max_load_factor`-Überladungen. Bereichs-, Mitglieds- und Arraybereinigung verwenden das authentifizierte SDK-Speicherlayout und im Quelltext definierte globale Freigabefunktionen. Kopieren, Verschieben, Einfügen, Suche, Iteration, Rehashing, andere Elementtypen, eigene Richtlinien und SDK-Neudeklarationen im Quelltext bleiben abgewiesen.

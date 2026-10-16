@@ -881,4 +881,6 @@ I risultati CI, le verifiche di esecuzione e installazione e i test saltati sono
 
 ## Metadati delle mappe non ordinate
 
-L’header C++17 fissato `<unordered_map>` ammette i metadati di `std::unordered_map<int, int>` con i tipi esatti dell’SDK `std::hash<int>`, `std::equal_to<int>` e `std::allocator<std::pair<const int, int>>`. Alias, identità dei tipi, tipi membro pubblici, `sizeof` e `alignof` conservano il layout della destinazione scelta. Oggetti e operazioni delle mappe in esecuzione, criteri personalizzati, altri tipi di elementi e ridichiarazioni dell’utente restano rifiutati.
+L’header C++17 fissato `<unordered_map>` ammette i metadati di `std::unordered_map<int, int>` con i tipi esatti dell’SDK `std::hash<int>`, `std::equal_to<int>` e `std::allocator<std::pair<const int, int>>`. Alias, identità dei tipi, tipi membro pubblici, `sizeof` e `alignof` conservano il layout della destinazione scelta.
+
+Il `std::unordered_map<int, int>` fissato con i criteri SDK predefiniti supporta anche costruzione predefinita, distruzione, puntatori e riferimenti a runtime, `size`, `empty`, `bucket_count`, `load_factor` ed entrambi gli overload di `max_load_factor`. La pulizia di ambiti, membri e array usa il layout SDK autenticato e funzioni globali di deallocazione definite nel sorgente. Copia, spostamento, inserimento, ricerca, iterazione, rehashing, altri tipi di elementi, criteri personalizzati e ridichiarazioni SDK nel sorgente restano rifiutati.

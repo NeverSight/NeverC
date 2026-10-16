@@ -74536,6 +74536,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (auto Map = approvedUtilityUnorderedMapOperation(S, SM, Call, Context))
+    return Map;
   if (approvedFunctionTraitValueCall(S, SM, Call, Context))
     return UtilityOperation::FunctionTraitValue;
   if (approvedUtilityArraySwapQuery(S, SM, Call, Context))
@@ -86377,6 +86379,282 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
       "pair", "__utility/pair.h", "__fwd/pair.h", 2);
   return Pair && Context.hasSameType(Pair->getTemplateArgs()[0].getAsType(), Context.IntTy.withConst()) &&
          Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
+}
+
+std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context,
+    const std::function<bool(QualType)> &Complete) {
+  if (!Record || !approvedUnorderedMapMetadataRecord(S, SM, Record, Context))
+    return std::nullopt;
+  if (!Record->getDefinition() && Complete &&
+      !Complete(Context.getRecordType(Record))) return std::nullopt;
+  const auto *Map = Record->getDefinition();
+  if (!Map || !approvedUnorderedMapMetadataRecord(S, SM, Map, Context) ||
+      Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
+    return std::nullopt;
+  auto Pinned = [&](const Decl *D) {
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    if (File && File->Root == "libcxx" && !S.owns(SM, D->getLocation()) &&
+        approvedStandardSDKDeclaration(S, SM, D)) return true;
+    const auto *Field = dyn_cast_or_null<FieldDecl>(D);
+    const auto *Owner = Field ? dyn_cast<CXXRecordDecl>(Field->getDeclContext()) : nullptr;
+    const auto *Padding = Field ? Field->getType()->getAsCXXRecordDecl() : nullptr;
+    const auto L = Field ? Field->getLocation() : SourceLocation();
+    const auto Expansion = L.isValid() ? S.sdkFile(SM, SM.getExpansionLoc(L)) : std::nullopt;
+    const auto PaddingFile = Padding ? S.sdkFile(SM, Padding->getLocation()) : std::nullopt;
+    // The SDK concatenates padding member names in scratch space. Admit only
+    // those exact typed fields expanded by its authenticated storage records.
+    return Field && L.isMacroID() && SM.isWrittenInScratchSpace(SM.getSpellingLoc(L)) &&
+           Field->getName().starts_with("__padding") && Padding &&
+           Padding->getName() == "__compressed_pair_padding" &&
+           PaddingFile && PaddingFile->Root == "libcxx" &&
+           PaddingFile->Path == "__memory/compressed_pair.h" &&
+           approvedStandardSDKDeclaration(S, SM, Padding) && Owner &&
+           approvedStandardSDKDeclaration(S, SM, Owner) && Expansion &&
+           Expansion->Root == "libcxx" &&
+           (Expansion->Path == "__hash_table" || Expansion->Path == "__memory/unique_ptr.h");
+  };
+  // Authenticate the concrete storage graph, including selected internal
+  // specializations. A source specialization must not borrow the outer map's
+  // header identity even when its physical layout happens to match.
+  llvm::DenseSet<const Decl *> Seen;
+  unsigned Nodes = 0;
+  auto CheckType = [&](auto &&Self, QualType Type, unsigned Depth) -> bool {
+    if (Type.isNull() || Depth > 64 || ++Nodes > 4096 || Type->isDependentType())
+      return false;
+    if (Type->isPointerType() || Type->isReferenceType())
+      return Self(Self, Type->getPointeeType(), Depth + 1);
+    if (const auto *Array = Context.getAsArrayType(Type))
+      return Self(Self, Array->getElementType(), Depth + 1);
+    const auto *R = Type->getAsCXXRecordDecl();
+    if (!R) return Type->isBuiltinType() || Type->isEnumeralType();
+    if (!Seen.insert(R->getCanonicalDecl()).second) return true;
+    for (const auto *D : R->redecls()) if (!Pinned(D)) return false;
+    if (const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      const auto *Primary = Specialization->getSpecializedTemplate();
+      for (const auto *D : Primary->redecls())
+        if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+      if (const auto *Partial = Specialization->getSpecializedTemplateOrPartial()
+                                   .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+        if (!Pinned(Partial)) return false;
+      for (const auto &Argument : Specialization->getTemplateArgs().asArray()) {
+        if (Argument.getKind() == TemplateArgument::Type) {
+          if (!Self(Self, Argument.getAsType(), Depth + 1)) return false;
+        } else if (Argument.getKind() != TemplateArgument::Integral)
+          return false;
+      }
+    }
+    const auto *Definition = R->getDefinition();
+    if (!Definition) return true;
+    if (!Pinned(Definition) || Definition->isInvalidDecl() ||
+        Definition->isDynamicClass() || Definition->isDependentContext())
+      return false;
+    for (const auto &Base : Definition->bases())
+      if (!Self(Self, Base.getType(), Depth + 1)) return false;
+    for (const auto *Field : Definition->fields())
+      if (!Pinned(Field) || !Self(Self, Field->getType(), Depth + 1)) return false;
+    return true;
+  };
+  if (!CheckType(CheckType, Context.getRecordType(Map), 0)) return std::nullopt;
+  auto Field = [&](const CXXRecordDecl *R, llvm::StringRef Name) -> const FieldDecl * {
+    R = R ? R->getDefinition() : nullptr;
+    if (!R) return nullptr;
+    const FieldDecl *Found = nullptr;
+    for (const auto *F : R->fields())
+      if (F->getName() == Name) {
+        if (Found || !Pinned(F) || F->isBitField()) return nullptr;
+        Found = F;
+      }
+    return Found;
+  };
+  auto Child = [&](const FieldDecl *F) {
+    return F ? F->getType()->getAsCXXRecordDecl() : nullptr;
+  };
+  auto Offset = [&](const CXXRecordDecl *R, const FieldDecl *F) -> uint64_t {
+    return R && F ? Context.getASTRecordLayout(R->getDefinition())
+                          .getFieldOffset(F->getFieldIndex())
+                  : ~uint64_t(0);
+  };
+  const auto *TableField = Field(Map, "__table_");
+  const auto *Table = Child(TableField);
+  const auto *BucketsField = Field(Table, "__bucket_list_");
+  const auto *Buckets = Child(BucketsField);
+  const auto *BucketData = Field(Buckets, "__ptr_");
+  const auto *DeleterField = Field(Buckets, "__deleter_");
+  const auto *Deleter = Child(DeleterField);
+  const auto *BucketCount = Field(Deleter, "__size_");
+  const auto *FirstField = Field(Table, "__first_node_");
+  const auto *First = Child(FirstField);
+  const auto *Next = Field(First, "__next_");
+  const auto *Size = Field(Table, "__size_");
+  const auto *LoadFactor = Field(Table, "__max_load_factor_");
+  const auto P = Context.getTypeSize(Context.VoidPtrTy);
+  if (!TableField || !BucketsField || !BucketData || !DeleterField || !BucketCount ||
+      !FirstField || !Next || !Size || !LoadFactor ||
+      Offset(Map, TableField) || Offset(Table, BucketsField) ||
+      Offset(Buckets, BucketData) || Offset(Buckets, DeleterField) != P ||
+      Offset(Deleter, BucketCount) || Offset(Table, FirstField) != 2 * P ||
+      Offset(First, Next) || Offset(Table, Size) != 3 * P ||
+      Offset(Table, LoadFactor) != 4 * P ||
+      Context.getTypeSize(Context.getRecordType(Map)) != 5 * P ||
+      Context.getTypeAlign(Context.getRecordType(Map)) != Context.getTypeAlign(Context.VoidPtrTy) ||
+      !BucketData->getType()->isPointerType() ||
+      !BucketData->getType()->getPointeeType()->isPointerType() ||
+      !Next->getType()->isPointerType() ||
+      !Context.hasSameType(BucketCount->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(LoadFactor->getType(), Context.FloatTy))
+    return std::nullopt;
+  const auto *Base = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Next->getType()->getPointeeType()->getAsCXXRecordDecl());
+  if (!Base || Base->getTemplateArgs().size() != 1 ||
+      Base->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+      !Base->getTemplateArgs().get(0).getAsType()->isPointerType()) return std::nullopt;
+  const auto NodeType = Base->getTemplateArgs().get(0).getAsType()->getPointeeType();
+  const auto *Node = NodeType->getAsCXXRecordDecl();
+  if (Node && !Node->getDefinition() && Complete) {
+    if (!Complete(NodeType)) return std::nullopt;
+    // Completion can select a previously unmaterialized specialization.
+    Seen.clear();
+    if (!CheckType(CheckType, Context.getRecordType(Map), 0)) return std::nullopt;
+  }
+  Node = Node ? Node->getDefinition() : nullptr;
+  const auto *Hash = Field(Node, "__hash_");
+  const FieldDecl *Payload = nullptr;
+  if (Node)
+    for (const auto *F : Node->fields())
+      if (F->isAnonymousStructOrUnion()) {
+        if (Payload) return std::nullopt;
+        Payload = F;
+      }
+  const auto *PayloadRecord = Child(Payload);
+  const auto *Value = Field(PayloadRecord, "__value_");
+  if (!Node || Node->getNumBases() != 1 || !Hash || !Value ||
+      !Context.hasSameType(Node->bases_begin()->getType(), Context.getRecordType(Base)) ||
+      Context.getASTRecordLayout(Node).getBaseClassOffset(Base).getQuantity() ||
+      Offset(Node, Hash) != P || !Payload || Offset(Node, Payload) != 2 * P ||
+      Offset(PayloadRecord, Value) ||
+      !Context.hasSameType(Hash->getType(), Context.getSizeType()) ||
+      Context.getTypeSize(Value->getType()) != 2 * Context.getTypeSize(Context.IntTy) ||
+      Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Context.IntTy) ||
+      Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy))
+    return std::nullopt;
+  return UtilityUnorderedMapRecord{Map, Context.getPointerType(Context.VoidPtrTy),
+      Context.VoidPtrTy, NodeType, uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()),
+      uint64_t(Offset(Node, Payload) / Context.getCharWidth())};
+}
+
+static bool unorderedMapPublicMethod(const State &S, const SourceManager &SM,
+                                    const CXXMethodDecl *Method) {
+  if (!Method || Method->isInvalidDecl() || Method->isDeleted() ||
+      Method->getAccess() != AS_public || Method->isStatic() || Method->isVirtual() ||
+      Method->isVolatile() || Method->isVariadic() || Method->getRefQualifier() != RQ_None ||
+      Method->getTemplateSpecializationKind() == TSK_ExplicitSpecialization ||
+      !Method->hasBody()) return false;
+  auto Pinned = [&](const FunctionDecl *Function) {
+    if (!Function) return true;
+    for (const auto *D : Function->redecls()) {
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || File->Root != "libcxx" || File->Path != "unordered_map" ||
+          S.owns(SM, D->getLocation()) || !approvedStandardSDKDeclaration(S, SM, D))
+        return false;
+    }
+    return true;
+  };
+  return Pinned(Method) && Pinned(Method->getDefinition()) &&
+         Pinned(Method->getTemplateInstantiationPattern(/*ForDefinition=*/true));
+}
+
+bool approvedUtilityUnorderedMapConstruction(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  const auto Info = Construction ? approvedUtilityUnorderedMapRecord(
+      S, SM, Context.getBaseElementType(Construction->getType())->getAsCXXRecordDecl(),
+      Context) : std::nullopt;
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  return Info && Constructor && !Construction->isTypeDependent() &&
+      !Construction->isValueDependent() && !Construction->isInstantiationDependent() &&
+      Construction->getConstructionKind() == CXXConstructionKind::Complete &&
+      !Construction->getNumArgs() && !Constructor->getNumParams() &&
+      Constructor->isDefaultConstructor() && unorderedMapPublicMethod(S, SM, Constructor) &&
+      approvedUnorderedMapMethodSource(S, SM, Constructor, Info->Record, Context);
+}
+
+bool approvedUtilityUnorderedMapDestructor(const State &S, const SourceManager &SM,
+    const CXXDestructorDecl *Destructor, const ASTContext &Context) {
+  const auto Info = Destructor ? approvedUtilityUnorderedMapRecord(
+      S, SM, Destructor->getParent(), Context) : std::nullopt;
+  const auto *Prototype = Destructor ? Destructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Info || !Prototype || !Prototype->isNothrow() || Destructor->getNumParams() ||
+      !unorderedMapPublicMethod(S, SM, Destructor)) return false;
+  llvm::DenseSet<const CXXRecordDecl *> Seen;
+  auto RetainStorageDestructors = [&](auto &&Self, const CXXRecordDecl *R,
+                                      unsigned Depth) -> bool {
+    R = R ? R->getDefinition() : nullptr;
+    if (!R || Depth > 64) return false;
+    if (!Seen.insert(R->getCanonicalDecl()).second) return true;
+    const auto *D = R->getDestructor();
+    if (D ? D->isDeleted() || D->isVirtual() ||
+                !approvedUnorderedMapMethodSource(S, SM, D, Info->Record, Context)
+          : !R->hasTrivialDestructor()) return false;
+    for (const auto &Base : R->bases())
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1)) return false;
+    for (const auto *Field : R->fields()) {
+      const auto Type = Context.getBaseElementType(Field->getType());
+      if (const auto *Child = Type->getAsCXXRecordDecl())
+        if (!Self(Self, Child, Depth + 1)) return false;
+    }
+    return true;
+  };
+  // Implicit member destruction is absent from a destructor's written body.
+  // Close embedded storage destructors separately so private SDK specializations
+  // cannot acquire observable cleanup while borrowing the public map type.
+  return RetainStorageDestructors(RetainStorageDestructors, Info->Record, 0);
+}
+
+std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto Info = Method ? approvedUtilityUnorderedMapRecord(
+      S, SM, Method->getParent(), Context) : std::nullopt;
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(
+      Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Info || !Reference || !Object || !Prototype || !Method->getIdentifier() ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !unorderedMapPublicMethod(S, SM, Method) ||
+      Call->getNumArgs() != Method->getNumParams() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+      !approvedUnorderedMapMethodSource(S, SM, Method, Info->Record, Context))
+    return std::nullopt;
+  auto ObjectType = Object->getType();
+  if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  if (ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Info->Record)))
+    return std::nullopt;
+  const auto Name = Method->getName();
+  if (Method->isConst() && !Method->getNumParams() && Call->isPRValue() && Prototype->isNothrow()) {
+    if (Context.hasSameType(Method->getReturnType(), Context.getSizeType())) {
+      if (Name == "size") return UtilityOperation::UnorderedMapSize;
+      if (Name == "bucket_count") return UtilityOperation::UnorderedMapBucketCount;
+    }
+    if (Method->getReturnType()->isBooleanType() && Name == "empty")
+      return UtilityOperation::UnorderedMapEmpty;
+    if (Context.hasSameType(Method->getReturnType(), Context.FloatTy)) {
+      if (Name == "load_factor") return UtilityOperation::UnorderedMapLoadFactor;
+      if (Name == "max_load_factor") return UtilityOperation::UnorderedMapMaxLoadFactor;
+    }
+  }
+  if (!Method->isConst() && !ObjectType.isConstQualified() && Name == "max_load_factor" &&
+      Method->getNumParams() == 1 && Method->getReturnType()->isVoidType() &&
+      Context.hasSameType(Method->getParamDecl(0)->getType(), Context.FloatTy) &&
+      Context.hasSameType(Call->getArg(0)->getType(), Context.FloatTy))
+    return UtilityOperation::UnorderedMapSetMaxLoadFactor;
+  return std::nullopt;
 }
 
 } // namespace nct

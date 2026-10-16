@@ -360552,9 +360552,6 @@ TEST_F(TranslateTest, CoreV2UnorderedMapMetadataRetainsSDKAndSourceChecks) {
       {"equality-explicit-definition", R"cpp(namespace std{inline namespace __1{template<>struct equal_to<int>{bool operator()(int a,int b)const{return a==b;}};}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
       {"allocator-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class T>class allocator;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
       {"pair-primary-redeclaration", R"cpp(namespace std{inline namespace __1{template<class A,class B>struct pair;}}using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
-      {"runtime-map", R"cpp(int f(){std::unordered_map<int,int> values;return int(values.size());})cpp", "cpp-core-v2", "TR0203"},
-      {"runtime-map-pointer", R"cpp(using M=std::unordered_map<int,int>;bool f(M*p){return p==nullptr;})cpp", "cpp-core-v2", "TR0201"},
-      {"runtime-map-size", R"cpp(using M=std::unordered_map<int,int>;int f(M const&r){return int(r.size());})cpp", "cpp-core-v2", "TR0203"},
       {"volatile-map", R"cpp(using M=volatile std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
       {"erased-source-type", R"cpp(template<class T>using I=int;using M=std::unordered_map<I<long double>,int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
       {"erased-source-expression", R"cpp(using M=std::unordered_map<decltype((sizeof(long double),0)),int>;static_assert(__is_class(M));)cpp", "cpp-core-v2", "TR0201"},
@@ -360567,6 +360564,90 @@ using M=std::unordered_map<int,int>;static_assert(__is_class(M));)cpp", "cpp-cor
     const auto Output = tmpFile(std::string("unordered-map-metadata-guard-") + Case.Name + ".nc");
     writeFile(Source, "#include <unordered_map>\n" + std::string(Case.Source));
     expectCode(translate(Source, {"--profile", Case.Profile, "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapDefaultObserversRun) {
+  for (const char *Name : {"unordered-map-default-observers.cpp",
+                           "unordered-map-functions-only.cpp"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name);
+    const auto Output = tmpFile(std::string(Name) + ".nc");
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string(Name) + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapDefaultLifetimesRun) {
+  const auto Source = fixture("unordered-map-default-lifetimes.cpp");
+  const auto Output = tmpFile("unordered-map-default-lifetimes.cpp.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unordered-map-default-lifetimes.cpp") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapDefaultRuntimeRetainsSourceBoundaries) {
+  const struct { const char *Name, *Source; } Cases[] = {
+      {"other-key", R"cpp(int f(){std::unordered_map<long,int> m;return int(m.size());})cpp"},
+      {"other-value", R"cpp(int f(){std::unordered_map<int,long> m;return int(m.size());})cpp"},
+      {"custom-hash", R"cpp(struct H{unsigned operator()(int v)const{return unsigned(v);}};int f(){std::unordered_map<int,int,H>m;return int(m.size());})cpp"},
+      {"custom-equality", R"cpp(struct E{bool operator()(int a,int b)const{return a==b;}};int f(){std::unordered_map<int,int,std::hash<int>,E>m;return int(m.size());})cpp"},
+      {"bucket-constructor", R"cpp(int f(){M m(4);return int(m.size());})cpp"},
+      {"copy-constructor", R"cpp(int f(){M a;M b(a);return int(b.size());})cpp"},
+      {"move-constructor", R"cpp(int f(){M a;M b(static_cast<M&&>(a));return int(b.size());})cpp"},
+      {"initializer-constructor", R"cpp(int f(){M m{{1,2}};return int(m.size());})cpp"},
+      {"copy-assignment", R"cpp(void f(M&a,const M&b){a=b;})cpp"},
+      {"clear", R"cpp(void f(M&m){m.clear();})cpp"},
+      {"reserve", R"cpp(void f(M&m){m.reserve(8);})cpp"},
+      {"rehash", R"cpp(void f(M&m){m.rehash(8);})cpp"},
+      {"subscript", R"cpp(int f(M&m){return m[1];})cpp"},
+      {"at", R"cpp(int f(M&m){return m.at(1);})cpp"},
+      {"find", R"cpp(bool f(M&m){return m.find(1)==m.end();})cpp"},
+      {"count", R"cpp(int f(M&m){return int(m.count(1));})cpp"},
+      {"erase", R"cpp(int f(M&m){return int(m.erase(1));})cpp"},
+      {"insert", R"cpp(void f(M&m){m.insert({1,2});})cpp"},
+      {"swap", R"cpp(void f(M&a,M&b){a.swap(b);})cpp"},
+      {"max-size", R"cpp(int f(M&m){return int(m.max_size());})cpp"},
+      {"volatile", R"cpp(int f(){volatile M m;return sizeof(m);})cpp"},
+      {"source-empty-specialization", R"cpp(namespace std{inline namespace __1{template<>bool unordered_map<int,int>::empty()const noexcept{return true;}}}bool f(const M&m){return m.empty();})cpp"},
+      {"source-constructor-specialization", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>::unordered_map()noexcept{}}}int f(){M m;return int(m.size());})cpp"},
+      {"source-destructor-specialization", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>::~unordered_map(){}}}int f(){M m;return int(m.size());})cpp"},
+      {"source-size-specialization", R"cpp(namespace std{inline namespace __1{template<>unordered_map<int,int>::size_type unordered_map<int,int>::size()const noexcept{return 7;}}}int f(const M&m){return int(m.size());})cpp"},
+      {"source-maxload-specialization", R"cpp(namespace std{inline namespace __1{template<>void unordered_map<int,int>::max_load_factor(float){}}}void f(M&m){m.max_load_factor(.5f);})cpp"},
+      {"source-map-friend", R"cpp(namespace std{inline namespace __1{struct Source{template<class K,class V,class H,class E,class A>friend class unordered_map;};}}int f(){M m;return int(m.size());})cpp"},
+      {"source-node-specialization", R"cpp(namespace std{inline namespace __1{template<>struct __hash_node<__hash_value_type<int,int>,void*>:__hash_node_base<__hash_node<__hash_value_type<int,int>,void*>*>{using V=__hash_value_type<int,int>;using B=__hash_node_base<__hash_node*>;using __next_pointer=B::__next_pointer;std::size_t __hash_;union{V __value_;};V&__get_value(){return __value_;}__hash_node(__next_pointer n,std::size_t h):B(n),__hash_(h){}~__hash_node(){}};}}int f(){M m;return int(m.size());})cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unordered-map-runtime-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unordered-map-runtime-guard-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <unordered_map>
+#include <new>
+using M=std::unordered_map<int,int>;
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+)cpp" + std::string(Case.Source));
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
     expectNoArtifacts(Output);
   }
 }

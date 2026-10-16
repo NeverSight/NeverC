@@ -881,4 +881,6 @@ Los resultados de CI, las verificaciones de ejecución e instalación y las prue
 
 ## Metadatos de mapas sin orden
 
-La cabecera C++17 fijada `<unordered_map>` admite metadatos de `std::unordered_map<int, int>` con los tipos exactos del SDK `std::hash<int>`, `std::equal_to<int>` y `std::allocator<std::pair<const int, int>>`. Los alias, la identidad de tipos, los tipos miembro públicos, `sizeof` y `alignof` conservan la disposición del destino elegido. Los objetos y operaciones de mapas en ejecución, las políticas propias, otros tipos de elementos y las redeclaraciones del usuario siguen rechazándose.
+La cabecera C++17 fijada `<unordered_map>` admite metadatos de `std::unordered_map<int, int>` con los tipos exactos del SDK `std::hash<int>`, `std::equal_to<int>` y `std::allocator<std::pair<const int, int>>`. Los alias, la identidad de tipos, los tipos miembro públicos, `sizeof` y `alignof` conservan la disposición del destino elegido.
+
+El `std::unordered_map<int, int>` fijado con políticas predeterminadas del SDK también admite construcción predeterminada, destrucción, punteros y referencias en ejecución, `size`, `empty`, `bucket_count`, `load_factor` y ambas sobrecargas de `max_load_factor`. La limpieza de ámbitos, miembros y matrices usa la disposición autenticada del SDK y funciones globales de liberación definidas en el código fuente. Copias, movimientos, inserción, búsqueda, iteración, redistribución, otros tipos de elementos, políticas propias y redeclaraciones del SDK en el código fuente siguen rechazándose.

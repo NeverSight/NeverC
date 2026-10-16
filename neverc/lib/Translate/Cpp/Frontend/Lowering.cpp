@@ -928,6 +928,101 @@ class FunctionLowering {
                             SourceLocation L) {
     return fieldStorage(discreteParameter(std::move(Place), Info, L), Info.Thresholds, L);
   }
+  Expression unorderedMapMember(Expression Place, const UtilityUnorderedMapRecord &Info,
+                                llvm::StringRef Name, SourceLocation L) {
+    QualType FieldType = Name == "nct_unordered_buckets" ? Info.BucketPointerType
+        : Name == "nct_unordered_first" ? Info.NodePointerType
+        : Name == "nct_unordered_max_load" ? A.Context.FloatTy : A.Context.getSizeType();
+    return Expression{{"kind", "member"}, {"type", type(FieldType, L)},
+        {"name", Name.str()}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  void initializeUnorderedMap(Expression Place, const UtilityUnorderedMapRecord &Info,
+                               SourceLocation L) {
+    for (const char *Name : {"nct_unordered_buckets", "nct_unordered_bucket_count",
+                             "nct_unordered_first", "nct_unordered_size"}) {
+      const auto Qual = llvm::StringRef(Name) == "nct_unordered_buckets" ? Info.BucketPointerType
+          : llvm::StringRef(Name) == "nct_unordered_first" ? Info.NodePointerType
+                                                         : A.Context.getSizeType();
+      assign(unorderedMapMember(Place, Info, Name, L), A.zero(Qual, L), L);
+    }
+    assign(unorderedMapMember(Place, Info, "nct_unordered_max_load", L), one("float", L), L);
+  }
+  Expression unorderedMapLoadFactor(Expression Place, const UtilityUnorderedMapRecord &Info,
+                                    SourceLocation L) {
+    auto Result = snapshot(A.zero(A.Context.FloatTy, L), L);
+    auto Count = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    const auto Divide = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L),
+           Divide, Done, L);
+    label(Divide, L);
+    assign(Result, binary("/", cast(unorderedMapMember(Place, Info, "nct_unordered_size", L), "float", L),
+                          cast(Count, "float", L), "float", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
+  }
+  void releaseUnorderedMap(Expression Place, const UtilityUnorderedMapRecord &Info,
+                            bool ReleaseBuckets, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Pointer = type(Info.NodePointerType, L);
+    auto Node = snapshot(unorderedMapMember(Place, Info, "nct_unordered_first", L), L);
+    const auto Check = labelName(), ReleaseNode = labelName(), NodesDone = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(cast(Node, "bool", L), ReleaseNode, NodesDone, L);
+    label(ReleaseNode, L);
+    auto Next = snapshot(dereference(cast(Node,
+        type(A.Context.getPointerType(Info.NodePointerType), L), L), L), L);
+    const auto *DeleteNode = A.allocatorHeapFunction(false, Info.NodeType, L);
+    json::Array NodeArgs;
+    NodeArgs.push_back(cast(Node, type(DeleteNode->getParamDecl(0)->getType(), L), L));
+    if (DeleteNode->getNumParams() == 2)
+      NodeArgs.push_back(cast(quantity(Info.NodeBytes, Size, L),
+                             type(DeleteNode->getParamDecl(1)->getType(), L), L));
+    chargeCall(NodeArgs, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(DeleteNode)},
+                               {"args", std::move(NodeArgs)}, {"loc", A.loc(L)}});
+    assign(Node, std::move(Next), L);
+    jump(Check, L);
+    label(NodesDone, L);
+    assign(unorderedMapMember(Place, Info, "nct_unordered_first", L), A.zero(Info.NodePointerType, L), L);
+    assign(unorderedMapMember(Place, Info, "nct_unordered_size", L), quantity(0, Size, L), L);
+    if (!ReleaseBuckets) {
+      auto Buckets = snapshot(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), L);
+      auto Count = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+      auto I = snapshot(quantity(0, Size, L), L);
+      const auto CheckBuckets = labelName(), ClearBucket = labelName(), BucketsDone = labelName();
+      jump(CheckBuckets, L);
+      label(CheckBuckets, L);
+      branch(binary("<", I, Count, "bool", L), ClearBucket, BucketsDone, L);
+      label(ClearBucket, L);
+      assign(index(Buckets, I, Pointer, L), A.zero(Info.NodePointerType, L), L);
+      assign(I, binary("+", I, one(Size, L), Size, L), L);
+      jump(CheckBuckets, L);
+      label(BucketsDone, L);
+      return;
+    }
+    auto Buckets = snapshot(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), L);
+    const auto Release = labelName(), Done = labelName();
+    branch(cast(Buckets, "bool", L), Release, Done, L);
+    label(Release, L);
+    const auto *DeleteBuckets = A.allocatorHeapFunction(false, Info.NodePointerType, L);
+    json::Array BucketArgs;
+    BucketArgs.push_back(cast(Buckets, type(DeleteBuckets->getParamDecl(0)->getType(), L), L));
+    if (DeleteBuckets->getNumParams() == 2) {
+      auto Bytes = binary("*", unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L),
+          quantity(A.Context.getTypeSizeInChars(Info.NodePointerType).getQuantity(), Size, L), Size, L);
+      BucketArgs.push_back(cast(std::move(Bytes), type(DeleteBuckets->getParamDecl(1)->getType(), L), L));
+    }
+    chargeCall(BucketArgs, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(DeleteBuckets)},
+                               {"args", std::move(BucketArgs)}, {"loc", A.loc(L)}});
+    jump(Done, L);
+    label(Done, L);
+    assign(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), A.zero(Info.BucketPointerType, L), L);
+    assign(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), quantity(0, Size, L), L);
+  }
+
   Expression randomVectorMember(Expression Place, const UtilityVectorRecord &Vector,
                                 const char *Name, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", type(Vector.PointerType, L)},
@@ -4025,6 +4120,38 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation >= UtilityOperation::UnorderedMapSize &&
+        Operation <= UtilityOperation::UnorderedMapSetMaxLoadFactor) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info) reject(L, "unordered map operation", "The authenticated storage layout is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::UnorderedMapLoadFactor)
+        return unorderedMapLoadFactor(Place, *Info, L);
+      if (Operation == UtilityOperation::UnorderedMapSetMaxLoadFactor) {
+        auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        auto Current = unorderedMapLoadFactor(Place, *Info, L);
+        const auto Clamp = labelName(), Ready = labelName();
+        branch(binary("<", Value, Current, "bool", L), Clamp, Ready, L);
+        label(Clamp, L);
+        assign(Value, Current, L);
+        jump(Ready, L);
+        label(Ready, L);
+        assign(unorderedMapMember(Place, *Info, "nct_unordered_max_load", L), Value, L);
+        return {};
+      }
+      auto Value = unorderedMapMember(Place, *Info,
+          Operation == UtilityOperation::UnorderedMapBucketCount ? "nct_unordered_bucket_count"
+          : Operation == UtilityOperation::UnorderedMapMaxLoadFactor ? "nct_unordered_max_load"
+                                                                  : "nct_unordered_size", L);
+      if (Operation == UtilityOperation::UnorderedMapEmpty)
+        return binary("==", Value, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+      return snapshot(std::move(Value), L);
+    }
     if (Operation >= UtilityOperation::RandomEngineGenerate &&
         Operation <= UtilityOperation::RandomEngineSeedSequence) {
       const auto *F = Call->getDirectCallee();
@@ -30862,6 +30989,13 @@ class FunctionLowering {
                            std::move(Length), std::move(FillCharacter), L);
       return;
     }
+    if (approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources,
+          T->getAsCXXRecordDecl(), A.Context);
+      if (!Info) reject(L, "unordered map construction", "The authenticated storage layout is unavailable.");
+      initializeUnorderedMap(std::move(Place), *Info, L);
+      return;
+    }
     if (auto Kind = approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context)) {
       auto Vector = approvedUtilityVectorRecord(
@@ -32352,6 +32486,8 @@ public:
         approvedUtilityStringDestructor(A.S, A.Sources, D, A.Context);
     const bool VectorDestructor =
         approvedUtilityVectorDestructor(A.S, A.Sources, D, A.Context);
+    const bool UnorderedMapDestructor =
+        approvedUtilityUnorderedMapDestructor(A.S, A.Sources, D, A.Context);
     if (approvedUtilityUniquePtrRecord(A.S, A.Sources, DestroyedRecord,
                                        A.Context) &&
         !UniquePtrDestructor)
@@ -32368,7 +32504,12 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
              "string destructor",
              "The pinned std::string destructor definition is required.");
-    if (D && !UniquePtrDestructor && !StringDestructor && !VectorDestructor && !D->isImplicit() &&
+    if (approvedUtilityUnorderedMapRecord(A.S, A.Sources, DestroyedRecord, A.Context) &&
+        !UnorderedMapDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
+             "The authenticated SDK storage destructor chain is required.");
+    if (D && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !UnorderedMapDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
         reject(D->getLocation(), "destructor", "An admitted owned destructor definition is required.");
@@ -32496,6 +32637,9 @@ public:
                                     {"loc", A.loc(L)}});
         jump(Done, L);
         label(Done, L);
+      } else if (auto Map = approvedUtilityUnorderedMapRecord(
+                     A.S, A.Sources, DestroyedRecord, A.Context)) {
+        releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
       } else if (auto Vector = approvedUtilityVectorRecord(
                      A.S, A.Sources,
                      approvedSeedSequenceRecord(A.S, A.Sources, DestroyedRecord, A.Context)

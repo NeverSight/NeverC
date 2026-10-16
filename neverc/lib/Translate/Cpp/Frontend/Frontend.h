@@ -962,6 +962,12 @@ enum class UtilityOperation {
   AlgorithmGenerateN,
   AlgorithmShuffle,
   AlgorithmSample,
+  UnorderedMapSize,
+  UnorderedMapBucketCount,
+  UnorderedMapEmpty,
+  UnorderedMapLoadFactor,
+  UnorderedMapMaxLoadFactor,
+  UnorderedMapSetMaxLoadFactor,
   RandomEngineGenerate,
   RandomEngineSeed,
   RandomEngineDiscard,
@@ -2003,6 +2009,26 @@ bool approvedUtilityConstant(const State &S, const clang::SourceManager &SM,
                              clang::APValue &Value);
 bool approvedCstddefNull(const State &S, const clang::SourceManager &SM,
                         const clang::Expr *Expression);
+struct UtilityUnorderedMapRecord {
+  const clang::CXXRecordDecl *Record;
+  clang::QualType BucketPointerType, NodePointerType, NodeType;
+  uint64_t NodeBytes, ValueOffsetBytes;
+};
+std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context,
+    const std::function<bool(clang::QualType)> &Complete = {});
+enum class UtilityOperation;
+bool approvedUnorderedMapMethodSource(const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedUtilityUnorderedMapConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedUtilityUnorderedMapDestructor(const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool approvedUnorderedMapMetadataRecord(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 bool approvedCstddefTypeQuery(const State &S,
@@ -2185,6 +2211,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMaps;
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
@@ -2239,6 +2266,8 @@ public:
   bool requireUtilityString(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
+  bool requireUtilityUnorderedMap(const clang::CXXRecordDecl *Record,
+      clang::SourceLocation Location, unsigned Depth = 0);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);

@@ -881,4 +881,6 @@ CI 结果、运行与安装验证以及测试跳过项按平台分别记录。�
 
 ## 无序映射元数据
 
-固定的 C++17 `<unordered_map>` 头文件支持 `std::unordered_map<int, int>` 的元数据，要求使用精确的 SDK `std::hash<int>`、`std::equal_to<int>` 和 `std::allocator<std::pair<const int, int>>`。类型别名、类型同一性、公开成员类型、`sizeof` 和 `alignof` 保留所选目标的布局。映射对象与运行时操作、自定义策略、其他元素类型及用户重声明仍被拒绝。
+固定的 C++17 `<unordered_map>` 头文件支持 `std::unordered_map<int, int>` 的元数据，要求使用精确的 SDK `std::hash<int>`、`std::equal_to<int>` 和 `std::allocator<std::pair<const int, int>>`。类型别名、类型同一性、公开成员类型、`sizeof` 和 `alignof` 保留所选目标的布局。
+
+使用 SDK 默认策略的固定 `std::unordered_map<int, int>` 还支持默认构造、析构、运行时指针与引用、`size`、`empty`、`bucket_count`、`load_factor` 及两种 `max_load_factor` 重载。作用域、成员和数组清理使用经过认证的 SDK 存储布局与源码定义的全局释放钩子。复制、移动、插入、查找、迭代、重新散列、其他元素类型、自定义策略及源码对 SDK 的重声明仍被拒绝。

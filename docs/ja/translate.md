@@ -881,4 +881,6 @@ CI の結果、実行・インストールの検証、スキップされたテ�
 
 ## 順序なしマップのメタデータ
 
-固定された C++17 の `<unordered_map>` ヘッダーは、SDK の正確な `std::hash<int>`、`std::equal_to<int>`、`std::allocator<std::pair<const int, int>>` を使う `std::unordered_map<int, int>` のメタデータを受け入れます。別名、型の同一性、公開メンバー型、`sizeof`、`alignof` は対象環境のレイアウトを保持します。実行時のマップオブジェクトと操作、独自ポリシー、その他の要素型、ユーザーによる再宣言は引き続き拒否されます。
+固定された C++17 の `<unordered_map>` ヘッダーは、SDK の正確な `std::hash<int>`、`std::equal_to<int>`、`std::allocator<std::pair<const int, int>>` を使う `std::unordered_map<int, int>` のメタデータを受け入れます。別名、型の同一性、公開メンバー型、`sizeof`、`alignof` は対象環境のレイアウトを保持します。
+
+SDK の既定ポリシーを使う固定の `std::unordered_map<int, int>` は、既定構築、破棄、実行時のポインターと参照、`size`、`empty`、`bucket_count`、`load_factor`、両方の `max_load_factor` オーバーロードも受け入れます。スコープ、メンバー、配列の破棄には検証済み SDK ストレージ配置とソース定義のグローバル解放フックを使います。コピー、移動、挿入、検索、反復、再ハッシュ、他の要素型、独自ポリシー、ソースからの SDK 再宣言は引き続き拒否されます。

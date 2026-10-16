@@ -1317,4 +1317,6 @@ CI results, execution and installation checks, and skipped tests are recorded by
 
 ## Unordered-map metadata
 
-The pinned C++17 `<unordered_map>` header admits metadata for `std::unordered_map<int, int>` with the exact SDK `std::hash<int>`, `std::equal_to<int>` and `std::allocator<std::pair<const int, int>>`. Aliases, type identity, public type members, `sizeof` and `alignof` retain the selected target layout. Runtime map objects and operations, custom policies, other element types and source redeclarations remain rejected.
+The pinned C++17 `<unordered_map>` header admits metadata for `std::unordered_map<int, int>` with the exact SDK `std::hash<int>`, `std::equal_to<int>` and `std::allocator<std::pair<const int, int>>`. Aliases, type identity, public type members, `sizeof` and `alignof` retain the selected target layout.
+
+The pinned `std::unordered_map<int, int>` with SDK default policies now also supports default construction, destruction, runtime pointers and references, `size`, `empty`, `bucket_count`, `load_factor` and both `max_load_factor` overloads. Scope, member and array cleanup use the authenticated SDK storage layout and source-defined global deallocation hooks. Copies, moves, insertion, lookup, iteration, rehashing, other element types, custom policies and source SDK redeclarations remain rejected.
