@@ -1,5 +1,57 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-16
+
+- Source checked at **2026-10-16 01:19 UTC / 09:19 Asia/Shanghai**: dev [4c33d439](https://github.com/NeverSight/NeverC/commit/4c33d439ec83024796ce388e82d885142b7b6407), authored October 15 at 19:28 UTC. CI below is the **01:02–01:05 UTC** exact-source observation, not a result for this later documentation commit.
+- Incoming range since the previous report: [6e8ca967…4c33d439](https://github.com/NeverSight/NeverC/compare/6e8ca96775af823b5a5eb8c3a50bfa622964b41f...4c33d439ec83024796ce388e82d885142b7b6407), **18 commits / 94 changed paths**: 16 implementation commits, one contribution-documentation commit and one merge integrating the previous PROGRESS update. The path inventory contains 69 non-Markdown and 25 Markdown files; this is not an audit-completion count. Documentation-only changes are excluded from product progress.
+- **One statically confirmed piecewise sampling evaluation-order mismatch.** A minimal shared-lowering reorder was prepared and independently reviewed. Its source publication was aborted and remains uncommitted; no source or regression-fixture repair is claimed. This documentation update records the finding and publication blocker only.
+- Strictly static: source, diff, callers/interfaces, configuration, fixture source and existing GitHub metadata/logs. **No project execution, builds, tests, benchmarks, repository scripts, dynamic analysis or manual CI dispatch/rerun.** Author statements about O0/O2, native targets or sanitizers are not validation performed by this review.
+- Read root AGENTS.md, README contribution guidance, docs/local-dev.md and .github/ci-policy.md. Complete neverc, tests and utils tree inventories contain no nested AGENTS or contribution guide; the repository root contains no CONTRIBUTING file. dev is the default branch, writable and unprotected; the returned ruleset is disabled. No dependencies, security settings, issues, labels, assignees, merges or deployments were changed.
+
+## Activity and review queue
+
+**9 ordinary open issues / 0 open PRs**, unchanged since the October 15 01:05 UTC snapshot. All-state issue pagination returned 18 entries, including historical PRs, on page one and an empty page two at 100/page. Open PR pages one and two were empty. No issue or PR opened, closed or merged in the interval. Issue-comment and PR review-comment collections since the prior cutoff were empty. There is no active PR review queue or relevant open PR to reuse.
+
+Roadmap issues #7–#12 and #16–#18 remain open. Their state is not evidence of milestone completion; no owner, deadline or percentage is inferred.
+
+## Source progress and bounded static findings
+
+The implementation commits add Bernoulli distribution support; discrete-distribution ownership and function, reference, object and template callbacks; piecewise constant/linear distributions; exponential and extreme-value distributions; normal cached state; lognormal, Weibull and gamma distributions. Typed sqrt/log/exp/pow IR primitives and source fixtures accompany those changes. This is implementation progress, not proof that all supported targets or contracts pass.
+
+All 18 commit records and 94 changed-path records were inventoried. The actual inspected source scope was:
+
+1. **Random admission, ownership and callback interfaces.** Read selected [RandomSDK.cpp](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/Cpp/Frontend/RandomSDK.cpp) ranges 1–196, 250–693, 1298–1330 and 1593–2248, with additional sampling at 708–845. Traced distribution field layouts, constructor/operator authentication, selected source generators, source-function-object signatures, reference capture, copy/destruction and template-callable admission. Read every incoming Frontend.cpp and Frontend.h patch and the new MathSDK.cpp dispatch patch. These source-retention checks are not a complete proof of every dependency or cleanup path.
+2. **Shared lowering and distribution sequencing.** Read [Lowering.cpp](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp) shared vector/capture/normalization helpers at 920–1470, relevant state helpers at 217–278 and 2240–2372, changed piecewise/discrete dispatch at 3582–3825, scalar-real dispatch at 3826–4008 and constructor changes at 29121–29432. Also checked the surrounding dispatch/function boundaries. Compared complete pinned [discrete_distribution.h](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/Cpp/SDK/libcxx/__random/discrete_distribution.h), [piecewise_constant_distribution.h](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/Cpp/SDK/libcxx/__random/piecewise_constant_distribution.h) and [piecewise_linear_distribution.h](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/Cpp/SDK/libcxx/__random/piecewise_linear_distribution.h). This establishes the bounded piecewise ordering finding above; the prepared fix has not landed.
+3. **Gamma, normal and lognormal paths.** Compared sampled pinned gamma (29–146), normal (28–132), lognormal (28–99), exponential (29–101), uniform-real (98–104) and canonical (29–44) header bodies with the lowerer and admission interfaces. Inspected shape/scale read ordering, gamma rejection branches, normal hot/cold cache and paired-draw behavior, cache copying/reset/parameter replacement, and lognormal explicit-parameter copying. Sampled supporting __math roots/logarithms/exponential declarations. No additional defect was proven in these selected paths; this does not establish numerical or whole-profile correctness.
+4. **Typed math IR.** Read all incoming [TranslateIR.h](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/TranslateIR.h), [TranslateIR.cpp](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/TranslateIR.cpp) and [NCEmitter.cpp](https://github.com/NeverSight/NeverC/blob/4c33d439ec83024796ce388e82d885142b7b6407/neverc/lib/Translate/NCEmitter.cpp) hunks, plus parser context at TranslateIR.cpp 245–410, verifier context at 906–933 and 1007–1050, and emitter entry at NCEmitter.cpp 967–989. Traced float/double type matching, unary versus binary arity, core-v2 gating, wire-field count and verification before emission. Read the complete 337-line incoming TranslateIRTests.cpp patch, including negative type/arity/profile/payload assertions.
+5. **Fixture-source coverage.** Fully read tests/neverc/Inputs/translate/cpp/random-discrete-reference-allocation.cpp, random-discrete-object-lifetimes.cpp, random-discrete-template-lifetimes.cpp, random-piecewise-linear-callback-timing.cpp and random-piecewise-linear-ref-weights-float.cpp. Also read random-gamma-{source,minstd,mt64,edges}.cpp, random-normal-{source,minstd,mt64,cache}.cpp and random-lognormal-{source,minstd,mt64,cache}.cpp. Sampled the related TranslateTests.cpp harness, discrete reference-rejection matrix, piecewise-linear 24-case matrix and latest gamma guards. These are assertions in source, not observed passes. The gamma harness describes 18 engine/precision/shape combinations with reference values and generator-state checks; those checks were not run here.
+
+The new frontend README and relevant C++ core-v2 documentation changes were read as contract context; other translated documentation was inventoried, not treated as proof.
+
+**Excluded scope:** this was not a full review of all 94 changed paths or a whole-repository scan. Remaining engines/adaptors/seed-sequence paths, complete allocator/unwind and source-dependency closure, full SDK provenance/catalog closure, all fixtures, libm numerical edge behavior, runtime/std/LLVM, installed packages and hosted DynCode were not audited end to end. Large incoming compiler/fixture diffs remain a coverage risk rather than an inferred defect.
+
+## Existing CI at the exact source
+
+At **01:02–01:05 UTC**, source **4c33d439** has **11 workflows: 4 failure / 4 in progress / 3 success**, and **23 check runs: 5 failure / 4 in progress / 14 success**. Both collections were completely paginated at 100/page with empty second pages. These are existing push runs on dev; there is no PR head.
+
+- **Confirmed MSVC ARM64 compilation blocker:** [native Windows ARM64](https://github.com/NeverSight/NeverC/actions/runs/38794154471/job/116626406964) and [Python-plugin Windows ARM64](https://github.com/NeverSight/NeverC/actions/runs/38794154421/job/116627838272) both report fatal **C1053**, FunctionLowering::utilityOperation **function too large**, at Lowering.cpp:3513 while compiling Lowering.cpp.obj. Both complete logs were read. The method spans roughly 21,398 lines; a small speculative extraction is not sufficient evidence of a repair. This is distinct from the superseded historical fixture-literal C2026 issue.
+- **Other failed gates:** [macOS ARM64](https://github.com/NeverSight/NeverC/actions/runs/38794154484), job 116626254513, failed at Build network product examples after compiler build/install/package and relocated-archive checks passed. [Python plugin bindings](https://github.com/NeverSight/NeverC/actions/runs/38794154421), Linux-x64 job 116627838306, failed Check plugin global state (Linux) after build, lifecycle/SDK, native-bridge, sanitized-smoke and driver-smoke stages passed. [Linux ARM64](https://github.com/NeverSight/NeverC/actions/runs/38794154400), job 116626361346, is marked completed/failure, but its returned step metadata inconsistently leaves Install neverc in progress after Build neverc succeeded. The exact failing command is therefore unproven. Logs for these three jobs were inaccessible because of transport failures; no concrete source cause is assigned.
+- **Running at Run neverc tests:** [Windows x64](https://github.com/NeverSight/NeverC/actions/runs/38794154438), [Windows x64 Clang-LTO](https://github.com/NeverSight/NeverC/actions/runs/38794154393), [Windows ARM64 Clang-LTO](https://github.com/NeverSight/NeverC/actions/runs/38794154409) and [Linux x64](https://github.com/NeverSight/NeverC/actions/runs/38794154649). Their earlier compiler builds passed. Windows-x64 catalog-byte verification and applicable Clang-LTO/package/archive checks also passed, but none of these running workflows is a suite pass.
+- **Successful workflows:** [documentation lint](https://github.com/NeverSight/NeverC/actions/runs/38794154428), [C++ frontend-tools archive audit](https://github.com/NeverSight/NeverC/actions/runs/38794154476) and [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/38794154533). Other passing Python matrix jobs do not negate the two failed plugin jobs.
+
+Existing CI results and author-reported validation are separate evidence. No failed gate is blamed on the newest gamma change solely because it shares the head commit. Automatically attached checks for this report-only commit, if any, belong to a later SHA and were not manually dispatched.
+
+## Suggested priorities
+
+1. **Publish the bounded piecewise ordering repair once the publication blocker is resolved.** Dependencies: authorization resolution, fresh source/head read and exact remote diff verification. Acceptance: the shared lowerer follows the pinned sampling order, a focused regression source covers the admitted callback behavior, and any later execution claim is tied to independent existing-CI evidence at the actual repair SHA. The prepared edit is not yet committed or validated.
+2. **Address the confirmed MSVC function-size blocker through bounded helper extraction.** Dependencies: preserve current dispatch semantics and caller/state interfaces. Acceptance: a statically reviewed extraction followed by actual descendant MSVC ARM64 build success in both affected workflows, without weakening compiler options, assertions or CI gates.
+3. **Resolve the remaining CI evidence gaps and narrow state/ownership coverage gaps.** Dependencies: accessible macOS network-example, Linux plugin-global-state and Linux ARM64 logs, plus consistent job metadata. Acceptance: identify each exact failing command before assigning causes, and finish selected remaining state/cleanup traces before broad feature-completion claims. Documentation-only commits are not product progress.
+
+<details>
+<summary>Previous snapshots (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-15
 
 - Cutoff: **2026-10-15 01:05 UTC / 09:05 Asia/Shanghai**. Reviewed source: dev [ef1463d6](https://github.com/NeverSight/NeverC/commit/ef1463d6901eb55a0606d3c713ae582c9b6de9ff), authored October 14 at 21:29 UTC.
@@ -1192,3 +1244,15 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Kept the complete issue/PR counts at 9/0 with no interval opens, closures, merges or active PR review queue.
 - Recorded exact-source CI: 2 failed, 6 running, 3 successful workflows; separately identified the failed Linux-x64 matrix job in the running Python workflow. Log access remains the concrete diagnosis blocker.
 - Added this English snapshot and dated log while retaining every previous snapshot and human edit verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
+
+
+</details>
+
+## Daily log — 2026-10-16
+
+- Inventoried 18 incoming commits / 94 paths from 6e8ca967 through 4c33d439; distinguished 16 implementation commits from contribution-documentation and prior-report merge changes.
+- Completed the bounded source, pinned-header, caller/interface, typed-IR and fixture-source review above. Confirmed one piecewise sampling ordering mismatch and prepared a minimal reorder; source publication was aborted, so no source fix or new regression fixture is claimed.
+- Kept the fully paginated issue/PR counts at 9/0, with no interval opens, closures, merges or active PR review queue.
+- Recorded exact-source CI: 4 failed, 4 running and 3 successful workflows. Read both MSVC ARM64 C1053 logs; retained the other three inaccessible-log/metadata diagnosis limits.
+- Added this English snapshot and dated entry while preserving the complete previous file verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
+
