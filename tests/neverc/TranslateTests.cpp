@@ -360614,7 +360614,6 @@ TEST_F(TranslateTest, CoreV2UnorderedMapDefaultRuntimeRetainsSourceBoundaries) {
       {"initializer-constructor", R"cpp(int f(){M m{{1,2}};return int(m.size());})cpp"},
       {"copy-assignment", R"cpp(void f(M&a,const M&b){a=b;})cpp"},
       {"at", R"cpp(int f(M&m){return m.at(1);})cpp"},
-      {"find", R"cpp(bool f(M&m){return m.find(1)==m.end();})cpp"},
       {"insert", R"cpp(void f(M&m){m.insert({1,2});})cpp"},
       {"volatile", R"cpp(int f(){volatile M m;return sizeof(m);})cpp"},
       {"source-empty-specialization", R"cpp(namespace std{inline namespace __1{template<>bool unordered_map<int,int>::empty()const noexcept{return true;}}}bool f(const M&m){return m.empty();})cpp"},
@@ -360854,6 +360853,319 @@ int f(M&m){return m[1];}
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("unordered-map-modifiers-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("unordered-map-modifiers-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", Case.Profile, "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapIteratorTraversalRun) {
+  for (const char *Name : {"unordered-map-iterators-traversal.cpp","unordered-map-iterators-functions-only.cpp"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name);
+    const auto Output = tmpFile(std::string(Name) + ".nc");
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string(Name) + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapIteratorsPreserveStableNodeReferences) {
+  for (const char *Name : {"unordered-map-iterators-stability.cpp"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name);
+    const auto Output = tmpFile(std::string(Name) + ".nc");
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string(Name) + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapIteratorsPreserveReceiverAndArgumentEffects) {
+  for (const char *Name : {"unordered-map-iterators-effects.cpp"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name);
+    const auto Output = tmpFile(std::string(Name) + ".nc");
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string(Name) + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapIteratorLifetimesAndBindingsRun) {
+  for (const char *Name : {"unordered-map-iterators-lifetimes.cpp"}) {
+    SCOPED_TRACE(Name);
+    const auto Source = fixture(Name);
+    const auto Output = tmpFile(std::string(Name) + ".nc");
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string(Name) + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMapIteratorsRetainSDKAndTypeBoundaries) {
+  const struct { const char *Name, *Source, *Profile; } Cases[] = {
+      {"source-map-begin", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>unordered_map<int,int>::iterator unordered_map<int,int>::begin()noexcept{return iterator();}}}
+void f(M&m){m.begin();}
+)cpp", "cpp-core-v2"},
+      {"source-map-end", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>unordered_map<int,int>::iterator unordered_map<int,int>::end()noexcept{return iterator();}}}
+void f(M&m){m.end();}
+)cpp", "cpp-core-v2"},
+      {"source-map-cbegin", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>unordered_map<int,int>::const_iterator unordered_map<int,int>::cbegin()const noexcept{return const_iterator();}}}
+void f(M const&m){m.cbegin();}
+)cpp", "cpp-core-v2"},
+      {"source-map-cend", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>unordered_map<int,int>::const_iterator unordered_map<int,int>::cend()const noexcept{return const_iterator();}}}
+void f(M const&m){m.cend();}
+)cpp", "cpp-core-v2"},
+      {"source-map-find", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>unordered_map<int,int>::iterator unordered_map<int,int>::find(int const&){return iterator();}}}
+void f(M&m){m.find(1);}
+)cpp", "cpp-core-v2"},
+      {"source-map-const-find", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>unordered_map<int,int>::const_iterator unordered_map<int,int>::find(int const&)const{return const_iterator();}}}
+void f(M const&m){m.find(1);}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-default", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>  __hash_map_iterator<Raw>::__hash_map_iterator()noexcept{}}}
+void f(){I i;}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-const-default", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>  __hash_map_const_iterator<RawC>::__hash_map_const_iterator()noexcept{}}}
+void f(){C i;}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-const-conversion", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>  __hash_map_const_iterator<RawC>::__hash_map_const_iterator(I)noexcept{}}}
+void f(I i){C c(i);}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-dereference", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> M::value_type& __hash_map_iterator<Raw>::operator*()const{for(;;){}}}}
+void f(I i){*i;}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-arrow", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> M::value_type* __hash_map_iterator<Raw>::operator->()const{return nullptr;}}}
+void f(I i){i.operator->();}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-increment", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> I& __hash_map_iterator<Raw>::operator++(){return *this;}}}
+void f(I i){++i;}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-post-increment", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> I __hash_map_iterator<Raw>::operator++(int){return *this;}}}
+void f(I i){i++;}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-const-dereference", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> M::value_type const& __hash_map_const_iterator<RawC>::operator*()const{for(;;){}}}}
+void f(C i){*i;}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-const-arrow", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> M::value_type const* __hash_map_const_iterator<RawC>::operator->()const{return nullptr;}}}
+void f(C i){i.operator->();}
+)cpp", "cpp-core-v2"},
+      {"source-iterator-const-increment", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<> C& __hash_map_const_iterator<RawC>::operator++(){return *this;}}}
+void f(C i){++i;}
+)cpp", "cpp-core-v2"},
+      {"source-wrapper-specialization", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>class __hash_map_iterator<Raw>{void*__node_;};}}
+int f(){return sizeof(M::iterator);}
+)cpp", "cpp-core-v2"},
+      {"source-const-wrapper-specialization", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>class __hash_map_const_iterator<RawC>{void*__node_;};}}
+int f(){return sizeof(M::const_iterator);}
+)cpp", "cpp-core-v2"},
+      {"source-inner-specialization", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>class __hash_iterator<N*>{void*__node_;};}}
+int f(){return sizeof(M::iterator);}
+)cpp", "cpp-core-v2"},
+      {"source-const-inner-specialization", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+namespace std{inline namespace __1{template<>class __hash_const_iterator<N*>{void*__node_;public:using __non_const_iterator=__hash_iterator<N*>;};}}
+int f(){return sizeof(M::const_iterator);}
+)cpp", "cpp-core-v2"},
+      {"source-friend-equal-redecl", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+static_assert(sizeof(I)==sizeof(void*));
+namespace std{inline namespace __1{bool operator==(I const&,I const&);}}
+bool f(I a,I b){return a==b;}
+)cpp", "cpp-core-v2"},
+      {"source-friend-not-equal-redecl", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+static_assert(sizeof(I)==sizeof(void*));
+namespace std{inline namespace __1{bool operator!=(I const&,I const&);}}
+bool f(I a,I b){return a!=b;}
+)cpp", "cpp-core-v2"},
+      {"other-element-iterator", R"cpp(#include <unordered_map>
+int f(){return sizeof(std::unordered_map<long,int>::iterator);}
+)cpp", "cpp-core-v2"},
+      {"local-iterator", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+void f(M&m){auto i=m.begin(0);(void)i;}
+)cpp", "cpp-core-v2"},
+      {"core-v1", R"cpp(#include <unordered_map>
+int f(){return sizeof(std::unordered_map<int,int>::iterator);}
+)cpp", "cpp-core-v1"},
+      {"source-map-erase-iterator", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+#include <new>
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<>unordered_map<int,int>::iterator unordered_map<int,int>::erase(iterator){return iterator();}}}
+void f(M&m,I i){m.erase(i);}
+)cpp", "cpp-core-v2"},
+      {"source-map-erase-const-iterator", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+#include <new>
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<>unordered_map<int,int>::iterator unordered_map<int,int>::erase(const_iterator){return iterator();}}}
+void f(M&m,C i){m.erase(i);}
+)cpp", "cpp-core-v2"},
+      {"source-map-erase-range", R"cpp(#include <unordered_map>
+using M=std::unordered_map<int,int>;
+using N=std::__hash_node<std::__hash_value_type<int,int>,void*>;
+using Raw=std::__hash_iterator<N*>;using RawC=std::__hash_const_iterator<N*>;
+using I=M::iterator;using C=M::const_iterator;
+#include <new>
+void operator delete(void*)noexcept{}
+void operator delete(void*,std::size_t)noexcept{}
+namespace std{inline namespace __1{template<>unordered_map<int,int>::iterator unordered_map<int,int>::erase(const_iterator,const_iterator){return iterator();}}}
+void f(M&m,C i){m.erase(i,i);}
+)cpp", "cpp-core-v2"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unordered-map-iterators-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unordered-map-iterators-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     auto Result = translate(Source, {"--profile", Case.Profile, "-o", Output.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;

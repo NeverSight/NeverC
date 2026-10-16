@@ -16671,8 +16671,8 @@ source-defined global deallocation operators. Internal node size, alignment,
 payload offsets and embedded destructor chains are authenticated separately.
 Missing source deallocation definitions retain TR0203, including empty maps.
 
-Copy/move construction, assignment, `insert`/`emplace`, `at`, `find` and
-iterators remain outside this admission. Every public SDK method and selected private
+Map copy/move construction, assignment, `insert`/`emplace` and `at`
+remain outside this admission. Every public SDK method and selected private
 helper retains its body and redeclaration checks. Source specializations of
 methods, constructors, destructors or private storage cannot borrow admission.
 No SDK/catalog, source frontend or floating-point policy changes are required.
@@ -16716,3 +16716,40 @@ load clamping, clear/refill, self/empty swaps and source hook effects. Managed
 O0/O2, source-boundary guards, unchanged generated-NC sanitizers and eight-target
 object/frontend checks are publication requirements. i686 checks are frontend
 semantics only; all test widths retain value and lifetime assertions.
+
+## Unordered-map iterator values
+
+The exact default-policy int/int map admits mutable and const iterator values,
+default/copy/move construction and assignment, and mutable-to-const conversion.
+The authenticated outer and inner SDK iterator specializations must have their
+single pointer at offset zero and retain the same authenticated map node type.
+Pointer/reference-only translation units complete those exact storage layouts
+without instantiating unrelated SDK bodies. Source specializations, redeclarations
+and custom policies cannot borrow this admission.
+
+Both iterator types admit dereference, arrow, prefix/postfix increment, equality
+and inequality, including named operators.
+Both single-iterator `erase` overloads and const-iterator range `erase` detach
+nodes and release them through the selected source delete function, returning
+the next mutable iterator. Erasure captures the successor before the delete
+hook and preserves other live node references. Empty ranges retain the exact
+endpoint without dereferencing it; nonempty ranges retain SDK validity rules. `begin`, `end`, `cbegin`, `cend` and
+both `find` overloads preserve the SDK node chain and do not allocate. Dereference
+returns `pair<const int, int>&` or its const reference; mapped values can be
+mutated only through a mutable iterator. Range loops, structured bindings,
+iterator arrays and source record members, returns and dynamic lifetimes use
+the same checked value carrier.
+
+SDK validity preconditions continue to apply: increment/dereference require an
+appropriate live node, erased iterators cannot be used and rehash invalidates
+iterators while preserving node references. Member swap preserves iterators to
+elements. Receiver and argument effects occur once in C++17 order; assignment
+operator notation evaluates the right operand first, while an explicit member
+call evaluates the receiver before its arguments.
+
+Native and managed fixtures cover empty ends, mutable/const traversal, pointer
+identity, copy/conversion/assignment, signed-key lookup, valid iterators across
+insertion/erasure/swap, renewed lookup after rehash and source-visible effects.
+Direct replaceable `new` expressions may be elided by native optimization, so
+their lifetime fixtures assert values and balanced cleanup rather than a fixed
+allocation-event hash. Map-operation traces retain their native64 goldens.

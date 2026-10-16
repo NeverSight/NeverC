@@ -883,4 +883,6 @@ CI 結果、執行與安裝驗證以及測試跳過項目依平台分別記錄�
 
 固定的 C++17 `<unordered_map>` 標頭支援 `std::unordered_map<int, int>` 的中繼資料，要求使用精確的 SDK `std::hash<int>`、`std::equal_to<int>` 與 `std::allocator<std::pair<const int, int>>`。型別別名、型別同一性、公開成員型別、`sizeof` 與 `alignof` 保留所選目標的配置。
 
-使用 SDK 預設策略的固定 `std::unordered_map<int, int>` 支援預設建構、解構、執行階段指標與參考、大小與負載觀察器、負載上限設定，以及 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 和成員 `swap`。重新雜湊與交換保留已插入節點的位址。配置與釋放使用原始碼定義的全域鉤子；輸入須符合 SDK 前置條件及配置成功且不溢位的範圍。複製、移動、`insert`/`emplace`、`at`、`find`、迭代器、其他元素型別、自訂策略及原始碼對 SDK 的重新宣告仍會遭拒。
+使用 SDK 預設策略的固定 `std::unordered_map<int, int>` 支援預設建構、解構、執行階段指標與參考、大小與負載觀察器、負載上限設定，以及 `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` 和成員 `swap`。重新雜湊與交換保留已插入節點的位址。配置與釋放使用原始碼定義的全域鉤子；輸入須符合 SDK 前置條件及配置成功且不溢位的範圍。複製、移動、`insert`/`emplace`、`at`、其他元素型別、自訂策略及原始碼對 SDK 的重新宣告仍會遭拒。
+
+可變與唯讀迭代器支援預設、複製及移動建構與指定、可變到唯讀轉換、解參考、箭頭、遞增及相等比較。`begin`/`end`、`cbegin`/`cend`、`find`、範圍迴圈與結構化繫結保留 SDK 節點順序及鍵的唯讀參考。 迭代器與迭代器範圍的 `erase` 會傳回下一個可變迭代器。

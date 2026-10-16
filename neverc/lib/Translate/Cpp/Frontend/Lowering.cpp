@@ -1024,6 +1024,31 @@ class FunctionLowering {
     label(Done, L);
   }
 
+  Expression unorderedIteratorNode(Expression Place,
+      const UtilityUnorderedMapIteratorRecord &Info, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", type(Info.Owner.NodePointerType, L)},
+        {"name", "nct_unordered_iterator_node"}, {"args", json::Array{std::move(Place)}},
+        {"loc", A.loc(L)}};
+  }
+
+  Expression unorderedIteratorValue(Expression Node,
+      const UtilityUnorderedMapIteratorRecord &Info, SourceLocation L) {
+    const auto Value = Info.Const ? A.Context.getConstType(Info.ValueType) : Info.ValueType;
+    auto Address = binary("+", cast(std::move(Node), "ptr:u8", L),
+        quantity(Info.Owner.ValueOffsetBytes, type(A.Context.getSizeType(), L), L), "ptr:u8", L);
+    return cast(cast(std::move(Address), "ptr:void", L),
+                type(A.Context.getPointerType(Value), L), L);
+  }
+
+  Expression unorderedMakeIterator(Expression Node,
+      const UtilityUnorderedMapIteratorRecord &Info,
+      std::optional<Expression> Destination, SourceLocation L) {
+    auto Place = Destination ? std::move(*Destination)
+        : temporary(type(A.Context.getRecordType(Info.Record), L), L);
+    assign(unorderedIteratorNode(Place, Info, L), std::move(Node), L);
+    return Place;
+  }
+
   Expression unorderedNodeField(Expression Node, QualType FieldType,
                                 uint64_t Offset, SourceLocation L) {
     const auto BytePointer = A.Context.getPointerType(A.Context.UnsignedCharTy);
@@ -4598,6 +4623,115 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation >= UtilityOperation::UnorderedMapBegin &&
+        Operation <= UtilityOperation::UnorderedMapFind) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          Method->getReturnType()->getAsCXXRecordDecl(), A.Context);
+      if (!Map || !Iterator) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      Expression Node;
+      if (Operation == UtilityOperation::UnorderedMapEnd) {
+        Node = A.zero(Map->NodePointerType, L);
+      } else if (Operation == UtilityOperation::UnorderedMapBegin) {
+        Node = snapshot(unorderedMapMember(Place, *Map, "nct_unordered_first", L), L);
+      } else {
+        auto Key = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        auto Hash = snapshot(cast(dereference(Key, L), type(A.Context.getSizeType(), L), L), L);
+        Node = unorderedFindNode(Place, *Map, dereference(Key, L), Hash, L);
+      }
+      return unorderedMakeIterator(std::move(Node), *Iterator, std::move(Destination), L);
+    }
+    if (Operation == UtilityOperation::UnorderedMapEraseIterator ||
+        Operation == UtilityOperation::UnorderedMapEraseRange) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      const auto Result = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          Method->getReturnType()->getAsCXXRecordDecl(), A.Context);
+      const auto Input = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Map || !Result || !Input)
+        reject(L, "unordered map iterator erase", "The authenticated layouts are unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      auto First = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+      auto Node = snapshot(unorderedIteratorNode(dereference(First, L), *Input, L), L);
+      auto Remove = [&] {
+        auto Next = snapshot(unorderedNodeNext(Node, *Map, L), L);
+        unorderedEraseKey(Place, *Map, unorderedNodeKey(Node, *Map, L), L);
+        assign(Node, Next, L);
+      };
+      if (Operation == UtilityOperation::UnorderedMapEraseRange) {
+        auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+        auto End = snapshot(unorderedIteratorNode(dereference(Last, L), *Input, L), L);
+        const auto Check = labelName(), Erase = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Node, End, "bool", L), Erase, Done, L);
+        label(Erase, L);
+        Remove();
+        jump(Check, L);
+        label(Done, L);
+      } else {
+        Remove();
+      }
+      return unorderedMakeIterator(Node, *Result, std::move(Destination), L);
+    }
+    if (Operation >= UtilityOperation::UnorderedIteratorDereference &&
+        Operation <= UtilityOperation::UnorderedIteratorAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *Method = dyn_cast<CXXMethodDecl>(F);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *Record = Method ? Method->getParent()
+          : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, Record, A.Context);
+      if (!Info) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
+      if (!Method) {
+        auto Left = snapshot(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
+        auto Right = snapshot(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L);
+        return binary(Operation == UtilityOperation::UnorderedIteratorEqual ? "==" : "!=",
+            unorderedIteratorNode(dereference(Left, L), *Info, L),
+            unorderedIteratorNode(dereference(Right, L), *Info, L), "bool", L);
+      }
+      const unsigned Offset = Operator ? 1 : 0;
+      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
+      // Operator notation evaluates the right operand first; an explicit
+      // member call evaluates its receiver before its arguments in C++17.
+      if (Operation == UtilityOperation::UnorderedIteratorAssign) {
+        Expression Receiver, Right;
+        auto ObjectAddress = [&] { return snapshot(Object->getType()->isPointerType() ? expression(Object)
+            : address(lvalue(Object), Object->getType(), L), L); };
+        if (Member) Receiver = ObjectAddress();
+        Right = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+        auto Value = snapshot(dereference(Right, L), L);
+        if (!Member) Receiver = ObjectAddress();
+        auto Place = dereference(Receiver, L);
+        assign(Place, Value, L);
+        return Place;
+      }
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::UnorderedIteratorPostIncrement)
+        expression(Call->getArg(Offset));
+      auto Node = snapshot(unorderedIteratorNode(Place, *Info, L), L);
+      if (Operation == UtilityOperation::UnorderedIteratorDereference)
+        return dereference(unorderedIteratorValue(Node, *Info, L), L);
+      if (Operation == UtilityOperation::UnorderedIteratorArrow)
+        return unorderedIteratorValue(Node, *Info, L);
+      assign(unorderedIteratorNode(Place, *Info, L), unorderedNodeNext(Node, Info->Owner, L), L);
+      if (Operation == UtilityOperation::UnorderedIteratorPreIncrement) return Place;
+      return unorderedMakeIterator(Node, *Info, std::move(Destination), L);
+    }
     if (Operation >= UtilityOperation::UnorderedMapSize &&
         Operation <= UtilityOperation::UnorderedMapSetMaxLoadFactor) {
       const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
@@ -31515,6 +31649,23 @@ class FunctionLowering {
       }
       constructStringBytes(std::move(Place), T, &*String, std::move(Input),
                            std::move(Length), std::move(FillCharacter), L);
+      return;
+    }
+    if (auto Kind = approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          A.Context.getBaseElementType(T)->getAsCXXRecordDecl(), A.Context);
+      if (!Info) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
+      if (*Kind == UtilityUnorderedMapIteratorConstruction::Default) {
+        assign(unorderedIteratorNode(Place, *Info, L), A.zero(Info->Owner.NodePointerType, L), L);
+      } else if (*Kind == UtilityUnorderedMapIteratorConstruction::CopyOrMove) {
+        assign(Place, expression(C->getArg(0)), L);
+      } else {
+        const auto Source = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+            C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Source) reject(L, "unordered map iterator conversion", "The authenticated source layout is unavailable.");
+        auto Value = snapshot(expression(C->getArg(0)), L);
+        assign(unorderedIteratorNode(Place, *Info, L), unorderedIteratorNode(Value, *Source, L), L);
+      }
       return;
     }
     if (approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context)) {

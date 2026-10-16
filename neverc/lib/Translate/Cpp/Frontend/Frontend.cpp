@@ -2524,6 +2524,18 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Iterator->getTemplateArgs().get(0).getAsType(), L,
                      AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityUnorderedMapIteratorMetadata(S, Sources, T->getAsCXXRecordDecl())) {
+      const auto Info = approvedUtilityUnorderedMapIteratorRecord(S, Sources,
+          T->getAsCXXRecordDecl(), Context, [&](QualType Element) {
+            chargeExpansion(1, L);
+            return CompleteSDKRecord && CompleteSDKRecord(Element, L);
+          });
+      if (!Info) {
+        reject(L, "unordered map iterator metadata", "The authenticated SDK storage graph is required.", "TR0203");
+        throw Failure{};
+      }
+      checkQueryType(Context.IntTy, L, AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
                approvedUnorderedMapMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
       const auto *Map = cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
       checkQueryType(Map->getTemplateArgs().get(0).getAsType(), L,
@@ -3078,15 +3090,15 @@ static bool utilitySDKFunctionSource(Adapter &A, const FunctionDecl *Function,
 
 static bool utilityUnorderedMapQueryLayout(Adapter &A, const CXXRecordDecl *Record,
                                             SourceLocation Location) {
-  if (!approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context))
-    return true;
-  // Pointer/reference-only source need not instantiate the private node.
-  // Complete exact authenticated storage types, never SDK method bodies.
-  return bool(approvedUtilityUnorderedMapRecord(A.S, A.Sources, Record, A.Context,
-      [&](QualType Type) {
-        A.chargeExpansion(1, Location);
-        return A.CompleteSDKRecord && A.CompleteSDKRecord(Type, Location);
-      }));
+  auto Complete = [&](QualType Type) {
+    A.chargeExpansion(1, Location);
+    return A.CompleteSDKRecord && A.CompleteSDKRecord(Type, Location);
+  };
+  if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context))
+    return bool(approvedUtilityUnorderedMapRecord(A.S, A.Sources, Record, A.Context, Complete));
+  if (approvedUtilityUnorderedMapIteratorMetadata(A.S, A.Sources, Record))
+    return bool(approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, Record, A.Context, Complete));
+  return true;
 }
 
 static bool utilityMemoryElementQueryLayout(Adapter &A, QualType ElementType,
@@ -9615,6 +9627,7 @@ public:
         return false;
       return destruction(Seq->Storage->getType()->getAsCXXRecordDecl(), Depth + 1);
     }
+    if (approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Record, A.Context)) return true;
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
@@ -11462,6 +11475,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityStringRecord(S, Sources, D, Context) &&
                  !requireUtilityString(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityUnorderedMapIteratorMetadata(S, Sources, D) &&
+                 !requireUtilityUnorderedMapIterator(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityUnorderedMapRecord(S, Sources, D, Context) &&
                  !requireUtilityUnorderedMap(D, L, Depth + 1)) {
         return {};
@@ -11643,6 +11659,25 @@ bool Adapter::requireUtilityString(const CXXRecordDecl *Record,
     return false;
   S.Module["memory_lifetimes"] = true;
   Records.push_back(const_cast<CXXRecordDecl *>(String->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityUnorderedMapIterator(const CXXRecordDecl *Record,
+    SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "unordered map iterator type", "Nested types exceed the protocol limit.");
+    return false;
+  }
+  const auto Info = approvedUtilityUnorderedMapIteratorRecord(S, Sources, Record, Context);
+  if (!Info) {
+    reject(Location, "standard library record", "An authenticated default int/int unordered-map iterator is required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityUnorderedMapIterators.insert(Info->Record->getCanonicalDecl()).second)
+    return true;
+  if (type(Info->Owner.NodePointerType, Location, false, Depth + 1).empty() ||
+      type(Info->ValueType, Location, false, Depth + 1).empty()) return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Info->Record));
   return true;
 }
 
@@ -11955,6 +11990,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
         Args.push_back(zero((String->AlternateLayout ? I == 0 : I == 2)
                                 ? String->PointerType
                                 : Context.getSizeType(), L));
+    } else if (auto Iterator = approvedUtilityUnorderedMapIteratorRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Iterator->Owner.NodePointerType, L));
     } else if (auto Map = approvedUtilityUnorderedMapRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Map->BucketPointerType, L));
       Args.push_back(zero(Context.getSizeType(), L));
@@ -15444,6 +15481,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                  A.Context) ||
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityStringConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -15907,6 +15945,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           const auto *Map = cast<ClassTemplateSpecializationDecl>(Declaration);
           Self(Self, Map->getTemplateArgs().get(0).getAsType(), true, Depth + 1);
           Self(Self, Map->getTemplateArgs().get(1).getAsType(), true, Depth + 1);
+          return;
+        }
+        if (const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // The authenticated iterator graph supplies its private SDK storage.
+          Self(Self, Iterator->ValueType, true, Depth + 1);
           return;
         }
         if (approvedMemoryTemplateMetadata(A.S, A.Sources, Declaration)) {
@@ -16808,6 +16852,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                      Destructor->getParent()) ||
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
+             approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
              approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -16999,6 +17044,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             approvedUtilityArrayConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
             approvedFunctionalReferenceConstruction(A.S, A.Sources,
+                                                    Construction, A.Context)
+                .has_value() ||
+            approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources,
                                                     Construction, A.Context)
                 .has_value() ||
             approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
@@ -18988,7 +19036,8 @@ public:
                                                 A.Context) ||
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
-           approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, Construction, A.Context) ||
+         approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
@@ -24005,9 +24054,11 @@ public:
         if (const auto *D = dyn_cast_or_null<CXXDestructorDecl>(F)) {
           const auto *Reference = dyn_cast_or_null<MemberExpr>(directMethodReference(C));
           const auto *Record = D->getParent()->getDefinition();
-          if (C->getNumArgs() || !Reference || !callableMethod(D) ||
-              !Record || !owned(Record)) {
-            A.reject(L, "explicit destructor call", "A direct nonvirtual destructor of an admitted owned record is required.");
+          const bool PinnedIterator = Record && approvedUtilityUnorderedMapIteratorDestructor(
+              A.S, A.Sources, Record, A.Context);
+          if (C->getNumArgs() || !Reference || !Record ||
+              (!PinnedIterator && (!callableMethod(D) || !owned(Record)))) {
+            A.reject(L, "explicit destructor call", "A checked direct nonvirtual destructor receiver is required.");
           } else {
             auto Object = A.Context.getRecordType(Record);
             A.type(Object, L);
@@ -24443,7 +24494,8 @@ public:
                                                         A.Context) ||
                    approvedUtilityStringConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
-                   approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -24662,6 +24714,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityStringRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityVector =
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityUnorderedIterator =
+        approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDefaultDelete =
@@ -24677,7 +24731,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityVector || UtilityUnorderedMap ||
+                                   UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
                                : A.emptyBase(R)) {
@@ -24715,6 +24769,8 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityString->Record->getLocation());
       DependencyTypes.emplace_back(UtilityString->PointerType,
                                    UtilityString->Record->getLocation());
+    } else if (UtilityUnorderedIterator) {
+      DependencyTypes.emplace_back(UtilityUnorderedIterator->Owner.NodePointerType, R->getLocation());
     } else if (UtilityUnorderedMap) {
       DependencyTypes.emplace_back(UtilityUnorderedMap->BucketPointerType, R->getLocation());
       DependencyTypes.emplace_back(UtilityUnorderedMap->NodePointerType, R->getLocation());
@@ -24860,6 +24916,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityVector =
         S.coreV2() ? approvedUtilityVectorRecord(S, Sources, R, Context)
                    : std::optional<UtilityVectorRecord>();
+    const auto UtilityUnorderedIterator =
+        approvedUtilityUnorderedMapIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(S, Sources, R, Context);
     const auto UtilityDefaultDelete =
@@ -24879,7 +24937,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityVector && !UtilityUnorderedMap &&
+                               !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
                            ? emptyBase(R)
@@ -24912,6 +24970,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
             {"type", type((UtilityString->AlternateLayout ? I == 0 : I == 2)
                               ? UtilityString->PointerType
                               : Context.getSizeType(), R->getLocation())}});
+    } else if (UtilityUnorderedIterator) {
+      Fields.push_back(json::Object{{"name", "nct_unordered_iterator_node"},
+          {"type", type(UtilityUnorderedIterator->Owner.NodePointerType, R->getLocation())}});
     } else if (UtilityUnorderedMap) {
       for (const auto &Field : std::initializer_list<std::pair<const char *, QualType>>{
                {"nct_unordered_buckets", UtilityUnorderedMap->BucketPointerType},
@@ -24970,6 +25031,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         if (FunctionalReference->PaddedBase)
           Offsets.push_back(uint64_t(0));
         Offsets.push_back(Layout.getFieldOffset(0));
+      } else if (UtilityUnorderedIterator) {
+        Offsets.push_back(uint64_t(0));
       } else if (UtilityUnorderedMap) {
         const auto PointerBits = Context.getTypeSize(Context.VoidPtrTy);
         for (unsigned I = 0; I != 5; ++I)

@@ -979,6 +979,18 @@ enum class UtilityOperation {
   UnorderedMapMaxBucketCount,
   UnorderedMapSwap,
   UnorderedMapSubscript,
+  UnorderedMapBegin,
+  UnorderedMapEnd,
+  UnorderedMapFind,
+  UnorderedMapEraseIterator,
+  UnorderedMapEraseRange,
+  UnorderedIteratorDereference,
+  UnorderedIteratorArrow,
+  UnorderedIteratorPreIncrement,
+  UnorderedIteratorPostIncrement,
+  UnorderedIteratorEqual,
+  UnorderedIteratorNotEqual,
+  UnorderedIteratorAssign,
   RandomEngineGenerate,
   RandomEngineSeed,
   RandomEngineDiscard,
@@ -2029,6 +2041,25 @@ std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
+struct UtilityUnorderedMapIteratorRecord {
+  const clang::CXXRecordDecl *Record, *Underlying;
+  const clang::FieldDecl *Storage, *Node;
+  UtilityUnorderedMapRecord Owner;
+  clang::QualType ValueType;
+  bool Const;
+};
+std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIteratorRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context,
+    const std::function<bool(clang::QualType)> &Complete = {});
+bool approvedUtilityUnorderedMapIteratorMetadata(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
+enum class UtilityUnorderedMapIteratorConstruction { Default, CopyOrMove, Converting };
+std::optional<UtilityUnorderedMapIteratorConstruction>
+approvedUtilityUnorderedMapIteratorConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedUtilityUnorderedMapIteratorDestructor(const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 enum class UtilityOperation;
 bool approvedUnorderedMapMethodSource(const State &S, const clang::SourceManager &SM,
     const clang::FunctionDecl *Function, const clang::CXXRecordDecl *Record,
@@ -2037,6 +2068,9 @@ bool approvedUtilityUnorderedMapConstruction(const State &S, const clang::Source
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 bool approvedUtilityUnorderedMapDestructor(const State &S, const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedUtilityUnorderedMapIteratorOperation(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
@@ -2222,6 +2256,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMaps;
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
@@ -2277,6 +2312,8 @@ public:
   bool requireUtilityString(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
+  bool requireUtilityUnorderedMapIterator(const clang::CXXRecordDecl *Record,
+      clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityUnorderedMap(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth = 0);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
