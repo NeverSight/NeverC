@@ -2590,5 +2590,28 @@ std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
 std::optional<UnorderedResultCall> unorderedResultCall(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UnorderedMapNonmemberCall {
+  UtilityUnorderedMapRecord Map;
+  bool Swap, NotEqual;
+};
+std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+enum class UnorderedIteratorTraversalKind { Advance, Distance, Next };
+struct UnorderedIteratorTraversalCall {
+  UtilityUnorderedMapIteratorRecord Iterator;
+  UnorderedIteratorTraversalKind Kind;
+};
+std::optional<UnorderedIteratorTraversalCall> unorderedIteratorTraversalCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UnorderedGenericSwapCall {
+  std::optional<UtilityUnorderedMapRecord> Map;
+  std::optional<UtilityUnorderedNodeRecord> Node;
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+};
+std::optional<UnorderedGenericSwapCall> unorderedGenericSwapCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 } // namespace nct
 #endif

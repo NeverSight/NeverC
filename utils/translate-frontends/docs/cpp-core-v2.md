@@ -17083,3 +17083,92 @@ pinned node operation. Swap retains node addresses and performs no allocation or
 deletion, including self swap. Copying remains unavailable because node handles
 are move-only. Source-owned SDK specializations and indirect SDK swap addresses
 are outside the admitted operations.
+
+## Unordered-map nonmember comparison and swap
+
+The exact default int/int map admits operator==, operator!= and the original
+unordered_map-specific nonmember swap, through qualified calls or ADL. Equality
+first compares sizes, then follows the left map's node order and finds every key
+in the right map before comparing its mapped int. Different insertion orders,
+bucket counts and maximum load factors do not affect equality. Inequality is the
+negation of this result. No comparison allocates or changes either map.
+
+Both operands are evaluated once before either map is read or modified. Nonmember
+swap uses the existing authenticated member-swap storage path, preserving element
+addresses and exchanging bucket arrays, counts and load limits. Bucket predecessors
+that referred to the old object's sentinel are repaired. Self swap preserves all
+contents and addresses. Existing iterator/lifetime rules still apply.
+
+Reference-only translation units complete the exact map and node layouts without
+requiring heap definitions. The original SDK primary templates, every redeclaration,
+all five map template arguments and the selected reachable bodies, including pair
+comparison and member swap, remain authenticated. Source replacements, indirect
+SDK function addresses, volatile operands and other key/value/policy types remain
+outside this admission.
+
+## Unordered-map forward iterator traversal
+
+The exact mutable/const global and local iterators compose with direct
+std::distance, std::advance and std::next. Advance accepts admitted builtin
+integer distances up to 64 bits and performs the SDK conversion to the target
+ptrdiff_t. Next accepts that difference type, including the authenticated SDK
+default argument one. Distance returns the target difference type. Valid reachable
+ranges, representable distances, nonnegative forward offsets and ordinary
+iterator lifetime/invalidation preconditions apply.
+
+Distance and next construct their distinct iterator arguments before evaluating
+later operands. Local copies retain node, bucket and captured bucket count.
+Advance first binds the referenced iterator, then evaluates the distance before
+reading that iterator's current state. A distance callback can therefore change
+the referenced cursor before traversal. Direct loops use the existing checked
+increment path, ending local traversal at the captured bucket boundary. No
+operation allocates storage or changes map elements.
+
+All public SDK primary templates and redeclarations, their concrete template
+arguments, iterator traits and selected private traversal/conversion helpers are
+authenticated. Source specializations and indirect SDK function addresses remain
+rejected. Reference-only use completes just the exact iterator/map/node storage
+and does not require heap definitions.
+
+## Unordered-map unused node and result type aliases
+
+Unused node_type and insert_return_type aliases, their pointer/reference/array
+forms and exact type identity queries authenticate the same SDK record graph as
+runtime uses. Only pinned records are completed; all primary/redeclarations and
+concrete private storage remain checked before and after completion. This requires
+no owning object, heap definitions or SDK method body instantiation.
+
+## Unordered-map generic standard swap
+
+The original generic `std::swap<T>` admits the exact default map, node handles and
+mutable/const global or local iterator types. This includes explicit `std::swap<Map>`
+as well as ordinary qualified generic calls for handles and iterators. Both operands
+are captured once before any state changes. The selected SDK three-move sequence
+leaves its temporary empty, so equivalent direct exchange needs no allocation or
+deallocation. Map exchange repairs bucket predecessors and preserves element
+addresses; handles exchange ownership and allocator engagement; local iterators
+exchange the complete node/bucket/count state. Self swap preserves the object and
+owned node. Reference-only use requires no heap definitions.
+
+The exact one-type template argument, original generic swap primary/redeclarations,
+concrete storage and reachable selected move/destructor bodies remain authenticated.
+The generic definition must originate in the pinned utility swap header; its pinned
+forward declaration in is_swappable is also checked. Source-owned replacements,
+operation specializations and indirect SDK function addresses remain rejected.
+
+## Unordered-map insertion-result construction
+
+The exact insert_return_type admits its implicit default constructor, including
+ordinary default initialization and value initialization. Both construct the
+singular global iterator and empty node handle. Value initialization additionally
+zeroes inserted; ordinary default initialization leaves that bool unwritten, so
+valid code assigns it before reading. Arrays, source-owned member fields and
+factory returns preserve the same initialization and owning destruction rules.
+The original implicit SDK constructor and selected iterator/node constructor
+closures remain authenticated. Owning lifetimes retain the source delete boundary
+even when the constructed node is empty.
+
+Empty, partial and full braced aggregate initialization retains its existing
+field-ordered evaluation and selected member construction. Regression fixtures
+cover those controls alongside the newly admitted constructor forms, including
+owned nodes moved into array elements and complete cleanup.

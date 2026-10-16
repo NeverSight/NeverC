@@ -1840,6 +1840,120 @@ class FunctionLowering {
     moveUnorderedHandle(fieldStorage(Destination, Info.Handle, L),
         fieldStorage(Source, Info.Handle, L), Info.Node, Assignment, L);
   }
+  Expression unorderedGenericSwapOperation(const CallExpr *Call,
+      const UnorderedGenericSwapCall &Info) {
+    const auto L = Call->getExprLoc();
+    const auto *F = Call->getDirectCallee();
+    auto Left = dereference(snapshot(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L), L);
+    auto Right = dereference(snapshot(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L), L);
+    // The authenticated three-move path leaves its SDK temporary empty. The
+    // equivalent storage exchange performs no allocation or deallocation.
+    if (Info.Map) {
+      unorderedSwap(Left, Right, *Info.Map, L);
+    } else if (Info.Node) {
+      swapUnorderedHandles(Left, Right, *Info.Node, L);
+    } else {
+      auto Saved = snapshot(unorderedIteratorNode(Left, *Info.Iterator, L), L);
+      assign(unorderedIteratorNode(Left, *Info.Iterator, L), unorderedIteratorNode(Right, *Info.Iterator, L), L);
+      assign(unorderedIteratorNode(Right, *Info.Iterator, L), Saved, L);
+      if (Info.Iterator->Local)
+        for (const auto *Name : {"nct_unordered_iterator_bucket", "nct_unordered_iterator_count"}) {
+          auto Metadata = snapshot(unorderedIteratorMetadata(Left, Name, L), L);
+          assign(unorderedIteratorMetadata(Left, Name, L), unorderedIteratorMetadata(Right, Name, L), L);
+          assign(unorderedIteratorMetadata(Right, Name, L), Metadata, L);
+        }
+    }
+    return {};
+  }
+
+  Expression unorderedIteratorTraversalOperation(const CallExpr *Call,
+      const UnorderedIteratorTraversalCall &Info, std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto *Function = Call->getDirectCallee();
+    // argument() creates the distinct SDK by-value iterator before later operands.
+    auto Iterator = dereference(snapshot(argument(Call->getArg(0),
+        Function->getParamDecl(0)->getType()), L), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Check = labelName(), Step = labelName(), Done = labelName();
+    if (Info.Kind == UnorderedIteratorTraversalKind::Distance) {
+      auto Last = dereference(snapshot(argument(Call->getArg(1),
+          Function->getParamDecl(1)->getType()), L), L);
+      auto End = snapshot(unorderedIteratorNode(Last, Info.Iterator, L), L);
+      auto Result = snapshot(quantity(0, Difference, L), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", unorderedIteratorNode(Iterator, Info.Iterator, L), End, "bool", L), Step, Done, L);
+      label(Step, L);
+      auto Node = snapshot(unorderedIteratorNode(Iterator, Info.Iterator, L), L);
+      assign(unorderedIteratorNode(Iterator, Info.Iterator, L),
+          unorderedAdvanceIterator(Node, Info.Iterator, Iterator, L), L);
+      assign(Result, binary("+", Result, quantity(1, Difference, L), Difference, L), L);
+      jump(Check, L);
+      label(Done, L);
+      return Result;
+    }
+    auto Count = snapshot(cast(argument(Call->getArg(1),
+        Function->getParamDecl(1)->getType()), Difference, L), L);
+    jump(Check, L);
+    label(Check, L);
+    branch(binary(">", Count, quantity(0, Difference, L), "bool", L), Step, Done, L);
+    label(Step, L);
+    auto Node = snapshot(unorderedIteratorNode(Iterator, Info.Iterator, L), L);
+    assign(unorderedIteratorNode(Iterator, Info.Iterator, L),
+        unorderedAdvanceIterator(Node, Info.Iterator, Iterator, L), L);
+    assign(Count, binary("-", Count, quantity(1, Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Done, L);
+    if (Info.Kind == UnorderedIteratorTraversalKind::Advance) return {};
+    return unorderedMakeIterator(unorderedIteratorNode(Iterator, Info.Iterator, L),
+        Info.Iterator, std::move(Destination), L,
+        Info.Iterator.Local ? std::optional<Expression>(unorderedIteratorMetadata(Iterator,
+            "nct_unordered_iterator_bucket", L)) : std::nullopt,
+        Info.Iterator.Local ? std::optional<Expression>(unorderedIteratorMetadata(Iterator,
+            "nct_unordered_iterator_count", L)) : std::nullopt);
+  }
+
+  Expression unorderedMapNonmemberOperation(const CallExpr *Call,
+      const UnorderedMapNonmemberCall &Info) {
+    const auto L = Call->getExprLoc();
+    const auto *Function = Call->getDirectCallee();
+    // Evaluate both references once before observing either map's state.
+    auto Left = dereference(snapshot(argument(Call->getArg(0),
+        Function->getParamDecl(0)->getType()), L), L);
+    auto Right = dereference(snapshot(argument(Call->getArg(1),
+        Function->getParamDecl(1)->getType()), L), L);
+    if (Info.Swap) {
+      unorderedSwap(Left, Right, Info.Map, L);
+      return {};
+    }
+    auto Equal = snapshot(A.zero(A.Context.BoolTy, L), L);
+    const auto Start = labelName(), Check = labelName(), Find = labelName();
+    const auto Compare = labelName(), Advance = labelName(), Matched = labelName(), Done = labelName();
+    branch(binary("==", unorderedMapMember(Left, Info.Map, "nct_unordered_size", L),
+        unorderedMapMember(Right, Info.Map, "nct_unordered_size", L), "bool", L), Start, Done, L);
+    label(Start, L);
+    auto Node = snapshot(unorderedMapMember(Left, Info.Map, "nct_unordered_first", L), L);
+    jump(Check, L);
+    label(Check, L);
+    branch(cast(Node, "bool", L), Find, Matched, L);
+    label(Find, L);
+    auto Key = snapshot(unorderedNodeKey(Node, Info.Map, L), L);
+    auto Other = unorderedFindNode(Right, Info.Map, Key,
+        cast(Key, type(A.Context.getSizeType(), L), L), L);
+    branch(cast(Other, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(binary("==", unorderedNodeValue(Node, Info.Map, L),
+        unorderedNodeValue(Other, Info.Map, L), "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Node, unorderedNodeNext(Node, Info.Map, L), L);
+    jump(Check, L);
+    label(Matched, L);
+    assign(Equal, cast(quantity(1, "int", L), "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Info.NotEqual ? binary("==", Equal, A.zero(A.Context.BoolTy, L), "bool", L) : Equal;
+  }
+
   Expression unorderedResultOperation(const CallExpr *Call, const UnorderedResultCall &Info) {
     auto L = Call->getExprLoc();
     const auto *Function = Call->getDirectCallee();
@@ -27060,6 +27174,12 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (auto Info = unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context))
+        return unorderedGenericSwapOperation(Call, *Info);
+      if (auto Info = unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context))
+        return unorderedIteratorTraversalOperation(Call, *Info, std::move(Destination));
+      if (auto Info = unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context))
+        return unorderedMapNonmemberOperation(Call, *Info);
       if (auto Info = unorderedResultCall(A.S, A.Sources, Call, A.Context))
         return unorderedResultOperation(Call, *Info);
       if (auto Info = unorderedMapListAssignment(A.S, A.Sources, Call, A.Context))
@@ -32417,6 +32537,14 @@ class FunctionLowering {
       return;
     }
     if (auto Info = unorderedResultConstruction(A.S, A.Sources, C, A.Context)) {
+      if (!C->getNumArgs()) {
+        unorderedMakeIterator(A.zero(Info->Node.Map.NodePointerType, L), Info->Iterator,
+            fieldStorage(Place, Info->Position, L), L);
+        if (C->requiresZeroInitialization())
+          assign(fieldStorage(Place, Info->Inserted, L), A.zero(A.Context.BoolTy, L), L);
+        releaseUnorderedHandle(fieldStorage(Place, Info->Handle, L), Info->Node, L);
+        return;
+      }
       auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
       moveUnorderedResult(Place, dereference(Source, L), *Info, false, L);
       return;

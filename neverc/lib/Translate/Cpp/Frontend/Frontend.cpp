@@ -2404,6 +2404,16 @@ static QualType functionMetadataType(QualType T) {
   return !T.isNull() && T->isFunctionType() ? T : QualType{};
 }
 
+static bool unorderedNodeTypeQueryMetadata(Adapter &A,
+    const CXXRecordDecl *Record, SourceLocation Location) {
+  auto Complete = [&](QualType Type) {
+    A.chargeExpansion(1, Location);
+    return A.CompleteSDKRecord && A.CompleteSDKRecord(Type, Location);
+  };
+  return unorderedNodeRecord(A.S, A.Sources, Record, A.Context, Complete).has_value() ||
+         unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete).has_value();
+}
+
 void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
   if (!functionMetadataType(T).isNull() || incompleteArrayMetadataType(T) ||
       incompleteRecordMetadataType(T) || memoryTemplateMetadataType(*this, T))
@@ -2538,6 +2548,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
         throw Failure{};
       }
       checkQueryType(Context.IntTy, L, AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               unorderedNodeTypeQueryMetadata(*this, T->getAsCXXRecordDecl(), L)) {
+      // Exact SDK storage is checked without constructing an owner or its methods.
     } else if (AllowIncompleteRecords &&
                approvedUnorderedMapMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
       const auto *Map = cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
@@ -15897,7 +15910,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               Query != A.S.UnevaluatedMemoryCalls.end())
             Result = Query->second;
         if (Result.isNull() &&
-            (unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+            (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedMapListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
@@ -16694,7 +16710,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 operationTypeDependency(Source);
             }
         }
-        if (unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+        if (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedMapListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
@@ -23684,7 +23703,10 @@ public:
           Leaf = scalarDestruction(Call, A.Context);
         if (Leaf) {
           const bool Utility =
-              unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
+              unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedMapListAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -24310,7 +24332,10 @@ public:
           approvedFunctionalOperation(A.S, A.Sources, C, A.Context))
         return true;
       if (A.S.coreV2() &&
-          (unorderedResultCall(A.S, A.Sources, C, A.Context) ||
+          (unorderedGenericSwapCall(A.S, A.Sources, C, A.Context) ||
+             unorderedIteratorTraversalCall(A.S, A.Sources, C, A.Context) ||
+             unorderedMapNonmemberCall(A.S, A.Sources, C, A.Context) ||
+             unorderedResultCall(A.S, A.Sources, C, A.Context) ||
              unorderedMapListAssignment(A.S, A.Sources, C, A.Context) ||
              unorderedMapMerge(A.S, A.Sources, C, A.Context) ||
            unorderedNodeCall(A.S, A.Sources, C, A.Context) ||
