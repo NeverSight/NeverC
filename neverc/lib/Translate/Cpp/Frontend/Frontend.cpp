@@ -2905,6 +2905,8 @@ functionalReferenceDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
 
 static std::optional<FunctionalObjectRecord>
 functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
+  if (auto StringHash = approvedStringHashObject(A.S, A.Sources, Record, A.Context))
+    return FunctionalObjectRecord{StringHash->Record};
   const auto Object =
       approvedFunctionalObjectRecord(A.S, A.Sources, Record, A.Context);
   if (!Object)
@@ -5386,8 +5388,54 @@ static bool functionalQueryDeclvalSource(Adapter &A, const Expr *Expression,
          utilitySDKFunctionSource(A, Function, "__utility/declval.h", false);
 }
 
+static const CXXConstructExpr *
+stringHashQueryArgumentConstruction(const CallExpr *Call) {
+  if (!Call || Call->getNumArgs() != 2)
+    return nullptr;
+  const Expr *Argument = Call->getArg(1);
+  for (unsigned Depth = 0; Argument && Depth != 64; ++Depth) {
+    if (const auto *Paren = dyn_cast<ParenExpr>(Argument))
+      Argument = Paren->getSubExpr();
+    else if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument))
+      Argument = Temporary->getSubExpr();
+    else if (const auto *Bound = dyn_cast<CXXBindTemporaryExpr>(Argument))
+      Argument = Bound->getSubExpr();
+    else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+             Cast && Cast->getCastKind() == CK_NoOp)
+      Argument = Cast->getSubExpr();
+    else
+      return dyn_cast<CXXConstructExpr>(Argument);
+  }
+  return nullptr;
+}
+
+static bool stringHashDefaultViewQuerySource(
+    Adapter &A, const CallExpr *Call, const CXXConstructExpr *Construction) {
+  const auto Hash = approvedStringHashCall(
+      A.S, A.Sources, Call, A.Context, false);
+  const auto *Constructor = Construction ? Construction->getConstructor()
+                                          : nullptr;
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  return Hash && Hash->View && Call->getNumArgs() == 2 && Construction &&
+         A.S.UnevaluatedFunctionalCalls.count(Call) &&
+         stringHashQueryArgumentConstruction(Call) == Construction &&
+         Construction->getConstructionKind() == CXXConstructionKind::Complete &&
+         Construction->getNumArgs() == 0 && Constructor &&
+         Constructor->isDefaultConstructor() &&
+         Constructor->getNumParams() == 0 && !Constructor->getPrimaryTemplate() &&
+         A.Context.hasSameType(Construction->getType(), Hash->ValueType) &&
+         Constructor->getParent()->getCanonicalDecl() ==
+             Hash->ValueType->getAsCXXRecordDecl()->getCanonicalDecl() &&
+         Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !Prototype->getNoexceptExpr() &&
+         utilitySDKFunctionSource(A, Constructor, "string_view", false);
+}
+
 static const FunctionProtoType *
 functionalObjectQueryTargetSource(Adapter &A, const CallExpr *Call) {
+  if (approvedStringHashCall(A.S, A.Sources, Call, A.Context, false))
+    return operationCalleePrototype(Call);
   if (!approvedFunctionalSignatureQuery(A.S, A.Sources, Call, A.Context))
     return nullptr;
   const auto *Target = functionalObjectInvokeTargetSource(
@@ -12917,6 +12965,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const CallExpr *> QueuedCallSignatures;
   std::set<const CallExpr *> CompletedQueryCalls;
   std::set<const Expr *> IndexedUnevaluatedSources;
+  std::map<const CXXConstructExpr *, const CallExpr *> StringHashQueryViews;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   std::vector<const CXXMethodDecl *> ConsumedSpecialMemberSignatures;
@@ -16112,6 +16161,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
                 A.S.UnevaluatedMemoryDefaults.emplace(Default, Call);
         }
+      }
+      if (const auto *Call = dyn_cast<CallExpr>(Current);
+          Call && A.S.UnevaluatedFunctionalCalls.count(Call) && Call->getNumArgs() == 2) {
+        const auto *Construction = stringHashQueryArgumentConstruction(Call);
+        if (stringHashDefaultViewQuerySource(A, Call, Construction))
+          StringHashQueryViews.emplace(Construction, Call);
       }
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
@@ -25542,6 +25597,13 @@ public:
                    "translation unit.",
                    "TR0203");
     if (const auto *C = dyn_cast<CXXConstructExpr>(S)) {
+      if (const auto Query = StringHashQueryViews.find(C);
+          Query != StringHashQueryViews.end()) {
+        if (!stringHashDefaultViewQuerySource(A, Query->second, C))
+          A.reject(L, "string hash view query",
+                   "The exact default view signature source is required.");
+        return true; // No arguments/body/lifetime; written type sources still traverse.
+      }
       if (A.S.coreV2() && C->getConstructor() &&
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor())) {
@@ -26331,6 +26393,18 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     }
   for (const auto &[Name, Location] : UsedDefaultHeapLocations)
     FunctionData.push_back(lowerDefaultHeap(DefaultHeapIdentities.at(Name), Location));
+  if (!StringHashHelperName.empty()) {
+    bool Retained = false;
+    for (const auto &F : FunctionData)
+      for (const auto &I : *F.getAsObject()->getArray("body")) {
+        const auto &Instruction = *I.getAsObject();
+        if (Instruction.getString("op") == "call" &&
+            Instruction.getString("callee") == StringHashHelperName)
+          Retained = true;
+      }
+    if (Retained)
+      FunctionData.push_back(lowerStringHash());
+  }
   S.Module["functions"] = std::move(FunctionData);
   json::Array Mappings;
   for (const auto &M : MappedFunctions)

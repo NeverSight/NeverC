@@ -5,6 +5,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Index/USRGeneration.h"
@@ -787,6 +788,11 @@ static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
   if (Name != "hash")
     return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                          "__functional/operations.h");
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
+    if (auto StringHash = approvedStringHashObject(
+            S, SM, Method->getParent(), Method->getASTContext()))
+      return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                            StringHash->View ? "string_view" : "string");
   return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                        "__functional/hash.h");
 }
@@ -940,10 +946,151 @@ static const VarDecl *functionTraitObjectValue(const State &S,
   return nullptr;
 }
 
+static bool stringHashOrigin(const State &S, const SourceManager &SM,
+                             const Decl *D, llvm::StringRef Path) {
+  return D && approvedStandardSDKDeclaration(S, SM, D) &&
+         cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+}
+
+static bool stringHashRecordSource(const State &S, const SourceManager &SM,
+                                   const ClassTemplateSpecializationDecl *R,
+                                   llvm::StringRef Name,
+                                   llvm::StringRef Path) {
+  const auto *Primary = R ? R->getSpecializedTemplate() : nullptr;
+  if (!R || !Primary || !R->getIdentifier() || R->getName() != Name ||
+      R->isInvalidDecl() || R->isUnion() || R->isDependentContext() ||
+      !R->isCompleteDefinition())
+    return false;
+  auto Origin = [&](const Decl *D, bool Template = false) {
+    return stringHashOrigin(S, SM, D, Path) ||
+           (Name == "char_traits" &&
+            stringHashOrigin(S, SM, D, "__fwd/string.h")) ||
+           (Template && Name == "hash" &&
+            (stringHashOrigin(S, SM, D, "__fwd/functional.h") ||
+             stringHashOrigin(S, SM, D, "__functional/hash.h") ||
+             stringHashOrigin(S, SM, D, "__memory/shared_ptr.h") ||
+             stringHashOrigin(S, SM, D, "__memory/unique_ptr.h")));
+  };
+  for (const auto *D : R->redecls())
+    if (!Origin(D))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D, true) || !Origin(D->getTemplatedDecl(), true))
+      return false;
+  if (const auto *Partial = R->getSpecializedTemplateOrPartial()
+                                .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+    for (const auto *D : Partial->redecls())
+      if (!Origin(D))
+        return false;
+  return true;
+}
+
+std::optional<StringHashObjectInfo>
+approvedStringHashObject(const State &S, const SourceManager &SM,
+                         const CXXRecordDecl *Record,
+                         const ASTContext &Context) {
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  if (!S.coreV2() || !Hash || !Hash->getIdentifier() ||
+      Hash->getName() != "hash" || Hash->getTemplateArgs().size() != 1 ||
+      Hash->getTemplateArgs().get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Value = Hash->getTemplateArgs().get(0).getAsType();
+  if (Value.isNull() || Value.hasQualifiers())
+    return std::nullopt;
+  const auto View = approvedUtilityStringViewRecord(
+      S, SM, Value->getAsCXXRecordDecl(), Context);
+  const auto String = View ? std::optional<UtilityStringRecord>()
+                           : approvedUtilityStringRecord(
+                                 S, SM, Value->getAsCXXRecordDecl(), Context);
+  if (!View && !String)
+    return std::nullopt;
+  // Existing carrier layout checks prove the selected char traits definition.
+  // Hash admission additionally closes every traits specialization/primary
+  // declaration, including source redeclarations added after that definition.
+  const auto *Carrier = cast<ClassTemplateSpecializationDecl>(
+      Value->getAsCXXRecordDecl()->getDefinition());
+  const auto *TraitsRecord =
+      Carrier->getTemplateArgs().get(1).getAsType()->getAsCXXRecordDecl();
+  const auto *Traits = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      TraitsRecord ? TraitsRecord->getDefinition() : nullptr);
+  if (!stringHashRecordSource(S, SM, Traits, "char_traits",
+                              "__string/char_traits.h"))
+    return std::nullopt;
+  const llvm::StringRef Path = View ? "string_view" : "string";
+  const llvm::StringRef BaseName = View ? "__string_view_hash" : "__string_hash";
+  if (!stringHashRecordSource(S, SM, Hash, "hash", Path) ||
+      Hash->getSpecializationKind() !=
+          (View ? TSK_ExplicitSpecialization : TSK_ImplicitInstantiation) ||
+      Hash->getNumBases() != 1)
+    return std::nullopt;
+  const CXXRecordDecl *Chain[3] = {Hash, nullptr, nullptr};
+  for (unsigned I = 0; I != 3; ++I) {
+    const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Chain[I]);
+    if (!R || !R->isEmpty() || !R->isStandardLayout() ||
+        !R->isTriviallyCopyable() || !R->field_empty() ||
+        R->hasUserDeclaredConstructor() || R->hasUserDeclaredDestructor() ||
+        !R->hasTrivialDestructor() ||
+        Context.getTypeSize(Context.getRecordType(R)) != Context.getCharWidth() ||
+        Context.getTypeAlign(Context.getRecordType(R)) !=
+            Context.getTypeAlign(Context.UnsignedCharTy) ||
+        R->getNumBases() != (I == 2 ? 0u : 1u))
+      return std::nullopt;
+    const auto Header = I == 2 ? "__functional/unary_function.h" : Path;
+    if (I &&
+        (!stringHashRecordSource(
+             S, SM, R, I == 1 ? BaseName : "__unary_function_keep_layout_base",
+             Header) ||
+         R->getSpecializationKind() != TSK_ImplicitInstantiation))
+      return std::nullopt;
+    if (const auto *Dtor = R->getDestructor())
+      for (const auto *D : Dtor->redecls()) {
+        const auto *Method = cast<CXXDestructorDecl>(D);
+        if (!stringHashOrigin(S, SM, D, Header) || !Method->isImplicit() ||
+            !Method->isDefaulted() || !Method->isTrivial() ||
+            Method->isDeleted() || Method->isInvalidDecl() ||
+            Method->getTypeSourceInfo())
+          return std::nullopt;
+      }
+    if (I != 2) {
+      const auto &B = *R->bases_begin();
+      if (B.isVirtual() || B.getAccessSpecifier() != AS_public)
+        return std::nullopt;
+      const auto *Base = B.getType()->getAsCXXRecordDecl();
+      Chain[I + 1] = Base ? Base->getDefinition() : nullptr;
+    }
+  }
+  const auto *Base = cast<ClassTemplateSpecializationDecl>(Chain[1]);
+  const auto &Args = Base->getTemplateArgs();
+  if (Args.size() != (View ? 1u : 2u) ||
+      Args.get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args.get(0).getAsType(), Context.CharTy))
+    return std::nullopt;
+  if (!View) {
+    const auto *Source = cast<ClassTemplateSpecializationDecl>(
+        Value->getAsCXXRecordDecl());
+    if (Args.get(1).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Args.get(1).getAsType(),
+                             Source->getTemplateArgs().get(2).getAsType()))
+      return std::nullopt;
+  }
+  const auto &UnaryArgs =
+      cast<ClassTemplateSpecializationDecl>(Chain[2])->getTemplateArgs();
+  if (UnaryArgs.size() != 2 ||
+      UnaryArgs.get(0).getKind() != TemplateArgument::Type ||
+      UnaryArgs.get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(UnaryArgs.get(0).getAsType(), Value) ||
+      !Context.hasSameType(UnaryArgs.get(1).getAsType(), Context.getSizeType()))
+    return std::nullopt;
+  return StringHashObjectInfo{Hash, Base, Value, bool(View)};
+}
+
 std::optional<FunctionalObjectRecord>
 approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context) {
+  if (auto StringHash = approvedStringHashObject(S, SM, Record, Context))
+    return FunctionalObjectRecord{StringHash->Record};
   if (functionTraitObjectValue(S, SM, Record, Context))
     return FunctionalObjectRecord{Record->getDefinition()};
   const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
@@ -1058,6 +1205,8 @@ bool approvedFunctionalObjectBaseCast(const State &S, const SourceManager &SM,
           ? Arguments.get(0).getAsType()
           : QualType();
   auto *Base = scalarHashBase(S, SM, Definition, ValueType, Context);
+  if (auto StringHash = approvedStringHashObject(S, SM, Hash, Context))
+    Base = dyn_cast<ClassTemplateSpecializationDecl>(StringHash->Base);
   if (!Base)
     Base = enumHashBase(S, SM, Definition, ValueType, Context);
   const auto *Target = Cast->getType()->getAsCXXRecordDecl();
@@ -2112,10 +2261,411 @@ static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
                                  Context.getSizeType()};
 }
 
+// A closed proof for this public operation, not a permission to lower any of
+// these SDK bodies independently. No declaration or query-wide proof is cached.
+class StringHashSourceClosure {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  std::set<const FunctionDecl *> Seen;
+  unsigned Nodes = 0;
+
+  bool origin(const Decl *D, llvm::StringRef Path) const {
+    return stringHashOrigin(S, SM, D, Path);
+  }
+  bool functionSource(const FunctionDecl *F, llvm::StringRef Path) const {
+    if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+        !origin(F, Path))
+      return false;
+    for (const auto *D : F->redecls())
+      if (!origin(D, Path))
+        return false;
+    auto TemplateOrigin = [&](const Decl *D) {
+      // The selected swap definition and its canonical forward declaration
+      // reside in different pinned headers.
+      return origin(D, Path) ||
+             (Path == "__utility/swap.h" && F->getIdentifier() &&
+              F->getName() == "swap" &&
+              origin(D, "__type_traits/is_swappable.h"));
+    };
+    if (const auto *Primary = F->getPrimaryTemplate())
+      for (const auto *D : Primary->redecls())
+        if (!TemplateOrigin(D) || !TemplateOrigin(D->getTemplatedDecl()))
+          return false;
+    if (const auto *Pattern = F->getTemplateInstantiationPattern())
+      for (const auto *D : Pattern->redecls())
+        if (!TemplateOrigin(D))
+          return false;
+    return true;
+  }
+  bool pointerTraitsValue(const TypedefNameDecl *Local) const {
+    QualType Type = Local->getUnderlyingType();
+    while (const auto *E = dyn_cast<ElaboratedType>(Type.getTypePtr()))
+      Type = E->getNamedType();
+    const auto *Alias = dyn_cast<TypedefType>(Type.getTypePtr());
+    const auto *Value = Alias ? Alias->getDecl() : nullptr;
+    const auto *Traits = Value ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                    Value->getDeclContext()) : nullptr;
+    if (!Value || Value->getName() != "value_type" ||
+        !origin(Value, "__iterator/iterator_traits.h") ||
+        !Context.hasSameType(Local->getUnderlyingType(), Context.CharTy) ||
+        !stringHashRecordSource(S, SM, Traits, "iterator_traits",
+                                 "__iterator/iterator_traits.h") ||
+        Traits->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Traits->getSpecializedTemplateOrPartial()
+             .dyn_cast<ClassTemplatePartialSpecializationDecl *>() ||
+        Traits->getTemplateArgs().size() != 1 ||
+        Traits->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Traits->getTemplateArgs().get(0).getAsType(),
+            Context.getPointerType(Context.CharTy.withConst())))
+      return false;
+    for (const auto *D : Value->redecls())
+      if (!origin(D, "__iterator/iterator_traits.h"))
+        return false;
+    return true;
+  }
+  bool record(const CXXRecordDecl *R) const {
+    R = R ? R->getDefinition() : nullptr;
+    if (!R || !approvedStandardSDKDeclaration(S, SM, R))
+      return false;
+    for (const auto *D : R->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, D))
+        return false;
+    const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(R);
+    if (!Specialization)
+      return true; // A nested record of an already pinned SDK class.
+    const auto *Primary = Specialization->getSpecializedTemplate();
+    for (const auto *D : Primary->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, D) ||
+          !approvedStandardSDKDeclaration(S, SM, D->getTemplatedDecl()))
+        return false;
+    if (const auto *Partial = Specialization->getSpecializedTemplateOrPartial()
+                                  .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+      for (const auto *D : Partial->redecls())
+        if (!approvedStandardSDKDeclaration(S, SM, D))
+          return false;
+    return true;
+  }
+  bool intrinsicValueAdapter(const FunctionDecl *F) const {
+    const auto Name = F->getName();
+    const auto *Args = F->getTemplateSpecializationArgs();
+    const auto *Pattern = F->getTemplateInstantiationPattern();
+    const auto *Body = Pattern ? dyn_cast_or_null<CompoundStmt>(Pattern->getBody()) : nullptr;
+    if (!Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type ||
+        !Pattern || !Body || F->getNumParams() != 1 || !F->isConstexpr())
+      return false;
+    const auto T = Args->get(0).getAsType();
+    const auto Value = T.getNonReferenceType();
+    const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
+    if (Value.isVolatileQualified() || Value.isRestrictQualified() ||
+        Value.getAddressSpace() != LangAS::Default || !Prototype || !Prototype->isNothrow())
+      return false;
+    if (Name == "addressof") {
+      const auto *Return = Body->size() == 1 ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+      const auto *Call = Return ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+      const auto *Builtin = Call ? Call->getDirectCallee() : nullptr;
+      const auto *Argument = Call && Call->getNumArgs() == 1
+                                 ? dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+      if (!Builtin || Builtin->getBuiltinID() != Builtin::BI__builtin_addressof ||
+          !Argument || Argument->getDecl() != Pattern->getParamDecl(0) ||
+          !cstddefOrigin(S, SM, Call->getExprLoc(), "libcxx", "__memory/addressof.h"))
+        return false;
+      for (const auto *D : Builtin->redecls())
+        if (!D->isImplicit() ||
+            (D->getLocation().isValid() &&
+             !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/addressof.h")))
+          return false;
+      return Context.hasSameUnqualifiedType(Value, Context.CharTy) &&
+             Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Value)) &&
+             Context.hasSameType(F->getReturnType(), Context.getPointerType(Value));
+    }
+    if ((Name != "move" && Name != "forward") ||
+        !Context.hasSameUnqualifiedType(Value, Context.getSizeType()) ||
+        !F->getParamDecl(0)->getType()->isReferenceType() ||
+        !Context.hasSameType(F->getParamDecl(0)->getType().getNonReferenceType(), Value))
+      return false;
+    const auto Result = Name == "forward" && T->isLValueReferenceType()
+                            ? T : Context.getRValueReferenceType(Value);
+    if (!Context.hasSameType(F->getReturnType(), Result) || Body->size() > 2)
+      return false;
+    const ReturnStmt *Return = nullptr;
+    for (const auto *Node : Body->body()) {
+      if (const auto *R = dyn_cast<ReturnStmt>(Node))
+        Return = R;
+      else if (const auto *D = dyn_cast<DeclStmt>(Node)) {
+        if (!D->isSingleDecl() ||
+            !approvedStandardSDKDeclaration(S, SM, D->getSingleDecl()))
+          return false;
+        const auto *Alias = dyn_cast<TypedefNameDecl>(D->getSingleDecl());
+        if (!isa<StaticAssertDecl>(D->getSingleDecl()) &&
+            !(Name == "move" && Alias && Alias->getName() == "_Up" &&
+              Alias->getDeclContext() == Pattern && Alias->getTypeSourceInfo() &&
+              origin(Alias, "__utility/move.h") &&
+              cstddefOrigin(S, SM, Alias->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
+                             "libcxx", "__utility/move.h")))
+          return false;
+      } else
+        return false;
+    }
+    const auto *Cast = Return ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Parameter = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+    return Parameter && Parameter->getDecl() == Pattern->getParamDecl(0);
+  }
+  bool statement(const Stmt *Node, unsigned Depth) {
+    if (!Node)
+      return true;
+    if (++Nodes > 200000 || Depth > 128 ||
+        !S.sdkFile(SM, Node->getBeginLoc()))
+      return false;
+    if (const auto *Call = dyn_cast<CallExpr>(Node))
+      if (!function(Call->getDirectCallee(), Depth + 1, Call->getExprLoc()))
+        return false;
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node))
+      if (!function(Construction->getConstructor(), Depth + 1))
+        return false;
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
+      const auto *D = Reference->getDecl();
+      if (!approvedSDKDeclaration(S, SM, D) ||
+          !approvedSDKDeclaration(S, SM, Reference->getFoundDecl()))
+        return false;
+      if (const auto *V = dyn_cast<VarDecl>(D))
+        for (const auto *R : V->redecls())
+          if (!approvedSDKDeclaration(S, SM, R))
+            return false;
+    }
+    if (const auto *Member = dyn_cast<MemberExpr>(Node))
+      if (!approvedStandardSDKDeclaration(S, SM, Member->getMemberDecl()))
+        return false;
+    if (const auto *Declarations = dyn_cast<DeclStmt>(Node))
+      for (const auto *D : Declarations->decls()) {
+        if (!approvedSDKDeclaration(S, SM, D))
+          return false;
+        if (const auto *Alias = dyn_cast<TypedefNameDecl>(D);
+            Alias && Alias->getName() == "value_type" &&
+            !pointerTraitsValue(Alias))
+          return false;
+      }
+    for (const auto *Child : Node->children())
+      if (!statement(Child, Depth + 1))
+        return false;
+    return true;
+  }
+
+public:
+  StringHashSourceClosure(const State &S, const SourceManager &SM,
+                           const ASTContext &Context)
+      : S(S), SM(SM), Context(Context) {}
+  bool function(const FunctionDecl *F, unsigned Depth = 0,
+                SourceLocation Site = {}) {
+    if (!F || Depth > 128)
+      return false;
+    if (F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated ||
+        F->getBuiltinID() == Builtin::BI__builtin_constant_p) {
+      const llvm::StringRef Path =
+          F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated
+              ? "__type_traits/is_constant_evaluated.h"
+              : "string";
+      if (!cstddefOrigin(S, SM, Site, "libcxx", Path))
+        return false;
+      for (const auto *D : F->redecls())
+        if (!D->isImplicit() ||
+            (D->getLocation().isValid() &&
+             !cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path) &&
+             !(F->getBuiltinID() == Builtin::BI__builtin_constant_p &&
+               cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                              "__utility/is_valid_range.h"))))
+          return false;
+      return true; // Compiler proof dependencies; no emitted runtime call.
+    }
+    if (!Seen.insert(F->getCanonicalDecl()).second)
+      return true;
+    if (Seen.size() > 128)
+      return false;
+    if (F->getIdentifier() && F->getName() == "memcpy") {
+      auto COrigin = [&](const Decl *D) {
+        return D && approvedSDKDeclaration(S, SM, D) &&
+               cstddefOrigin(S, SM, D->getLocation(), "resource",
+                              "include/string.h");
+      };
+      for (const auto *D : F->redecls())
+        if (!COrigin(D))
+          return false;
+      return COrigin(F) && F->isExternC() && !F->hasBody() &&
+             !F->isVariadic() && F->getNumParams() == 3 &&
+             Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) &&
+             F->getParamDecl(0)->getType().isRestrictQualified() &&
+             F->getParamDecl(1)->getType().isRestrictQualified() &&
+             Context.hasSameType(F->getParamDecl(0)->getType().getUnqualifiedType(), Context.VoidPtrTy) &&
+             Context.hasSameType(F->getParamDecl(1)->getType().getUnqualifiedType(),
+                 Context.getPointerType(Context.VoidTy.withConst())) &&
+             Context.hasSameType(F->getParamDecl(2)->getType(), Context.getSizeType());
+    }
+    llvm::StringRef Path;
+    if (const auto *M = dyn_cast<CXXMethodDecl>(F)) {
+      const auto *Parent = M->getParent();
+      if (!record(Parent))
+        return false;
+      if (Parent->getName() == "__murmur2_or_cityhash") {
+        Path = "__functional/hash.h";
+        const auto *Hasher = dyn_cast<ClassTemplateSpecializationDecl>(Parent);
+        if (!stringHashRecordSource(S, SM, Hasher, "__murmur2_or_cityhash", Path) ||
+            Hasher->getSpecializationKind() != TSK_ImplicitInstantiation ||
+            Hasher->getTemplateArgs().size() != 2 ||
+            Hasher->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+            Hasher->getTemplateArgs().get(1).getKind() != TemplateArgument::Integral ||
+            !Context.hasSameType(Hasher->getTemplateArgs().get(0).getAsType(), Context.getSizeType()) ||
+            Hasher->getTemplateArgs().get(1).getAsIntegral() != Context.getTypeSize(Context.getSizeType()))
+          return false;
+      } else if (Parent->getName() == "pair") {
+        Path = "__utility/pair.h";
+        const auto Pair = approvedUtilityPairRecord(S, SM, Parent, Context);
+        if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.getSizeType()) ||
+            !Context.hasSameType(Pair->Second->getType(), Context.getSizeType()))
+          return false;
+      } else if (Parent->getName() == "basic_string" ||
+                 Parent->getName() == "__string_hash") {
+        Path = "string";
+      } else if (Parent->getName() == "basic_string_view" ||
+                 Parent->getName() == "__string_view_hash") {
+        Path = "string_view";
+      } else if (Parent->getName() == "pointer_traits") {
+        Path = "__memory/pointer_traits.h";
+      } else {
+        return false;
+      }
+    } else if (F->getIdentifier()) {
+      const auto Name = F->getName();
+      if (Name == "__do_string_hash")
+        Path = "__string/char_traits.h";
+      else if (Name == "__loadword")
+        Path = "__functional/hash.h";
+      else if (Name == "swap")
+        Path = "__utility/swap.h";
+      else if (Name == "move" || Name == "forward")
+        Path = Name == "move" ? "__utility/move.h" : "__utility/forward.h";
+      else if (Name == "__to_address")
+        Path = "__memory/pointer_traits.h";
+      else if (Name == "__libcpp_is_constant_evaluated")
+        Path = "__type_traits/is_constant_evaluated.h";
+      else if (Name == "addressof")
+        Path = "__memory/addressof.h";
+    }
+    if (Path.empty() || !functionSource(F, Path))
+      return false;
+    // Clang recognizes these SDK value/address adapters as intrinsics and can
+    // leave their specialization bodies uninstantiated. Authenticate the exact
+    // immutable pattern and primitive signature rather than a general fallback.
+    if (F->getIdentifier() && (F->getName() == "move" ||
+                              F->getName() == "forward" ||
+                              F->getName() == "addressof"))
+      return intrinsicValueAdapter(F);
+    if (F->getIdentifier() && F->getName() == "__hash_len_0_to_16") {
+      // ABI1 shifts the uint32_t local before its size_t promotion. Merely
+      // trusting the pinned file would also accept a user-selected ABI2 arm.
+      unsigned NarrowShifts = 0;
+      std::function<void(const Stmt *)> Check = [&](const Stmt *Node) {
+        if (!Node)
+          return;
+        if (const auto *B = dyn_cast<BinaryOperator>(Node);
+            B && B->getOpcode() == BO_Shl) {
+          const auto *N = dyn_cast<IntegerLiteral>(B->getRHS()->IgnoreParenImpCasts());
+          const auto *V = dyn_cast<DeclRefExpr>(B->getLHS()->IgnoreParenImpCasts());
+          if (N && N->getValue() == 3 && V && V->getDecl()->getName() == "__a" &&
+              Context.hasSameType(B->getType(), Context.UnsignedIntTy) &&
+              Context.hasSameType(B->getLHS()->getType(), Context.UnsignedIntTy))
+            ++NarrowShifts;
+        }
+        for (const auto *Child : Node->children())
+          Check(Child);
+      };
+      Check(F->getBody());
+      if (NarrowShifts != 1)
+        return false;
+    }
+    if (F->getIdentifier() && F->getName() == "__loadword") {
+      const auto *Args = F->getTemplateSpecializationArgs();
+      if (!Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type ||
+          (!Context.hasSameType(Args->get(0).getAsType(), Context.UnsignedIntTy) &&
+           !Context.hasSameType(Args->get(0).getAsType(), Context.getSizeType())))
+        return false;
+    }
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F)) {
+      if (Constructor->isImplicit() && Constructor->isTrivial())
+        return true;
+      for (const auto *Initializer : Constructor->inits())
+        if (!statement(Initializer->getInit(), Depth + 1))
+          return false;
+    }
+    return F->hasBody() && statement(F->getBody(), Depth + 1);
+  }
+};
+
+std::optional<StringHashObjectInfo>
+approvedStringHashCall(const State &S, const SourceManager &SM,
+                       const CallExpr *Call, const ASTContext &Context,
+                       bool Runtime) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
+  const auto *Cast = Call && Call->getNumArgs() == 2
+                         ? dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens())
+                         : nullptr;
+  const auto Object = approvedStringHashObject(
+      S, SM, Cast ? Cast->getSubExpr()->getType()->getAsCXXRecordDecl() : nullptr,
+      Context);
+  if (!Operator || !Method || !Reference || !Cast || !Object ||
+      Context.getTargetInfo().isBigEndian() || Context.getCharWidth() != 8 ||
+      Context.getTypeSize(Context.UnsignedIntTy) != 32 ||
+      (Context.getTypeSize(Context.getSizeType()) != 32 &&
+       Context.getTypeSize(Context.getSizeType()) != 64) ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
+      !Method->isInlined() || Method->getRefQualifier() != RQ_None ||
+      Method->getNumParams() != 1 || !Call->isPRValue() ||
+      (Cast->getCastKind() != CK_DerivedToBase &&
+       Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Cast->path_size() != 1 ||
+      *Cast->path_begin() != &*Object->Record->bases_begin() ||
+      Method->getParent()->getCanonicalDecl() != Object->Base->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Cast->getType(), Context.getRecordType(Object->Base)) ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+    return std::nullopt;
+  const auto Expected = Object->View
+      ? Object->ValueType.withConst()
+      : Context.getLValueReferenceType(Object->ValueType.withConst());
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  const llvm::StringRef Path = Object->View ? "string_view" : "string";
+  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+  if (!Context.hasSameType(Method->getParamDecl(0)->getType(), Expected) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Object->ValueType) ||
+      Call->getArg(1)->getType().isVolatileQualified() ||
+      (!Object->View && !Call->getArg(1)->isGLValue()) ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || !Pattern ||
+      !stringHashOrigin(S, SM, Pattern, Path))
+    return std::nullopt;
+  const FunctionDecl *Methods[] = {Method, Pattern};
+  for (const auto *F : Methods)
+    for (const auto *D : F->redecls())
+      if (!stringHashOrigin(S, SM, D, Path))
+        return std::nullopt;
+  if (Runtime && !StringHashSourceClosure(S, SM, Context).function(Method))
+    return std::nullopt;
+  return Object;
+}
+
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference,
     const CXXMethodDecl *SelectedMethod) {
+  if (Call && RequireOwnedReference)
+    if (auto StringHash = approvedStringHashCall(S, SM, Call, Context, true))
+      return FunctionalOperationInfo{FunctionalOperation::ByteHash,
+          StringHash->ValueType, {}, Context.getSizeType(), Context.getSizeType()};
   if (Call) {
     if (auto Pointer = approvedPointerHashOperation(
             S, SM, Call, Context, RequireOwnedReference))
@@ -3400,6 +3950,8 @@ static bool functionalWrapperSignatureOperation(const State &S,
 bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
                                       const ASTContext &Context) {
+  if (approvedStringHashCall(S, SM, Call, Context, false))
+    return true;
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);

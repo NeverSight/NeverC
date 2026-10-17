@@ -308,7 +308,21 @@ enum class FunctionalOperation {
   LogicalOr,
   LogicalNot,
   Hash,
+  ByteHash,
 };
+struct StringHashObjectInfo {
+  const clang::CXXRecordDecl *Record, *Base;
+  clang::QualType ValueType;
+  bool View;
+};
+std::optional<StringHashObjectInfo>
+approvedStringHashObject(const State &S, const clang::SourceManager &SM,
+                         const clang::CXXRecordDecl *Record,
+                         const clang::ASTContext &Context);
+std::optional<StringHashObjectInfo>
+approvedStringHashCall(const State &S, const clang::SourceManager &SM,
+                       const clang::CallExpr *Call,
+                       const clang::ASTContext &Context, bool Runtime);
 struct FunctionalObjectRecord {
   const clang::CXXRecordDecl *Record;
 };
@@ -2309,6 +2323,8 @@ public:
   // Identity metadata only; authorization is repeated for every typed use.
   std::map<std::string, const clang::FunctionDecl *> DefaultHeapIdentities;
   std::map<std::string, json::Object> UsedDefaultHeapLocations;
+  std::string StringHashHelperName;
+  clang::SourceLocation StringHashHelperLocation;
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
@@ -2480,6 +2496,8 @@ public:
   bool defaultHeapFunction(const clang::FunctionDecl *F, bool Allocate,
                            bool Array, clang::QualType Element, HeapUse Use) const;
   void retainDefaultHeapCalls(const json::Array &Body);
+  std::string stringHashName(clang::SourceLocation L);
+  json::Object lowerStringHash();
   json::Object lowerDefaultHeap(const clang::FunctionDecl *F,
                                 const json::Object &Location);
   std::string nativeHeapImport(const clang::FunctionDecl *F, clang::SourceLocation L);

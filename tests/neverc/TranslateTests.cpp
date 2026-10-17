@@ -365245,3 +365245,305 @@ int main(){return 0;}
     expectNoArtifacts(Output);
   }
 }
+
+
+TEST_F(TranslateTest, CoreV2StringHashByteRangesMatchPinnedAlgorithms) {
+  const auto Output = tmpFile("string-hash-values.nc");
+  const auto Result = translate(fixture("string-hash-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__murmur2_or_cityhash"), std::string::npos);
+  EXPECT_EQ(Text.find("__do_string_hash"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashStringsPreserveReferencesAndMutation) {
+  const auto Output = tmpFile("string-hash-strings.nc");
+  const auto Result = translate(fixture("string-hash-strings.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__murmur2_or_cityhash"), std::string::npos);
+  EXPECT_EQ(Text.find("__do_string_hash"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-strings") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashQueriesRetainSignatureOnlySource) {
+  const auto Output = tmpFile("string-hash-queries.nc");
+  const auto Result = translate(fixture("string-hash-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__murmur2_or_cityhash"), std::string::npos);
+  EXPECT_EQ(Text.find("__do_string_hash"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const auto Pure = tmpFile("string-hash-pure-signatures.cpp");
+  const auto PureOutput = tmpFile("string-hash-pure-signatures.nc");
+  writeFile(Pure, R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <type_traits>
+#include <utility>
+static_assert(noexcept(std::declval<const std::hash<std::string_view>&>()(std::declval<std::string_view>())));
+static_assert(noexcept(std::declval<const std::hash<std::string>&>()(std::declval<const std::string&>())));
+static_assert(std::is_same<decltype(std::hash<std::string_view>{}(std::string_view{})), std::size_t>::value);
+static_assert(std::is_same<decltype(std::hash<std::string>{}(std::declval<const std::string&>())), std::size_t>::value);
+int main() { return 0; }
+)cpp");
+  const auto PureResult = translate(Pure,
+      {"--profile", "cpp-core-v2", "-o", PureOutput.string()});
+  ASSERT_EQ(PureResult.exitCode, 0) << PureResult.out << PureResult.err;
+  EXPECT_EQ(readFile(PureOutput).find("nct_string_hash_bytes_"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-pure-signatures") + Optimization);
+    const auto Compile = compileGenerated(PureOutput, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const auto Replaced = tmpFile("string-hash-query-view-replaced.cpp");
+  const auto ReplacedOutput = tmpFile("string-hash-query-view-replaced.nc");
+  writeFile(Replaced, R"cpp(#include <string_view>
+#include <functional>
+namespace std { inline namespace __1 { template<> constexpr basic_string_view<char>::basic_string_view() noexcept : __data_(nullptr), __size_(0) {} }}
+static_assert(noexcept(std::hash<std::string_view>{}(std::string_view{})));
+int main(){return 0;}
+)cpp");
+  const auto Rejected = translate(Replaced,
+      {"--profile", "cpp-core-v2", "-o", ReplacedOutput.string()});
+  EXPECT_NE(Rejected.exitCode, 0) << Rejected.out << Rejected.err;
+  EXPECT_EQ(Rejected.err.find("TR0101"), std::string::npos) << Rejected.err;
+  EXPECT_TRUE(Rejected.err.find("TR0201") != std::string::npos ||
+              Rejected.err.find("TR0203") != std::string::npos) << Rejected.err;
+  EXPECT_FALSE(fs::exists(ReplacedOutput));
+  EXPECT_FALSE(fs::exists(ReplacedOutput.string() + ".manifest.json"));
+  EXPECT_FALSE(fs::exists(ReplacedOutput.string() + ".map.json"));
+}
+
+TEST_F(TranslateTest, CoreV2StringHashRejectsSelectedSDKSubstitutions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"public-view-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<>struct hash<string_view>; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"public-string-partial-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class A>struct hash<basic_string<char,char_traits<char>,A>>; }}
+int main(){std::string s("abc");return std::hash<std::string>{}(s)==0;}
+)cpp"},
+      {"helper-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class P>size_t __do_string_hash(P,P); }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"loadword-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T>T __loadword(const void*); }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"hasher-primary-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T,size_t>struct __murmur2_or_cityhash; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"cityhash-partial-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T>struct __murmur2_or_cityhash<T,64>; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"iterator-traits-partial-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T>struct iterator_traits<T*>; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"helper-source-specialization", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"swap-source-specialization", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<>inline void swap<size_t>(size_t&a,size_t&b)noexcept{a=0;b=0;} }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"pair-primary-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T,class U>struct pair; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"char-traits-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<>struct char_traits<char>; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"view-base-primary-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T>struct __string_view_hash; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"string-base-primary-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T,class A>struct __string_hash; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"unary-base-primary-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+namespace std { inline namespace __1 { template<class T,class U>struct __unary_function_keep_layout_base; }}
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"memcpy-redeclaration", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+extern "C" void* memcpy(void*,const void*,std::size_t);
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+      {"abi2-macro-selection", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){return std::hash<std::string_view>{}(std::string_view("abcdefghijklmnop",16))==0?1:0;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("string-hash-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("string-hash-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashRetainsDirectCallBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"private-view-base-call", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){return std::__string_view_hash<char>{}(std::string_view("abc"))==0;}
+)cpp"},
+      {"private-string-base-call", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){std::string s("abc");return std::__string_hash<char,std::allocator<char>>{}(s)==0;}
+)cpp"},
+      {"private-byte-hasher-call", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){return std::__murmur2_or_cityhash<std::size_t>{}("abc",3)==0;}
+)cpp"},
+      {"private-string-helper-call", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){const char*s="abc";return std::__do_string_hash(s,s+3)==0;}
+)cpp"},
+      {"hash-method-address", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){auto method=&std::hash<std::string_view>::operator();return method==nullptr;}
+)cpp"},
+      {"invoke-adapter", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){return std::invoke(std::hash<std::string_view>{},std::string_view("abc"))==0;}
+)cpp"},
+      {"apply-adapter", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){return std::apply(std::hash<std::string_view>{},std::tuple<std::string_view>{std::string_view("abc")})==0;}
+)cpp"},
+      {"reference-wrapper-adapter", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){std::hash<std::string_view> hash;return std::ref(hash)(std::string_view("abc"))==0;}
+)cpp"},
+      {"wide-view-hash", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <tuple>
+int main(){return std::hash<std::u16string_view>{}(std::u16string_view(u"abc"))==0;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("string-hash-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("string-hash-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

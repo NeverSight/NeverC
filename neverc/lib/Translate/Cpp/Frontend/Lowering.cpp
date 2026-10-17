@@ -4561,6 +4561,8 @@ class FunctionLowering {
     case FunctionalOperation::LogicalNot:
       return snapshot(
           UnaryExpression("!", cast(std::move(Left), "bool", L), "bool"), L);
+    case FunctionalOperation::ByteHash:
+      reject(L, "string hash", "String hash requires its exact direct public call.");
     case FunctionalOperation::Hash:
       if (Info.LeftType->isNullPtrType())
         return snapshot(
@@ -4780,12 +4782,281 @@ class FunctionLowering {
     return Type->isFunctionType() ? A.Context.getPointerType(Type) : Type;
   }
 
+  Expression callStringHash(Expression Data, Expression Length,
+                            SourceLocation L) {
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    auto Result = temporary(SizeType, L);
+    A.chargeExpansion(1 + generatedNodes(Result) + generatedNodes(Data) +
+                          generatedNodes(Length), L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.stringHashName(L)},
+        {"args", json::Array{std::move(Data), std::move(Length)}},
+        {"target", json::Object(Result)}, {"loc", A.loc(L)}});
+    return Result;
+  }
+
+  Expression stringHashBytes(Expression Data, Expression Length,
+                             SourceLocation L) {
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto U32Type = type(A.Context.UnsignedIntTy, L);
+    const auto ByteType = type(A.Context.UnsignedCharTy, L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto BytesType = type(
+        A.Context.getPointerType(A.Context.UnsignedCharTy.withConst()), L);
+    auto Bytes = snapshot(
+        cast(cast(std::move(Data), "ptr:void", L), BytesType, L), L);
+    auto Count = snapshot(std::move(Length), L);
+    auto W = [&](uint64_t V) { return quantity(V, SizeType, L); };
+    auto Op = [&](llvm::StringRef Name, const Expression &X,
+                  const Expression &Y) {
+      return binary(Name, json::Object(X), json::Object(Y), SizeType, L);
+    };
+    auto Add = [&](const Expression &X, const Expression &Y) {
+      return Op("+", X, Y);
+    };
+    auto Sub = [&](const Expression &X, const Expression &Y) {
+      return Op("-", X, Y);
+    };
+    auto Mul = [&](const Expression &X, const Expression &Y) {
+      return Op("*", X, Y);
+    };
+    auto Xor = [&](const Expression &X, const Expression &Y) {
+      return Op("^", X, Y);
+    };
+    auto Shr = [&](const Expression &X, unsigned N) {
+      return Op(">>", X, W(N));
+    };
+    auto Save = [&](Expression V) { return snapshot(std::move(V), L); };
+    auto Byte = [&](const Expression &Offset) {
+      return cast(index(json::Object(Bytes),
+                        cast(json::Object(Offset), DifferenceType, L),
+                        ByteType, L), SizeType, L);
+    };
+    // Assemble words from byte loads: no alignment, aliasing or overread
+    // assumptions. Every caller proves the entire selected word is in range.
+    auto Fetch = [&](const Expression &Offset, unsigned Bits = 64) {
+      const auto WordType = Bits == 32 ? U32Type : SizeType;
+      auto Word = quantity(0, WordType, L);
+      for (unsigned I = 0; I != Bits / 8; ++I) {
+        auto V = cast(Byte(Add(Offset, W(I))), WordType, L);
+        if (I)
+          V = binary("<<", std::move(V), quantity(I * 8, WordType, L),
+                     WordType, L);
+        Word = binary("|", std::move(Word), std::move(V), WordType, L);
+      }
+      return Save(std::move(Word));
+    };
+    auto Test = [&](llvm::StringRef Name, const Expression &X,
+                    const Expression &Y) {
+      return binary(Name, json::Object(X), json::Object(Y), "bool", L);
+    };
+    if (A.Context.getTypeSize(A.Context.getSizeType()) == 32) {
+      auto H = Save(json::Object(Count));
+      auto Remaining = Save(json::Object(Count));
+      auto Offset = Save(W(0));
+      const auto Head = labelName(), Body = labelName(), Tail = labelName();
+      jump(Head, L);
+      label(Head, L);
+      branch(Test(">=", Remaining, W(4)), Body, Tail, L);
+      label(Body, L);
+      auto K = Fetch(Offset, 32);
+      assign(K, Mul(K, W(0x5bd1e995)), L);
+      assign(K, Xor(K, Shr(K, 24)), L);
+      assign(K, Mul(K, W(0x5bd1e995)), L);
+      assign(H, Xor(Mul(H, W(0x5bd1e995)), K), L);
+      assign(Offset, Add(Offset, W(4)), L);
+      assign(Remaining, Sub(Remaining, W(4)), L);
+      jump(Head, L);
+      label(Tail, L);
+      for (unsigned N : {3u, 2u, 1u}) {
+        const auto Present = labelName(), Next = labelName();
+        branch(Test(">=", Remaining, W(N)), Present, Next, L);
+        label(Present, L);
+        assign(H, Xor(H, Op("<<", Byte(Add(Offset, W(N - 1))),
+                                  W((N - 1) * 8))), L);
+        if (N == 1)
+          assign(H, Mul(H, W(0x5bd1e995)), L);
+        jump(Next, L);
+        label(Next, L);
+      }
+      assign(H, Xor(H, Shr(H, 13)), L);
+      assign(H, Mul(H, W(0x5bd1e995)), L);
+      return Save(Xor(H, Shr(H, 15)));
+    }
+    auto K0 = W(0xc3a5c85c97cb3127ULL);
+    auto K1 = W(0xb492b66fbe98f273ULL);
+    auto K2 = W(0x9ae16a3b2f90404fULL);
+    auto K3 = W(0xc949d7c7509e6557ULL);
+    auto Rotate = [&](Expression V, const Expression &Shift) {
+      auto Value = Save(std::move(V));
+      return Op("|", Op(">>", Value, Shift),
+                      Op("<<", Value, Sub(W(64), Shift)));
+    };
+    auto Mix = [&](Expression V) {
+      auto Value = Save(std::move(V));
+      return Xor(Value, Shr(Value, 47));
+    };
+    auto Hash16 = [&](Expression U, Expression V) {
+      auto Left = Save(std::move(U)), Right = Save(std::move(V));
+      auto M = W(0x9ddfea08eb382d69ULL);
+      auto X = Save(Mul(Xor(Left, Right), M));
+      assign(X, Xor(X, Shr(X, 47)), L);
+      auto Y = Save(Mul(Xor(Right, X), M));
+      assign(Y, Xor(Y, Shr(Y, 47)), L);
+      return Save(Mul(Y, M));
+    };
+    auto Weak = [&](const Expression &Offset, Expression SeedA,
+                    Expression SeedB) {
+      auto W0 = Fetch(Offset), X = Fetch(Add(Offset, W(8)));
+      auto Y = Fetch(Add(Offset, W(16))), Z = Fetch(Add(Offset, W(24)));
+      auto Left = Save(Add(SeedA, W0));
+      auto Right = Save(Rotate(Add(Add(SeedB, Left), Z), W(21)));
+      auto C = Save(json::Object(Left));
+      assign(Left, Add(Add(Left, X), Y), L);
+      assign(Right, Add(Right, Rotate(json::Object(Left), W(44))), L);
+      return std::pair<Expression, Expression>{Save(Add(Left, Z)),
+                                               Save(Add(Right, C))};
+    };
+    auto Result = temporary(SizeType, L);
+    const auto Short = labelName(), MediumTest = labelName();
+    const auto Medium = labelName(), LargeTest = labelName();
+    const auto Large = labelName(), Long = labelName(), Done = labelName();
+    auto Finish = [&](Expression Value) {
+      assign(Result, std::move(Value), L);
+      jump(Done, L);
+    };
+    branch(Test("<=", Count, W(16)), Short, MediumTest, L);
+    label(Short, L);
+    const auto Nine = labelName(), FourTest = labelName();
+    const auto Four = labelName(), TinyTest = labelName();
+    const auto Tiny = labelName(), Empty = labelName();
+    branch(Test(">", Count, W(8)), Nine, FourTest, L);
+    label(Nine, L);
+    auto A9 = Fetch(W(0)), B9 = Fetch(Sub(Count, W(8)));
+    Finish(Xor(Hash16(json::Object(A9), Rotate(Add(B9, Count), Count)), B9));
+    label(FourTest, L);
+    branch(Test(">=", Count, W(4)), Four, TinyTest, L);
+    label(Four, L);
+    auto A4 = Fetch(W(0), 32), B4 = Fetch(Sub(Count, W(4)), 32);
+    // Pinned libc++ ABI1 truncates this shift in uint32_t before size_t.
+    auto Shifted4 = binary("<<", json::Object(A4), quantity(3, U32Type, L),
+                           U32Type, L);
+    Finish(Hash16(Add(Count, cast(std::move(Shifted4), SizeType, L)),
+                  cast(json::Object(B4), SizeType, L)));
+    label(TinyTest, L);
+    branch(Test(">", Count, W(0)), Tiny, Empty, L);
+    label(Tiny, L);
+    auto A1 = Save(Byte(W(0))), B1 = Save(Byte(Shr(Count, 1)));
+    auto C1 = Save(Byte(Sub(Count, W(1))));
+    auto Y1 = Save(Add(A1, Op("<<", B1, W(8))));
+    auto Z1 = Save(Add(Count, Op("<<", C1, W(2))));
+    Finish(Mul(Mix(Xor(Mul(Y1, K2), Mul(Z1, K3))), K2));
+    label(Empty, L);
+    Finish(json::Object(K2));
+    label(MediumTest, L);
+    branch(Test("<=", Count, W(32)), Medium, LargeTest, L);
+    label(Medium, L);
+    auto A17 = Save(Mul(Fetch(W(0)), K1)), B17 = Fetch(W(8));
+    auto C17 = Save(Mul(Fetch(Sub(Count, W(8))), K2));
+    auto D17 = Save(Mul(Fetch(Sub(Count, W(16))), K0));
+    Finish(Hash16(Add(Add(Rotate(Sub(A17, B17), W(43)),
+                            Rotate(json::Object(C17), W(30))), D17),
+                  Add(Sub(Add(A17, Rotate(Xor(B17, K3), W(20))), C17),
+                      Count)));
+    label(LargeTest, L);
+    branch(Test("<=", Count, W(64)), Large, Long, L);
+    label(Large, L);
+    auto Z33 = Fetch(W(24));
+    auto A33 = Save(Add(Fetch(W(0)),
+                        Mul(Add(Count, Fetch(Sub(Count, W(16)))), K0)));
+    auto B33 = Save(Rotate(Add(A33, Z33), W(52)));
+    auto C33 = Save(Rotate(json::Object(A33), W(37)));
+    assign(A33, Add(A33, Fetch(W(8))), L);
+    assign(C33, Add(C33, Rotate(json::Object(A33), W(7))), L);
+    assign(A33, Add(A33, Fetch(W(16))), L);
+    auto VF33 = Save(Add(A33, Z33));
+    auto VS33 = Save(Add(Add(B33, Rotate(json::Object(A33), W(31))), C33));
+    assign(A33, Add(Fetch(W(16)), Fetch(Sub(Count, W(32)))), L);
+    assign(Z33, Add(Z33, Fetch(Sub(Count, W(8)))), L);
+    assign(B33, Rotate(Add(A33, Z33), W(52)), L);
+    assign(C33, Rotate(json::Object(A33), W(37)), L);
+    assign(A33, Add(A33, Fetch(Sub(Count, W(24)))), L);
+    assign(C33, Add(C33, Rotate(json::Object(A33), W(7))), L);
+    assign(A33, Add(A33, Fetch(Sub(Count, W(16)))), L);
+    auto WF33 = Save(Add(A33, Z33));
+    auto WS33 = Save(Add(Add(B33, Rotate(json::Object(A33), W(31))), C33));
+    auto R33 = Save(Mix(Add(Mul(Add(VF33, WS33), K2),
+                               Mul(Add(WF33, VS33), K0))));
+    Finish(Mul(Mix(Add(Mul(R33, K0), VS33)), K2));
+    label(Long, L);
+    auto X = Fetch(Sub(Count, W(40)));
+    auto Y = Save(Add(Fetch(Sub(Count, W(16))),
+                       Fetch(Sub(Count, W(56)))));
+    auto Z = Hash16(Add(Fetch(Sub(Count, W(48))), Count),
+                     Fetch(Sub(Count, W(24))));
+    auto [VF, VS] = Weak(Sub(Count, W(64)), json::Object(Count),
+                         json::Object(Z));
+    auto [WF, WS] = Weak(Sub(Count, W(32)), Add(Y, K1), json::Object(X));
+    assign(X, Add(Mul(X, K1), Fetch(W(0))), L);
+    auto Remaining = Save(Op("&", Sub(Count, W(1)), W(~uint64_t(63))));
+    auto Offset = Save(W(0));
+    const auto Loop = labelName(), After = labelName();
+    jump(Loop, L);
+    label(Loop, L);
+    assign(X, Mul(Rotate(Add(Add(Add(X, Y), VF),
+                               Fetch(Add(Offset, W(8)))), W(37)), K1), L);
+    assign(Y, Mul(Rotate(Add(Add(Y, VS), Fetch(Add(Offset, W(48)))),
+                             W(42)), K1), L);
+    assign(X, Xor(X, WS), L);
+    assign(Y, Add(Y, Add(VF, Fetch(Add(Offset, W(40))))), L);
+    assign(Z, Mul(Rotate(Add(Z, WF), W(33)), K1), L);
+    auto NewV = Weak(Offset, Mul(VS, K1), Add(X, WF));
+    assign(VF, std::move(NewV.first), L);
+    assign(VS, std::move(NewV.second), L);
+    auto NewW = Weak(Add(Offset, W(32)), Add(Z, WS),
+                     Add(Y, Fetch(Add(Offset, W(16)))));
+    assign(WF, std::move(NewW.first), L);
+    assign(WS, std::move(NewW.second), L);
+    auto OldZ = Save(json::Object(Z));
+    assign(Z, json::Object(X), L);
+    assign(X, std::move(OldZ), L);
+    assign(Offset, Add(Offset, W(64)), L);
+    assign(Remaining, Sub(Remaining, W(64)), L);
+    branch(Test("!=", Remaining, W(0)), Loop, After, L);
+    label(After, L);
+    auto Left = Add(Add(Hash16(json::Object(VF), json::Object(WF)),
+                        Mul(Mix(json::Object(Y)), K1)), Z);
+    auto Right = Add(Hash16(json::Object(VS), json::Object(WS)), X);
+    Finish(Hash16(std::move(Left), std::move(Right)));
+    label(Done, L);
+    return Result;
+  }
+
   Expression functionalOperation(const CallExpr *Call,
                                  const FunctionalOperationInfo &Info) {
     auto L = Call->getExprLoc();
     const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
     const bool Unary = Method->getNumParams() == 1;
     discardFunctionalObject(Call->getArg(0));
+    if (Info.Operation == FunctionalOperation::ByteHash) {
+      const auto Object = approvedStringHashCall(
+          A.S, A.Sources, Call, A.Context, true);
+      if (!Object)
+        reject(L, "string hash", "The exact public string hash source is unavailable.");
+      if (Object->View) {
+        const auto View = approvedUtilityStringViewRecord(
+            A.S, A.Sources, Object->ValueType->getAsCXXRecordDecl(), A.Context);
+        auto Value = snapshot(expression(Call->getArg(1)), L);
+        auto Data = snapshot(fieldStorage(json::Object(Value), View->Data, L), L);
+        auto Length = snapshot(fieldStorage(std::move(Value), View->Size, L), L);
+        return callStringHash(std::move(Data), std::move(Length), L);
+      }
+      const auto String = approvedUtilityStringRecord(
+          A.S, A.Sources, Object->ValueType->getAsCXXRecordDecl(), A.Context);
+      const auto *Argument = Call->getArg(1);
+      auto Address = snapshot(address(lvalue(Argument), Argument->getType(), L), L);
+      auto [Data, Length] = readStringAt(std::move(Address), *String, L);
+      return callStringHash(std::move(Data), std::move(Length), L);
+    }
     if (Info.Operation == FunctionalOperation::Hash) {
       if (!Unary || Call->getNumArgs() != 2)
         reject(L, "functional hash",
@@ -34499,6 +34770,26 @@ public:
   explicit FunctionLowering(Adapter &A) : A(A), Function(nullptr) {
     Prefix = "nct_f" + digest("startup:" + A.S.Relative).substr(0, 12) + "_";
   }
+  json::Object runStringHash(llvm::StringRef Name, SourceLocation L) {
+    Prefix = "nct_f" + digest(Name).substr(0, 12) + "_";
+    const auto PointerType = type(
+        A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    Parameters.push_back(json::Object{{"name", "nct_hash_data"},
+                                     {"type", PointerType}, {"loc", A.loc(L)}});
+    Parameters.push_back(json::Object{{"name", "nct_hash_size"},
+                                     {"type", SizeType}, {"loc", A.loc(L)}});
+    Entry = labelName();
+    label(Entry, L);
+    auto Result = stringHashBytes(variable("nct_hash_data", PointerType, L),
+                                  variable("nct_hash_size", SizeType, L), L);
+    A.chargeExpansion(1 + generatedNodes(Result), L);
+    Body.push_back(json::Object{{"op", "return"}, {"value", std::move(Result)},
+                               {"loc", A.loc(L)}});
+    Open = false;
+    return finish(Name, SizeType, L, true, false);
+  }
+
   json::Object runStartup(llvm::ArrayRef<const VarDecl *> Objects) {
     const auto L = Objects.front()->getLocation();
     const auto Name = "nct_startup_" + digest(A.S.Relative).substr(0, 16);
@@ -34655,6 +34946,32 @@ json::Object Adapter::lowerDefaultHeap(const FunctionDecl *F,
   return json::Object{{"name", name(F)}, {"result", Allocate ? "ptr:void" : "void"},
       {"internal", true}, {"c_export", false}, {"params", std::move(Params)},
       {"locals", std::move(Locals)}, {"body", std::move(Body)}, {"loc", json::Object(Location)}};
+}
+
+std::string Adapter::stringHashName(SourceLocation L) {
+  if (!StringHashHelperName.empty())
+    return StringHashHelperName;
+  StringHashHelperName = "nct_string_hash_bytes_" + digest(S.Relative).substr(0, 16);
+  // Source C exports keep their spelling. They cannot shadow an internal
+  // generated helper, including an intentionally chosen matching spelling.
+  for (;;) {
+    bool Collision = false;
+    for (const auto *F : Functions)
+      if (name(F) == StringHashHelperName) {
+        Collision = true;
+        break;
+      }
+    if (!Collision)
+      break;
+    StringHashHelperName += "_x";
+  }
+  StringHashHelperLocation = L;
+  return StringHashHelperName;
+}
+
+json::Object Adapter::lowerStringHash() {
+  return FunctionLowering(*this).runStringHash(StringHashHelperName,
+                                             StringHashHelperLocation);
 }
 
 json::Object Adapter::lower(FunctionDecl *Function) {
