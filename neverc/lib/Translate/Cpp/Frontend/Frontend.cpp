@@ -5,6 +5,7 @@
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/ParentMapContext.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
@@ -12730,6 +12731,176 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
   throw Failure{};
 }
 
+// Semantic graph comparison only. The caller separately completes the exact
+// retained trait source and binds every input to this owned factory call.
+static bool tupleFactoryMatchGraph(
+    const ASTContext &Context, const Expr *Actual, const Expr *Hypothetical,
+    QualType Result,
+    const std::map<const Expr *, const OpaqueValueExpr *> &Inputs,
+    std::vector<std::pair<const Expr *, const Expr *>> &Matched) {
+  std::set<std::pair<const Expr *, const Expr *>> Seen;
+  std::set<const Expr *> ConsumedInputs;
+  std::vector<std::pair<const Expr *, const Expr *>> Pairs;
+  auto SameType = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Compare = [&](auto &&Self, const Expr *A, const Expr *B,
+                     unsigned Depth, bool Root) -> bool {
+    if (!A || !B || Depth > 64 || Seen.size() >= 200000)
+      return false;
+    if (Root) {
+      // Clang's SDK return statement owns the helper argument cleanups. The
+      // retained initialization root has the same nested lifetime nodes but
+      // no enclosing statement wrapper. Block/compound-literal cleanups are
+      // never normalized through this exception.
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(A)) {
+        if (Cleanup->getNumObjects())
+          return false;
+        A = Cleanup->getSubExpr();
+      }
+      // The trait retains the initializer of a reference, before applying the
+      // reference result's expression category. Exact SDK T(get(...)) adds a
+      // no-op cast whose written reference type supplies that final category.
+      // Keep its cv conversion and the complete initializer below the cast.
+      if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(A);
+          Cast && Result->isReferenceType() && Cast->getCastKind() == CK_NoOp &&
+          SameType(Cast->getTypeAsWritten(), Result) &&
+          SameType(Cast->getType(), Result.getNonReferenceType()) &&
+          SameType(Cast->getType(), Cast->getSubExpr()->getType()) &&
+          Cast->getValueKind() == Expr::getValueKindForType(Result))
+        A = Cast->getSubExpr();
+      if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(A);
+          Cast && (Cast->getCastKind() == CK_NoOp ||
+                   Cast->getCastKind() == CK_ConstructorConversion) &&
+          SameType(Cast->getType(), Result.getNonReferenceType()) &&
+          SameType(Cast->getType(), Cast->getSubExpr()->getType()) &&
+          Cast->getValueKind() == Cast->getSubExpr()->getValueKind())
+        A = Cast->getSubExpr();
+      if (isa<CXXScalarValueInitExpr>(A) && isa<ImplicitValueInitExpr>(B) &&
+          Result->isScalarType() && Inputs.empty() &&
+          SameType(A->getType(), B->getType()) &&
+          SameType(A->getType(), Result) && A->isPRValue() && B->isPRValue())
+        return true;
+    }
+    if (!SameType(A->getType(), B->getType()) ||
+        A->getValueKind() != B->getValueKind() ||
+        A->getObjectKind() != B->getObjectKind())
+      return false;
+    if (auto Input = Inputs.find(A); Input != Inputs.end()) {
+      if (B != Input->second || Input->second->getSourceExpr())
+        return false;
+      ConsumedInputs.insert(A);
+      Pairs.emplace_back(A, B);
+      return true;
+    }
+    if (!Seen.emplace(A, B).second)
+      return true;
+    const auto *AC = dyn_cast<CXXConstructExpr>(A);
+    const auto *BC = dyn_cast<CXXConstructExpr>(B);
+    if (AC || BC) {
+      if (!AC || !BC || AC->getConstructor() != BC->getConstructor() ||
+          AC->getConstructionKind() != BC->getConstructionKind() ||
+          AC->requiresZeroInitialization() != BC->requiresZeroInitialization() ||
+          AC->isListInitialization() != BC->isListInitialization() ||
+          AC->isStdInitListInitialization() != BC->isStdInitListInitialization() ||
+          AC->isElidable() != BC->isElidable() ||
+          AC->getNumArgs() != BC->getNumArgs())
+        return false;
+    } else if (const auto *Cast = dyn_cast<CastExpr>(A)) {
+      const auto *Other = dyn_cast<CastExpr>(B);
+      // Explicit T(value) versus the trait's direct initialization can place
+      // the identical scalar cast on different root syntax classes.
+      if (!Other || Cast->getCastKind() != Other->getCastKind() ||
+          (!(Root && isa<CXXFunctionalCastExpr>(Cast) &&
+             isa<ImplicitCastExpr>(Other)) &&
+           A->getStmtClass() != B->getStmtClass()) ||
+          Cast->path_size() != Other->path_size())
+        return false;
+      auto P = Other->path_begin();
+      for (const auto *Base : Cast->path())
+        if (Base != *P++)
+          return false;
+    } else {
+      if (A->getStmtClass() != B->getStmtClass())
+        return false;
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(A)) {
+        const auto *Other = cast<CXXDefaultArgExpr>(B);
+        const auto *Parameter = Default->getParam();
+        if (Parameter != Other->getParam() || Default->hasRewrittenInit() ||
+            Other->hasRewrittenInit() || !Parameter->hasDefaultArg() ||
+            Default->getExpr() != Parameter->getDefaultArg() ||
+            Default->getExpr() != Other->getExpr() ||
+            Parameter->getFunctionScopeIndex() !=
+                Other->getParam()->getFunctionScopeIndex())
+          return false;
+        Pairs.emplace_back(A, B);
+        return true;
+      }
+      if (const auto *Call = dyn_cast<CallExpr>(A)) {
+        const auto *Other = cast<CallExpr>(B);
+        if (!Call->getDirectCallee() ||
+            Call->getDirectCallee() != Other->getDirectCallee() ||
+            !SameType(Call->getDirectCallee()->getType(),
+                      Other->getDirectCallee()->getType()) ||
+            Call->getNumArgs() != Other->getNumArgs())
+          return false;
+      } else if (const auto *Member = dyn_cast<MemberExpr>(A)) {
+        const auto *Other = cast<MemberExpr>(B);
+        if (Member->getMemberDecl() != Other->getMemberDecl() ||
+            Member->isArrow() != Other->isArrow() ||
+            Member->isImplicitAccess() != Other->isImplicitAccess() ||
+            Member->hasQualifier() != Other->hasQualifier() ||
+            (Member->hasQualifier() &&
+             Member->getQualifier() != Other->getQualifier()))
+          return false;
+      } else if (const auto *Reference = dyn_cast<DeclRefExpr>(A)) {
+        if (Reference->getDecl() != cast<DeclRefExpr>(B)->getDecl())
+          return false;
+      } else if (const auto *Bound = dyn_cast<CXXBindTemporaryExpr>(A)) {
+        if (Bound->getTemporary()->getDestructor() !=
+            cast<CXXBindTemporaryExpr>(B)->getTemporary()->getDestructor())
+          return false;
+      } else if (const auto *Materialized = dyn_cast<MaterializeTemporaryExpr>(A)) {
+        const auto *Other = cast<MaterializeTemporaryExpr>(B);
+        if (Materialized->getStorageDuration() != Other->getStorageDuration() ||
+            Materialized->getExtendingDecl() != Other->getExtendingDecl() ||
+            Materialized->isBoundToLvalueReference() !=
+                Other->isBoundToLvalueReference())
+          return false;
+      } else if (!isa<ParenExpr, CXXScalarValueInitExpr,
+                          ImplicitValueInitExpr>(A)) {
+        return false;
+      }
+    }
+    Pairs.emplace_back(A, B);
+    auto AI = A->child_begin(), BI = B->child_begin();
+    for (; AI != A->child_end() && BI != B->child_end(); ++AI, ++BI) {
+      const auto *AE = dyn_cast_or_null<Expr>(*AI);
+      const auto *BE = dyn_cast_or_null<Expr>(*BI);
+      if (bool(AE) != bool(BE) || (AE && !Self(Self, AE, BE, Depth + 1, false)))
+        return false;
+    }
+    return AI == A->child_end() && BI == B->child_end();
+  };
+  if (!Compare(Compare, Actual, Hypothetical, 0, true) ||
+      ConsumedInputs.size() != Inputs.size())
+    return false;
+  Matched = std::move(Pairs);
+  return true;
+}
+
+static bool tupleFactorySelectionLocation(
+    const State &S, const SourceManager &SM, SourceLocation Location,
+    const FunctionDecl *Function) {
+  const auto Origin = S.sdkFile(SM, Location);
+  return Origin && Origin->Root == "libcxx" &&
+         (Origin->Path == "tuple" ||
+          Origin->Path == "__type_traits/is_constructible.h") &&
+         Function && S.owns(SM, Function->getLocation()) &&
+         concreteMemberFunctionTemplate(Function) &&
+         (isa<CXXConstructorDecl>(Function) || isa<CXXConversionDecl>(Function));
+}
+
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
@@ -15668,7 +15839,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     for (const auto *Source : Found->second) {
       A.chargeExpansion(1, Source->Location);
       if (Source->Expression != Expression || Source->Function != Function ||
-          !A.S.owns(A.Sources, Source->Location)) {
+          (!A.S.owns(A.Sources, Source->Location) &&
+           !tupleFactorySelectedSource(Expression, Function, Source->Location))) {
         A.reject(L, "selected member template identity", "Retained source must identify this actual expression and selected function.");
         return false;
       }
@@ -15880,7 +16052,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Current);
           Call && Call->getOperator() == OO_Subscript)
         A.S.UnevaluatedArraySubscripts.insert(Call);
-      if (const auto *Call = dyn_cast<CallExpr>(Current); Call)
+      if (const auto *Call = dyn_cast<CallExpr>(Current); Call) {
+        if (const auto *F = Call->getDirectCallee();
+            F && F->getIdentifier() && F->getName() == "make_from_tuple" &&
+            retainTupleFactory(Call, false))
+          A.S.UnevaluatedMemoryCalls.emplace(Call,
+              A.Context.getCanonicalType(F->getReturnType()));
         if (const auto Result = functionalQuerySource(A, Call);
             !Result.isNull())
           A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
@@ -15935,6 +16112,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
                 A.S.UnevaluatedMemoryDefaults.emplace(Default, Call);
         }
+      }
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
           Pending.push_back(Operand);
@@ -16565,6 +16743,596 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  "An erased wrapper requires one original member source.");
     }
   }
+  struct TupleFactoryUse {
+    UtilityMakeFromTupleCall Factory;
+    bool Runtime;
+  };
+  std::map<const CallExpr *, TupleFactoryUse> TupleFactoryUses;
+  std::map<const Expr *, std::set<const CallExpr *>> TupleFactorySelections;
+  std::set<const TypeTraitExpr *> TupleFactoryExceptionQueries;
+  std::set<const TypeTraitExpr *> CompletedTupleFactoryExceptionQueries;
+
+  bool tupleFactorySelectedSource(const Expr *Expression,
+                                 const FunctionDecl *Function,
+                                 SourceLocation Location) const {
+    if (!tupleFactorySelectionLocation(A.S, A.Sources, Location, Function))
+      return false;
+    const auto Found = TupleFactorySelections.find(Expression);
+    if (Found == TupleFactorySelections.end())
+      return false;
+    const FunctionDecl *Selected = nullptr;
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Expression))
+      Selected = C->getConstructor();
+    else if (const auto *C = dyn_cast<CXXMemberCallExpr>(Expression))
+      Selected = C->getDirectCallee();
+    return Selected == Function && !Found->second.empty();
+  }
+
+  bool retainTupleFactory(const CallExpr *Call, bool Runtime) {
+    if (auto Found = TupleFactoryUses.find(Call); Found != TupleFactoryUses.end())
+      return Found->second.Runtime == Runtime;
+    const auto Signature = approvedUtilityMakeFromTupleCall(
+        A.S, A.Sources, Call, A.Context, true);
+    const auto Factory = Runtime ? approvedUtilityMakeFromTupleCall(
+                                      A.S, A.Sources, Call, A.Context)
+                                : Signature;
+    if (!Factory || !Signature ||
+        Factory->Constructibility != Signature->Constructibility)
+      return false;
+    const auto *Query = Factory->Constructibility;
+    auto Retained = A.OperationTraits.find(Query);
+    if (Retained == A.OperationTraits.end() || !Retained->second.Attempted ||
+        !Retained->second.Complete || !Retained->second.Root ||
+        Retained->second.Operands.size() != Factory->Tuple.size())
+      return false;
+    const auto &Source = Retained->second;
+    std::vector<std::pair<const Expr *, const Expr *>> AllPairs;
+    auto Match = [&](const UtilityMakeFromTupleCall &Description) {
+      std::map<const Expr *, const OpaqueValueExpr *> Inputs;
+      std::set<unsigned> Indices;
+      for (const auto &[Get, I] : Description.Elements) {
+        if (I >= Source.Operands.size() || !Indices.insert(I).second)
+          return false;
+        const auto *Operand = dyn_cast_or_null<OpaqueValueExpr>(Source.Operands[I]);
+        QualType T = Query->getArg(I + 1)->getType();
+        if (T->isObjectType() || T->isFunctionType())
+          T = A.Context.getRValueReferenceType(T);
+        if (!Operand || Operand->getSourceExpr() ||
+            !A.Context.hasSameType(Operand->getType(),
+                                   T.getNonLValueExprType(A.Context)) ||
+            Operand->getValueKind() != Expr::getValueKindForType(T) ||
+            !A.Context.hasSameType(Get->getType(), Operand->getType()) ||
+            Get->getValueKind() != Operand->getValueKind() ||
+            !Inputs.emplace(Get, Operand).second)
+          return false;
+      }
+      std::vector<std::pair<const Expr *, const Expr *>> Pairs;
+      if (Indices.size() != Source.Operands.size() ||
+          !tupleFactoryMatchGraph(A.Context, Description.Operation, Source.Root,
+                                 Description.ResultType, Inputs, Pairs))
+        return false;
+      AllPairs.insert(AllPairs.end(), Pairs.begin(), Pairs.end());
+      return true;
+    };
+    if (!Match(*Signature) || (Runtime && !Match(*Factory)))
+      return false;
+    A.chargeExpansion(1 + AllPairs.size(), Call->getExprLoc());
+    TupleFactoryUses.emplace(Call, TupleFactoryUse{*Factory, Runtime});
+    for (const auto &[Actual, Hypothetical] : AllPairs) {
+      TupleFactorySelections[Actual].insert(Call);
+      TupleFactorySelections[Hypothetical].insert(Call);
+    }
+    for (const auto &[Actual, Hypothetical] : AllPairs) {
+        const FunctionDecl *Selected = nullptr;
+        if (const auto *C = dyn_cast<CXXConstructExpr>(Actual))
+          Selected = C->getConstructor();
+        else if (const auto *C = dyn_cast<CXXMemberCallExpr>(Actual))
+          Selected = C->getDirectCallee();
+        if (Selected && concreteMemberFunctionTemplate(Selected) &&
+            !checkSelectedTemplateCall(Actual, Selected, Call->getExprLoc()))
+          return false;
+    }
+    const bool Stronger = TupleFactoryExceptionQueries.insert(Query).second;
+    // Even a scalar-only query requires the stronger exception-source pass.
+    // An earlier ordinary query completion is never a factory permission.
+    if (A.DeferredOperationQueries.insert(Query).second ||
+        (Stronger && A.VerifiedOperationQueries.count(Query)))
+      A.PendingOperationQueries.push_back(Query);
+    A.typeClassificationValue(Query);
+    queueConsumedOperationSignatures(Query);
+    return true;
+  }
+
+  bool tupleFactoryRuntimeDefinitions(const OperationTraitSource &Source) {
+    std::set<const Expr *> Seen;
+    std::set<const CXXRecordDecl *> Records;
+    auto Method = [&](const CXXMethodDecl *Function) -> bool {
+      if (!Function || !A.S.owns(A.Sources, Function->getLocation()))
+        return false;
+      if (Function->isTrivial() &&
+          (Function->isImplicit() || defaultedDeclaration(Function)))
+        return true; // The operation-source pass still proves this family.
+      const FunctionDecl *Definition = nullptr;
+      if (!Function->hasBody(Definition) || !Definition ||
+          !A.S.owns(A.Sources, Definition->getLocation()))
+        return false;
+      if (Function->isImplicit() || defaultedDeclaration(Function)) {
+        if (isa<CXXDestructorDecl>(Function))
+          return isa<CompoundStmt>(Definition->getBody()) &&
+                 cast<CompoundStmt>(Definition->getBody())->body_empty();
+        auto Found = CompletedGeneratedOperations.find(
+            cast<CXXMethodDecl>(Definition));
+        return Found != CompletedGeneratedOperations.end() && Found->second.Complete;
+      }
+      return CompletedOperationDefinitions.count(Definition);
+    };
+    auto Function = [&](const FunctionDecl *Selected) {
+      if (const auto *Member = dyn_cast_or_null<CXXMethodDecl>(Selected))
+        return Method(Member);
+      const auto *Definition = Selected ? Selected->getDefinition() : nullptr;
+      return Definition && A.S.owns(A.Sources, Selected->getLocation()) &&
+             A.S.owns(A.Sources, Definition->getLocation()) &&
+             CompletedOperationDefinitions.count(Definition);
+    };
+    auto Destruction = [&](auto &&Self, QualType Type, unsigned Depth) -> bool {
+      if (Type->isReferenceType())
+        return true;
+      const auto *Record = A.Context.getBaseElementType(Type)->getAsCXXRecordDecl();
+      if (!Record)
+        return true;
+      Record = Record->getDefinition();
+      if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+        return false;
+      if (!Records.insert(Record).second)
+        return true;
+      if (!Record->hasTrivialDestructor() && !Method(Record->getDestructor()))
+        return false;
+      for (const auto &Base : Record->bases())
+        if (!Self(Self, Base.getType(), Depth + 1))
+          return false;
+      for (const auto *Field : Record->fields())
+        if (!Self(Self, Field->getType(), Depth + 1))
+          return false;
+      return true;
+    };
+    auto Walk = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
+      if (!E || Depth > 64 || Seen.size() >= 200000)
+        return false;
+      if (!Seen.insert(E).second || isa<OpaqueValueExpr>(E))
+        return true;
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(E))
+        return !Default->hasRewrittenInit() &&
+               Self(Self, Default->getExpr(), Depth + 1);
+      if (const auto *C = dyn_cast<CXXConstructExpr>(E))
+        if (!Method(C->getConstructor()) || !Destruction(Destruction, C->getType(), 0))
+          return false;
+      if (const auto *C = dyn_cast<CallExpr>(E))
+        if (!Function(C->getDirectCallee()) ||
+            (C->isPRValue() && !Destruction(Destruction, C->getType(), 0)))
+          return false;
+      if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(E))
+        if (!Method(B->getTemporary()->getDestructor()))
+          return false;
+      for (const auto *Child : E->children())
+        if (const auto *Expression = dyn_cast_or_null<Expr>(Child))
+          if (!Self(Self, Expression, Depth + 1))
+            return false;
+      return true;
+    };
+    return Walk(Walk, Source.Root, 0);
+  }
+
+public:
+  bool finishTupleFactories() {
+    for (const auto &[Call, Use] : TupleFactoryUses) {
+      const auto *Query = Use.Factory.Constructibility;
+      const auto Source = A.OperationTraits.find(Query);
+      if (Source == A.OperationTraits.end() ||
+          !CompletedTupleFactoryExceptionQueries.count(Query)) {
+        A.reject(Call->getExprLoc(), "tuple factory exception source",
+                 "Both selected factory layers require completed exception source.");
+        return false;
+      }
+      if (!Use.Runtime)
+        continue;
+      // No query-only constructor, call or destructor signature enters this
+      // pass. Nontrivial generated definitions have their own completed body.
+      if (!tupleFactoryRuntimeDefinitions(Source->second) ||
+          !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
+                                true, &CompletedOperationDefaults,
+                                &CheckedOperationExpressions, &CheckedOperationTypes,
+                                &CompletedGeneratedOperations, nullptr, nullptr, nullptr,
+                                &CompletedQueryTemplateSelections, Query,
+                                &CompletedSpecialMemberSignatures) ||
+          !tupleFactoryLifetime(Call, Use.Factory)) {
+        A.reject(Call->getExprLoc(), "tuple factory runtime source",
+                 "The exact factory operation requires completed runtime definitions and live reference origins.",
+                 "TR0203");
+        return false;
+      }
+      A.VerifiedTupleFactories.insert(Call);
+    }
+    return A.S.Diagnostics.empty();
+  }
+private:
+
+  const Expr *tupleFactoryPeel(const Expr *E) const {
+    for (unsigned Depth = 0; E && Depth < 64; ++Depth) {
+      if (const auto *C = dyn_cast<ExprWithCleanups>(E))
+        E = C->getSubExpr();
+      else if (const auto *P = dyn_cast<ParenExpr>(E))
+        E = P->getSubExpr();
+      else if (const auto *C = dyn_cast<CastExpr>(E);
+               C && (C->getCastKind() == CK_NoOp ||
+                     (C->getCastKind() == CK_ConstructorConversion &&
+                      isa<CXXConstructExpr>(C->getSubExpr()) &&
+                      A.Context.hasSameType(C->getType(), C->getSubExpr()->getType()) &&
+                      C->getValueKind() == C->getSubExpr()->getValueKind())))
+        E = C->getSubExpr();
+      else if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(E))
+        E = B->getSubExpr();
+      else
+        return E;
+    }
+    return nullptr;
+  }
+  struct TupleFactoryOrigin {
+    const VarDecl *Local = nullptr;
+    bool Borrowed = false;
+    bool Temporary = false;
+    bool Self = false;
+    bool Valid = false;
+    const Expr *TemporarySource = nullptr;
+    const FunctionDecl *BorrowedFunction = nullptr;
+  };
+  const FunctionDecl *tupleFactoryEnclosingFunction(const Expr *E) const {
+    auto Node = DynTypedNode::create(*E);
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      const auto Parents = A.Context.getParents(Node);
+      if (Parents.size() != 1)
+        return nullptr;
+      Node = Parents[0];
+      if (const auto *Function = Node.get<FunctionDecl>())
+        return Function;
+    }
+    return nullptr;
+  }
+  const Expr *tupleFactoryFullExpression(const Expr *E) const {
+    const Expr *Root = E;
+    auto Node = DynTypedNode::create(*E);
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      const auto Parents = A.Context.getParents(Node);
+      if (Parents.size() != 1)
+        return nullptr;
+      if (const auto *Expression = Parents[0].get<Expr>()) {
+        Root = Expression;
+        Node = Parents[0];
+      } else {
+        return Root;
+      }
+    }
+    return nullptr;
+  }
+  TupleFactoryOrigin tupleFactoryOrigin(const Expr *Expression,
+                                       unsigned Depth = 0) {
+    const auto *E = tupleFactoryPeel(Expression);
+    if (!E || Depth > 64)
+      return {};
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(E)) {
+      const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+      if (!Variable)
+        return {};
+      if (const auto *Parameter = dyn_cast<ParmVarDecl>(Variable)) {
+        if (Parameter->getType()->isReferenceType())
+          return {nullptr, true, false, false, true, nullptr,
+                  dyn_cast<FunctionDecl>(Parameter->getDeclContext())};
+      } else if (Variable->getType()->isReferenceType()) {
+        const auto Origin = Variable->hasInit()
+                                ? tupleFactoryOrigin(Variable->getInit(), Depth + 1)
+                                : TupleFactoryOrigin{};
+        if (Variable->hasGlobalStorage() &&
+            !(Origin.Valid && Origin.Borrowed && !Origin.BorrowedFunction))
+          return {};
+        return Origin;
+      }
+      return Variable->hasGlobalStorage()
+                 ? TupleFactoryOrigin{nullptr, true, false, false, true}
+                 : TupleFactoryOrigin{Variable, false, false, false, true};
+    }
+    if (isa<CXXThisExpr>(E))
+      return {nullptr, true, false, false, true, nullptr,
+              tupleFactoryEnclosingFunction(E)};
+    if (const auto *Member = dyn_cast<MemberExpr>(E)) {
+      const auto *Field = dyn_cast<FieldDecl>(Member->getMemberDecl());
+      // A reference member's referent does not inherit its container's life.
+      if (!Field || Field->getType()->isReferenceType() ||
+          (Member->isArrow() && !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts())))
+        return {};
+      return tupleFactoryOrigin(Member->getBase(), Depth + 1);
+    }
+    if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E)) {
+      if (const auto *Extender = dyn_cast_or_null<VarDecl>(M->getExtendingDecl()))
+        return Extender->hasGlobalStorage()
+                   ? TupleFactoryOrigin{nullptr, true, false, false, true}
+                   : TupleFactoryOrigin{Extender, false, false, false, true};
+      return {nullptr, false, true, false, true, E};
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(E)) {
+      const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+      if (Call->getNumArgs() == 1 &&
+          (Operation == UtilityOperation::Move || Operation == UtilityOperation::Forward))
+        return tupleFactoryOrigin(Call->getArg(0), Depth + 1);
+    }
+    return E->isPRValue() ? TupleFactoryOrigin{nullptr, false, true, false, true, E}
+                         : TupleFactoryOrigin{};
+  }
+  TupleFactoryOrigin tupleFactoryElementOrigin(const Expr *Expression,
+                                               unsigned Index,
+                                               bool ReferenceElement,
+                                               unsigned Depth = 0) {
+    if (!ReferenceElement)
+      return tupleFactoryOrigin(Expression, Depth);
+    const auto *E = tupleFactoryPeel(Expression);
+    if (!E || Depth > 64)
+      return {};
+    if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
+      return tupleFactoryElementOrigin(M->getSubExpr(), Index, true, Depth + 1);
+    if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
+      const auto *V = dyn_cast<VarDecl>(R->getDecl());
+      // An opaque tuple of references has no referent summary. A local tuple
+      // initializer, including tie/forward_as_tuple, retains the exact source.
+      if (!V || isa<ParmVarDecl>(V) || !V->hasInit())
+        return {};
+      const auto Origin = tupleFactoryElementOrigin(V->getInit(), Index, true, Depth + 1);
+      if (V->hasGlobalStorage() &&
+          !(Origin.Valid && Origin.Borrowed && !Origin.BorrowedFunction))
+        return {};
+      return Origin;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(E)) {
+      const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+      if ((Operation == UtilityOperation::Tie ||
+           Operation == UtilityOperation::ForwardAsTuple) && Index < Call->getNumArgs())
+        return tupleFactoryOrigin(Call->getArg(Index), Depth + 1);
+      if ((Operation == UtilityOperation::Move || Operation == UtilityOperation::Forward) &&
+          Call->getNumArgs() == 1)
+        return tupleFactoryElementOrigin(Call->getArg(0), Index, true, Depth + 1);
+      return {};
+    }
+    if (const auto *C = dyn_cast<CXXConstructExpr>(E)) {
+      if (!approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context) &&
+          !approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context))
+        return {};
+      if (C->getNumArgs() == 1 &&
+          approvedUtilityTupleLikeSource(A.S, A.Sources, C->getArg(0)->getType(),
+                                         A.Context, true, true))
+        return tupleFactoryElementOrigin(C->getArg(0), Index, true, Depth + 1);
+      if (Index < C->getNumArgs() && !isa<CXXDefaultArgExpr>(C->getArg(Index)))
+        return tupleFactoryOrigin(C->getArg(Index), Depth + 1);
+    }
+    return {};
+  }
+  const CompoundStmt *tupleFactoryScope(const Decl *Declaration) const {
+    auto Node = DynTypedNode::create(*Declaration);
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      const auto Parents = A.Context.getParents(Node);
+      if (Parents.size() != 1)
+        return nullptr;
+      Node = Parents[0];
+      if (const auto *Block = Node.get<CompoundStmt>())
+        return Block;
+      if (Node.get<FunctionDecl>())
+        return nullptr;
+    }
+    return nullptr;
+  }
+  bool tupleFactoryLocalOutlives(const VarDecl *Origin, const VarDecl *Target) const {
+    if (!Origin || !Target || Origin == Target || Target->hasGlobalStorage() ||
+        !A.Sources.isBeforeInTranslationUnit(Origin->getLocation(), Target->getLocation()))
+      return false;
+    if (isa<ParmVarDecl>(Origin))
+      return Origin->getDeclContext() == Target->getDeclContext();
+    const auto *Scope = tupleFactoryScope(Origin);
+    if (!Scope)
+      return false;
+    auto Node = DynTypedNode::create(*Target);
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      const auto Parents = A.Context.getParents(Node);
+      if (Parents.size() != 1)
+        return false;
+      Node = Parents[0];
+      if (Node.get<CompoundStmt>() == Scope)
+        return true;
+      if (Node.get<FunctionDecl>())
+        return false;
+    }
+    return false;
+  }
+  bool tupleFactoryInputAlive(const CallExpr *Call,
+                              const TupleFactoryOrigin &Origin) const {
+    if (!Origin.Valid || Origin.Self)
+      return false;
+    if (Origin.Borrowed)
+      return !Origin.BorrowedFunction ||
+             Origin.BorrowedFunction == tupleFactoryEnclosingFunction(Call);
+    if (Origin.Temporary) {
+      const auto *Full = tupleFactoryFullExpression(Call);
+      return Full && Origin.TemporarySource &&
+             Full == tupleFactoryFullExpression(Origin.TemporarySource);
+    }
+    if (!Origin.Local ||
+        !A.Sources.isBeforeInTranslationUnit(Origin.Local->getLocation(), Call->getExprLoc()))
+      return false;
+    if (isa<ParmVarDecl>(Origin.Local))
+      return Origin.Local->getDeclContext() == tupleFactoryEnclosingFunction(Call);
+    const auto *Scope = tupleFactoryScope(Origin.Local);
+    auto Node = DynTypedNode::create(*Call);
+    for (unsigned Depth = 0; Scope && Depth < 64; ++Depth) {
+      const auto Parents = A.Context.getParents(Node);
+      if (Parents.size() != 1)
+        return false;
+      Node = Parents[0];
+      if (Node.get<CompoundStmt>() == Scope)
+        return true;
+      if (Node.get<FunctionDecl>())
+        return false;
+    }
+    return false;
+  }
+  bool tupleFactoryUseLifetime(const CallExpr *Call,
+                               const TupleFactoryOrigin &Origin) const {
+    if (!Origin.Valid)
+      return false;
+    if (Origin.Borrowed)
+      return true;
+    auto Node = DynTypedNode::create(*Call);
+    bool Projected = false;
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      const auto Parents = A.Context.getParents(Node);
+      if (Parents.size() != 1)
+        return false;
+      const auto Parent = Parents[0];
+      if (const auto *Cast = Parent.get<ImplicitCastExpr>();
+          Cast && Cast->getCastKind() == CK_LValueToRValue &&
+          !Cast->getType()->isRecordType())
+        return true;
+      if (const auto *Binary = Parent.get<BinaryOperator>();
+          Binary && Binary->isAssignmentOp() && Binary->getLHS() == Node.get<Expr>())
+        return true;
+      if (const auto *Variable = Parent.get<VarDecl>()) {
+        if (Origin.Self && !Projected && !Variable->getType()->isReferenceType() &&
+            A.Context.hasSameType(A.Context.getBaseElementType(Variable->getType()),
+                                   Call->getType()))
+          return true; // The destination itself owns the selected self field.
+        return !Origin.Temporary && !Origin.Self &&
+               tupleFactoryLocalOutlives(Origin.Local, Variable);
+      }
+      if (Parent.get<ReturnStmt>())
+        return Origin.Self && !Projected && Node.get<Expr>() &&
+               Node.get<Expr>()->isPRValue() &&
+               A.Context.hasSameType(Node.get<Expr>()->getType(), Call->getType());
+      if (const auto *Initializer = Parent.get<CXXCtorInitializer>())
+        return Origin.Self && !Projected && Initializer->isMemberInitializer() &&
+               !Initializer->getMember()->getType()->isReferenceType() &&
+               A.Context.hasSameType(Initializer->getMember()->getType(), Call->getType());
+      if (Parent.get<CallExpr>() || Parent.get<CXXConstructExpr>())
+        return false;
+      if (Parent.get<CompoundStmt>())
+        return true; // Discarded result is confined to this full expression.
+      if (const auto *Member = Parent.get<MemberExpr>()) {
+        if (Member->getBase() != Node.get<Expr>() || Member->isArrow())
+          return false;
+        Projected = true;
+      } else if (const auto *Binary = Parent.get<BinaryOperator>();
+                 Binary && Binary->getOpcode() == BO_Comma) {
+        if (Binary->getLHS() == Node.get<Expr>())
+          return true;
+        if (Binary->getRHS() != Node.get<Expr>())
+          return false;
+      } else if (const auto *Cast = Parent.get<CastExpr>()) {
+        if (Cast->getCastKind() != CK_NoOp && Cast->getCastKind() != CK_ToVoid)
+          return false;
+      } else if (!Parent.get<ParenExpr>() && !Parent.get<ExprWithCleanups>() &&
+                 !Parent.get<MaterializeTemporaryExpr>() &&
+                 !Parent.get<CXXBindTemporaryExpr>() && !Parent.get<InitListExpr>())
+        return false;
+      Node = Parent;
+    }
+    return false;
+  }
+  bool tupleFactoryLifetime(const CallExpr *Call,
+                            const UtilityMakeFromTupleCall &Factory) {
+    auto Element = [&](unsigned I) {
+      return tupleFactoryElementOrigin(Call->getArg(0), I,
+                                       Factory.Tuple.elementType(I)->isReferenceType());
+    };
+    // Value results still read every referenced input. A reference carrier
+    // initialized in an earlier full expression cannot revive its temporary.
+    for (unsigned I = 0; I < Factory.Tuple.size(); ++I)
+      if (Factory.Tuple.elementType(I)->isReferenceType() &&
+          !tupleFactoryInputAlive(Call, Element(I)))
+        return false;
+    if (Factory.ResultType->isReferenceType())
+      return Factory.Tuple.size() == 1 && tupleFactoryUseLifetime(Call, Element(0));
+    const auto *Record = Factory.ResultType->getAsCXXRecordDecl();
+    if (!Record)
+      return true;
+    Record = Record->getDefinition();
+    if (!Record || Record->getNumBases())
+      return false;
+    std::vector<const FieldDecl *> References;
+    std::set<const CXXRecordDecl *> SeenRecords;
+    auto NestedReferences = [&](auto &&Self, QualType Type, unsigned Depth) -> bool {
+      if (Depth > 64)
+        return true;
+      if (Type->isReferenceType())
+        return true;
+      const auto *Nested = A.Context.getBaseElementType(Type)->getAsCXXRecordDecl();
+      if (!Nested)
+        return false;
+      Nested = Nested->getDefinition();
+      if (!Nested)
+        return true;
+      if (!SeenRecords.insert(Nested).second)
+        return false;
+      for (const auto &Base : Nested->bases())
+        if (Self(Self, Base.getType(), Depth + 1))
+          return true;
+      for (const auto *Member : Nested->fields())
+        if (Self(Self, Member->getType(), Depth + 1))
+          return true;
+      return false;
+    };
+    for (const auto *Field : Record->fields()) {
+      if (Field->getType()->isReferenceType())
+        References.push_back(Field);
+      else if (NestedReferences(NestedReferences, Field->getType(), 0))
+        return false; // Nested reference provenance needs its own summary.
+    }
+    if (References.empty())
+      return true;
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
+        tupleFactoryPeel(Factory.Operation));
+    if (!Construction)
+      return false;
+    const auto *Constructor = Construction->getConstructor();
+    if (!ordinaryConstructor(Constructor) || Constructor->isCopyOrMoveConstructor() ||
+        Constructor->isDelegatingConstructor())
+      return false;
+    for (const auto *Field : References) {
+      const Expr *Binding = nullptr;
+      for (const auto *Initializer : Constructor->inits())
+        if (Initializer->isMemberInitializer() && Initializer->getMember() == Field)
+          Binding = tupleFactoryPeel(Initializer->getInit());
+      if (!Binding)
+        return false;
+      TupleFactoryOrigin Origin;
+      if (const auto *Reference = dyn_cast<DeclRefExpr>(Binding)) {
+        if (const auto *Parameter = dyn_cast<ParmVarDecl>(Reference->getDecl())) {
+          const auto I = Parameter->getFunctionScopeIndex();
+          if (Parameter->getDeclContext() != Constructor ||
+              !Parameter->getType()->isReferenceType() || I >= Construction->getNumArgs())
+            return false;
+          const auto *Argument = tupleFactoryPeel(Construction->getArg(I));
+          for (const auto &[Get, Index] : Factory.Elements)
+            if (Argument == Get)
+              Origin = Element(Index);
+        } else {
+          Origin = tupleFactoryOrigin(Binding);
+        }
+      } else if (const auto *Member = dyn_cast<MemberExpr>(Binding)) {
+        const auto *OwnField = dyn_cast<FieldDecl>(Member->getMemberDecl());
+        if (OwnField && OwnField->getParent() == Record &&
+            !OwnField->getType()->isReferenceType() &&
+            isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()))
+          Origin = {nullptr, false, false, true, true};
+      }
+      if (!tupleFactoryUseLifetime(Call, Origin))
+        return false;
+    }
+    return true;
+  }
+
   std::set<const CallExpr *> ArraySwapQuerySources;
   std::set<const TypeTraitExpr *> ArraySwapOperationQueries;
   void retainSDKFunctionConstantValue(const Expr *Value, QualType Destination,
@@ -16628,6 +17396,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // Capture before ownership/cache skips; only a query selecting this exact
     // completed default consumes the evidence. MaybeBindToTemporary can resolve
     // even a trivial destructor and then omit the binding expression entirely.
+    if (const auto *Call = dyn_cast<CallExpr>(S))
+      if (const auto *F = Call->getDirectCallee();
+          F && F->getIdentifier() && F->getName() == "make_from_tuple")
+        (void)retainTupleFactory(Call, !A.S.UnevaluatedMemoryCalls.count(Call));
     if (const auto *Call = dyn_cast<CallExpr>(S))
       if (const auto Swap = approvedUtilityArraySwapQuery(A.S, A.Sources, Call, A.Context);
           Swap && ArraySwapQuerySources.insert(Call).second) {
@@ -19260,6 +20032,12 @@ public:
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Selected == Source.Function &&
+          tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected)) {
+        // Collection is inert until an exact public factory binds this node.
+        SelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
       const auto *Construction =
           dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
       const auto *UtilityCall = dyn_cast_or_null<CallExpr>(Source.Expression);
@@ -22114,13 +22892,15 @@ public:
             (Query->getTrait() == UTT_IsNothrowDestructible
               ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
               : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
-                                     operationTraitNeedsExceptionSource(Query->getTrait()),
+                                     operationTraitNeedsExceptionSource(Query->getTrait()) ||
+                                         TupleFactoryExceptionQueries.count(Query),
                                      &CompletedOperationDefaults, &CheckedOperationExpressions,
                                      &CheckedOperationTypes, &CompletedGeneratedOperations,
                                      &CompletedQueryConstructions,
                                      &CompletedQueryDestructorSignatures,
                                      &CompletedQueryCalls, &CompletedQueryTemplateSelections,
-                                     ArraySwapOperationQueries.count(Query) ? Query : nullptr,
+                                     (ArraySwapOperationQueries.count(Query) ||
+                                      TupleFactoryExceptionQueries.count(Query)) ? Query : nullptr,
                                      &CompletedSpecialMemberSignatures, PrepareSpecialMember));
         if (!Complete) {
           A.reject(Query->getExprLoc(), "operation trait source",
@@ -22128,6 +22908,8 @@ public:
           return false;
         }
         A.VerifiedOperationQueries.insert(Query);
+        if (TupleFactoryExceptionQueries.count(Query))
+          CompletedTupleFactoryExceptionQueries.insert(Query);
       }
       // A folded result does not prove its operands' type or value source. Check
       // every resolved classification/operation/array query, including false and
@@ -25172,7 +25954,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   if (!Traversed || !S.Diagnostics.empty())
     return;
   CheckingSource = false;
-  if (!Check.finishTypeQueries() || !Check.finishAlgorithmPredicates())
+  if (!Check.finishTypeQueries() || !Check.finishTupleFactories() ||
+      !Check.finishAlgorithmPredicates())
     return;
   if (S.coreV2())
     orderCoreV2Records(*this);
@@ -25896,7 +26679,10 @@ class Consumer : public ASTConsumer {
       return;
     auto &Context = Template->getASTContext();
     auto &Sources = Context.getSourceManager();
-    if (!S.owns(Sources, Location))
+    if (!S.owns(Sources, Location) &&
+        !(Kind == TemplateSourceKind::Function &&
+          tupleFactorySelectionLocation(S, Sources, Location,
+              dyn_cast_or_null<FunctionDecl>(Declaration))))
       return;
     // These are successful Clang callbacks, not input protocol records. Bound
     // collection globally without eagerly rejecting an unused generic body.
@@ -26019,9 +26805,11 @@ public:
       // generic swap's conditional exception specification. Retention grants
       // no source admission: a consuming descriptor must authenticate the
       // selected specialization and each operand before checking this event.
-      if (Count != 2 || !Origin || Origin->Root != "libcxx" ||
-          (Origin->Path != "__type_traits/is_nothrow_constructible.h" &&
-           Origin->Path != "__type_traits/is_nothrow_assignable.h"))
+      if (!Origin || Origin->Root != "libcxx" ||
+          !((Count == 2 &&
+             (Origin->Path == "__type_traits/is_nothrow_constructible.h" ||
+              Origin->Path == "__type_traits/is_nothrow_assignable.h")) ||
+            (Count <= 65 && Origin->Path == "__type_traits/is_constructible.h")))
         return false;
     }
     if (Count > 65) {
@@ -26130,7 +26918,9 @@ public:
     if (!S.coreV2() || !Function || !Function->getPrimaryTemplate())
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
-    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 2))
+    if ((!S.owns(Sources, Location) &&
+         !tupleFactorySelectionLocation(S, Sources, Location, Function)) ||
+        !reserveSourceUnits(Sources, Location, 2))
       return;
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.

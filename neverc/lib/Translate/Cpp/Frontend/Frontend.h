@@ -811,6 +811,7 @@ enum class UtilityOperation {
   Tie,
   ForwardAsTuple,
   TupleApply,
+  MakeFromTuple,
   TupleCat,
   TupleSwap,
   TupleMemberSwap,
@@ -1676,6 +1677,20 @@ const clang::TypedefNameDecl *approvedUtilityTupleLikeElementTrait(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     clang::QualType Object, const UtilityTupleLikeSource &Tuple, unsigned Index,
     const clang::ASTContext &Context);
+struct UtilityMakeFromTupleCall {
+  UtilityTupleLikeSource Tuple;
+  clang::QualType ResultType;
+  const clang::FunctionDecl *Factory, *Helper;
+  const clang::CallExpr *Expansion;
+  const clang::Expr *Operation;
+  std::vector<std::pair<const clang::CallExpr *, unsigned>> Elements;
+  const clang::TypeTraitExpr *Constructibility;
+  const clang::VarTemplateSpecializationDecl *Constraint;
+  bool SignatureQuery;
+};
+std::optional<UtilityMakeFromTupleCall> approvedUtilityMakeFromTupleCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context, bool SignatureQuery = false);
 struct UtilityTupleCatCall {
   UtilityTupleRecord Result;
   std::vector<UtilityTupleLikeSource> Sources;
@@ -2313,6 +2328,7 @@ public:
   std::map<const clang::CXXMethodDecl *, SpecialMemberSource> SpecialMembers;
   bool CheckingSource = false;
   std::function<bool(clang::QualType, clang::SourceLocation)> CompleteSDKRecord;
+  std::set<const clang::CallExpr *> VerifiedTupleFactories;
   std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
   std::set<const clang::TypeTraitExpr *> DeferredOperationQueries, VerifiedOperationQueries;
   std::map<const clang::StringLiteral *, std::string> StringObjects;

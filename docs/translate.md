@@ -911,6 +911,8 @@ also supply reference and selected by-value callback arguments to `std::apply`,
 with the same source categories and parameter lifetimes as owned arrays.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
+Exact pinned `std::make_from_tuple` accepts authenticated tuple, pair and array inputs and constructs admitted scalar or source-record results. The input is evaluated once; selected conversions, constructor templates, defaults and final return/field/array destinations retain their effects and C++17 copy elision. Helper argument/default temporaries end before the caller's tuple temporaries. Runtime operations require completed definitions; pure `decltype`/`noexcept` queries check both factory signatures and selected exception sources without runtime helpers. Reference inputs, reference results and direct reference fields require live origins; expired forwarding carriers, escaping temporaries, unknown or nested reference provenance, base-bearing result records, source replacements, private helper calls and standalone addresses remain rejected. NeverC's source language remains C23-only. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#make-from-tuple-result-construction).
+
 Authenticated `std::array` objects, including zero-length and nested arrays,
 also compose with reference tuples and pairs, `ref`/`cref`, `tie`,
 `forward_as_tuple` and the checked `apply`, `invoke`, reference-wrapper,

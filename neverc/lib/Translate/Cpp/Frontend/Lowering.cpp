@@ -44,6 +44,7 @@ class FunctionLowering {
   const VarDecl *ActiveDynamicInitializer = nullptr;
   std::map<const Decl *, Expression> Storage;
   std::map<const OpaqueValueExpr *, Expression> ArraySources;
+  std::map<const Expr *, Expression> TupleFactoryElements;
   struct ArrayIndex {
     uint64_t Value;
     SourceLocation Location;
@@ -404,6 +405,8 @@ class FunctionLowering {
   }
   Expression lvalue(const Expr *E) {
     E = E->IgnoreParens();
+    if (auto Found = TupleFactoryElements.find(E); Found != TupleFactoryElements.end())
+      return Found->second;
     auto L = E->getExprLoc();
     if (const auto *C = dyn_cast<CastExpr>(E);
         C && (C->getCastKind() == CK_DerivedToBase ||
@@ -18292,6 +18295,78 @@ class FunctionLowering {
                "The std::tuple_cat element count differs from its result.");
       return Place;
     }
+    case UtilityOperation::MakeFromTuple: {
+      const auto Factory = approvedUtilityMakeFromTupleCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Factory || !A.VerifiedTupleFactories.count(Call))
+        reject(L, "utility tuple factory",
+               "The exact selected tuple factory expansion is required.");
+      // Capture the caller's tuple before opening the helper's return full
+      // expression. Its temporary storage belongs to the caller's frame.
+      auto TupleAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto TupleValue = dereference(std::move(TupleAddress), L);
+      auto SavedElements = TupleFactoryElements;
+      auto RestoreElements = llvm::make_scope_exit([&] {
+        TupleFactoryElements = std::move(SavedElements);
+      });
+      for (const auto &[Get, I] : Factory->Elements) {
+        Expression Place;
+        if (!Factory->Tuple.ArrayElements) {
+          Place = TupleElement(json::Object(TupleValue),
+                               Factory->Tuple.Elements[I],
+                               Call->getArg(0)->getType().isConstQualified());
+        } else {
+          const auto Element = Factory->Tuple.ArrayElementType;
+          const auto Pointee = Call->getArg(0)->getType().isConstQualified()
+                                   ? Element.withConst() : Element;
+          auto Storage = fieldStorage(json::Object(TupleValue),
+                                       Factory->Tuple.ArrayElements, L);
+          auto Pointer = decay(std::move(Storage),
+                                type(A.Context.getPointerType(Pointee), L), L);
+          Place = index(std::move(Pointer),
+                         quantity(I, type(A.Context.getSizeType(), L), L),
+                         type(Element, L), L);
+        }
+        // Bind storage rather than an early value snapshot. Conversions in
+        // one argument may change an element read by a later argument.
+        TupleFactoryElements.insert_or_assign(Get, std::move(Place));
+      }
+      const auto ResultType = Factory->ResultType;
+      if (ResultType->isReferenceType()) {
+        if (Destination)
+          reject(L, "utility tuple factory result",
+                 "Reference binding cannot construct an object destination.");
+        beginFullExpression();
+        auto Result = snapshot(
+            cast(address(lvalue(Factory->Operation),
+                         ResultType->getPointeeType(), L),
+                 type(ResultType, L), L), L);
+        endFullExpression();
+        return dereference(std::move(Result), L);
+      }
+      if (recordValue(ResultType)) {
+        // The final result is owned by the caller, never by the helper's
+        // argument/default frame. initialize retains the selected AST's actual
+        // conversions, source constructors and C++17 final destination.
+        auto Result = Destination ? std::move(*Destination)
+                                  : objectTemporary(ResultType, L);
+        if (Result.getString("type") != type(ResultType, L))
+          reject(L, "utility tuple factory result",
+                 "Factory and final result storage types differ.");
+        beginFullExpression();
+        initialize(json::Object(Result), Factory->Operation, L);
+        endFullExpression();
+        return Result;
+      }
+      if (Destination)
+        reject(L, "utility tuple factory result",
+               "Only a record result accepts object destination storage.");
+      beginFullExpression();
+      auto Result = snapshot(expression(Factory->Operation), L);
+      endFullExpression();
+      return Result;
+    }
     case UtilityOperation::TupleApply: {
       const auto Tuple = approvedUtilityTupleLikeSource(
           A.S, A.Sources, Call->getArg(1)->getType(), A.Context, true, true);
@@ -28677,6 +28752,8 @@ class FunctionLowering {
                      Delete->getDestroyedType(), F, L);
   }
   Expression expression(const Expr *E) {
+    if (auto Found = TupleFactoryElements.find(E); Found != TupleFactoryElements.end())
+      return Found->second;
     if (A.S.coreV2() && E->getType()->isFunctionType())
       return functionValue(E);
     auto L = E->getExprLoc();

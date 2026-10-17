@@ -364975,3 +364975,273 @@ using F=void(*)(void*)noexcept;F f(){return &::operator delete;})cpp", "TR0201"}
     expectNoArtifacts(Output);
   }
 }
+
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleValuesPreserveSelectedConversions) {
+  const auto Output = tmpFile("make-from-tuple-values.nc");
+  const auto Result = translate(fixture("make-from-tuple-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__make_from_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("make-from-tuple-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleLifetimesSeparateHelperAndCallerCleanup) {
+  const auto Output = tmpFile("make-from-tuple-lifetimes.nc");
+  const auto Result = translate(fixture("make-from-tuple-lifetimes.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__make_from_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("make-from-tuple-lifetimes") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleDestinationsPreserveGuaranteedElision) {
+  const auto Output = tmpFile("make-from-tuple-destinations.nc");
+  const auto Result = translate(fixture("make-from-tuple-destinations.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__make_from_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("make-from-tuple-destinations") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleReferencesRetainOriginsAndFinalStorage) {
+  const auto Output = tmpFile("make-from-tuple-references.nc");
+  const auto Result = translate(fixture("make-from-tuple-references.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__make_from_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("make-from-tuple-references") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleTemplatesPreserveConversionsCopiesAndMoves) {
+  const auto Output = tmpFile("make-from-tuple-conversions.nc");
+  const auto Result = translate(fixture("make-from-tuple-conversions.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__make_from_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("make-from-tuple-conversions") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleQueriesRetainSignatureOnlySource) {
+  const auto Output = tmpFile("make-from-tuple-queries.nc");
+  const auto Result = translate(fixture("make-from-tuple-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__make_from_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("translated native heap calls require"), std::string::npos);
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleRejectsSDKIdentitySubstitutions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"source-public-specialization", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std { template<> int make_from_tuple<int,tuple<R>&,void>(tuple<R>&) noexcept { return 99; } }
+int main(){ std::tuple<R> value{R{2}}; return std::make_from_tuple<int>(value); }
+)cpp"},
+      {"source-helper-redeclaration", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std { inline namespace __1 {
+template<class _Tp,class _Tuple,size_t..._Idx>
+inline constexpr _Tp __make_from_tuple_impl(_Tuple&& __t,__tuple_indices<_Idx...>,
+ enable_if_t<is_constructible_v<_Tp,decltype(std::get<_Idx>(std::forward<_Tuple>(__t)))...>>*)
+ noexcept(noexcept(_Tp(std::get<_Idx>(std::forward<_Tuple>(__t))...)));
+}}
+int main(){std::tuple<R> value{R{2}};return std::make_from_tuple<int>(value);}
+)cpp"},
+      {"source-get-specialization", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+R alternative{99};
+namespace std { template<> R& get<0,R>(tuple<R>&) noexcept { return alternative; } }
+int main(){ std::tuple<R> value{R{2}}; return std::make_from_tuple<int>(value); }
+)cpp"},
+      {"source-forward-specialization", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std { template<> tuple<R>& forward<tuple<R>&>(tuple<R>& value) noexcept { return value; } }
+int main(){ std::tuple<R> value{R{2}}; return std::make_from_tuple<int>(value); }
+)cpp"},
+      {"source-index-specialization", R"cpp(#include <tuple>
+namespace std { template<> struct __tuple_indices<0> { int extra; }; }
+int main(){std::tuple<int> value{2};return std::make_from_tuple<int>(value);}
+)cpp"},
+      {"source-can-make-specialization", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std { template<> inline constexpr bool __can_make_from_tuple<int,tuple<R>&,__tuple_indices<0>,void> = true; }
+int main(){std::tuple<R> value{R{2}};return std::make_from_tuple<int>(value);}
+)cpp"},
+      {"source-constructible-redeclaration", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std { inline namespace __1 { template<class T,class...Args> extern const bool is_constructible_v; }}
+int main(){std::tuple<R> value{R{2}};return std::make_from_tuple<int>(value);}
+)cpp"},
+      {"direct-private-helper", R"cpp(#include <tuple>
+int main(){std::tuple<int> value{2};return std::__make_from_tuple_impl<int>(value,std::__tuple_indices<0>{});}
+)cpp"},
+      {"standalone-public-address", R"cpp(#include <tuple>
+int main(){std::tuple<int> value{2};auto factory=&std::make_from_tuple<int,std::tuple<int>&>;return factory(value);}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("make-from-tuple-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("make-from-tuple-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+  const std::vector<std::pair<std::string, std::string>> Unselected = {
+      {"source-helper-redeclaration", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std {
+template<class _Tp,class _Tuple,size_t..._Idx>
+inline constexpr _Tp __make_from_tuple_impl(_Tuple&& __t,__tuple_indices<_Idx...>,
+ enable_if_t<is_constructible_v<_Tp,decltype(std::get<_Idx>(std::forward<_Tuple>(__t)))...>>*)
+ noexcept(noexcept(_Tp(std::get<_Idx>(std::forward<_Tuple>(__t))...)));
+}
+int main(){std::tuple<R> value{R{2}};return std::make_from_tuple<int>(value);}
+)cpp"},
+      {"source-constructible-redeclaration", R"cpp(#include <tuple>
+struct R { int value; operator int() const noexcept { return value; } };
+namespace std { template<class T,class...Args> extern const bool is_constructible_v; }
+int main(){std::tuple<R> value{R{2}};return std::make_from_tuple<int>(value);}
+)cpp"},
+  };
+  // An outer-namespace declaration is a different entity from the selected
+  // libc++ inline-namespace template and cannot grant or revoke its proof.
+  for (const auto &[Name, Code] : Unselected) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("make-from-tuple-unselected-" + Name + ".cpp");
+    const auto Output = tmpFile("make-from-tuple-unselected-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("__make_from_tuple_impl"), std::string::npos);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeFromTupleRejectsUnprovedRuntimeAndReferenceSources) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"borrowed-source-constructor", R"cpp(#include <tuple>
+struct R { int value; explicit R(int) noexcept; };
+int main(){std::tuple<int> value{2};return std::make_from_tuple<R>(value).value;}
+)cpp"},
+      {"escaping-owning-tuple-reference", R"cpp(#include <tuple>
+const int& probe(){return std::make_from_tuple<const int&>(std::tuple<int>{2});}
+int main(){return 0;}
+)cpp"},
+      {"escaping-reference-field", R"cpp(#include <tuple>
+struct R { const int& value; explicit R(const int& n) noexcept:value(n){} };
+R probe(){return std::make_from_tuple<R>(std::tuple<int>{2});}
+int main(){return 0;}
+)cpp"},
+      {"forwarded-literal-reference", R"cpp(#include <tuple>
+const int& probe(){return std::make_from_tuple<const int&>(std::forward_as_tuple(2));}
+int main(){return 0;}
+)cpp"},
+      {"local-owning-tuple-return-reference", R"cpp(#include <tuple>
+const int& probe(){std::tuple<int> t{2};return std::make_from_tuple<const int&>(t);}
+int main(){return 0;}
+)cpp"},
+      {"local-reference-tuple-return-reference", R"cpp(#include <tuple>
+const int& probe(){int n=2;auto t=std::tie(n);return std::make_from_tuple<const int&>(t);}
+int main(){return 0;}
+)cpp"},
+      {"helper-conversion-reference-field", R"cpp(#include <tuple>
+struct R{const int& value;explicit R(const int& n)noexcept:value(n){}};
+struct Input{operator int()const noexcept{return 2;}};
+R probe(){std::tuple<Input> t;return std::make_from_tuple<R>(t);}
+int main(){return 0;}
+)cpp"},
+      {"nested-reference-field-escape", R"cpp(#include <tuple>
+struct Inner{const int& value;explicit Inner(const int& n)noexcept:value(n){}};
+struct Outer{Inner field;explicit Outer(const int& n)noexcept:field(n){}};
+Outer probe(){return std::make_from_tuple<Outer>(std::tuple<int>{2});}
+int main(){return 0;}
+)cpp"},
+      {"old-forwarded-temporary-value", R"cpp(#include <tuple>
+int main(){auto t=std::forward_as_tuple(42);return std::make_from_tuple<int>(t);}
+)cpp"},
+      {"address-of-local-reference-escape", R"cpp(#include <tuple>
+const int* saved;
+int main(){std::tuple<int> t{2};saved=&std::make_from_tuple<int&>(t);return 0;}
+)cpp"},
+      {"self-reference-projection-escape", R"cpp(#include <tuple>
+struct R{int value;const int& ref;explicit R(int n)noexcept:value(n),ref(value){}};
+const int& probe(){return std::make_from_tuple<R>(std::tuple<int>{2}).ref;}
+int main(){return 0;}
+)cpp"},
+      {"static-carrier-previous-activation", R"cpp(#include <tuple>
+int f(int&& x){static auto t=std::forward_as_tuple(x);return std::make_from_tuple<int>(t);}
+int main(){return 0;}
+)cpp"},
+      {"query-source-declaration-without-definition", R"cpp(#include <tuple>
+struct R{int value;explicit R(int)noexcept;};
+static_assert(noexcept(std::make_from_tuple<R>(std::declval<std::tuple<int>&>())));
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("make-from-tuple-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("make-from-tuple-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

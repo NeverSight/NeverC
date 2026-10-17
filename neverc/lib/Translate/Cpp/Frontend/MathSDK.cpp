@@ -74546,9 +74546,379 @@ static bool utilityPointerToBody(const State &S, const SourceManager &SM,
          Context.hasSameType(Delegate->getType(), Method->getReturnType());
 }
 
+// Inactive implementation fragment. Integrate only over the published parent,
+// then compile and prove the complete consuming descriptor before admission.
+static bool tupleFactoryPinnedDeclaration(const State &S,
+                                          const SourceManager &SM,
+                                          const Decl *D) {
+  const auto Origin = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  return Origin && Origin->Root == "libcxx" && Origin->Path == "tuple" &&
+         approvedStandardSDKDeclaration(S, SM, D);
+}
+
+static bool tupleFactoryPinnedFunction(const State &S,
+                                      const SourceManager &SM,
+                                      const FunctionDecl *F,
+                                      llvm::StringRef Name,
+                                      unsigned Parameters) {
+  const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  if (!S.coreV2() || !F || !Primary || !Pattern ||
+      !F->getIdentifier() || F->getName() != Name ||
+      F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+      isa<CXXMethodDecl>(F) || F->isExternC() ||
+      F->getNumParams() != Parameters ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Pattern->hasBody() ||
+      !tupleFactoryPinnedDeclaration(S, SM, F) ||
+      !tupleFactoryPinnedDeclaration(S, SM, Primary) ||
+      !tupleFactoryPinnedDeclaration(S, SM, Pattern))
+    return false;
+  for (const auto *D : F->redecls())
+    if (!tupleFactoryPinnedDeclaration(S, SM, D))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!tupleFactoryPinnedDeclaration(S, SM, D) ||
+        !tupleFactoryPinnedDeclaration(S, SM, D->getTemplatedDecl()))
+      return false;
+  const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
+  return Prototype && !Prototype->isVariadic() &&
+         Prototype->getCallConv() == CC_C &&
+         !Prototype->hasExtParameterInfos();
+}
+
+static const Expr *tupleFactoryReturnExpression(const FunctionDecl *F) {
+  const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+static const Expr *tupleFactoryNoexceptExpression(const FunctionDecl *F) {
+  const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+  const Expr *Expression = Prototype ? Prototype->getNoexceptExpr() : nullptr;
+  while (const auto *Constant = dyn_cast_or_null<ConstantExpr>(Expression))
+    Expression = Constant->getSubExpr();
+  const auto *Query = dyn_cast_or_null<CXXNoexceptExpr>(Expression);
+  return Query && !Query->isValueDependent() &&
+                 !Query->isInstantiationDependent()
+             ? Query->getOperand()
+             : nullptr;
+}
+
+static bool tupleFactoryIndexPack(const TemplateArgument &Pack,
+                                 unsigned Count) {
+  if (Pack.getKind() != TemplateArgument::Pack || Pack.pack_size() != Count)
+    return false;
+  unsigned Index = 0;
+  for (const auto &Argument : Pack.pack_elements()) {
+    if (Argument.getKind() != TemplateArgument::Integral ||
+        Argument.getAsIntegral().isNegative() ||
+        Argument.getAsIntegral().getLimitedValue(Count + 1) != Index++)
+      return false;
+  }
+  return true;
+}
+
+static const TypeTraitExpr *tupleFactoryConstructibleTrait(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const DeclContext *Namespace, QualType Result,
+    llvm::ArrayRef<QualType> Arguments) {
+  const TypeTraitExpr *Found = nullptr;
+  for (const auto *D : Namespace->lookup(
+           &Context.Idents.get("is_constructible_v"))) {
+    const auto *Primary = dyn_cast<VarTemplateDecl>(D);
+    if (!Primary)
+      return nullptr;
+    for (const auto *R : Primary->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, R) ||
+          !cstddefOrigin(S, SM, R->getLocation(), "libcxx",
+                         "__type_traits/is_constructible.h") ||
+          !cstddefOrigin(S, SM, R->getTemplatedDecl()->getLocation(), "libcxx",
+                         "__type_traits/is_constructible.h"))
+        return nullptr;
+    for (const auto *Specialization : Primary->specializations()) {
+      const auto &A = Specialization->getTemplateArgs();
+      if (A.size() != 2 || A[0].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(A[0].getAsType(), Result) ||
+          A[1].getKind() != TemplateArgument::Pack ||
+          A[1].pack_size() != Arguments.size())
+        continue;
+      unsigned I = 0;
+      bool Same = true;
+      for (const auto &Argument : A[1].pack_elements()) {
+        if (Argument.getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Argument.getAsType(), Arguments[I]))
+          Same = false;
+        ++I;
+      }
+      if (!Same)
+        continue;
+      if (Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          llvm::dyn_cast<VarTemplateDecl *>(Specialization->getSpecializedTemplateOrPartial()) != Primary)
+        return nullptr;
+      for (const auto *R : Specialization->redecls())
+        if (!approvedStandardSDKDeclaration(S, SM, R) ||
+            !cstddefOrigin(S, SM, R->getLocation(), "libcxx",
+                           "__type_traits/is_constructible.h"))
+          return nullptr;
+      const auto *Query = Specialization->getInit()
+                              ? dyn_cast<TypeTraitExpr>(
+                                    Specialization->getInit()->IgnoreParenImpCasts())
+                              : nullptr;
+      if (!Query || Query->getTrait() != TT_IsConstructible ||
+          Query->isTypeDependent() || Query->isValueDependent() ||
+          Query->isInstantiationDependent() || !Query->getValue() ||
+          Query->getNumArgs() != Arguments.size() + 1 ||
+          !Context.hasSameType(Query->getArg(0)->getType(), Result))
+        return nullptr;
+      for (unsigned J = 0; J < Arguments.size(); ++J)
+        if (!Context.hasSameType(Query->getArg(J + 1)->getType(), Arguments[J]))
+          return nullptr;
+      if (Found && Found != Query)
+        return nullptr;
+      Found = Query;
+    }
+  }
+  return Found;
+}
+
+static const VarTemplateSpecializationDecl *tupleFactoryCanConstruct(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const DeclContext *Namespace, QualType Result, QualType TupleArgument,
+    QualType Indices) {
+  const VarTemplateSpecializationDecl *Found = nullptr;
+  for (const auto *D : Namespace->lookup(
+           &Context.Idents.get("__can_make_from_tuple"))) {
+    const auto *Primary = dyn_cast<VarTemplateDecl>(D);
+    if (!Primary)
+      return nullptr;
+    for (const auto *R : Primary->redecls())
+      if (!tupleFactoryPinnedDeclaration(S, SM, R) ||
+          !tupleFactoryPinnedDeclaration(S, SM, R->getTemplatedDecl()))
+        return nullptr;
+    for (const auto *Specialization : Primary->specializations()) {
+      const auto &A = Specialization->getTemplateArgs();
+      if (A.size() != 4 || A[0].getKind() != TemplateArgument::Type ||
+          A[1].getKind() != TemplateArgument::Type ||
+          A[2].getKind() != TemplateArgument::Type ||
+          A[3].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(A[0].getAsType(), Result) ||
+          !Context.hasSameType(A[1].getAsType(), TupleArgument) ||
+          !Context.hasSameType(A[2].getAsType(), Indices) ||
+          !A[3].getAsType()->isVoidType())
+        continue;
+      const auto *Partial = llvm::dyn_cast<VarTemplatePartialSpecializationDecl *>(
+          Specialization->getSpecializedTemplateOrPartial());
+      if (!Partial || Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          !tupleFactoryPinnedDeclaration(S, SM, Partial) ||
+          Partial->getSpecializedTemplate()->getCanonicalDecl() !=
+              Primary->getCanonicalDecl())
+        return nullptr;
+      for (const auto *R : Partial->redecls())
+        if (!tupleFactoryPinnedDeclaration(S, SM, R))
+          return nullptr;
+      for (const auto *R : Specialization->redecls())
+        if (!tupleFactoryPinnedDeclaration(S, SM, R))
+          return nullptr;
+      const auto *Value = Specialization->getInit()
+                              ? dyn_cast<CXXBoolLiteralExpr>(
+                                    Specialization->getInit()->IgnoreParenImpCasts())
+                              : nullptr;
+      if (!Value || !Value->getValue() ||
+          (Found && Found->getCanonicalDecl() != Specialization->getCanonicalDecl()))
+        return nullptr;
+      Found = Specialization;
+    }
+  }
+  return Found;
+}
+
+std::optional<UtilityMakeFromTupleCall> approvedUtilityMakeFromTupleCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool SignatureQuery) {
+  const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments = Factory ? Factory->getTemplateSpecializationArgs() : nullptr;
+  if (!Call || Call->getNumArgs() != 1 || Call->isTypeDependent() ||
+      Call->isValueDependent() || Call->isInstantiationDependent() ||
+      !tupleFactoryPinnedFunction(S, SM, Factory, "make_from_tuple", 1) ||
+      !approvedUtilityReference(S, SM, Call, Factory) || !Arguments ||
+      Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      Arguments->get(2).getKind() != TemplateArgument::Type ||
+      !Arguments->get(2).getAsType()->isVoidType())
+    return std::nullopt;
+  const auto Result = Arguments->get(0).getAsType();
+  const auto Input = Arguments->get(1).getAsType();
+  const auto Parameter = Input->isReferenceType()
+                             ? Input : Context.getRValueReferenceType(Input);
+  auto Tuple = approvedUtilityTupleLikeSource(
+      S, SM, Call->getArg(0)->getType(), Context, true, true);
+  if (!Tuple || Tuple->size() > 64 || Result->isVoidType() ||
+      Result->isArrayType() || Result.isVolatileQualified() ||
+      !Context.hasSameType(Factory->getReturnType(), Result) ||
+      !Context.hasSameType(Factory->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Parameter->getPointeeType()) ||
+      !Context.hasSameType(Call->getType(), Result.getNonReferenceType()) ||
+      Call->getValueKind() != Expr::getValueKindForType(Result))
+    return std::nullopt;
+  const auto *FactoryResult = SignatureQuery
+                                  ? tupleFactoryNoexceptExpression(Factory)
+                                  : tupleFactoryReturnExpression(Factory);
+  const auto *Expansion = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(FactoryResult));
+  const auto *Helper = Expansion ? Expansion->getDirectCallee() : nullptr;
+  const auto *HelperArguments = Helper ? Helper->getTemplateSpecializationArgs() : nullptr;
+  const auto *Reference = Expansion
+                              ? dyn_cast_or_null<DeclRefExpr>(
+                                    directFunctionReference(Expansion))
+                              : nullptr;
+  if (!Expansion || Expansion->getNumArgs() != 3 || !HelperArguments ||
+      !tupleFactoryPinnedFunction(S, SM, Helper, "__make_from_tuple_impl", 3) ||
+      !Reference || Reference->getDecl() != Helper ||
+      !tupleFactoryPinnedDeclaration(S, SM, Reference->getDecl()) ||
+      HelperArguments->size() != 3 ||
+      HelperArguments->get(0).getKind() != TemplateArgument::Type ||
+      HelperArguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(HelperArguments->get(0).getAsType(), Result) ||
+      !Context.hasSameType(HelperArguments->get(1).getAsType(), Input) ||
+      !tupleFactoryIndexPack(HelperArguments->get(2), Tuple->size()) ||
+      !Context.hasSameType(Helper->getReturnType(), Result) ||
+      !Context.hasSameType(Helper->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameType(Expansion->getType(), Call->getType()) ||
+      Expansion->getValueKind() != Call->getValueKind() ||
+      !approvedFunctionalForwardingCall(S, SM, Expansion->getArg(0),
+                                        Factory->getParamDecl(0)))
+    return std::nullopt;
+  const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Helper->getParamDecl(1)->getType()->getAsCXXRecordDecl());
+  const auto *IndexPrimary = Indices ? Indices->getSpecializedTemplate() : nullptr;
+  const auto *IndexDefinition = Indices ? Indices->getDefinition() : nullptr;
+  if (!Indices || !IndexPrimary || !IndexDefinition ||
+      Indices->getName() != "__tuple_indices" ||
+      Indices->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Indices->getTemplateArgs().size() != 1 ||
+      !tupleFactoryIndexPack(Indices->getTemplateArgs().get(0), Tuple->size()) ||
+      !IndexDefinition->field_empty() || IndexDefinition->getNumBases() ||
+      !Context.hasSameType(Expansion->getArg(1)->getType(),
+                           Helper->getParamDecl(1)->getType()))
+    return std::nullopt;
+  for (const auto *D : Indices->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__tuple/tuple_indices.h"))
+      return std::nullopt;
+  for (const auto *D : IndexPrimary->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !(cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
+          cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__utility/integer_sequence.h")) ||
+        !approvedStandardSDKDeclaration(S, SM, D->getTemplatedDecl()) ||
+        !(cstddefOrigin(S, SM, D->getTemplatedDecl()->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
+          cstddefOrigin(S, SM, D->getTemplatedDecl()->getLocation(), "libcxx", "__utility/integer_sequence.h")))
+      return std::nullopt;
+  const auto *IndexCast = dyn_cast<CXXFunctionalCastExpr>(Expansion->getArg(1));
+  const auto *IndexValue = IndexCast
+                               ? dyn_cast<InitListExpr>(IndexCast->getSubExpr())
+                               : nullptr;
+  const auto *Default = dyn_cast<CXXDefaultArgExpr>(Expansion->getArg(2));
+  const auto DefaultType = Helper->getParamDecl(2)->getType();
+  if (!IndexCast || IndexCast->getCastKind() != CK_NoOp || !IndexValue ||
+      IndexValue->getNumInits() || IndexValue->hasArrayFiller() ||
+      !Default || Default->getParam() != Helper->getParamDecl(2) ||
+      Default->hasRewrittenInit() || !Default->getParam()->hasDefaultArg() ||
+      Default->getExpr() != Default->getParam()->getDefaultArg() ||
+      !tupleFactoryPinnedDeclaration(S, SM, Default->getParam()) ||
+      !cstddefOrigin(S, SM, Default->getExpr()->getExprLoc(), "libcxx", "tuple") ||
+      !DefaultType->isPointerType() || !DefaultType->getPointeeType()->isVoidType() ||
+      !Context.hasSameType(Default->getType(), DefaultType) ||
+      !Default->getExpr() ||
+      !isa<CXXNullPtrLiteralExpr>(Default->getExpr()->IgnoreParenImpCasts()))
+    return std::nullopt;
+  const auto *Operation = SignatureQuery
+                              ? tupleFactoryNoexceptExpression(Helper)
+                              : tupleFactoryReturnExpression(Helper);
+  if (!Operation || !Context.hasSameType(Operation->getType(), Call->getType()))
+    return std::nullopt;
+  std::vector<std::pair<const CallExpr *, unsigned>> Elements;
+  std::vector<QualType> ElementTypes(Tuple->size());
+  std::set<const Stmt *> Seen;
+  auto Collect = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> bool {
+    if (Depth > 64)
+      return false;
+    if (!Node || !Seen.insert(Node).second)
+      return true;
+    if (Seen.size() > 200000)
+      return false;
+    if (isa<CXXDefaultArgExpr>(Node))
+      return true;
+    if (const auto *Get = dyn_cast<CallExpr>(Node)) {
+      const auto *F = Get->getDirectCallee();
+      if (F && F->getIdentifier() && F->getName() == "get" &&
+          approvedStandardSDKDeclaration(S, SM, F)) {
+        const auto *A = F->getTemplateSpecializationArgs();
+        if (!A || !A->size() || A->get(0).getKind() != TemplateArgument::Integral ||
+            A->get(0).getAsIntegral().isNegative())
+          return false;
+        const auto I = A->get(0).getAsIntegral().getLimitedValue(Tuple->size());
+        if (I >= Tuple->size() || !ElementTypes[I].isNull() ||
+            !approvedUtilityTupleApplyElement(S, SM, Get,
+                                               Helper->getParamDecl(0), *Tuple,
+                                               I, Context))
+          return false;
+        Elements.emplace_back(Get, I);
+        ElementTypes[I] = F->getReturnType();
+        return true;
+      }
+    }
+    for (const auto *Child : Node->children())
+      if (!Self(Self, Child, Depth + 1))
+        return false;
+    return true;
+  };
+  if (!Collect(Collect, Operation, 0) || Elements.size() != Tuple->size())
+    return std::nullopt;
+  const auto *Constructibility = tupleFactoryConstructibleTrait(
+      S, SM, Context, Factory->getDeclContext(), Result, ElementTypes);
+  const auto *Constraint = tupleFactoryCanConstruct(
+      S, SM, Context, Factory->getDeclContext(), Result, Input,
+      Helper->getParamDecl(1)->getType());
+  if (!Constructibility || !Constraint)
+    return std::nullopt;
+  if (Result->isReferenceType() && !SignatureQuery) {
+    // A reference result has no result object or lifetime extension. Limit its
+    // binding to the exact live element; conversions through a helper-owned
+    // temporary or a different user-provided referent need separate proof.
+    if (Tuple->size() != 1 || Result->getPointeeType().isVolatileQualified() ||
+        (!Tuple->elementType(0)->isReferenceType() && !Call->getArg(0)->isLValue()))
+      return std::nullopt;
+    const Expr *Binding = Operation;
+    for (;;) {
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Binding))
+        Binding = Cleanup->getSubExpr();
+      else if (const auto *Parentheses = dyn_cast<ParenExpr>(Binding))
+        Binding = Parentheses->getSubExpr();
+      else if (const auto *Cast = dyn_cast<CastExpr>(Binding);
+               Cast && Cast->getCastKind() == CK_NoOp)
+        Binding = Cast->getSubExpr();
+      else
+        break;
+    }
+    if (Binding != Elements.front().first ||
+        !Context.hasSameUnqualifiedType(Result->getPointeeType(), Binding->getType()) ||
+        !Result->getPointeeType().isAtLeastAsQualifiedAs(Binding->getType(), Context))
+      return std::nullopt;
+  }
+  return UtilityMakeFromTupleCall{*Tuple, Result, Factory, Helper, Expansion,
+                                  Operation, std::move(Elements),
+                                  Constructibility, Constraint, SignatureQuery};
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
+  if (approvedUtilityMakeFromTupleCall(S, SM, Call, Context))
+    return UtilityOperation::MakeFromTuple;
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
