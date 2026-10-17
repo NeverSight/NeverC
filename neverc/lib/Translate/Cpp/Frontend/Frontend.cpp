@@ -6185,6 +6185,20 @@ static bool utilityApplyInvocationSource(Adapter &A, const CallExpr *Call,
          Exception(Dispatch, Inner);
 }
 
+static bool scalarHashQueryObject(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Object = approvedFunctionalObjectRecord(A.S, A.Sources, Record, A.Context);
+  const auto *Hash = Object
+      ? dyn_cast<ClassTemplateSpecializationDecl>(Object->Record) : nullptr;
+  if (!Hash || Hash->getName() != "hash" || Hash->getTemplateArgs().size() != 1 ||
+      Hash->getTemplateArgs().get(0).getKind() != TemplateArgument::Type)
+    return false;
+  const auto Value = Hash->getTemplateArgs().get(0).getAsType();
+  return Value->isSpecificBuiltinType(BuiltinType::Float) ||
+         Value->isSpecificBuiltinType(BuiltinType::Double) ||
+         Value->isSpecificBuiltinType(BuiltinType::LongLong) ||
+         Value->isSpecificBuiltinType(BuiltinType::ULongLong);
+}
+
 static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
   const auto Signature = approvedUtilityTupleApplySignatureCall(
       A.S, A.Sources, Call, A.Context);
@@ -6217,14 +6231,21 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
       return {};
     Target = operationCalleePrototype(Selected);
     Result = A.Context.getCanonicalType(Target->getReturnType());
+  } else if (scalarHashQueryObject(
+                 A, Selected->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl())) {
+    Target = functionalObjectQueryTargetSource(A, Selected);
+    if (Target)
+      Result = A.Context.getCanonicalType(Target->getReturnType());
   } else if (const auto Reference = functionalReferenceQuerySource(A, Selected);
              !Reference.Result.isNull()) {
-    // Keep this new pure apply branch limited to the admitted owner hash.
+    // Keep this pure apply branch limited to admitted owner and scalar hashes.
     const auto Wrapper = approvedFunctionalReferenceRecord(
         A.S, A.Sources, Selected->getArg(0)->getType()->getAsCXXRecordDecl(),
         A.Context);
-    if (!Wrapper || !approvedUniqueHashObject(
-            A.S, A.Sources, Wrapper->ReferentType->getAsCXXRecordDecl(), A.Context))
+    if (!Wrapper ||
+        (!approvedUniqueHashObject(
+             A.S, A.Sources, Wrapper->ReferentType->getAsCXXRecordDecl(), A.Context) &&
+         !scalarHashQueryObject(A, Wrapper->ReferentType->getAsCXXRecordDecl())))
       return {};
     Target = operationCalleePrototype(Selected);
     Result = Reference.Result;

@@ -367398,3 +367398,221 @@ int main(){using P=std::unique_ptr<int,D>;P value;auto owners=std::make_tuple(st
     expectNoArtifacts(Output);
   }
 }
+
+
+TEST_F(TranslateTest, CoreV2ScalarHashClosureValuesAndAdapterEffects) {
+  const auto Output = tmpFile("scalar-hash-closure-values.nc");
+  const auto Result = translate(fixture("scalar-hash-closure-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("scalar-hash-closure-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarHashClosureSignatureOnlyQueries) {
+  const auto Output = tmpFile("scalar-hash-closure-queries.nc");
+  const auto Result = translate(fixture("scalar-hash-closure-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("scalar-hash-closure-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarHashClosureQueriesIgnoreUnusedByteBodies) {
+  const auto Output = tmpFile("scalar-hash-closure-copy-queries.nc");
+  const auto Result = translate(fixture("scalar-hash-closure-copy-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("scalar-hash-closure-copy-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarHashClosureFunctionsOnlyBorrowing) {
+  const auto Output = tmpFile("scalar-hash-closure-borrowed.nc");
+  const auto Result = translate(fixture("scalar-hash-closure-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("scalar-hash-closure-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarHashClosureRejectsSelected32BitByteSources) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"double-direct", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(h(value)!=0);}
+)cpp"},
+    {"double-invoke", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(h,value)!=0);}
+)cpp"},
+    {"double-apply", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(h,std::tie(value))!=0);}
+)cpp"},
+    {"double-wrapper", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(w(value)!=0);}
+)cpp"},
+    {"double-invoke-wrapper", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(w,value)!=0);}
+)cpp"},
+    {"double-apply-wrapper", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(w,std::tie(value))!=0);}
+)cpp"},
+    {"double-ignored", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(value);return 0;}
+)cpp"},
+    {"long-long-direct", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(h(value)!=0);}
+)cpp"},
+    {"long-long-invoke", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(h,value)!=0);}
+)cpp"},
+    {"long-long-apply", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(h,std::tie(value))!=0);}
+)cpp"},
+    {"long-long-wrapper", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(w(value)!=0);}
+)cpp"},
+    {"long-long-invoke-wrapper", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(w,value)!=0);}
+)cpp"},
+    {"long-long-apply-wrapper", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(w,std::tie(value))!=0);}
+)cpp"},
+    {"long-long-ignored", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
+int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(value);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("scalar-byte-source-") + Case.Name + ".cpp");
+    writeFile(Source, Case.Source);
+    for (const std::string &Target : {"i686-unknown-linux-gnu", "i686-pc-windows-msvc"}) {
+      SCOPED_TRACE(Target);
+      const auto Request = tmpFile(std::string(Case.Name) + Target + "-request.json");
+      const auto Response = tmpFile(std::string(Case.Name) + Target + "-response.json");
+      const auto CatalogHash = neverc::translate::approvedCppSdkCatalogSHA256();
+      const auto RootPath = Source.parent_path().string();
+      const auto SourcePath = Source.string();
+      llvm::json::Object SDK{{"distribution_id", neverc::translate::CppMathSDKID},
+                            {"catalog_sha256", CatalogHash}};
+      llvm::json::Object Input{{"protocol", 1}, {"profile", "cpp-core-v2"},
+          {"root", RootPath}, {"source", SourcePath},
+          {"target", Target}, {"arguments", llvm::json::Array{"-std=c++17"}},
+          {"sdk", std::move(SDK)}};
+      std::string Text;
+      llvm::raw_string_ostream Stream(Text);
+      Stream << llvm::json::Value(std::move(Input));
+      writeFile(Request, Text);
+      const auto Result = ncc({"__neverc_cpp_frontend", "--request", Request.string(),
+                               "--output", Response.string()});
+      ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+      ASSERT_TRUE(fs::is_regular_file(Response));
+      auto Parsed = llvm::json::parse(readFile(Response));
+      ASSERT_TRUE(static_cast<bool>(Parsed)) << llvm::toString(Parsed.takeError()).str().str();
+      const auto *Module = Parsed->getAsObject();
+      ASSERT_NE(Module, nullptr);
+      const auto *Diagnostics = Module->getArray("diagnostics");
+      ASSERT_NE(Diagnostics, nullptr);
+      EXPECT_FALSE(Diagnostics->empty());
+      EXPECT_NE(readFile(Response).find("TR0203"), std::string::npos);
+      EXPECT_EQ(readFile(Response).find("TR0101"), std::string::npos);
+    }
+  }
+}

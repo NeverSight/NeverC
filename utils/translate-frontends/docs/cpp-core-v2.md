@@ -6153,9 +6153,9 @@ source roots and execute no query effects.
 The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
 its native C++ unavailability diagnostic.
 
-The materialized result-source path for `long long` and `unsigned long long`
-hashes supports direct, `std::invoke` and wrapped queries after evaluated calls materialize
-their inherited scalar operator and each selected adapter. The public hash owns
+The signature result-source path for `long long` and `unsigned long long`
+hashes supports direct, `std::invoke`, `std::apply` and callable-wrapper queries
+through their exact retained selected SDK call, without requiring evaluated calls. The public hash owns
 the exact `__scalar_hash` base and its empty unary typedef base; both base levels,
 the scalar primary/partial specialization, the public hash declaration family
 and the selected operator retain pinned SDK sources. The existing wide-integer
@@ -6163,18 +6163,17 @@ hash descriptor supplies the implementation and `size_t` result. Scalar argument
 conversions, const/copied/dereferenced/temporary receivers and nested empty base
 initializers preserve that ownership. A direct call's implicit scalar-base view
 retains the original public receiver source and belongs only to that exact call.
-Each callable category and argument pack still needs its own materialized adapter.
+Each callable category and argument pack authenticates its exact signature adapter; runtime calls additionally prove the selected scalar body and byte algorithm.
 Independent private-base objects or method addresses gain no source proof from a
 public hash call; private-base layout expressions used inside a call query remain
 independent source dependencies.
 Original written types, expressions, initializers, selected defaults and temporary
 cleanup remain separate source roots and execute no query-time effects.
 
-The materialized result-source path for `float` and `double` hash specializations
-supports the same direct, `std::invoke` and wrapped queries. Their explicit public operators
-already have SDK definitions, so a direct query does not require an evaluated
-call first. Each wrapper or `invoke` specialization still requires its exact
-materialized adapter and exception-source proof. The authenticated floating hash
+The signature result-source path for `float` and `double` hash specializations
+supports the same direct, `std::invoke`, `std::apply` and callable-wrapper queries.
+Each query binds its exact retained adapter and exception source without
+consuming concrete hash, scalar or byte-algorithm bodies. The authenticated floating hash
 operation supplies the zero-normalization branch and scalar hashing delegate;
 both signs of zero hash to zero, and nonzero values retain the runtime bit-hash
 contract above. Floating and integral argument conversions happen before that
@@ -17268,3 +17267,5 @@ Runtime `std::hash<T*>` authenticates the complete selected pinned byte algorith
 The admitted scalar/array `std::hash<std::unique_ptr<T,D>>` also supports invoke, apply, direct reference_wrapper calls and invoke/apply of the wrapper, with default or existing empty custom deleters. Exact owner arguments and tuple elements are borrowed at their original address; receiver/argument effects and temporary owner/tuple cleanup retain their original lifetime. Runtime checks authenticate the actual selected adapter and complete hash sources, including ignored results. Pure queries preserve the potentially throwing signature without requiring hash/get/byte bodies or adding runtime helpers. Source-to-owner conversions and reference_wrapper<Owner> arguments through these adapters remain outside this increment.
 
 Reference tuples borrow admitted owners. Value tuples use the selected same-type move constructor, clear the source owner, and destroy owning elements in reverse tuple order; owner elements never use bitwise copying.
+
+Admitted float/double/long-long hashes authenticate the selected scalar declaration families, exact union initialization, parameter store and return, plus the complete selected byte algorithm for two-word delegates. The same runtime proof applies through invoke, apply and callable reference wrappers, including ignored results. Scalar apply and apply-of-wrapper signature queries bind their actual retained SDK call without consuming hash/scalar/byte bodies or adding runtime helpers; original source function definitions remain independent. Signed-zero normalization, scalar conversions and argument effects are preserved. This does not expand integer widths or admit long double.
