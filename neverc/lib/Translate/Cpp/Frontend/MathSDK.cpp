@@ -9060,7 +9060,8 @@ approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
   const auto Owner = approvedUtilityUniquePtrRecord(
-      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Context.getBaseElementType(Construction->getType())->getAsCXXRecordDecl(),
+      Context);
   const auto *Prototype =
       Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
                   : nullptr;

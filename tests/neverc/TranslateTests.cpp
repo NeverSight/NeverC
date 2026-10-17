@@ -6415,8 +6415,10 @@ TEST_F(TranslateTest, CoreV2DefaultSizedDeleteUsesOwnedUnsizedDefinition) {
 
 TEST_F(TranslateTest, CoreV2DefaultSizedDeleteRetainsDefinitionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"missing-unsized", "void f(int*p){delete p;}", "TR0203"},
-      {"missing-unsized-array", "struct R{int n;~R(){}};void f(R*p){delete[]p;}", "TR0203"},
+      {"source-redeclaration-missing-unsized", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+void f(int*p){delete p;})cpp", "TR0203"},
+      {"source-redeclaration-missing-unsized-array", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+struct R{int n;~R(){}};void f(R*p){delete[]p;})cpp", "TR0203"},
       {"explicit-undefined-sized", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void operator delete(void*,Size)noexcept;void f(int*p){delete p;}", "TR0203"},
       {"late-written-sized", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void f(int*p){delete p;}void operator delete(void*,Size)noexcept;", "TR0203"},
       {"explicit-undefined-sized-array", "using Size=decltype(sizeof(0));void operator delete[](void*)noexcept{}void operator delete[](void*,Size)noexcept;struct R{int n;~R(){}};void f(R*p){delete[]p;}", "TR0203"},
@@ -6516,8 +6518,10 @@ TEST_F(TranslateTest, CoreV2ArrayAllocationAcceptsCheckedConstantExtents) {
 TEST_F(TranslateTest, CoreV2ArrayAllocationRetainsSourceAndLengthBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"runtime-bound", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(int n){return new int[n]{};}", "TR0201"},
-      {"missing-array-allocator", "int*f(){return new int[3]{};}", "TR0203"},
-      {"missing-array-deallocator", "void f(int*p){delete[]p;}", "TR0203"},
+      {"source-redeclaration-missing-array-allocator", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int*f(){return new int[3]{};})cpp", "TR0203"},
+      {"source-redeclaration-missing-array-deallocator", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+void f(int*p){delete[]p;})cpp", "TR0203"},
       {"missing-record-destructor", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{~R();};R*f(){return new R[3];}", "TR0203"},
       {"zero-missing-destructor", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{~R();};R*f(){return new R[0];}", "TR0203"},
       {"zero-constructor-source", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{R(){long double n=0;}};R*f(){return new R[0];}", "TR0201"},
@@ -10131,22 +10135,32 @@ TEST_F(TranslateTest, CoreV2AllocationRetainsSourceAndRuntimeBoundaries) {
       {"written-delete-visibility-default", "__attribute__((visibility(\"default\"))) void operator delete(void*)noexcept{}", "TR0201"},
       {"written-array-visibility-default", "using Size=decltype(sizeof(0));__attribute__((visibility(\"default\"))) void*operator new[](Size){return nullptr;}", "TR0201"},
       {"written-visibility-inherited", "using Size=decltype(sizeof(0));__attribute__((visibility(\"default\"))) void*operator new(Size);void*operator new(Size){return nullptr;}", "TR0201"},
-      {"discarded-void-new", "void f(){static_cast<void>(new int(1));}", "TR0203"},
-      {"discarded-new", "int f(){if constexpr(false){int*p=new int(3);}return 0;}", "TR0203"},
-      {"template-new", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0203"},
-      {"default-argument-new", "int f(int*p=new int(1)){return *p;}", "TR0203"},
+      {"source-redeclaration-discarded-void-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+void f(){static_cast<void>(new int(1));})cpp", "TR0203"},
+      {"source-redeclaration-discarded-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int f(){if constexpr(false){int*p=new int(3);}return 0;})cpp", "TR0203"},
+      {"source-redeclaration-template-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+template<class T>T* f(){return new T{};}int main(){return *f<int>();})cpp", "TR0203"},
+      {"source-redeclaration-default-argument-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int f(int*p=new int(1)){return *p;})cpp", "TR0203"},
       {"void-new", "void*f(){return new void;}", "TR0202"},
-      {"default-member-new", "struct R{int*p=new int(1);};", "TR0203"},
-      {"record-new", "struct R{int n;~R(){}};R*f(){return new R{1};}", "TR0203"},
-      {"record-delete", "struct R{int n;~R(){}};void f(R*p){delete p;}", "TR0203"},
+      {"source-redeclaration-default-member-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+struct R{int*p=new int(1);};)cpp", "TR0203"},
+      {"source-redeclaration-record-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+struct R{int n;~R(){}};R*f(){return new R{1};})cpp", "TR0203"},
+      {"source-redeclaration-record-delete", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+struct R{int n;~R(){}};void f(R*p){delete p;})cpp", "TR0203"},
       {"missing-class-new", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size);};R*f(){return new R{3};}", "TR0203"},
       {"missing-class-delete", "struct R{int n;static void operator delete(void*);};void f(R*p){delete p;}", "TR0203"},
       {"missing-placement", "using Size=decltype(sizeof(0));void*operator new(Size,void*);int*f(void*p){return new(p)int(3);}", "TR0203"},
       {"reserved-placement-definition", "using Size=decltype(sizeof(0));void*operator new(Size,void*p){return p;}", "TR0203"},
       {"reserved-placement-delete", "void operator delete(void*,void*){}", "TR0203"},
-      {"array-new", "int*f(){return new int[3]{};}", "TR0203"},
-      {"array-delete", "void f(int*p){delete[]p;}", "TR0203"},
-      {"alias-array-new", "using A=int[3];int*f(){return new A{};}", "TR0203"},
+      {"source-redeclaration-array-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int*f(){return new int[3]{};})cpp", "TR0203"},
+      {"source-redeclaration-array-delete", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+void f(int*p){delete[]p;})cpp", "TR0203"},
+      {"source-redeclaration-alias-array-new", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+using A=int[3];int*f(){return new A{};})cpp", "TR0203"},
       {"incomplete-new", "struct R;R*f(){return new R;}", "TR0202"},
       {"void-delete", "void f(void*p){delete p;}", "TR0201"},
       {"incomplete-delete", "struct R;void f(R*p){delete p;}", "TR0201"},
@@ -15651,7 +15665,8 @@ TEST_F(TranslateTest, CoreV2StaticPointersAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticPointersRetainConstantAddressAndSourceRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"global-heap", "int*p=new int(3);", "TR0203"},
+      {"source-redeclaration-global-heap", R"cpp(using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int*p=new int(3);)cpp", "TR0203"},
       {"global-integer-address", "int*p=reinterpret_cast<int*>(1);", "TR0201"},
       {"global-past-extent", "int a[2];int*p=a+3;", "TR0201"},
       {"global-before-array", "int a[2];int*p=a-1;", "TR0201"},
@@ -35031,12 +35046,13 @@ int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::vector<long double>> v;v.emplace_back(std::initializer_list<long double>{1});}
 )cpp"},
-      {"missing-allocation", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::vector<int>> v;v.emplace_back(std::initializer_list<int>{3,7});}
@@ -35709,12 +35725,13 @@ using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 #include <list>
 int main(){std::list<int> a={3,7};std::vector<std::vector<int>> v;v.emplace_back(a.begin(),a.end());}
 )cpp"},
-      {"missing-allocation", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){int a[2]={3,7};std::vector<std::vector<int>> v;v.emplace_back(a,a+2);}
@@ -36397,12 +36414,13 @@ int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){long double n=7;std::vector<std::vector<int>> v;v.emplace_back(2,n);}
 )cpp"},
-      {"missing-allocation", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::vector<int>> v;v.emplace_back(2,short(7));}
@@ -37031,12 +37049,13 @@ int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::vector<int>> v;v.emplace_back(65537);return 0;}
 )cpp"},
-      {"missing-allocation-definition", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation-definition", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::vector<int>> v;v.emplace_back(2);return 0;}
@@ -37812,12 +37831,13 @@ int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::pair<F,int>> v;v.emplace_back(C{},7);return 0;}
 )cpp"},
-      {"missing-allocation-definition", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation-definition", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return 0;}
@@ -38466,12 +38486,13 @@ int effects;int target(int n)noexcept;
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::pair<C,int>> v;v.emplace_back(C{},7);return 0;}
 )cpp"},
-      {"missing-allocation-definition", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation-definition", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<std::pair<C,int>> v;v.emplace_back(C{},7);return 0;}
@@ -39210,10 +39231,11 @@ using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 namespace std { inline namespace __1 { template<> unique_ptr<C> make_unique<C>() { return unique_ptr<C>(new C()); } } }
 int main(){auto p=std::make_unique<C>();return !p;}
 )cpp"},
-      {"missing-allocation-definition", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation-definition", R"cpp(#include <type_traits>
 #include <functional>
 #include <memory>
 #include <utility>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){auto p=std::make_unique<C>();return !p;}
@@ -39886,12 +39908,13 @@ using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int check(){std::vector<C> v;C c;v.emplace_back();v.push_back(c);v.push_back(C{});return v.size()!=3||&v[0]==&v[1]||&v[1]==&v[2]||v[0]()(7)!=8||v[2]()(8)!=9||effects!=2;}
 int main(){int result=check();return result?result:(allocations>0&&allocations==releases?0:91);}
 )cpp"},
-      {"missing-allocation-definition", R"cpp(#include <type_traits>
+      {"source-redeclaration-missing-allocation-definition", R"cpp(#include <type_traits>
 #include <functional>
 #include <utility>
 #include <vector>
 #include <array>
 #include <optional>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int effects;int target(int n)noexcept{++effects;return n+1;}
 using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
 int main(){std::vector<C> v;C c;v.emplace_back();v.push_back(c);v.push_back(C{});return v.size()!=3||&v[0]==&v[1]||&v[1]==&v[2]||v[0]()(7)!=8||v[2]()(8)!=9||effects!=2;}
@@ -68416,11 +68439,15 @@ TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRequiresExactObjectForms) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"missing-delete-definition",
-       "#include <memory>\nvoid f(int*p){std::default_delete<int>{}(p);}",
+      {"source-redeclaration-missing-delete-definition",
+       R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+void f(int*p){std::default_delete<int>{}(p);})cpp",
        "TR0203"},
-      {"missing-array-delete-definition",
-       "#include <memory>\nvoid f(int*p){std::default_delete<int[]>{}(p);}",
+      {"source-redeclaration-missing-array-delete-definition",
+       R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+void f(int*p){std::default_delete<int[]>{}(p);})cpp",
        "TR0203"},
       {"volatile-element",
        "#include <memory>\nstd::default_delete<volatile int> value;", "TR0201"},
@@ -69020,10 +69047,14 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"missing-delete-definition",
-       "#include <memory>\nint main(){std::unique_ptr<int> value;}", "TR0203"},
-      {"missing-array-delete-definition",
-       "#include <memory>\nstd::unique_ptr<int[]> value;", "TR0203"},
+      {"source-redeclaration-missing-delete-definition",
+       R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int main(){std::unique_ptr<int> value;})cpp", "TR0203"},
+      {"source-redeclaration-missing-array-delete-definition",
+       R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+std::unique_ptr<int[]> value;)cpp", "TR0203"},
       {"volatile-array-element",
        "#include <memory>\nvoid operator delete[](void*)noexcept{}"
        "std::unique_ptr<volatile int[]> value;",
@@ -79258,17 +79289,19 @@ char *probe(std::allocator<char> &allocator) {
 }
 )cpp",
        "TR0201", ""},
-      {"member-missing-new", R"cpp(
+      {"source-redeclaration-member-missing-new", R"cpp(
 #include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int main() {
   std::allocator<char> allocator;
   decltype(sizeof(0)) requested = 3;
   return allocator.allocate(requested) ? 0 : 1;
 }
 )cpp",
-       "TR0203", "allocation definition"},
-      {"traits-missing-new", R"cpp(
+       "TR0203", "function declaration"},
+      {"source-redeclaration-traits-missing-new", R"cpp(
 #include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 int main() {
   std::allocator<char> allocator;
   using Traits = std::allocator_traits<std::allocator<char>>;
@@ -79276,7 +79309,7 @@ int main() {
   return Traits::allocate(allocator, requested, nullptr) ? 0 : 1;
 }
 )cpp",
-       "TR0203", "allocation definition"},
+       "TR0203", "function declaration"},
       {"member-missing-delete", R"cpp(
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -79355,13 +79388,15 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
        "static_assert(__is_same(std::uses_allocator<int,A>,"
        "std::uses_allocator<int,A>));",
        "TR0201"},
-      {"allocate-missing-new-definition",
-       "#include <memory>\nint main(){std::allocator<int> allocator;"
-       "int *p=allocator.allocate(1);allocator.deallocate(p,1);}",
+      {"source-redeclaration-allocate-missing-new-definition",
+       R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int main(){std::allocator<int> allocator;int *p=allocator.allocate(1);allocator.deallocate(p,1);})cpp",
        "TR0203"},
-      {"deallocate-missing-delete-definition",
-       "#include <memory>\nint main(){std::allocator<int> allocator;"
-       "allocator.deallocate(nullptr,0);}",
+      {"source-redeclaration-deallocate-missing-delete-definition",
+       R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
+int main(){std::allocator<int> allocator;allocator.deallocate(nullptr,0);})cpp",
        "TR0203"},
       {"allocate-runtime-count",
        "using Size=decltype(sizeof(0));unsigned char bytes[64];"
@@ -80365,11 +80400,13 @@ struct A{using value_type=int;};static_assert(__is_same(Imported::allocator_trai
 namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
 struct A{using value_type=int;};static_assert(__is_same(Imported::uses_allocator<int,A>,Imported::uses_allocator<int,A>));
 )cpp", "TR0201"},
-      {"allocate-missing-new", R"cpp(#include <memory>
+      {"source-redeclaration-allocate-missing-new", R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
 int main(){Imported::allocator<int>a;int*p=a.allocate(1);a.deallocate(p,1);}
 )cpp", "TR0203"},
-      {"owner-missing-delete", R"cpp(#include <memory>
+      {"source-redeclaration-owner-missing-delete", R"cpp(#include <memory>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
 int main(){Imported::unique_ptr<int>p;}
 )cpp", "TR0203"},
@@ -363566,7 +363603,8 @@ void operator delete(void*,std::size_t)noexcept{}
 using M=std::unordered_map<int,int>;using N=M::node_type;
 void f(std::unordered_map<int,long>&m){auto n=m.extract(1);}
 )cpp", "cpp-core-v2"},
-      {"missing-delete", R"cpp(#include <unordered_map>
+      {"source-redeclaration-missing-delete", R"cpp(#include <unordered_map>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 void f(){std::unordered_map<int,int>::node_type n;}
 )cpp", "cpp-core-v2"},
       {"core-v1", R"cpp(#include <unordered_map>
@@ -364505,7 +364543,8 @@ void operator delete(void*)noexcept{}void operator delete(void*,std::size_t)noex
 template<>I::__hash_map_iterator()noexcept{}
 int f(){R r;r.inserted=false;return r.inserted;}
 )cpp", "cpp-core-v2"},
-      {"missing-heap-definitions", R"cpp(#include <unordered_map>
+      {"source-redeclaration-missing-heap-definitions", R"cpp(#include <unordered_map>
+using NeverCDefaultHeapGuardSize=decltype(sizeof(0));void*operator new(NeverCDefaultHeapGuardSize);
 using R=std::unordered_map<int,int>::insert_return_type;int f(){R r;r.inserted=false;return r.inserted;}
 )cpp", "cpp-core-v2"},
       {"volatile-result", R"cpp(#include <unordered_map>
@@ -364600,6 +364639,339 @@ int f(){R r;r.inserted=false;return r.inserted;}
     EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
     EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
         << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2DefaultHeapObjectsPreserveStorageAndArrayCleanup) {
+  const auto Output = tmpFile("default-heap-objects.nc");
+  const auto Result = translate(fixture("default-heap-objects.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("default-heap-objects") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapOwnersPreserveFactoriesAndNestedLifetimes) {
+  const auto Output = tmpFile("default-heap-owners.nc");
+  const auto Result = translate(fixture("default-heap-owners.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("default-heap-owners") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapContainersOwnAndReleaseNativeStorage) {
+  const auto Output = tmpFile("default-heap-containers.nc");
+  const auto Result = translate(fixture("default-heap-containers.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("default-heap-containers") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapAllocatorIgnoresClassSpecificAllocation) {
+  const auto Output = tmpFile("default-heap-allocator-class.nc");
+  const auto Result = translate(fixture("default-heap-allocator-class.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("default-heap-allocator-class") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapUniqueArraysRetainSourceAllocationHooks) {
+  const auto Output = tmpFile("default-heap-source-hook-arrays.nc");
+  const auto Result = translate(fixture("default-heap-source-hook-arrays.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("default-heap-source-hook-arrays") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapQueriesDoNotIntroduceRuntimeDependencies) {
+  const auto Output = tmpFile("default-heap-queries.nc");
+  const auto Result = translate(fixture("default-heap-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("translated native heap calls require"), std::string::npos);
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapRejectsUnprovedReplacementPairing) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"scalar-new-before", R"cpp(using Size=decltype(sizeof(0));
+void*operator new(Size);
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+)cpp", "TR0203"},
+      {"scalar-new-after", R"cpp(using Size=decltype(sizeof(0));
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+void*operator new(Size);
+)cpp", "TR0203"},
+      {"array-new-before", R"cpp(using Size=decltype(sizeof(0));
+void*operator new[](Size);
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+)cpp", "TR0203"},
+      {"array-new-after", R"cpp(using Size=decltype(sizeof(0));
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+void*operator new[](Size);
+)cpp", "TR0203"},
+      {"scalar-delete-before", R"cpp(using Size=decltype(sizeof(0));
+void operator delete(void*)noexcept;
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+)cpp", "TR0203"},
+      {"scalar-delete-after", R"cpp(using Size=decltype(sizeof(0));
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+void operator delete(void*)noexcept;
+)cpp", "TR0203"},
+      {"array-delete-before", R"cpp(using Size=decltype(sizeof(0));
+void operator delete[](void*)noexcept;
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+)cpp", "TR0203"},
+      {"array-delete-after", R"cpp(using Size=decltype(sizeof(0));
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+void operator delete[](void*)noexcept;
+)cpp", "TR0203"},
+      {"scalar-sized-delete-before", R"cpp(using Size=decltype(sizeof(0));
+void operator delete(void*,Size)noexcept;
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+)cpp", "TR0203"},
+      {"scalar-sized-delete-after", R"cpp(using Size=decltype(sizeof(0));
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+void operator delete(void*,Size)noexcept;
+)cpp", "TR0203"},
+      {"array-sized-delete-before", R"cpp(using Size=decltype(sizeof(0));
+void operator delete[](void*,Size)noexcept;
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+)cpp", "TR0203"},
+      {"array-sized-delete-after", R"cpp(using Size=decltype(sizeof(0));
+int*f(){return new int[3]{};}void g(int*p){delete p;}
+void operator delete[](void*,Size)noexcept;
+)cpp", "TR0203"},
+      {"class-pairing-cache", R"cpp(using Size=decltype(sizeof(0));unsigned long long arena[8];struct R{int n;static void*operator new(Size){return arena;}};void first(){int*p=new int(1);delete p;}void later(R*p){delete p;})cpp", "TR0203"},
+      {"class-inherited-pairing", R"cpp(using Size=decltype(sizeof(0));unsigned long long arena[8];struct Base{static void*operator new(Size){return arena;}};struct R:Base{int n;};void f(R*p){delete p;})cpp", "TR0201"},
+      {"custom-global-placement", R"cpp(using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}void f(int*p){delete p;})cpp", "TR0203"},
+      {"custom-global-array-placement", R"cpp(using Size=decltype(sizeof(0));struct Tag{};void*operator new[](Size,Tag,void*p){return p;}void f(int*p){delete[]p;})cpp", "TR0203"},
+      {"default-delete-class-pairing", R"cpp(#include <memory>
+using Size=decltype(sizeof(0));unsigned long long arena[8];struct R{int n;static void*operator new(Size){return arena;}};void f(R*p){std::default_delete<R>{}(p);})cpp", "TR0203"},
+      {"unique-ptr-custom-placement", R"cpp(#include <memory>
+using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}void f(int*p){std::unique_ptr<int> owner(p);})cpp", "TR0203"},
+      {"default-runtime-array-length", R"cpp(int*f(int n){return new int[n]{};})cpp", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("default-heap-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("default-heap-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapAdmitsFormerMissingRuntimeCases) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"CoreV2DefaultSizedDeleteRetainsDefinitionBoundaries-missing-unsized", R"cpp(void f(int*p){delete p;})cpp"},
+      {"CoreV2DefaultSizedDeleteRetainsDefinitionBoundaries-missing-unsized-array", R"cpp(struct R{int n;~R(){}};void f(R*p){delete[]p;})cpp"},
+      {"CoreV2ArrayAllocationRetainsSourceAndLengthBoundaries-missing-array-allocator", R"cpp(int*f(){return new int[3]{};})cpp"},
+      {"CoreV2ArrayAllocationRetainsSourceAndLengthBoundaries-missing-array-deallocator", R"cpp(void f(int*p){delete[]p;})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-discarded-void-new", R"cpp(void f(){static_cast<void>(new int(1));})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-discarded-new", R"cpp(int f(){if constexpr(false){int*p=new int(3);}return 0;})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-template-new", R"cpp(template<class T>T* f(){return new T{};}int main(){return *f<int>();})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-default-argument-new", R"cpp(int f(int*p=new int(1)){return *p;})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-default-member-new", R"cpp(struct R{int*p=new int(1);};)cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-record-new", R"cpp(struct R{int n;~R(){}};R*f(){return new R{1};})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-record-delete", R"cpp(struct R{int n;~R(){}};void f(R*p){delete p;})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-array-new", R"cpp(int*f(){return new int[3]{};})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-array-delete", R"cpp(void f(int*p){delete[]p;})cpp"},
+      {"CoreV2AllocationRetainsSourceAndRuntimeBoundaries-alias-array-new", R"cpp(using A=int[3];int*f(){return new A{};})cpp"},
+      {"CoreV2StaticPointersRetainConstantAddressAndSourceRequirements-global-heap", R"cpp(int*p=new int(3);)cpp"},
+      {"CoreV2NestedVectorListEmplaceRetainsSourceAndSDKBoundaries-missing-allocation", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::vector<int>> v;v.emplace_back(std::initializer_list<int>{3,7});}
+)cpp"},
+      {"CoreV2NestedVectorRangeEmplaceRetainsIteratorAndSourceBoundaries-missing-allocation", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){int a[2]={3,7};std::vector<std::vector<int>> v;v.emplace_back(a,a+2);}
+)cpp"},
+      {"CoreV2NestedVectorFillConversionsRetainSourceAndSDKBoundaries-missing-allocation", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::vector<int>> v;v.emplace_back(2,short(7));}
+)cpp"},
+      {"CoreV2NestedVectorEmplaceRetainsCountAndSourceBoundaries-missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::vector<int>> v;v.emplace_back(2);return 0;}
+)cpp"},
+      {"CoreV2VectorPairCallbackEmplaceRetainsSourceAndConversionBoundaries-missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return 0;}
+)cpp"},
+      {"CoreV2FunctionTraitVectorPairEmplaceRetainsConversionBoundaries-missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<C,int>> v;v.emplace_back(C{},7);return 0;}
+)cpp"},
+      {"CoreV2FunctionTraitUniqueRetainsSourceAndAllocationBoundaries-missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"CoreV2FunctionTraitVectorRetainsSourceAndElementBoundaries-missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<C> v;C c;v.emplace_back();v.push_back(c);v.push_back(C{});return v.size()!=3||&v[0]==&v[1]||&v[1]==&v[2]||v[0]()(7)!=8||v[2]()(8)!=9||effects!=2;}
+)cpp"},
+      {"CoreV2MemoryDefaultDeleteRequiresExactObjectForms-missing-delete-definition", R"cpp(#include <memory>
+void f(int*p){std::default_delete<int>{}(p);})cpp"},
+      {"CoreV2MemoryDefaultDeleteRequiresExactObjectForms-missing-array-delete-definition", R"cpp(#include <memory>
+void f(int*p){std::default_delete<int[]>{}(p);})cpp"},
+      {"CoreV2MemoryUniquePtrRequiresExactObjectForms-missing-delete-definition", R"cpp(#include <memory>
+int main(){std::unique_ptr<int> value;})cpp"},
+      {"CoreV2MemoryUniquePtrRequiresExactObjectForms-missing-array-delete-definition", R"cpp(#include <memory>
+std::unique_ptr<int[]> value;)cpp"},
+      {"CoreV2MemoryByteAllocatorCountsRequireCheckedSources-member-missing-new", R"cpp(
+#include <memory>
+int main() {
+  std::allocator<char> allocator;
+  decltype(sizeof(0)) requested = 3;
+  return allocator.allocate(requested) ? 0 : 1;
+}
+)cpp"},
+      {"CoreV2MemoryByteAllocatorCountsRequireCheckedSources-traits-missing-new", R"cpp(
+#include <memory>
+int main() {
+  std::allocator<char> allocator;
+  using Traits = std::allocator_traits<std::allocator<char>>;
+  decltype(sizeof(0)) requested = 3;
+  return Traits::allocate(allocator, requested, nullptr) ? 0 : 1;
+}
+)cpp"},
+      {"CoreV2MemoryAllocatorMetadataRequiresExactTemplates-allocate-missing-new-definition", R"cpp(#include <memory>
+int main(){std::allocator<int> allocator;int *p=allocator.allocate(1);allocator.deallocate(p,1);})cpp"},
+      {"CoreV2MemoryAllocatorMetadataRequiresExactTemplates-deallocate-missing-delete-definition", R"cpp(#include <memory>
+int main(){std::allocator<int> allocator;allocator.deallocate(nullptr,0);})cpp"},
+      {"CoreV2MemoryTemplateNameImportsRetainSourceBoundaries-allocate-missing-new", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+int main(){Imported::allocator<int>a;int*p=a.allocate(1);a.deallocate(p,1);}
+)cpp"},
+      {"CoreV2MemoryTemplateNameImportsRetainSourceBoundaries-owner-missing-delete", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+int main(){Imported::unique_ptr<int>p;}
+)cpp"},
+      {"CoreV2UnorderedMapNodeHandlesRetainSDKAndHeapBoundaries-missing-delete", R"cpp(#include <unordered_map>
+void f(){std::unordered_map<int,int>::node_type n;}
+)cpp"},
+      {"CoreV2UnorderedMapResultConstructionRetainsSDKAndHeapBoundaries-missing-heap-definitions", R"cpp(#include <unordered_map>
+using R=std::unordered_map<int,int>::insert_return_type;int f(){R r;r.inserted=false;return r.inserted;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("default-heap-former-" + Name + ".cpp");
+    const auto Output = tmpFile("default-heap-former-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(std::filesystem::exists(Output));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultHeapRetainsDirectCallAndNativeSymbolBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"direct-scalar-new", R"cpp(#include <new>
+void*f(){return ::operator new(sizeof(int));})cpp", "TR0203"},
+      {"direct-array-new", R"cpp(#include <new>
+void*f(){return ::operator new[](sizeof(int));})cpp", "TR0203"},
+      {"direct-unsized-delete", R"cpp(#include <new>
+void f(void*p){::operator delete(p);})cpp", "TR0203"},
+      {"default-function-address", R"cpp(#include <new>
+using F=void*(*)(std::size_t);F f(){return &::operator new;})cpp", "TR0201"},
+      {"default-delete-address", R"cpp(#include <new>
+using F=void(*)(void*)noexcept;F f(){return &::operator delete;})cpp", "TR0201"},
+      {"source-malloc-collision", R"cpp(using Size=decltype(sizeof(0));unsigned long long arena[8];extern "C" void*malloc(Size){return arena;}int*f(){return new int(3);})cpp", "TR0301"},
+      {"source-free-collision", R"cpp(extern "C" void free(void*){}void f(int*p){delete p;})cpp", "TR0301"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("default-heap-protocol-" + Name + ".cpp");
+    const auto Output = tmpFile("default-heap-protocol-" + Name + ".nc");
+    writeFile(Source, Code);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    EXPECT_FALSE(Result.stderrContains("TR0101")) << Result.out << Result.err;
     expectNoArtifacts(Output);
   }
 }

@@ -9212,6 +9212,9 @@ public:
            prototypeSource(Function->getType()->getAs<FunctionProtoType>(), Function) &&
            prototypeSource(Definition->getType()->getAs<FunctionProtoType>(), Definition);
   }
+  bool heapDefined(const FunctionDecl *Function) {
+    return defined(Function) || A.defaultHeapDeclaration(Function);
+  }
   bool queryConstructorSignature(const CXXConstructorDecl *Constructor) {
     if (!lazyQueryConstructorSignature(A, Constructor))
       return false;
@@ -9576,7 +9579,7 @@ public:
     }
     // Use the same selected deallocation function as lowering, which can
     // differ from the SDK delete expression's implicit unsized declaration.
-    if (!defined(A.uniquePtrDeleteFunction(Owner, Owner.Record->getLocation())))
+    if (!heapDefined(A.uniquePtrDeleteFunction(Owner, Owner.Record->getLocation())))
       return false;
     if (const auto *Element = A.Context.getBaseElementType(Owner.ElementType)
                                   ->getAsCXXRecordDecl())
@@ -9746,8 +9749,9 @@ public:
         !uniquePtrConstruction(Info->OwnerConstruction->getConstructor()))
       return false;
     const auto L = Call->getExprLoc();
-    if (!defined(A.allocationFunction(Info->Allocation->getOperatorNew(), true,
-                                      L, Info->Owner.Deleter.Array)) ||
+    if (!heapDefined(A.allocationFunction(Info->Allocation->getOperatorNew(), true,
+                                          L, Info->Owner.Deleter.Array,
+                                          Info->Owner.ElementType)) ||
         !destruction(Info->Owner.Record))
       return false;
     if (const auto *Constructor = Info->Constructor) {
@@ -10687,6 +10691,17 @@ bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
   return true;
 }
 
+bool Adapter::nativeHeapABI() const {
+  const auto &Target = Context.getTargetInfo();
+  const auto &Triple = Target.getTriple();
+  const auto Size = Context.getSizeType();
+  return (Triple.isMacOSX() || (Triple.isOSLinux() && !Triple.isAndroid()) ||
+          Triple.isKnownWindowsMSVCEnvironment() || Triple.isWindowsGNUEnvironment()) &&
+         Size->isUnsignedIntegerType() &&
+         Context.getTypeSize(Size) == Context.getTypeSize(Context.VoidPtrTy) &&
+         Context.getTypeAlign(Size) == Context.getTypeAlign(Context.VoidPtrTy);
+}
+
 std::string Adapter::nativeHeapImport(const FunctionDecl *F, SourceLocation L) {
   if (!S.coreV2() || !nativeHeapDeclaration(F) || F->getDefinition())
     return {};
@@ -10695,14 +10710,7 @@ std::string Adapter::nativeHeapImport(const FunctionDecl *F, SourceLocation L) {
         nativeHeapDeclaration(Declaration) != nativeHeapDeclaration(F) ||
         !supportedDeclarationAttributes(Declaration))
       return {};
-  const auto &Target = Context.getTargetInfo();
-  const auto &Triple = Target.getTriple();
-  const auto Size = Context.getSizeType();
-  if ((!Triple.isMacOSX() && !(Triple.isOSLinux() && !Triple.isAndroid()) &&
-       !Triple.isKnownWindowsMSVCEnvironment() && !Triple.isWindowsGNUEnvironment()) ||
-      !Size->isUnsignedIntegerType() ||
-      Context.getTypeSize(Size) != Context.getTypeSize(Context.VoidPtrTy) ||
-      Context.getTypeAlign(Size) != Context.getTypeAlign(Context.VoidPtrTy)) {
+  if (!nativeHeapABI()) {
     reject(L, "native heap ABI", "Native heap declarations require a checked hosted C ABI and native size_t layout.", "TR0204");
     throw Failure{};
   }
@@ -10792,9 +10800,140 @@ bool Adapter::standardPlacementAllocation(const FunctionDecl *F,
   return Reference && Reference->getDecl() == Definition->getParamDecl(1);
 }
 
+// The six ordinary replaceable signatures are one source-override closure.
+// Array defaults forward to scalar operators; an independent per-overload
+// fallback would silently bypass source replacements.
+static bool ordinaryGlobalHeapShape(const FunctionDecl *F, ASTContext &Context) {
+  if (!F || isa<CXXMethodDecl>(F) || F->isVariadic() ||
+      F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !F->getLexicalDeclContext()->getRedeclContext()->isTranslationUnit())
+    return false;
+  const auto Operator = F->getOverloadedOperator();
+  const bool Allocate = Operator == OO_New || Operator == OO_Array_New;
+  if (!Allocate && Operator != OO_Delete && Operator != OO_Array_Delete)
+    return false;
+  return F->getNumParams() >= 1 && F->getNumParams() <= (Allocate ? 1u : 2u) &&
+         Context.hasSameType(F->getReturnType(), Allocate ? Context.VoidPtrTy : Context.VoidTy) &&
+         Context.hasSameType(F->getParamDecl(0)->getType(),
+                             Allocate ? Context.getSizeType() : Context.VoidPtrTy) &&
+         (F->getNumParams() == 1 ||
+          Context.hasSameType(F->getParamDecl(1)->getType(), Context.getSizeType()));
+}
+
+bool Adapter::defaultHeapDeclaration(const FunctionDecl *F) const {
+  if (!S.coreV2() || !nativeHeapABI() || !ordinaryGlobalHeapShape(F, Context) ||
+      F->getDefinition())
+    return false;
+  const bool Allocate = F->getOverloadedOperator() == OO_New ||
+                        F->getOverloadedOperator() == OO_Array_New;
+  for (const auto *D : F->redecls()) {
+    const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
+    if (!ordinaryGlobalHeapShape(D, Context) || D->isInvalidDecl() ||
+        D->isDeleted() || D->isInlined() || D->getStorageClass() != SC_None ||
+        !D->isReplaceableGlobalAllocationFunction() ||
+        !ordinaryCallbackPrototype(Prototype) ||
+        Prototype->getExceptionSpecType() != (Allocate ? EST_None : EST_BasicNoexcept))
+      return false;
+    const bool Implicit = D->isImplicit();
+    if (Implicit) {
+      if (D->getLocation().isValid() || D->getBeginLoc().isValid() ||
+          D->getEndLoc().isValid() || D->getTypeSourceInfo())
+        return false;
+    } else {
+      const auto Origin = S.sdkFile(Sources, D->getLocation());
+      if (!Origin || Origin->Root != "libcxx" ||
+          Origin->Path != "__new/global_new_delete.h" || !D->getTypeSourceInfo())
+        return false;
+    }
+    for (const auto *P : D->parameters()) {
+      if (P->isInvalidDecl() || P->hasAttrs() || P->hasDefaultArg() ||
+          P->isImplicit() != Implicit)
+        return false;
+      if (Implicit && (P->getLocation().isValid() || P->getBeginLoc().isValid() ||
+                       P->getEndLoc().isValid() || P->getTypeSourceInfo()))
+        return false;
+    }
+    for (const auto *Attribute : D->attrs()) {
+      if (const auto *Visibility = dyn_cast<VisibilityAttr>(Attribute);
+          Visibility && !Visibility->getRange().isValid() &&
+          Visibility->getVisibility() == VisibilityAttr::Default)
+        continue;
+      if (Allocate && Attribute->isImplicit() && !Attribute->getRange().isValid()) {
+        if (isa<ReturnsNonNullAttr>(Attribute))
+          continue;
+        if (const auto *Size = dyn_cast<AllocSizeAttr>(Attribute);
+            Size && Size->getElemSizeParam().isValid() &&
+            Size->getElemSizeParam().getSourceIndex() == 1 &&
+            !Size->getNumElemsParam().isValid())
+          continue;
+      }
+      if (!Implicit && Allocate) {
+        if (const auto *Unused = dyn_cast<WarnUnusedResultAttr>(Attribute);
+            Unused && Unused->getMessage().empty())
+          continue;
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool classHeapSelection(const CXXRecordDecl *Record, unsigned Depth = 0) {
+  if (!Record)
+    return false;
+  Record = Record->getDefinition();
+  if (!Record || Depth > 64)
+    return true;
+  for (const auto *D : Record->decls()) {
+    if (const auto *F = dyn_cast<FunctionDecl>(D);
+        F && allocationOperatorKind(F->getOverloadedOperator()))
+      return true;
+    if (const auto *T = dyn_cast<FunctionTemplateDecl>(D);
+        T && allocationOperatorKind(T->getTemplatedDecl()->getOverloadedOperator()))
+      return true;
+    if (isa<UsingDecl, UsingShadowDecl>(D))
+      if (cast<NamedDecl>(D)->getDeclName().getNameKind() == DeclarationName::CXXOperatorName &&
+          allocationOperatorKind(cast<NamedDecl>(D)->getDeclName().getCXXOverloadedOperator()))
+        return true;
+  }
+  for (const auto &Base : Record->bases())
+    if (classHeapSelection(Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+      return true;
+  return false;
+}
+
+bool Adapter::defaultHeapFunction(const FunctionDecl *F, bool Allocate,
+                                   bool Array, QualType Element, HeapUse Use) const {
+  if (!defaultHeapDeclaration(F) || Element.isNull())
+    return false;
+  Element = Context.getBaseElementType(Element);
+  if (!Element->isObjectType() || Element->isIncompleteType() ||
+      Context.getTypeAlign(Element) > Context.getTargetInfo().getNewAlign() ||
+      F->getOverloadedOperator() != (Allocate ? (Array ? OO_Array_New : OO_New)
+                                           : (Array ? OO_Array_Delete : OO_Delete)))
+    return false;
+  for (auto Operator : {OO_New, OO_Array_New, OO_Delete, OO_Array_Delete})
+    for (const auto *D : Context.getTranslationUnitDecl()->lookup(
+             Context.DeclarationNames.getCXXOperatorName(Operator))) {
+      const auto *Template = dyn_cast<FunctionTemplateDecl>(D);
+      const auto *Candidate = Template ? Template->getTemplatedDecl() : dyn_cast<FunctionDecl>(D);
+      const bool CustomAllocation = !Allocate && Use == HeapUse::SourceExpression &&
+          (Operator == OO_New || Operator == OO_Array_New);
+      if (!Candidate || (!ordinaryGlobalHeapShape(Candidate, Context) && !CustomAllocation))
+        continue;
+      for (const auto *Declaration : Candidate->redecls())
+        if (S.owns(Sources, Declaration->getLocation()))
+          return false;
+    }
+  return Allocate || Use == HeapUse::SDKAllocator ||
+         !classHeapSelection(Element->getAsCXXRecordDecl());
+}
+
 const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
                                                bool Allocate, SourceLocation L,
-                                               bool Array) {
+                                               bool Array, QualType Element,
+                                               HeapUse Use) {
   const auto Operator = Allocate ? (Array ? OO_Array_New : OO_New)
                                  : (Array ? OO_Array_Delete : OO_Delete);
   const auto *Definition = F ? F->getDefinition() : nullptr;
@@ -10832,6 +10971,11 @@ const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
       type(P->getType(), L);
     return Definition;
   }
+  if ((!Definition || !S.owns(Sources, Definition->getLocation())) &&
+      defaultHeapFunction(F, Allocate, Array, Element, Use)) {
+    DefaultHeapIdentities.try_emplace(name(F), F->getCanonicalDecl());
+    return F;
+  }
   if (!Definition || !S.owns(Sources, Definition->getLocation())) {
     reject(L, Allocate ? "allocation definition" : "deallocation definition",
            "The selected allocation function requires its definition in this source unit.", "TR0203");
@@ -10858,7 +11002,7 @@ const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
 const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
                                                    QualType Element,
                                                    SourceLocation L,
-                                                   bool Array) {
+                                                   bool Array, HeapUse Use) {
   if (!S.coreV2() || Element.isNull() || Element->isVoidType() ||
       Element->isIncompleteType() || Element->isFunctionType() ||
       Context.getTypeAlign(Element) > Context.getTargetInfo().getNewAlign()) {
@@ -10935,7 +11079,7 @@ const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
            "A matching global allocation function is required.", "TR0203");
     throw Failure{};
   }
-  return allocationFunction(Selected, Allocate, L, Array);
+  return allocationFunction(Selected, Allocate, L, Array, Element, Use);
 }
 
 const FunctionDecl *
@@ -10952,8 +11096,9 @@ Adapter::defaultDeleteFunction(const UtilityDefaultDeleteRecord &Deleter,
   const auto *Selected = Delete->getOperatorDelete();
   const auto *Function =
       !isa_and_nonnull<CXXMethodDecl>(Selected)
-          ? allocatorHeapFunction(false, Deleter.ElementType, L, Deleter.Array)
-          : allocationFunction(Selected, false, L, Deleter.Array);
+          ? allocatorHeapFunction(false, Deleter.ElementType, L, Deleter.Array,
+                                  HeapUse::SourceExpression)
+          : allocationFunction(Selected, false, L, Deleter.Array, Deleter.ElementType);
   unsigned Index = 1;
   const bool Sized =
       Index < Function->getNumParams() &&
@@ -10995,7 +11140,7 @@ Adapter::uniquePtrDeleteFunction(const UtilityUniquePtrRecord &Owner,
 }
 
 ArrayAllocationLayout Adapter::arrayAllocationLayout(
-    QualType Object, bool UsualDeleteWantsSize, SourceLocation L) {
+    QualType Object, bool UsualDeleteWantsSize, SourceLocation L, bool RecordUse) {
   const auto &Target = Context.getTargetInfo();
   const auto &Triple = Target.getTriple();
   const auto ABI = Context.getCXXABIKind();
@@ -11015,7 +11160,8 @@ ArrayAllocationLayout Adapter::arrayAllocationLayout(
     reject(L, "array cookie ABI", "Array allocation requires a checked native C++ ABI and size_t layout.", "TR0204");
     throw Failure{};
   }
-  S.Module["array_cookie_abi"] = Microsoft ? "msvc" : Apple ? "apple-arm64" : "itanium";
+  if (RecordUse)
+    S.Module["array_cookie_abi"] = Microsoft ? "msvc" : Apple ? "apple-arm64" : "itanium";
   auto Element = Context.getBaseElementType(Object).getUnqualifiedType();
   ArrayAllocationLayout Result;
   Result.Element = Element;
@@ -24016,7 +24162,7 @@ public:
         if (A.storageUnits(Object) > 200000)
           A.reject(L, "new object storage", "Allocated object exceeds the storage limit.");
         const auto *Selected = N->getOperatorNew();
-        const auto *F = A.allocationFunction(Selected, true, L, N->isArray());
+        const auto *F = A.allocationFunction(Selected, true, L, N->isArray(), Object);
         if (N->isArray()) {
           A.arrayNewInfo(N); // Shared bound/initializer proof also covers erased source.
           const Expr *Init = N->getInitializer();
@@ -24059,7 +24205,8 @@ public:
           return true;
         }
         A.type(Object, L);
-        const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L, Delete->isArrayForm());
+        const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L,
+                                              Delete->isArrayForm(), Object);
         unsigned Index = 1;
         const bool Sized = Index < F->getNumParams() &&
             A.Context.hasSameUnqualifiedType(F->getParamDecl(Index)->getType(), A.Context.getSizeType());
@@ -24380,7 +24527,7 @@ public:
             A.type(Info->Owner.ElementType, L);
             const bool Array = Info->Owner.Deleter.Array;
             A.allocationFunction(Info->Allocation->getOperatorNew(), true, L,
-                                 Array);
+                                 Array, Info->Owner.ElementType);
             A.uniquePtrDeleteFunction(Info->Owner, L);
             if (Array) {
               if (!Info->ArrayCount)
@@ -25399,6 +25546,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       if (Instruction.getString("op") == "mapped_call")
         UsedMappings.insert(Instruction.getString("mapping")->str());
     }
+  for (const auto &[Name, Location] : UsedDefaultHeapLocations)
+    FunctionData.push_back(lowerDefaultHeap(DefaultHeapIdentities.at(Name), Location));
   S.Module["functions"] = std::move(FunctionData);
   json::Array Mappings;
   for (const auto &M : MappedFunctions)

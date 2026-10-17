@@ -2279,6 +2279,8 @@ struct DecompositionArrayCopy {
   const clang::ArrayInitLoopExpr *Loop, *Parent;
   const clang::ArrayInitIndexExpr *Index;
 };
+enum class HeapUse { SourceExpression, SDKAllocator };
+
 class Adapter {
 public:
   State &S;
@@ -2289,6 +2291,9 @@ public:
   std::map<const clang::FunctionTemplateDecl *, const clang::CXXRecordDecl *>
       FriendTemplateIdentityOwners;
   std::vector<clang::FunctionDecl *> Functions;
+  // Identity metadata only; authorization is repeated for every typed use.
+  std::map<std::string, const clang::FunctionDecl *> DefaultHeapIdentities;
+  std::map<std::string, json::Object> UsedDefaultHeapLocations;
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
@@ -2437,11 +2442,13 @@ public:
                                    bool Array) const;
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
                                                bool Allocate, clang::SourceLocation L,
-                                               bool Array = false);
+                                               bool Array, clang::QualType Element,
+                                               HeapUse Use = HeapUse::SourceExpression);
   const clang::FunctionDecl *allocatorHeapFunction(bool Allocate,
                                                    clang::QualType Element,
                                                    clang::SourceLocation L,
-                                                   bool Array = false);
+                                                   bool Array = false,
+                                                   HeapUse Use = HeapUse::SDKAllocator);
   const clang::FunctionDecl *
   defaultDeleteFunction(const UtilityDefaultDeleteRecord &Deleter,
                         const clang::CXXDeleteExpr *Delete,
@@ -2450,8 +2457,15 @@ public:
   uniquePtrDeleteFunction(const UtilityUniquePtrRecord &Owner,
                           clang::SourceLocation L);
   ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
-      bool UsualDeleteWantsSize, clang::SourceLocation L);
+      bool UsualDeleteWantsSize, clang::SourceLocation L, bool RecordUse = false);
   ArrayNewInfo arrayNewInfo(const clang::CXXNewExpr *N);
+  bool nativeHeapABI() const;
+  bool defaultHeapDeclaration(const clang::FunctionDecl *F) const;
+  bool defaultHeapFunction(const clang::FunctionDecl *F, bool Allocate,
+                           bool Array, clang::QualType Element, HeapUse Use) const;
+  void retainDefaultHeapCalls(const json::Array &Body);
+  json::Object lowerDefaultHeap(const clang::FunctionDecl *F,
+                                const json::Object &Location);
   std::string nativeHeapImport(const clang::FunctionDecl *F, clang::SourceLocation L);
   json::Object functionAddress(const clang::FunctionDecl *F, clang::SourceLocation L);
   std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);

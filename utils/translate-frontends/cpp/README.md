@@ -119,13 +119,12 @@ identities, inherited aliases and constants also resolve. Exact single-object
 `std::default_delete<T>` and unbounded-array `std::default_delete<T[]>`, where
 `T` may have complete bounded inner extents, preserve their one-byte stateless
 layout; their construction and calls lower directly through checked object or
-flattened reverse array destruction and the checked source-defined scalar
-or array class/global delete selected by Clang.
+flattened reverse array destruction and the checked scalar or array class/global delete selected by Clang.
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
 and uninitialized construction algorithms lower directly. Exact runtime
 allocator objects, C++17 `destroy`, and allocator-traits destruction,
 `max_size` and copy selection also lower directly. Exact allocator and traits
-allocation/deallocation forwarders call checked source-defined global new/delete
+allocation/deallocation forwarders call checked global new/delete
 for complete default-new-aligned elements and nonoverflowing allocation
 counts. One-byte elements accept runtime counts after target `size_t`
 conversion; larger elements require nonoverflowing integer constant expressions
@@ -720,7 +719,7 @@ interference-size values remain compile-time or scalar metadata, and exact
 non-volatile object pointers lower to their retained pointer value without a
 libc++ call. Exact standard placement new and constant-bound placement new[]
 reuse a captured storage pointer without a runtime call. Runtime tag objects,
-direct allocation-function calls and default heap operations remain excluded.
+direct allocation-function calls and allocation-failure handlers remain excluded.
 Memory contributes an exact, platform-free
 267-file C++17 header closure. Raw-pointer `pointer_traits` aliases resolve
 through pinned libc++. Exact `std::allocator<T>` and
@@ -734,8 +733,7 @@ runtime call. Exact single-object `std::default_delete<T>` and unbounded-array
 authenticated one-byte stateless carrier. Default, copy/move and admitted
 cv-converting construction lower
 directly. Calls evaluate the deleter and pointer once, destroy the complete
-object or reverse array elements, and invoke the checked source-defined scalar
-or array class/global delete selected by Clang. Exact
+object or reverse array elements, and invoke the checked scalar or array class/global delete selected by Clang. Exact
 single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
@@ -756,7 +754,7 @@ requiring a global delete definition. Exact single-object
 and unbounded-array
 `std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
 extents, for integer constant expressions from zero through 65536 lower through
-the selected checked source-defined global/class-specific scalar new/delete or
+the selected checked global/source-defined class-specific scalar new/delete or
 array new[]/delete[]. They value-initialize
 flattened scalars or call supported source-owned
 non-template `noexcept` record constructors, including authenticated
@@ -775,13 +773,11 @@ writable scalars and complete source-owned records whose selected constructor
 is supported, source-owned and `noexcept`, including authenticated source-owned
 trailing defaults evaluated once after supplied arguments. Allocation and
 deallocation accept exact member and traits forwarding, including hints and
-runtime deallocation counts, when a source-defined global new/delete path
-exists and the allocation count is proven within `max_size`. One-byte elements
+runtime deallocation counts, when an admitted global new/delete path exists and the allocation count is proven within `max_size`. One-byte elements
 accept runtime counts, preserving the complete expression's conversions,
 side effects and temporary cleanup. Larger elements accept integer constant
 expressions or a final implicit conversion from an unsigned builtin type,
-including `bool`, whose entire range fits the target's `max_size`. Default
-heap allocation, unproven allocation counts, over-aligned elements,
+including `bool`, whose entire range fits the target's `max_size`. Allocation-failure handling, unproven allocation counts, over-aligned elements,
 runtime-count array factories, stateful,
 reference, non-raw-pointer, nontrivial, overloaded, ref-qualified or throwing
 custom deleters, other smart pointers and ownership factories are not yet
@@ -1119,7 +1115,7 @@ Long double and serialization require further support.
 
 The pinned C++17 `<unordered_map>` header admits metadata for `std::unordered_map<int, int>` with the exact SDK `std::hash<int>`, `std::equal_to<int>` and `std::allocator<std::pair<const int, int>>`. Aliases, type identity, public type members, `sizeof` and `alignof` retain the selected target layout.
 
-The pinned `std::unordered_map<int, int>` with SDK default policies supports default construction, destruction, runtime pointers and references, size/load observers and load-limit mutation, plus `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` and member `swap`. Inserted nodes retain their addresses across rehash and swap. Allocation and deallocation use source-defined global hooks; inputs must stay within the SDK preconditions and successful, nonoverflowing allocation domain. `at`, other element types, custom policies and source SDK redeclarations remain rejected.
+The pinned `std::unordered_map<int, int>` with SDK default policies supports default construction, destruction, runtime pointers and references, size/load observers and load-limit mutation, plus `operator[]`, `count`, `erase(key)`, `clear`, `rehash`, `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` and member `swap`. Inserted nodes retain their addresses across rehash and swap. Allocation and deallocation use checked global hooks or authenticated defaults; inputs must stay within the SDK preconditions and successful, nonoverflowing allocation domain. `at`, other element types, custom policies and source SDK redeclarations remain rejected.
 
 Mutable and const iterators support default/copy/move construction and assignment, mutable-to-const conversion, dereference, arrow, increment and equality. `begin`/`end`, `cbegin`/`cend`, `find`, range loops and structured bindings preserve the SDK node order and const-key references. Iterator and iterator-range `erase` return the next mutable iterator.
 
@@ -1158,3 +1154,8 @@ Exact default-map mutable/const global and local iterators compose with std::dis
 Generic `std::swap<T>` also accepts the exact default map, its node handles and mutable/const global or local iterators. Both operands are captured once. Authenticated SDK moves leave their temporary empty; equivalent direct storage exchange preserves node ownership/addresses, map sentinel links and all local iterator metadata without allocation or deletion. Self swap preserves ownership. Original generic swap declarations and selected move/destructor bodies remain checked; source replacements and indirect function addresses remain rejected. Unused node_type and insert_return_type aliases, their pointer/reference/array forms and type identity queries also authenticate and complete SDK storage without constructing an owner or requiring heap definitions.
 
 The exact SDK insert_return_type supports implicit default and value construction. Both create a singular iterator and empty node; value initialization also zeroes inserted, while default initialization leaves that bool unwritten. Arrays, source fields and factory returns preserve these rules and owning cleanup. Existing empty, partial and full aggregate initialization remains supported in field order. Original constructor bodies and nested iterator/node operations remain authenticated; owning lifetimes retain source delete requirements.
+
+
+Ordinary default C++ heap operators are supported in the successful, nonoverflowing allocation domain. Untouched compiler-implicit declarations or exact pinned SDK declarations of scalar/array new and unsized/sized delete lower to private wrappers over the existing checked native malloc/free protocol. Zero-byte new requests at least one byte. Objects must fit the target’s ordinary new alignment and the existing hosted CRT/size_t ABI. Raw objects, arrays, admitted unique pointers, allocators, strings, vectors and unordered-map nodes share this contract.
+
+Source-defined operators keep their existing precedence, including implicit sized delete forwarding to source unsized delete. A source declaration or definition of any of the six ordinary replaceable global signatures disables every new default fallback across that whole family. Typed source delete/default_delete also rejects unproved pairing with class or inherited allocation functions, or other source global allocation overloads, including placement/nothrow/aligned forms; explicit SDK global allocator calls retain their independent selection. Direct default operator calls, default function addresses, aligned/nothrow fallback, allocation failure handlers and exception unwinding remain excluded. Raw default new[] still requires a proven constant extent; runtime nonthrowing class allocation keeps its separate existing contract. Pure type/lifetime queries emit no heap wrappers or array-cookie runtime metadata. The NeverC source language remains C23-only. [C++17](../docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).

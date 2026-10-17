@@ -4657,7 +4657,7 @@ initializing elements, so valid source must provide sufficient aligned storage.
 Volatile, void and function pointees, function addresses, quoted includes,
 shadows and forged declarations remain rejected. Runtime `std::nothrow` tag
 objects, direct calls or addresses of the placement functions, source
-redeclarations, default heap allocation, runtime placement-array bounds,
+redeclarations, allocation-failure handling, runtime placement-array bounds,
 allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
@@ -5365,7 +5365,7 @@ array `T` may contain complete bounded inner extents. The
 single-object path authenticates the concrete function-template specialization,
 `T` and `_Args` pack, non-array `new T(...)`, raw-pointer `unique_ptr<T>`
 construction and selected allocation function together. Allocation uses the
-exact checked source-defined global or class-specific `operator new` selected
+exact checked global or source-defined class-specific `operator new` selected
 by Clang before evaluating construction arguments. The resulting owner uses
 the independently selected scalar class/global delete path. A scalar accepts
 value initialization or one admitted direct scalar conversion. A complete
@@ -5470,7 +5470,7 @@ user-defined conversions and unsupported target records remain rejected.
 
 Exact `allocator<T>::allocate` and `deallocate` members and their exact
 `allocator_traits<allocator<T>>` forwarding operations lower through the
-existing source-defined global allocation-function contract. `T` must be a
+checked global allocation-function contract. `T` must be a
 complete non-void object whose alignment does not exceed the target's default
 new alignment. An allocation count must be proven no greater than `max_size`;
 this proves the byte multiplication cannot overflow without adding the
@@ -5512,7 +5512,7 @@ the existing standard forward to a checked source-defined unsized delete; any
 source-written undefined sized redeclaration blocks that inference. The allocator
 receiver or traits allocator reference is evaluated first. Both paths emit
 ordinary checked source calls, enable `memory_lifetimes`, and introduce no
-libc++ runtime call or allocation opcode. Default heap allocation, unproven or
+libc++ runtime call or allocation opcode. Allocation-failure handling, unproven or
 overflowing allocation counts, extended alignment and exceptions remain rejected.
 Ownership objects retain their separate contracts.
 
@@ -7322,7 +7322,7 @@ pattern and default template arguments. Empty
 inner vectors and buffer moves require no unused managed-object constructor or
 unique-pointer copy. Cleanup authenticates the exact materialized destructor
 and its `reset` call. For a standard deleter, it also authenticates the selected
-`default_delete` body and checks the same source deallocation definition selected
+`default_delete` body and checks the same checked deallocation operator selected
 by lowering, including its original signature and exception specification,
 and recursively retains managed-object layout and destruction source.
 Admitted direct unique-pointer construction in receiver initializers or query
@@ -8283,10 +8283,8 @@ pointer ranges through 64 bits are admitted. Input values normalize to 32 bits;
 `size()` and `param()` preserve the stored sequence. `generate()` accepts raw or
 wrapped writable unsigned 32/64-bit ranges, including empty/null ranges, and
 retains the selected output value type's arithmetic. Repeated generation leaves
-the seed sequence unchanged. Internal vector growth and source-owned global
-new/delete calls preserve the pinned allocation and destruction behavior.
-Matching source-owned global allocation and deallocation bodies are required
-under the existing vector allocation boundary.
+the seed sequence unchanged. Internal vector growth and checked global new/delete calls preserve the pinned allocation and destruction behavior.
+Global allocation and deallocation follow the checked source-hook or authenticated-default vector allocation boundary.
 
 These seed sequences can construct or reseed every checked engine/adaptor whose
 selected SDK path is defined. LCG construction selects four or five generated
@@ -9002,7 +9000,7 @@ recursive storage and equality operations. Aliased callback inputs are captured
 before growth or element shifting. Function pointers support equality and
 inequality; ordering remains rejected, including through composite elements.
 Pointers to incomplete object types retain their existing restrictions. The
-existing source-defined allocation-function requirement remains in force.
+checked source-hook or authenticated-default allocation requirement remains in force.
 Insert and positional emplace return mutable iterators. Single-value insertion
 and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through
@@ -9511,7 +9509,7 @@ a destructor, placement reconstruction and template identity. Separate native
 library load/unload and sixteen-thread first-use fixtures cover module ownership
 and once-only registration. These fixtures require the implementing CI revision;
 no native result is implied by source-only checks. TLS, exception unwinding,
-default heap runtime, standard headers and complete C++/STL remain unfinished.
+allocation-failure handling, standard headers and complete C++/STL remain unfinished.
 
 ## Nonlocal dynamic initialization
 
@@ -9543,7 +9541,7 @@ int main() { return first != 1 || second != 2 || calls != 2; }
 Each full expression cleans its ordinary temporaries before publishing that
 object and starting the next initializer. Lifetime-extended temporaries are built
 in their existing permanent child storage. Source-defined single-object allocation
-can run in startup; missing default heap functions still require a runtime.
+can run in startup; authenticated ordinary defaults use the checked native heap.
 TLS, exceptions/unwind, actual standard headers and
 complete C++/STL remain unfinished.
 
@@ -9667,7 +9665,7 @@ template-instance state follow the existing storage contracts. Static reference
 bindings follow their [alias contract](#static-reference-bindings).
 Dynamic local pointers follow the [first-use contract](#dynamic-local-static-initialization).
 Nonlocal pointers follow the [startup contract](#nonlocal-dynamic-initialization).
-TLS, default heap runtime,
+TLS, allocation-failure handling,
 standard-library headers/runtime still require further work. Mutable records
 follow their [static object contract](#static-record-objects). Paired source/protocol cases, malformed-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI.
@@ -9819,7 +9817,7 @@ initializer proof; dynamic temporaries register their own destruction when compl
 Unsupported destructor source remains diagnosed in dead or unselected source.
 Paired source/protocol, malformed IR, relocation, O0/O2 and concurrent-reader
 fixtures require native validation at the implementing CI revision.
-Exceptions/retry, TLS, default heap runtime and real
+Exceptions/retry, TLS, allocation-failure handling and real
 standard-library support remain unfinished parts of the full C++/STL goal.
 
 ## Static record objects
@@ -9871,7 +9869,7 @@ forward declarations needed for self addresses.
 Local nonconstant constructor calls and initializer reads follow the
 [first-use contract](#dynamic-local-static-initialization). Nonlocal objects use
 [dynamic startup](#nonlocal-dynamic-initialization). TLS, volatile objects,
-unsupported layouts/fields and default heap runtime remain
+unsupported layouts/fields and allocation-failure handling remain
 outside this increment. Exception unwinding and actual
 standard-library headers/runtime still require
 further work. Paired source/protocol cases, mutable/self-address IR cases,
@@ -11162,8 +11160,7 @@ exact selected constructor, default zero initialization and copy/move forwarding
 from the factory parameter are authenticated independently of the caller source.
 Const copies and const rvalues preserve the selected copy constructor; each
 argument is evaluated once. Existing typed memory construction supplies separate
-empty-object storage, and the source-defined allocation/deallocation operators
-and owner cleanup remain required. Release/reset and vector-owned unique
+empty-object storage, and the admitted allocation/deallocation operators and owner cleanup remain required. Release/reset and vector-owned unique
 pointers use their existing ownership proofs. Runtime array counts, counts above
 65536, unsupported trait signatures, source SDK replacements and `value` storage
 aliases remain outside this path.
@@ -11604,7 +11601,7 @@ Paired source/protocol fixtures cover binding, copied aliases, nested layouts,
 source diagnostics, zero children, owner graphs and relocation. O0/O2 and
 concurrent-reader fixtures cover identity, first-use state and destruction order;
 native acceptance requires the implementing CI revision. Actual standard-library
-headers/runtime, remaining templates, default heap runtime, exceptions,
+headers/runtime, remaining templates, allocation-failure handling, exceptions,
 inheritance/virtual dispatch and multi-TU v2 remain unfinished.
 
 ## Live-object rvalue references
@@ -11977,7 +11974,7 @@ qualifications.
 Deleted, inherited and variadic constructors remain rejected. Delegating
 constructors and constructor templates follow their contracts below. Dynamic
 local statics follow their first-use contract above. Exception unwinding,
-default heap runtime, inheritance, virtual dispatch and STL are still outside this increment.
+allocation-failure handling, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; nonlocal dynamic construction follows the
 startup contract. Records use the [static destruction contract](#static-destruction). Static pointer fields and arrays follow their
@@ -12930,7 +12927,7 @@ Unsupported generic member bodies retain normal laziness until selected.
 Ordinary named record owners follow this contract. Templated outer owners follow
 [the dependent-owner contract](#dependent-outer-member-class-templates) below.
 Generic nested ordinary records inside a class template, local/union owners,
-inheritance, virtual dispatch, unsupported field types and default heap runtime retain
+inheritance, virtual dispatch, unsupported field types and allocation-failure handling retain
 separate restrictions. Full C++/STL remains unfinished. Eighteen O0/O2 runtime
 checkpoints and paired protocol fixtures cover layouts, calls, storage identity,
 lifetimes and relocation; native results require the implementing CI revision.
@@ -12997,7 +12994,7 @@ Copied class-scope full declarations follow the separate
 [full declaration contract](#copied-class-scope-full-specializations) below.
 Ordinary nested records follow the [ordinary member contract](#ordinary-nested-classes-in-generic-owners).
 Local/union owners, inheritance, virtual
-dispatch, unsupported fields and default heap runtime retain separate restrictions. Limits
+dispatch, unsupported fields and allocation-failure handling retain separate restrictions. Limits
 remain 64 parameters/elements, bounded declaration/owner depth and the total
 expansion budget. Full C++/STL remains unfinished. Paired source/protocol fixtures
 and seventeen O0/O2 runtime checkpoints require native CI from the implementing
@@ -13060,7 +13057,7 @@ owner, substitute twice, call an external Clang executable or emit an opaque
 body. Limits remain 64 parameters/elements and bounded owner/source traversal.
 Ordinary nested records follow the [ordinary member contract](#ordinary-nested-classes-in-generic-owners).
 Inheritance, unsupported fields,
-default heap runtime and complete C++/STL remain unfinished. Only C++ input is implemented;
+allocation-failure handling and complete C++/STL remain unfinished. Only C++ input is implemented;
 E Language and Python remain planned. Paired source/protocol fixtures and
 seventeen O0/O2 runtime checkpoints require native CI of the implementing
 revision; protocol counts remain subject to that verification.
@@ -13118,7 +13115,7 @@ Windows' existing extern-template rules for enclosing-class instantiations remai
 those of the embedded frontend.
 
 Named nonlocal standard-layout records and existing field restrictions apply.
-Unsupported dependent friend class-template forms and friend-type expansions, unions, anonymous records, inheritance, default heap runtime and complete
+Unsupported dependent friend class-template forms and friend-type expansions, unions, anonymous records, inheritance, allocation-failure handling and complete
 C++/STL remain unfinished. Invalid C++ keeps `TR0202`; unsupported materialized
 source keeps `TR0201`; missing required function/storage definitions keep `TR0203`,
 without output artifacts. Source owner/redeclaration walks and packs remain
@@ -13173,7 +13170,7 @@ Declaration-only friends retain the same source-unit definition policy as
 ordinary declarations. Missing required definitions yield `TR0203`. Invalid
 C++ lookup, access or conflicting definitions yield `TR0202`. Unsupported source
 produces `TR0201` without output artifacts. Unsupported dependent friend class-template forms, friend
-type expansions, inheritance, default heap runtime and complete C++/STL
+type expansions, inheritance, allocation-failure handling and complete C++/STL
 remain unfinished; existing nondependent friend type/member rules are preserved.
 No wire schema or lowering ABI is added. Paired source/protocol fixtures and
 seventeen O0/O2 runtime checkpoints require implementing-revision native CI;
@@ -13632,7 +13629,7 @@ specializations and those in an ordinary or fully specialized outer class keep
 their own declaration source. Nested member accesses check argument source once
 and still evaluate each receiver once, with the existing 64-level source bound
 and total expansion budget. Other result types,
-thread-local storage, local/union owners, unsupported template owner chains, template-template parameters, inheritance, default heap runtime and full
+thread-local storage, local/union owners, unsupported template owner chains, template-template parameters, inheritance, allocation-failure handling and full
 C++/STL remain unfinished. Only C++ input is implemented; E Language, Python and
 other frontends are planned. Translation uses embedded Clang libraries and
 launches no external Clang executable.
@@ -13692,7 +13689,7 @@ Unsupported source reports `TR0201`, invalid C++ reports `TR0202`, and
 required missing definitions report `TR0203`.
 
 Local/union owners, unsupported template owner chains, template-template
-parameters, inheritance, default heap runtime and hosted standard-library headers remain
+parameters, inheritance, allocation-failure handling and hosted standard-library headers remain
 outside this increment. C++17 does not allow explicit or partial specialization
 of an alias template. Full C++/STL remains unfinished. C++ is the only implemented
 input frontend; E Language, Python and other frontends are planned.
@@ -13762,7 +13759,7 @@ scalar, pointer, reference or record destination and subsequent standard
 conversions. Access and invalid C++ diagnostics remain authoritative.
 
 Unsupported template owner chains,
-template-template parameters, unsupported dependent friend class-template forms, inheritance, virtual dispatch, unsupported layouts, default heap runtime and
+template-template parameters, unsupported dependent friend class-template forms, inheritance, virtual dispatch, unsupported layouts, allocation-failure handling and
 standard-library headers remain outside this increment. A constructor template
 cannot be explicitly defaulted under C++17; that remains a language error.
 Source depth is bounded at 64 with the shared 200000-unit budget. Unsupported
@@ -15074,6 +15071,10 @@ relocation. Native results require the implementing revision's CI.
 
 ## Single-object allocation and placement reuse
 
+Ordinary default C++ heap operators are supported in the successful, nonoverflowing allocation domain. Untouched compiler-implicit declarations or exact pinned SDK declarations of scalar/array new and unsized/sized delete lower to private wrappers over the existing checked native malloc/free protocol. Zero-byte new requests at least one byte. Objects must fit the target’s ordinary new alignment and the existing hosted CRT/size_t ABI. Raw objects, arrays, admitted unique pointers, allocators, strings, vectors and unordered-map nodes share this contract.
+
+Source-defined operators keep their existing precedence, including implicit sized delete forwarding to source unsized delete. A source declaration or definition of any of the six ordinary replaceable global signatures disables every new default fallback across that whole family. Typed source delete/default_delete also rejects unproved pairing with class or inherited allocation functions, or other source global allocation overloads, including placement/nothrow/aligned forms; explicit SDK global allocator calls retain their independent selection. Direct default operator calls, default function addresses, aligned/nothrow fallback, allocation failure handlers and exception unwinding remain excluded. Raw default new[] still requires a proven constant extent; runtime nonthrowing class allocation keeps its separate existing contract. Pure type/lifetime queries emit no heap wrappers or array-cookie runtime metadata. The NeverC source language remains C23-only.
+
 Core v2 admits C++17 single-object `new` and `delete` when their selected
 allocation and deallocation functions have checked definitions in this source
 unit, including the bounded default sized-delete forwarding rule below. It also
@@ -15145,9 +15146,9 @@ below. The translator does not prove runtime ownership, storage capacity, addres
 alignment or transparent replacement of every old alias. Defined C++ source must
 supply suitable storage and obey const, reference-member and lifetime rules.
 
-The self-contained source profile supplies no default heap. A selected function
-without an owned definition, the exact embedded standard placement definition or
-the default forwarding case reports `TR0203`; it never becomes an unchecked host
+The self-contained source profile admits authenticated ordinary default heap operators under the checked hosted ABI and pairing rules below. A selected function
+without a checked owned definition, authenticated default heap declaration,
+exact embedded placement definition or source forwarding case reports `TR0203`; it never becomes an unchecked host
 allocation call. Reserved global `operator new(size_t, void*)` and its matching
 delete cannot be defined or redeclared by user source. The standard functions are
 valid only as Clang-selected new-expression machinery; direct calls and addresses
@@ -15296,7 +15297,7 @@ new-expression's end are not destroyed again by delete.
 Paired source/protocol cases, eight-target cookie/layout checks, forged metadata,
 relocation and a separate C client at O0/O2 with strict aliasing cover these rules.
 The native and pinned-upstream runtime checks run only in CI. Throwing runtime
-new bounds, default heap/standard placement, extended-alignment source types, exception
+new bounds, allocation-failure handlers, extended-alignment source types, exception
 unwinding, standard headers and complete C++/STL remain unfinished. Language
 requirements follow [C++17 array new](https://timsong-cpp.github.io/cppwp/n4659/expr.new)
 and [C++17 delete](https://timsong-cpp.github.io/cppwp/n4659/expr.delete); native cookie
@@ -15308,7 +15309,7 @@ Core v2 also admits runtime outer lengths for source-defined class `operator new
 with a nonthrowing exception specification and no placement arguments. The
 ordinary NeverC frontend remains C23. This path uses the same independently
 checked native array cookie families, allocation operators and reverse `delete[]`
-as constant allocation. It does not provide the default heap or standard library.
+as constant allocation. Allocation-failure handlers and other standard-library facilities remain separate contracts.
 
 The bound is evaluated once. A negative signed result is detected before Sema's
 implicit conversion to size_t. Positive wide integers retain normal unsigned
@@ -15355,8 +15356,7 @@ enclosing-expression destruction. Arbitrary repeated temporary storage requires
 further lifetime support. The existing direct default-constructor category keeps
 its separate per-element cleanup behavior. Throwing allocators require actual exception runtime support;
 runtime placement allocation needs a separately checked argument-evaluation
-contract. Runtime primitive/string allocation through the default heap remains
-outside this source-owned class path. Constant-length cases retain their broader
+contract. Runtime primitive and admitted record allocations also use the authenticated ordinary default heap; string storage follows its separate container contract. Constant-length cases retain their broader
 existing initialization and placement support.
 
 Paired source/protocol tests, eight-target 32/64-bit bound checks, relocation and
@@ -15415,7 +15415,7 @@ O0/O2 receiver/cleanup fixtures accompany this change. Independent generated-NC
 fixtures cover scalar, pointer-object, array, record and callback alias accesses
 at O0, O2 and explicit strict aliasing, with inlining disabled. Native validation
 requires implementing CI. Single-object allocation and placement restart follow
-the contract above. Default heap runtime,
+the contract above. Allocation-failure handling,
 array cookies, exceptions/unwinding, standard headers and full C++/STL remain
 unfinished.
 
@@ -15490,7 +15490,7 @@ int main() {
 ```
 
 This increment covers normal completion only. Throw/catch, stack unwinding,
-partial construction rollback and default heap runtime remain rejected.
+partial construction rollback and allocation-failure handling remain rejected.
 Static/global object destruction uses its registered lifetime contract. Temporary calls and automatic local reference
 extension follow their separate contracts below. Existing expansion/storage limits also bound emitted
 cleanup instructions and recursive array destruction. V1 profiles retain their
@@ -16666,10 +16666,9 @@ current load. Only the SDK-defined input domain is admitted.
 The storage adapter checks the physical five-word SDK record on each target:
 bucket pointer, bucket count, first node, element count and float load limit.
 It initializes the empty state without allocation. Cleanup follows verified
-node links before releasing each node and the bucket array through admitted
-source-defined global deallocation operators. Internal node size, alignment,
+node links before releasing each node and the bucket array through admitted global deallocation operators. Internal node size, alignment,
 payload offsets and embedded destructor chains are authenticated separately.
-Missing source deallocation definitions retain TR0203, including empty maps.
+A source-only global operator declaration or an incomplete source replacement family retains TR0203, including empty maps.
 
 The `at` member remains outside this admission. Every public SDK method and selected private
 helper retains its body and redeclaration checks. Source specializations of
@@ -16686,8 +16685,7 @@ The exact default-policy int/int specialization also admits both `operator[]`
 overloads (including named calls), `count`, key `erase`, `clear`, `rehash`,
 `reserve`, `bucket`, `bucket_size`, `max_size`, `max_bucket_count` and member
 `swap`. Pointer/reference-only queries and swapping require no heap hook bodies.
-Operations which can allocate or release storage require admitted source-owned
-global new/delete definitions, even when one execution takes an empty branch.
+Operations which can allocate or release storage require checked source hooks or authenticated default global new/delete, even when one execution takes an empty branch.
 Inputs retain SDK preconditions and the successful, nonoverflowing allocation
 domain; throwing allocation/overflow paths are not translated.
 
@@ -16795,7 +16793,7 @@ null equal pointers and empty lists, do not access an element; empty list ends
 avoid arithmetic on a null carrier in generated C23.
 
 The SDK readable-range, iterator-validity, ownership and successful allocation
-preconditions still apply. Range insertion requires source heap definitions
+preconditions still apply. Range insertion requires admitted global heap operations
 even when one execution observes an empty range. Other iterator families and
 pair element types remain separate work. Node growth and value-copy timing use
 the same insertion helper as subscript, insert and try-emplace.
@@ -16824,7 +16822,7 @@ C++17 assignment notation evaluates its source operand before its receiver;
 named member notation evaluates the receiver before its source argument.
 
 The existing successful allocation and valid object lifetime preconditions apply.
-Other key/value/policy types remain separate work. SDK declaration/body authentication and source heap definitions are still
+Other key/value/policy types remain separate work. SDK declaration/body authentication and admitted global heap operations are still
 required even for an execution that transfers or copies an empty map.
 
 ## Unordered-map default emplace
@@ -16865,7 +16863,7 @@ construct and delete, preserving the existing node and mapped value. Hints retai
 one evaluation and return the mutable iterator. This uses the same prepared-node
 insertion helper as default emplace and the shared capacity/linking path.
 
-The existing source heap definitions, successful allocation and valid tuple
+The existing admitted global heap operations, successful allocation and valid tuple
 reference/lifetime preconditions apply. Other argument types, source tags and
 custom key/value/hash/equality/allocator policies remain separate work.
 
@@ -16907,7 +16905,7 @@ the captured request. Construction starts empty with load limit one and follows
 the existing SDK `rehash` rounding: powers of two remain powers of two, other
 positive requests select the SDK prime count, and zero allocates no bucket array.
 Member/array lifetimes and factory returns compose with existing map behavior.
-The existing source heap definitions and successful allocation domain apply.
+The existing admitted global heap operations and successful allocation domain apply.
 Custom policies and other key/value types require separate support.
 
 ## Unordered-map range and initializer-list constructors
@@ -16932,7 +16930,7 @@ and a valid empty pointer range never dereferences its endpoint.
 Range type authentication and the insertion loop are shared with existing
 range/list insert operations. Original constructor/default declarations, selected
 SDK bodies, initializer-list/iterator storage and pair types remain authenticated.
-Valid input ranges, live backing storage, source heap definitions and the existing
+Valid input ranges, live backing storage, admitted global heap operations and the existing
 successful allocation/lifetime domain remain required. Other policies and element
 types remain outside this constructor family.
 
@@ -16948,7 +16946,7 @@ Each receiver expression is evaluated once, including source calls returning a
 map pointer or reference. The observers allocate no storage and preserve the
 map's nodes, bucket count and load limit. Reference-only source functions use the
 existing private SDK type-completion path and require no local map object to
-establish the storage layout. Normal map lifetime and source heap requirements
+establish the storage layout. Normal map lifetime and admitted heap requirements
 still apply wherever a program constructs or destroys a map.
 
 The selected public methods, their SDK body closures, exact result policy types
@@ -17064,7 +17062,7 @@ The duplicate-cache native fixture is recorded as a known failure in all three
 configurations, never as a passing equivalence test. The unchanged managed source
 must pass its value, unique-key and complete lifetime assertions at O0/O2 and
 under ASan/UBSan. Source-owned method/template substitutions, other policies and
-missing global heap definitions remain rejected.
+untrusted source-only global heap declarations remain rejected.
 
 ## Unordered-map insertion-result lifecycle
 

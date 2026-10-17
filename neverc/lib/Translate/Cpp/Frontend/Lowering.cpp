@@ -8197,7 +8197,7 @@ class FunctionLowering {
                "A checked std::make_unique call is required.");
       const bool Array = Info->Owner.Deleter.Array;
       const auto *Function = A.allocationFunction(
-          Info->Allocation->getOperatorNew(), true, L, Array);
+          Info->Allocation->getOperatorNew(), true, L, Array, Info->Owner.ElementType);
       A.uniquePtrDeleteFunction(Info->Owner, L);
       const auto Wrapper = approvedFunctionalReferenceRecord(
           A.S, A.Sources, Info->Owner.ElementType->getAsCXXRecordDecl(),
@@ -28399,7 +28399,7 @@ class FunctionLowering {
                 std::optional<uint64_t> AuthenticatedCount = std::nullopt,
                 SourceLocation UseLocation = SourceLocation()) {
     const auto L = UseLocation.isValid() ? UseLocation : N->getExprLoc();
-    const auto *F = A.allocationFunction(N->getOperatorNew(), true, L, true);
+    const auto *F = A.allocationFunction(N->getOperatorNew(), true, L, true, N->getAllocatedType());
     const auto Object = N->getAllocatedType();
     ArrayNewInfo Info;
     if (AuthenticatedCount) {
@@ -28408,7 +28408,7 @@ class FunctionLowering {
     } else {
       Info = A.arrayNewInfo(N);
     }
-    const auto Layout = A.arrayAllocationLayout(Object, N->doesUsualArrayDeleteWantSize(), L);
+    const auto Layout = A.arrayAllocationLayout(Object, N->doesUsualArrayDeleteWantSize(), L, true);
     const uint64_t ObjectBytes = A.Context.getTypeSizeInChars(Object).getQuantity();
     const auto Size = type(A.Context.getSizeType(), L);
     auto Result = temporary(type(N->getType(), L), L);
@@ -28497,7 +28497,7 @@ class FunctionLowering {
     if (N->isArray())
       return allocateArray(N);
     auto L = N->getExprLoc();
-    const auto *F = A.allocationFunction(N->getOperatorNew(), true, L);
+    const auto *F = A.allocationFunction(N->getOperatorNew(), true, L, false, N->getAllocatedType());
     auto Object = N->getAllocatedType();
     json::Array Args;
     Args.push_back(allocationExtent(Object, F->getParamDecl(0)->getType(), false, L));
@@ -28545,7 +28545,7 @@ class FunctionLowering {
                        const FunctionDecl *F, bool UsualDeleteWantsSize,
                        SourceLocation L) {
     const auto Layout =
-        A.arrayAllocationLayout(Object, UsualDeleteWantsSize, L);
+        A.arrayAllocationLayout(Object, UsualDeleteWantsSize, L, true);
     Pointer = snapshot(std::move(Pointer), L);
     auto Destroy = labelName(), End = labelName();
     branch(cast(Pointer, "bool", L), Destroy, End, L);
@@ -28598,7 +28598,8 @@ class FunctionLowering {
   void deallocateArray(const CXXDeleteExpr *Delete, Expression Pointer,
                        SourceLocation L) {
     const auto *F =
-        A.allocationFunction(Delete->getOperatorDelete(), false, L, true);
+        A.allocationFunction(Delete->getOperatorDelete(), false, L, true,
+                             Delete->getDestroyedType());
     deallocateArray(std::move(Pointer), Delete->getDestroyedType(), F,
                     Delete->doesUsualArrayDeleteWantSize(), L);
   }
@@ -28670,7 +28671,8 @@ class FunctionLowering {
       return;
     }
     auto L = Delete->getExprLoc();
-    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
+    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L, false,
+                                            Delete->getDestroyedType());
     deallocateSingle(expression(Delete->getArgument()),
                      Delete->getDestroyedType(), F, L);
   }
@@ -34490,6 +34492,7 @@ private:
       if (Keep)
         Pruned.push_back(std::move(V));
     }
+    A.retainDefaultHeapCalls(Pruned);
     return json::Object{
         // The response is serialized after run() destroys its local strings.
         // Upstream JSON borrows StringRef, so retain owned copies here.
@@ -34503,6 +34506,79 @@ private:
         {"loc", A.loc(L)}};
   }
 };
+
+void Adapter::retainDefaultHeapCalls(const json::Array &Body) {
+  for (const auto &Value : Body) {
+    const auto *Instruction = Value.getAsObject();
+    if (Instruction->getString("op") != "call")
+      continue;
+    const auto Callee = Instruction->getString("callee");
+    if (Callee && DefaultHeapIdentities.count(Callee->str()))
+      UsedDefaultHeapLocations.try_emplace(Callee->str(),
+                                          *Instruction->getObject("loc"));
+  }
+}
+
+json::Object Adapter::lowerDefaultHeap(const FunctionDecl *F,
+                                       const json::Object &Location) {
+  // Identity was authenticated at each typed selection. Registering only
+  // retained calls keeps query-only and pruned paths free of heap dependencies.
+  if (!defaultHeapDeclaration(F))
+    throw Failure{};
+  const bool Allocate = F->getOverloadedOperator() == OO_New ||
+                        F->getOverloadedOperator() == OO_Array_New;
+  const auto Size = type(Context.getSizeType(), SourceLocation());
+  auto Var = [&](std::string Name, std::string Type) {
+    return json::Object{{"kind", "var"}, {"name", std::move(Name)},
+                        {"type", std::move(Type)}, {"loc", json::Object(Location)}};
+  };
+  auto Number = [&](uint64_t N) {
+    auto Value = literal(llvm::APSInt(llvm::APInt(Context.getTypeSize(Context.getSizeType()), N), true),
+                         Size, SourceLocation());
+    Value["loc"] = json::Object(Location);
+    return Value;
+  };
+  auto Label = [&](const char *Name) {
+    return json::Object{{"op", "label"}, {"label", Name}, {"loc", json::Object(Location)}};
+  };
+  json::Array Params, Locals, Body;
+  for (unsigned I = 0; I < F->getNumParams(); ++I)
+    Params.push_back(json::Object{{"name", "nct_p" + std::to_string(I)},
+        {"type", type(F->getParamDecl(I)->getType(), SourceLocation())},
+        {"loc", json::Object(Location)}});
+  Body.push_back(Label("nct_entry"));
+  if (Allocate) {
+    Locals.push_back(json::Object{{"name", "nct_bytes"}, {"type", Size}, {"loc", json::Object(Location)}});
+    Locals.push_back(json::Object{{"name", "nct_result"}, {"type", "ptr:void"}, {"loc", json::Object(Location)}});
+    Body.push_back(json::Object{{"op", "assign"}, {"target", Var("nct_bytes", Size)},
+                                {"value", Var("nct_p0", Size)}, {"loc", json::Object(Location)}});
+    auto Zero = json::Object{{"kind", "binary"}, {"operator", "=="}, {"type", "bool"},
+        {"args", json::Array{Var("nct_bytes", Size), Number(0)}}, {"loc", json::Object(Location)}};
+    Body.push_back(json::Object{{"op", "branch"}, {"condition", std::move(Zero)},
+                                {"true", "nct_zero"}, {"false", "nct_allocate"}, {"loc", json::Object(Location)}});
+    Body.push_back(Label("nct_zero"));
+    Body.push_back(json::Object{{"op", "assign"}, {"target", Var("nct_bytes", Size)},
+                                {"value", Number(1)}, {"loc", json::Object(Location)}});
+    Body.push_back(json::Object{{"op", "jump"}, {"label", "nct_allocate"}, {"loc", json::Object(Location)}});
+    Body.push_back(Label("nct_allocate"));
+    Body.push_back(json::Object{{"op", "native_heap_call"}, {"operation", "malloc"},
+        {"args", json::Array{Var("nct_bytes", Size)}}, {"target", Var("nct_result", "ptr:void")},
+        {"loc", json::Object(Location)}});
+    Body.push_back(json::Object{{"op", "return"}, {"value", Var("nct_result", "ptr:void")},
+                                {"loc", json::Object(Location)}});
+  } else {
+    Body.push_back(json::Object{{"op", "native_heap_call"}, {"operation", "free"},
+        {"args", json::Array{Var("nct_p0", "ptr:void")}}, {"loc", json::Object(Location)}});
+    Body.push_back(json::Object{{"op", "return"}, {"loc", json::Object(Location)}});
+  }
+  // A wrapper has at most ten instructions, two locals and two parameters.
+  chargeExpansion(128, SourceLocation());
+  S.Module["native_heap"] = true;
+  S.Module["memory_lifetimes"] = true;
+  return json::Object{{"name", name(F)}, {"result", Allocate ? "ptr:void" : "void"},
+      {"internal", true}, {"c_export", false}, {"params", std::move(Params)},
+      {"locals", std::move(Locals)}, {"body", std::move(Body)}, {"loc", json::Object(Location)}};
+}
 
 json::Object Adapter::lower(FunctionDecl *Function) {
   return FunctionLowering(*this, Function).run();
