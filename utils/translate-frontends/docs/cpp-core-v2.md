@@ -17242,7 +17242,7 @@ that potentially throwing signature. They authenticate only layout, enabling
 sources and signatures, without selecting concrete hash/get bodies, pointee
 destruction, allocation or array cookies. Functions borrowing owners whose
 pointee constructor/destructor is deleted require no deletion helper. Stateful, reference, potentially throwing and fancy-pointer
-deleters and unproved invoke/apply/reference-wrapper adapters remain excluded.
+deleters and independent helper addresses remain excluded.
 The main source frontend remains C23-only.
 
 ## Existing empty custom-deleter owner hashes
@@ -17264,3 +17264,7 @@ unchanged. This does not expand the supported deleter layouts or pointer types.
 ## Shared pointer hash algorithm source proof
 
 Runtime `std::hash<T*>` authenticates the complete selected pinned byte algorithm, including its primary and partial declarations, word loads, memcpy and CityHash ABI branch. This proof also applies through invoke, apply and reference wrappers, including ignored results; unique-owner hashes reuse it. Signature queries retain their separate body-free checks and add no runtime helpers.
+
+The admitted scalar/array `std::hash<std::unique_ptr<T,D>>` also supports invoke, apply, direct reference_wrapper calls and invoke/apply of the wrapper, with default or existing empty custom deleters. Exact owner arguments and tuple elements are borrowed at their original address; receiver/argument effects and temporary owner/tuple cleanup retain their original lifetime. Runtime checks authenticate the actual selected adapter and complete hash sources, including ignored results. Pure queries preserve the potentially throwing signature without requiring hash/get/byte bodies or adding runtime helpers. Source-to-owner conversions and reference_wrapper<Owner> arguments through these adapters remain outside this increment.
+
+Reference tuples borrow admitted owners. Value tuples use the selected same-type move constructor, clear the source owner, and destroy owning elements in reverse tuple order; owner elements never use bitwise copying.

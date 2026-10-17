@@ -391,6 +391,7 @@ const clang::CXXMethodDecl *approvedHeapQuerySourceComparator(
 struct FunctionalInvokeObjectCall {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;
+  const clang::CallExpr *UniqueHashCall = nullptr;
 };
 std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(
     const State &S, const clang::SourceManager &SM,
@@ -461,6 +462,7 @@ struct FunctionalReferenceInvokeCall {
   std::optional<FunctionalOperationInfo> Operation;
   const clang::CXXMethodDecl *Method;
   std::vector<const clang::CXXConstructExpr *> SelectedCopies;
+  const clang::CallExpr *UniqueHashCall = nullptr;
 };
 std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceInvokeCall(
@@ -487,6 +489,18 @@ approvedUtilityTupleApplyUserCall(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CallExpr *Call,
                                   const clang::ASTContext &Context);
+// Bind the authenticated dispatch's completed noexcept call to its retained
+// decltype call without consuming the runtime body. The caller authenticates
+// each decltype declval argument against the dispatch's template arguments.
+struct UtilityTupleApplySignature {
+  const clang::CallExpr *Selected;
+  const clang::CallExpr *DecltypeCall;
+  const clang::FunctionDecl *DispatchFunction;
+};
+std::optional<UtilityTupleApplySignature>
+approvedUtilityTupleApplySignatureCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 const clang::CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, unsigned Index, clang::QualType Parameter,
@@ -498,6 +512,7 @@ approvedFunctionalInvokeSelectedCopies(
 struct UtilityTupleApplyObjectOperation {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;
+  const clang::CallExpr *UniqueHashCall = nullptr;
 };
 std::optional<UtilityTupleApplyObjectOperation>
 approvedUtilityTupleApplyObjectOperation(
@@ -636,6 +651,13 @@ std::optional<UniqueHashObjectInfo>
 approvedUniqueHashObject(const State &S, const clang::SourceManager &SM,
                          const clang::CXXRecordDecl *Record,
                          const clang::ASTContext &Context);
+// The owned outer-query proof must bind this actual retained SDK selected call.
+// Signature-only authentication does not admit a runtime SDK call.
+std::optional<UniqueHashObjectInfo>
+approvedUniqueHashSignatureQuery(const State &S,
+                                 const clang::SourceManager &SM,
+                                 const clang::CallExpr *Selected,
+                                 const clang::ASTContext &Context);
 std::optional<UniqueHashObjectInfo>
 approvedUniqueHashCall(const State &S, const clang::SourceManager &SM,
                        const clang::CallExpr *Call,

@@ -366080,26 +366080,26 @@ using P=std::unique_ptr<int>;static_assert(!noexcept(std::hash<P>{}(std::declval
 #include <type_traits>
 using P=std::unique_ptr<int>;int main(){auto p=&std::hash<P>::operator();return p==nullptr;}
 )cpp"},
-    {"invoke-adapter", R"cpp(#include <memory>
+    {"invoke-adapter-owner-wrapper", R"cpp(#include <memory>
 #include <functional>
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);return std::invoke(std::hash<P>{},p)==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);return std::invoke(std::hash<P>{},std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"apply-adapter", R"cpp(#include <memory>
+    {"apply-adapter-owner-wrapper", R"cpp(#include <memory>
 #include <functional>
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);return std::apply(std::hash<P>{},std::tie(p))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);return std::apply(std::hash<P>{},std::tuple<std::reference_wrapper<P>>(std::ref(p)))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"reference-wrapper-adapter", R"cpp(#include <memory>
+    {"reference-wrapper-adapter-owner-wrapper", R"cpp(#include <memory>
 #include <functional>
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);std::hash<P> h;return std::ref(h)(p)==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);std::hash<P> h;return std::ref(h)(std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
     {"static-value-specialization", R"cpp(#include <memory>
 #include <functional>
@@ -366443,29 +366443,29 @@ struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <type_traits>
 using P=std::unique_ptr<int,D>;int main(){auto p=&std::hash<P>::operator();return p==nullptr;}
 )cpp"},
-    {"invoke-adapter", R"cpp(#include <memory>
+    {"invoke-adapter-owner-wrapper", R"cpp(#include <memory>
 #include <functional>
 struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::invoke(std::hash<P>{},p)==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::invoke(std::hash<P>{},std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"apply-adapter", R"cpp(#include <memory>
+    {"apply-adapter-owner-wrapper", R"cpp(#include <memory>
 #include <functional>
 struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::apply(std::hash<P>{},std::tie(p))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::apply(std::hash<P>{},std::tuple<std::reference_wrapper<P>>(std::ref(p)))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"reference-wrapper-adapter", R"cpp(#include <memory>
+    {"reference-wrapper-adapter-owner-wrapper", R"cpp(#include <memory>
 #include <functional>
 struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P> h;return std::ref(h)(p)==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P> h;return std::ref(h)(std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
     {"static-value-specialization", R"cpp(#include <memory>
 #include <functional>
@@ -366941,6 +366941,453 @@ int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("pointer-hash-closure-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("pointer-hash-closure-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2UniqueHashAdaptersOwnerEffectsAndDeleterCounts) {
+  const auto Output = tmpFile("unique-hash-adapters-values.nc");
+  const auto Result = translate(fixture("unique-hash-adapters-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-hash-adapters-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueHashAdaptersFullExpressionCleanup) {
+  const auto Output = tmpFile("unique-hash-adapters-lifetimes.nc");
+  const auto Result = translate(fixture("unique-hash-adapters-lifetimes.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-hash-adapters-lifetimes") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueHashAdaptersSignatureOnlyQueries) {
+  const auto Output = tmpFile("unique-hash-adapters-queries.nc");
+  const auto Result = translate(fixture("unique-hash-adapters-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-hash-adapters-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueHashAdaptersDeletedPointeeBorrowing) {
+  const auto Output = tmpFile("unique-hash-adapters-borrowed.nc");
+  const auto Result = translate(fixture("unique-hash-adapters-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-hash-adapters-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueHashAdaptersRejectsSelectedSourcesAndAdapters) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"invoke-public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<unique_ptr<int>>::operator()(const unique_ptr<int>&)const{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(h,p)!=0);}
+)cpp"},
+    {"apply-public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<unique_ptr<int>>::operator()(const unique_ptr<int>&)const{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(h,std::tie(p))!=0);}
+)cpp"},
+    {"wrapper-public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<unique_ptr<int>>::operator()(const unique_ptr<int>&)const{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(w(p)!=0);}
+)cpp"},
+    {"invoke-wrapper-public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<unique_ptr<int>>::operator()(const unique_ptr<int>&)const{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(w,p)!=0);}
+)cpp"},
+    {"apply-wrapper-public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<unique_ptr<int>>::operator()(const unique_ptr<int>&)const{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(w,std::tie(p))!=0);}
+)cpp"},
+    {"invoke-pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(h,p)!=0);}
+)cpp"},
+    {"apply-pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(h,std::tie(p))!=0);}
+)cpp"},
+    {"wrapper-pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(w(p)!=0);}
+)cpp"},
+    {"invoke-wrapper-pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(w,p)!=0);}
+)cpp"},
+    {"apply-wrapper-pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(w,std::tie(p))!=0);}
+)cpp"},
+    {"invoke-get-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(h,p)!=0);}
+)cpp"},
+    {"apply-get-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(h,std::tie(p))!=0);}
+)cpp"},
+    {"wrapper-get-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(w(p)!=0);}
+)cpp"},
+    {"invoke-wrapper-get-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(w,p)!=0);}
+)cpp"},
+    {"apply-wrapper-get-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(w,std::tie(p))!=0);}
+)cpp"},
+    {"invoke-loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(h,p)!=0);}
+)cpp"},
+    {"apply-loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(h,std::tie(p))!=0);}
+)cpp"},
+    {"wrapper-loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(w(p)!=0);}
+)cpp"},
+    {"invoke-wrapper-loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(w,p)!=0);}
+)cpp"},
+    {"apply-wrapper-loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(w,std::tie(p))!=0);}
+)cpp"},
+    {"invoke-enabling-static-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int*const&>::value;}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(h,p)!=0);}
+)cpp"},
+    {"apply-enabling-static-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int*const&>::value;}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(h,std::tie(p))!=0);}
+)cpp"},
+    {"wrapper-enabling-static-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int*const&>::value;}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(w(p)!=0);}
+)cpp"},
+    {"invoke-wrapper-enabling-static-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int*const&>::value;}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(w,p)!=0);}
+)cpp"},
+    {"apply-wrapper-enabling-static-specialization", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int*const&>::value;}}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(w,std::tie(p))!=0);}
+)cpp"},
+    {"invoke-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(h,p)!=0);}
+)cpp"},
+    {"ignored-invoke-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);std::invoke(h,p);return 0;}
+)cpp"},
+    {"apply-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(h,std::tie(p))!=0);}
+)cpp"},
+    {"ignored-apply-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);std::apply(h,std::tie(p));return 0;}
+)cpp"},
+    {"wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(w(p)!=0);}
+)cpp"},
+    {"ignored-wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);w(p);return 0;}
+)cpp"},
+    {"invoke-wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::invoke(w,p)!=0);}
+)cpp"},
+    {"ignored-invoke-wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);std::invoke(w,p);return 0;}
+)cpp"},
+    {"apply-wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);return int(std::apply(w,std::tie(p))!=0);}
+)cpp"},
+    {"ignored-apply-wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);std::apply(w,std::tie(p));return 0;}
+)cpp"},
+    {"invoke-owner-wrapper", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto r=std::ref(p);return int(std::invoke(h,std::ref(p))!=0);}
+)cpp"},
+    {"apply-owner-wrapper", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto r=std::ref(p);return int(std::apply(h,std::tie(r))!=0);}
+)cpp"},
+    {"wrapper-owner-wrapper", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto r=std::ref(p);return int(std::ref(h)(std::ref(p))!=0);}
+)cpp"},
+    {"tuple-default-selected-release", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace std {inline namespace __1 {template<> inline int* std::unique_ptr<int>::release() noexcept {return __ptr_;}}}
+int main(){using P=std::unique_ptr<int>;P value;auto owners=std::make_tuple(std::move(value));return int(std::apply(std::hash<P>{},owners)!=0);}
+)cpp"},
+    {"tuple-custom-selected-release", R"cpp(#include <memory>
+#include <functional>
+#include <tuple>
+#include <utility>
+struct D{void operator()(int*)const noexcept{}};
+namespace std {inline namespace __1 {template<> inline int* std::unique_ptr<int,D>::release() noexcept {return __ptr_;}}}
+int main(){using P=std::unique_ptr<int,D>;P value;auto owners=std::make_tuple(std::move(value));return int(std::apply(std::hash<P>{},owners)!=0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unique-hash-adapters-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unique-hash-adapters-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source,
         {"--profile", "cpp-core-v2", "-o", Output.string()});

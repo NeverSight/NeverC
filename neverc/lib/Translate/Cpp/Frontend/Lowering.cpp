@@ -5033,6 +5033,25 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression uniqueHashAtAddress(Expression Address,
+                                 const CallExpr *Selected,
+                                 const FunctionalOperationInfo &Info,
+                                 SourceLocation L) {
+    const auto Hash = approvedUniqueHashSignatureQuery(
+        A.S, A.Sources, Selected, A.Context);
+    if (!Hash || Info.Operation != FunctionalOperation::UniqueHash)
+      reject(L, "unique pointer hash", "The selected borrowed owner is unavailable.");
+    auto Pointer = snapshot(Expression{{"kind", "member"},
+        {"type", type(Hash->Owner.PointerType, L)},
+        {"name", "nct_unique_ptr_pointer"},
+        {"args", json::Array{dereference(std::move(Address), L)}},
+        {"loc", A.loc(L)}}, L);
+    auto PointerInfo = Info;
+    PointerInfo.Operation = FunctionalOperation::Hash;
+    return functionalOperationValues(L, std::move(Pointer), std::nullopt,
+                                     PointerInfo);
+  }
+
   Expression functionalOperation(const CallExpr *Call,
                                  const FunctionalOperationInfo &Info) {
     auto L = Call->getExprLoc();
@@ -5040,19 +5059,9 @@ class FunctionLowering {
     const bool Unary = Method->getNumParams() == 1;
     discardFunctionalObject(Call->getArg(0));
     if (Info.Operation == FunctionalOperation::UniqueHash) {
-      const auto Hash = approvedUniqueHashCall(A.S, A.Sources, Call, A.Context, true);
-      if (!Hash)
-        reject(L, "unique pointer hash", "The exact borrowed owner hash source is unavailable.");
       const auto *Argument = Call->getArg(1);
       auto Address = snapshot(address(lvalue(Argument), Argument->getType(), L), L);
-      auto Pointer = snapshot(Expression{{"kind", "member"},
-          {"type", type(Hash->Owner.PointerType, L)},
-          {"name", "nct_unique_ptr_pointer"},
-          {"args", json::Array{dereference(std::move(Address), L)}},
-          {"loc", A.loc(L)}}, L);
-      auto PointerInfo = Info;
-      PointerInfo.Operation = FunctionalOperation::Hash;
-      return functionalOperationValues(L, std::move(Pointer), std::nullopt, PointerInfo);
+      return uniqueHashAtAddress(std::move(Address), Call, Info, L);
     }
     if (Info.Operation == FunctionalOperation::ByteHash) {
       const auto Object = approvedStringHashCall(
@@ -5157,6 +5166,14 @@ class FunctionLowering {
     discardFunctionalObject(Call->getArg(0));
     auto Sources = captureUtilityInvocationArguments(
         Call, 1, Call->getNumArgs() - 1);
+    if (Info.Operation == FunctionalOperation::UniqueHash) {
+      auto Address = utilityInvocationArgument(
+          std::move(Sources[0]),
+          Call->getDirectCallee()->getParamDecl(1)->getType(),
+          Approved.Method->getParamDecl(0)->getType(), nullptr, L);
+      return uniqueHashAtAddress(std::move(Address), Approved.UniqueHashCall,
+                                 Info, L);
+    }
     auto Left = utilityInvocationArgument(
         std::move(Sources[0]),
         Call->getDirectCallee()->getParamDecl(1)->getType(),
@@ -8286,6 +8303,14 @@ class FunctionLowering {
         if (Call->getNumArgs() != (Unary ? 2u : 3u))
           reject(L, "functional reference invoke",
                  "The checked function object arity must match its arguments.");
+        if (Info->Operation->Operation == FunctionalOperation::UniqueHash) {
+          auto Address = utilityInvocationArgument(
+              std::move(Sources[0]),
+              Call->getDirectCallee()->getParamDecl(1 - OperatorOffset)->getType(),
+              Info->Method->getParamDecl(0)->getType(), nullptr, L);
+          return uniqueHashAtAddress(std::move(Address), Info->UniqueHashCall,
+                                     *Info->Operation, L);
+        }
         auto Left = utilityInvocationArgument(
             std::move(Sources[0]),
             Call->getDirectCallee()
@@ -18891,6 +18916,15 @@ class FunctionLowering {
           if (!Tuple || Tuple->size() != (Unary ? 1u : 2u))
             reject(L, "utility tuple apply",
                    "The referenced function object arity differs from the tuple.");
+          if (ReferenceCallable->Operation->Operation ==
+              FunctionalOperation::UniqueHash) {
+            auto Address = ApplyReferenceArgument(
+                ApplyElement(json::Object(TupleValue), 0), 0,
+                ReferenceCallable->Method->getParamDecl(0)->getType());
+            return uniqueHashAtAddress(std::move(Address),
+                                       ReferenceCallable->UniqueHashCall,
+                                       *ReferenceCallable->Operation, L);
+          }
           auto Left =
               ApplyValueArgument(ApplyElement(json::Object(TupleValue), 0), 0,
                                  functionalOperationParameterValueType(
@@ -19004,6 +19038,15 @@ class FunctionLowering {
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
+        if (ObjectOperation->Operation.Operation ==
+            FunctionalOperation::UniqueHash) {
+          auto Address = ApplyReferenceArgument(
+              ApplyElement(json::Object(TupleValue), 0), 0,
+              ObjectOperation->Method->getParamDecl(0)->getType());
+          return uniqueHashAtAddress(std::move(Address),
+                                     ObjectOperation->UniqueHashCall,
+                                     ObjectOperation->Operation, L);
+        }
         auto Left = ApplyValueArgument(
             ApplyElement(json::Object(TupleValue), 0), 0,
             functionalOperationParameterValueType(ObjectOperation->Method, 0));
@@ -31400,6 +31443,30 @@ class FunctionLowering {
                                      const CXXConstructExpr *Construction,
                                      Expression SourcePointer,
                                      SourceLocation L) {
+    if (approvedUtilityUniquePtrConstruction(
+            A.S, A.Sources, Construction, A.Context) ==
+        UtilityUniquePtrConstruction::Move) {
+      const auto Owner = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Owner || !A.Context.hasSameUnqualifiedType(
+                        Construction->getType(), T) ||
+          Place.getString("type") != type(T, L))
+        reject(L, "tuple owner move", "The selected owner layout changed.");
+      auto SourceAddress = snapshot(std::move(SourcePointer), L);
+      Expression SourceMember{{"kind", "member"},
+          {"type", type(Owner->PointerType, L)},
+          {"name", "nct_unique_ptr_pointer"},
+          {"args", json::Array{dereference(std::move(SourceAddress), L)}},
+          {"loc", A.loc(L)}};
+      auto Pointer = snapshot(SourceMember, L);
+      assign(std::move(SourceMember), A.zero(Owner->PointerType, L), L);
+      Expression DestinationMember{{"kind", "member"},
+          {"type", type(Owner->PointerType, L)},
+          {"name", "nct_unique_ptr_pointer"},
+          {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+      assign(std::move(DestinationMember), std::move(Pointer), L);
+      return;
+    }
     // The selected declaration or member initializer is a full-expression in
     // the SDK body. Its defaults finish before the next operation, while the
     // caller's already evaluated operands retain their enclosing lifetime.
