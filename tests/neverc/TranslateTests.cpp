@@ -366539,3 +366539,415 @@ using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declv
     expectNoArtifacts(Output);
   }
 }
+
+
+TEST_F(TranslateTest, CoreV2PointerHashClosurePointerValuesAndAdapterEffects) {
+  const auto Output = tmpFile("pointer-hash-closure-values.nc");
+  const auto Result = translate(fixture("pointer-hash-closure-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  EXPECT_EQ(readFile(Output).find("__murmur2_or_cityhash"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("pointer-hash-closure-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerHashClosureBodyFreeSignatureQueries) {
+  const auto Output = tmpFile("pointer-hash-closure-queries.nc");
+  const auto Result = translate(fixture("pointer-hash-closure-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  EXPECT_EQ(readFile(Output).find("__murmur2_or_cityhash"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("pointer-hash-closure-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerHashClosureFunctionsOnlyPointerBorrowing) {
+  const auto Output = tmpFile("pointer-hash-closure-borrowed.nc");
+  const auto Result = translate(fixture("pointer-hash-closure-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  EXPECT_EQ(readFile(Output).find("__murmur2_or_cityhash"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("pointer-hash-closure-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerHashClosureRejectsSelectedAlgorithms) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"direct-byte-call-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-byte-call-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-byte-call-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-byte-call-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-byte-call-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-byte-call-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-loadword-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-loadword-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-loadword-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-loadword-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-loadword-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-loadword-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-loadword-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __loadword<size_t>(const void*){return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-loadword-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __loadword<size_t>(const void*){return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-loadword-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __loadword<size_t>(const void*){return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-loadword-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __loadword<size_t>(const void*){return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-loadword-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __loadword<size_t>(const void*){return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-loadword-specialization", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<> size_t __loadword<size_t>(const void*){return 0;}}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-hasher-primary-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-hasher-primary-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-hasher-primary-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-hasher-primary-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-hasher-primary-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-hasher-primary-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-cityhash-partial-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-cityhash-partial-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-cityhash-partial-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-cityhash-partial-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-cityhash-partial-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-cityhash-partial-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-memcpy-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-memcpy-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-memcpy-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-memcpy-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-memcpy-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-memcpy-redeclaration", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)!=0?0:1;}
+)cpp"},
+    {"ignored-abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)!=0?0:1;}
+)cpp"},
+    {"apply-abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))!=0?0:1;}
+)cpp"},
+    {"wrapper-abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)!=0?0:1;}
+)cpp"},
+    {"invoke-wrapper-abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)!=0?0:1;}
+)cpp"},
+    {"direct-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::hash<int*>{}(pointer)==std::hash<int*>{}(nullptr)?0:1;}
+)cpp"},
+    {"ignored-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);std::hash<int*>{}(pointer);return value==3?0:1;}
+)cpp"},
+    {"invoke-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(hash,pointer)==std::hash<int*>{}(nullptr)?0:1;}
+)cpp"},
+    {"apply-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::apply(hash,std::make_tuple(pointer))==std::hash<int*>{}(nullptr)?0:1;}
+)cpp"},
+    {"wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return wrapper(pointer)==std::hash<int*>{}(nullptr)?0:1;}
+)cpp"},
+    {"invoke-wrapper-word-copy-macro", R"cpp(#define memcpy user_word_copy
+#include <functional>
+#include <tuple>
+#include <utility>
+#include <cstddef>
+extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
+int main(){int value=3;int*pointer=&value;std::hash<int*>hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,pointer)==std::hash<int*>{}(nullptr)?0:1;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pointer-hash-closure-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pointer-hash-closure-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

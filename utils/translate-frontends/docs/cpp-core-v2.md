@@ -17260,3 +17260,7 @@ functions without adding hash/get/deletion/heap helpers or array cookies. Their
 baseline comparison uses the same deleter definitions. The SDK hash enabling,
 selected get/pointer hash and complete byte-algorithm source closure remain
 unchanged. This does not expand the supported deleter layouts or pointer types.
+
+## Shared pointer hash algorithm source proof
+
+Runtime `std::hash<T*>` authenticates the complete selected pinned byte algorithm, including its primary and partial declarations, word loads, memcpy and CityHash ABI branch. This proof also applies through invoke, apply and reference wrappers, including ignored results; unique-owner hashes reuse it. Signature queries retain their separate body-free checks and add no runtime helpers.

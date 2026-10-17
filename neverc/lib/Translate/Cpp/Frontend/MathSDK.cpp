@@ -2149,6 +2149,12 @@ static bool functionalOperationParameterReference(
   return Ref && Ref->getDecl() == Method->getParamDecl(Index);
 }
 
+// Consume only an already authenticated nested byte-hash call. The proof is
+// shared by pointer runtime adapters and does not admit independent SDK calls.
+static bool selectedByteHashSource(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call,
+                                   const ASTContext &Context);
+
 static std::optional<FunctionalOperationInfo> approvedPointerHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
@@ -2321,6 +2327,8 @@ static std::optional<FunctionalOperationInfo> approvedPointerHashOperation(
                            Context.getSizeType()) ||
       HasherArguments.get(1).getAsIntegral() !=
           Context.getTypeSize(Context.getSizeType()))
+    return std::nullopt;
+  if (!selectedByteHashSource(S, SM, HashCall, Context))
     return std::nullopt;
   return FunctionalOperationInfo{FunctionalOperation::Hash,
                                  ValueType,
@@ -2964,6 +2972,13 @@ public:
   }
 };
 
+static bool selectedByteHashSource(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call,
+                                   const ASTContext &Context) {
+  return Call && StringHashSourceClosure(S, SM, Context).function(
+                     Call->getDirectCallee());
+}
+
 std::optional<UniqueHashObjectInfo>
 approvedUniqueHashCall(const State &S, const SourceManager &SM,
                        const CallExpr *Call, const ASTContext &Context,
@@ -3061,19 +3076,7 @@ approvedUniqueHashCall(const State &S, const SourceManager &SM,
           Context.getRecordType(Object->Owner.Record).withConst())) ||
       !stringHashOrigin(S, SM, PointerField, "__memory/unique_ptr.h"))
     return std::nullopt;
-  // The pointer descriptor authenticates its exact union/assignment/return.
-  // Consume the selected return's byte algorithm recursively, including its
-  // primary/partial declarations, loadword/memcpy and ABI1 arithmetic arm.
-  const auto *PointerBody = dyn_cast_or_null<CompoundStmt>(PointerMethod->getBody());
-  const auto *PointerReturn = PointerBody && PointerBody->size() == 3
-      ? dyn_cast<ReturnStmt>(PointerBody->body_back()) : nullptr;
-  Value = PointerReturn ? PointerReturn->getRetValue() : nullptr;
-  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Value))
-    Value = Cleanup->getSubExpr();
-  const auto *Bytes = dyn_cast_or_null<CXXOperatorCallExpr>(
-      Value ? Value->IgnoreParenImpCasts() : nullptr);
-  if (!Bytes || !StringHashSourceClosure(S, SM, Context).function(Bytes->getDirectCallee()))
-    return std::nullopt;
+  // The pointer descriptor includes the complete selected byte-algorithm proof.
   return Object;
 }
 
