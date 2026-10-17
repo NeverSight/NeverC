@@ -366140,3 +366140,402 @@ using P=std::unique_ptr<int>;static_assert(!noexcept(std::hash<P>{}(std::declval
     expectNoArtifacts(Output);
   }
 }
+
+
+TEST_F(TranslateTest, CoreV2UniqueCustomHashOwnerEffectsAndDeleterCounts) {
+  const auto Output = tmpFile("unique-custom-hash-owners.nc");
+  const auto Result = translate(fixture("unique-custom-hash-owners.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-custom-hash-owners") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueCustomHashFullExpressionCleanup) {
+  const auto Output = tmpFile("unique-custom-hash-lifetimes.nc");
+  const auto Result = translate(fixture("unique-custom-hash-lifetimes.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-custom-hash-lifetimes") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueCustomHashSignatureOnlyQueries) {
+  const auto Output = tmpFile("unique-custom-hash-queries.nc");
+  const auto Result = translate(fixture("unique-custom-hash-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-custom-hash-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueCustomHashDeletedPointeeBorrowing) {
+  const auto Output = tmpFile("unique-custom-hash-borrowed.nc");
+  const auto Result = translate(fixture("unique-custom-hash-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-custom-hash-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueCustomHashRejectsSelectedSourcesAndAdapters) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> size_t hash<unique_ptr<int,D>>::operator()(const unique_ptr<int,D>&) const{return 0;}}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"primary-hash-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>struct hash;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"owner-hash-partial-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,class D>struct hash<__enable_hash_helper<unique_ptr<T,D>,typename unique_ptr<T,D>::pointer>>;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"const-get-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> int* unique_ptr<int,D>::get()const noexcept{return nullptr;}}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"byte-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> size_t __murmur2_or_cityhash<size_t>::operator()(const void*,size_t)const{return 0;}}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"hasher-primary-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"cityhash-partial-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>struct __murmur2_or_cityhash<T,64>;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"copy-trait-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>struct is_copy_constructible;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"move-trait-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>struct is_move_constructible;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"default-trait-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>struct is_default_constructible;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"all-trait-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<bool...>struct __all;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"enable-helper-alias-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,class...K>using __enable_hash_helper=__enable_hash_helper_imp<T,__enable_if_t<__all<__has_enabled_hash<K>::value...>::value>>;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"enable-imp-alias-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,class U>using __enable_hash_helper_imp=T;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"check-requirements-alias-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class K,class H>using __check_hash_requirements=integral_constant<bool,is_copy_constructible<H>::value&&is_move_constructible<H>::value&&__is_invocable_r_v<size_t,H,const K&>>;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"memcpy-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+extern "C" void*memcpy(void*,const void*,std::size_t);
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"abi2-cityhash-arm", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<std::unique_ptr<int,D>>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"ignored-result-const-get-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> int* unique_ptr<int,D>::get()const noexcept{return nullptr;}}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<std::unique_ptr<int,D>>{}(p);return *p==3?0:1;}
+)cpp"},
+    {"ignored-result-loadword-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>T __loadword(const void*);}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<std::unique_ptr<int,D>>{}(p);return *p==3?0:1;}
+)cpp"},
+    {"ignored-result-hasher-primary-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,size_t>struct __murmur2_or_cityhash;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<std::unique_ptr<int,D>>{}(p);return *p==3?0:1;}
+)cpp"},
+    {"ignored-result-enable-helper-alias-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,class...K>using __enable_hash_helper=__enable_hash_helper_imp<T,__enable_if_t<__all<__has_enabled_hash<K>::value...>::value>>;}}
+int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<std::unique_ptr<int,D>>{}(p);return *p==3?0:1;}
+)cpp"},
+    {"query-only-public-call-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> size_t hash<unique_ptr<int,D>>::operator()(const unique_ptr<int,D>&) const{return 0;}}}
+using P=std::unique_ptr<int,D>;static_assert(std::is_same<decltype(std::hash<P>{}(std::declval<const P&>())),std::size_t>::value);int main(){return 0;}
+)cpp"},
+    {"query-only-pointer-hash-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<> size_t hash<int*>::operator()(int*)const noexcept{return 0;}}}
+using P=std::unique_ptr<int,D>;static_assert(std::is_same<decltype(std::hash<P>{}(std::declval<const P&>())),std::size_t>::value);int main(){return 0;}
+)cpp"},
+    {"query-only-enable-imp-alias-redeclaration", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T,class U>using __enable_hash_helper_imp=T;}}
+using P=std::unique_ptr<int,D>;static_assert(std::is_same<decltype(std::hash<P>{}(std::declval<const P&>())),std::size_t>::value);int main(){return 0;}
+)cpp"},
+    {"core-convertible-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+namespace std{inline namespace __1{template<>struct __is_core_convertible<size_t,size_t>:true_type{};}}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<P>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"ignored-core-convertible-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+namespace std{inline namespace __1{template<>struct __is_core_convertible<size_t,size_t>:true_type{};}}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P>{}(p);return *p==3?0:1;}
+)cpp"},
+    {"query-core-convertible-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+namespace std{inline namespace __1{template<>struct __is_core_convertible<size_t,size_t>:true_type{};}}
+using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+    {"standalone-call-address", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+using P=std::unique_ptr<int,D>;int main(){auto p=&std::hash<P>::operator();return p==nullptr;}
+)cpp"},
+    {"invoke-adapter", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::invoke(std::hash<P>{},p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"apply-adapter", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::apply(std::hash<P>{},std::tie(p))==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"reference-wrapper-adapter", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P> h;return std::ref(h)(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"static-value-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int* const&>::value;}}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::hash<P>{}(p)==std::hash<int*>{}(p.get())?0:1;}
+)cpp"},
+    {"ignored-static-value-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int* const&>::value;}}
+using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P>{}(p);return 0;}
+)cpp"},
+    {"query-static-value-specialization", R"cpp(#include <memory>
+#include <functional>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+#include <utility>
+#include <tuple>
+#include <type_traits>
+namespace std{inline namespace __1{template<>const bool __invokable_r<size_t,hash<int*>,int* const&>::value;}}
+using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+    {"stateful-deleter", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+struct D{int value;void operator()(int*p)const noexcept{delete p;}};
+using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+    {"nontrivial-deleter-lifetime", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+struct D{~D(){}void operator()(int*p)const noexcept{delete p;}};
+using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+    {"reference-deleter", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+struct D{void operator()(int*p)const noexcept{delete p;}};
+using P=std::unique_ptr<int,D&>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+    {"potentially-throwing-deleter", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+struct D{void operator()(int*p)const{delete p;}};
+using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+    {"different-pointer-alias", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+struct D{using pointer=const int*;void operator()(const int*p)const noexcept{delete p;}};
+using P=std::unique_ptr<int,D>;static_assert(!noexcept(std::hash<P>{}(std::declval<const P&>())));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unique-custom-hash-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unique-custom-hash-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

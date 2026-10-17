@@ -1399,7 +1399,7 @@ approvedUniqueHashObject(const State &S, const SourceManager &SM,
       S, SM, Value->getAsCXXRecordDecl(), Context);
   const auto *Partial = Hash->getSpecializedTemplateOrPartial()
                             .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
-  if (!Owner || Owner->CustomDeleter || !Partial ||
+  if (!Owner || !Partial ||
       !stringHashRecordSource(S, SM, Hash, "hash", "__memory/unique_ptr.h") ||
       !uniqueHashEmptyLifecycle(S, SM, Hash, Context, "__memory/unique_ptr.h"))
     return std::nullopt;

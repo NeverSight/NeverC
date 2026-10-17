@@ -17241,6 +17241,22 @@ The public operator has no noexcept specifier: pure signature queries preserve
 that potentially throwing signature. They authenticate only layout, enabling
 sources and signatures, without selecting concrete hash/get bodies, pointee
 destruction, allocation or array cookies. Functions borrowing owners whose
-pointee constructor/destructor is deleted require no deletion helper. Custom
+pointee constructor/destructor is deleted require no deletion helper. Stateful, reference, potentially throwing and fancy-pointer
 deleters and unproved invoke/apply/reference-wrapper adapters remain excluded.
 The main source frontend remains C23-only.
+
+## Existing empty custom-deleter owner hashes
+
+The exact direct owner hash also accepts the existing admitted empty, trivial,
+source-owned custom deleter with one checked noexcept void call operator and
+plain Element* representation. The original completed deleter definition and
+ordinary source checks remain required, even for signature queries. Hashing
+borrows the const owner and never invokes the deleter. Argument evaluation and
+normal owner destruction retain their effects, including source conversions
+and temporary cleanup at the original full-expression boundary.
+
+Query and functions-only borrowed modules preserve the original source deleter
+functions without adding hash/get/deletion/heap helpers or array cookies. Their
+baseline comparison uses the same deleter definitions. The SDK hash enabling,
+selected get/pointer hash and complete byte-algorithm source closure remain
+unchanged. This does not expand the supported deleter layouts or pointer types.
