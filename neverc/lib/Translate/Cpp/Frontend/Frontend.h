@@ -613,6 +613,19 @@ bool approvedUtilityMakeUniqueSignatureQuery(const State &S,
 bool approvedUtilityPointerExchangeSignatureQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityUniquePtrExchange {
+  UtilityUniquePtrRecord Owner;
+  bool NullReplacement;
+  const clang::CXXConstructExpr *OldConstruction;
+  const clang::CXXOperatorCallExpr *Assignment;
+  const clang::CXXConstructExpr *ReturnConstruction;
+};
+std::optional<UtilityUniquePtrExchange>
+approvedUtilityUniquePtrExchange(const State &S,
+                                 const clang::SourceManager &SM,
+                                 const clang::CallExpr *Call,
+                                 const clang::ASTContext &Context,
+                                 bool Runtime);
 enum class UtilityUniquePtrConstruction {
   Default,
   Null,
@@ -806,6 +819,7 @@ enum class UtilityOperation {
   MemoryUninitializedMove,
   MemoryUninitializedMoveN,
   Exchange,
+  UniquePtrExchange,
   Swap,
   NativeArraySwap,
   NativeOwnedArraySwap,

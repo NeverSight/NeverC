@@ -16635,6 +16635,111 @@ static bool utilityArrayPointerQualification(QualType Destination,
   return false;
 }
 
+std::optional<UtilityUniquePtrExchange>
+approvedUtilityUniquePtrExchange(const State &S, const SourceManager &SM,
+                                 const CallExpr *Call,
+                                 const ASTContext &Context, bool Runtime) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!S.coreV2() || !Function || !Reference || !Arguments ||
+      Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !S.owns(SM, Reference->getExprLoc()) || Call->getNumArgs() != 2 ||
+      Function->getNumParams() != 2 || !Call->isPRValue() ||
+      !Function->isInlined() || !Prototype || !Prototype->isNothrow() ||
+      !utilitySwapSDKFunction(S, SM, Function, "exchange",
+                              "__utility/exchange.h"))
+    return std::nullopt;
+  if (Runtime &&
+      (S.UnevaluatedMemoryCalls.count(Call) || !Function->hasBody()))
+    return std::nullopt;
+  const auto Type = Arguments->get(0).getAsType();
+  const auto Replacement = Arguments->get(1).getAsType();
+  const auto ReplacementValue = Replacement.getNonReferenceType();
+  if (Type.isNull() || Type.hasQualifiers() || ReplacementValue.isNull() ||
+      ReplacementValue.isVolatileQualified() ||
+      ReplacementValue.isRestrictQualified() ||
+      ReplacementValue.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const bool Null = ReplacementValue->isNullPtrType();
+  if (!Null &&
+      (!Context.hasSameType(ReplacementValue, Type) ||
+       Replacement->isLValueReferenceType() || Call->getArg(1)->isLValue()))
+    return std::nullopt;
+  const auto NewReference = Replacement->isLValueReferenceType()
+                                ? Context.getLValueReferenceType(ReplacementValue)
+                                : Context.getRValueReferenceType(ReplacementValue);
+  if (Function->getParamDecl(0)->hasDefaultArg() ||
+      Function->getParamDecl(1)->hasDefaultArg() ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(Type)) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), NewReference) ||
+      !Context.hasSameType(Function->getReturnType(), Type) ||
+      !Context.hasSameType(Call->getType(), Type) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Type) ||
+      !Call->getArg(0)->isLValue() ||
+      !Context.hasSameType(Call->getArg(1)->getType(), ReplacementValue) ||
+      (Replacement->isLValueReferenceType() != Call->getArg(1)->isLValue()))
+    return std::nullopt;
+  const auto Owner = Runtime
+                         ? approvedUtilityUniquePtrRecord(
+                               S, SM, Type->getAsCXXRecordDecl(), Context)
+                         : approvedUtilityUniquePtrLayout(
+                               S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Owner || Owner->CustomDeleter)
+    return std::nullopt;
+  if (!Runtime)
+    return UtilityUniquePtrExchange{*Owner, Null, nullptr, nullptr, nullptr};
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 3)
+    return std::nullopt;
+  auto Statement = Body->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Old = Declaration && Declaration->isSingleDecl()
+                        ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
+                        : nullptr;
+  const auto *Construction =
+      Old && Old->getInit()
+          ? dyn_cast<CXXConstructExpr>(Old->getInit()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Assignment = dyn_cast<CXXOperatorCallExpr>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *ReturnConstruction =
+      Return && Return->getRetValue()
+          ? dyn_cast<CXXConstructExpr>(
+                Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Returned =
+      ReturnConstruction && ReturnConstruction->getNumArgs() == 1
+          ? dyn_cast<DeclRefExpr>(
+                ReturnConstruction->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Old || !Context.hasSameType(Old->getType(), Type) || !Construction ||
+      !Assignment || Assignment->getOperator() != OO_Equal ||
+      Assignment->getNumArgs() != 2 || !ReturnConstruction ||
+      Construction->getNumArgs() != 1 ||
+      ReturnConstruction->getNumArgs() != 1 ||
+      approvedUtilityUniquePtrConstruction(S, SM, Construction, Context) !=
+          UtilityUniquePtrConstruction::Move ||
+      approvedUtilityUniquePtrConstruction(S, SM, ReturnConstruction, Context) !=
+          UtilityUniquePtrConstruction::Move ||
+      !functionalInvokeParameterReference(Assignment->getArg(0),
+                                           Function->getParamDecl(0)) ||
+      !Returned || Returned->getDecl() != Old)
+    return std::nullopt;
+  // The owning source layer separately authenticates exact move/forward
+  // arguments, complete selected constructor/helper and assignment bodies,
+  // and both noexcept traits. This descriptor grants no independent permission
+  // to private SDK expressions or standalone selected methods.
+  return UtilityUniquePtrExchange{*Owner, Null, Construction, Assignment,
+                                   ReturnConstruction};
+}
+
 // The pinned exchange body selects move and forward independently; prove both
 // instantiated calls before replacing them with a direct pointer-value write.
 static bool approvedUtilityPointerExchange(
@@ -75469,6 +75574,8 @@ std::optional<UtilityMakeFromTupleCall> approvedUtilityMakeFromTupleCall(
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
+  if (approvedUtilityUniquePtrExchange(S, SM, Call, Context, true))
+    return UtilityOperation::UniquePtrExchange;
   if (approvedUtilityMakeFromTupleCall(S, SM, Call, Context))
     return UtilityOperation::MakeFromTuple;
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||

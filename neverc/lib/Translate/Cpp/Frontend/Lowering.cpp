@@ -9180,6 +9180,48 @@ class FunctionLowering {
       label(End, L);
       return Counted ? Current : Expression{};
     }
+    case UtilityOperation::UniquePtrExchange: {
+      const auto Info = approvedUtilityUniquePtrExchange(
+          A.S, A.Sources, Call, A.Context, true);
+      if (!Info)
+        reject(L, "unique pointer exchange",
+               "The exact direct default-deleter owner exchange is unavailable.");
+      const auto OwnerType = A.Context.getRecordType(Info->Owner.Record);
+      auto ObjectAddress = snapshot(
+          address(lvalue(Call->getArg(0)), OwnerType, L), L);
+      std::optional<Expression> ReplacementAddress;
+      if (Info->NullReplacement)
+        discard(Call->getArg(1));
+      else
+        ReplacementAddress = snapshot(
+            address(lvalue(Call->getArg(1)), OwnerType, L), L);
+      // Both expressions have completed. Keep the replacement as a bound
+      // address so exchange(p, move(p)) reads it only after p's old move.
+      auto Member = [&](Expression Place) {
+        return Expression{{"kind", "member"},
+                          {"type", type(Info->Owner.PointerType, L)},
+                          {"name", "nct_unique_ptr_pointer"},
+                          {"args", json::Array{std::move(Place)}},
+                          {"loc", A.loc(L)}};
+      };
+      auto Object = dereference(std::move(ObjectAddress), L);
+      auto Old = snapshot(Member(json::Object(Object)), L);
+      assign(Member(json::Object(Object)),
+             A.zero(Info->Owner.PointerType, L), L);
+      auto Output = Destination ? std::move(*Destination)
+                                : objectTemporary(OwnerType, L);
+      assign(Output, A.zero(OwnerType, L), L);
+      assign(Member(json::Object(Output)), std::move(Old), L);
+      if (ReplacementAddress) {
+        auto Replacement = dereference(std::move(*ReplacementAddress), L);
+        auto Pointer = snapshot(Member(json::Object(Replacement)), L);
+        assign(Member(std::move(Replacement)),
+               A.zero(Info->Owner.PointerType, L), L);
+        assign(Member(std::move(Object)), std::move(Pointer), L);
+      }
+      return Output;
+    }
+
     case UtilityOperation::Exchange: {
       // Function arguments are bound before exchange reads the old value.
       // Capture the destination address and converted new value first, then

@@ -17195,3 +17195,27 @@ The accepted types use char, the pinned standard char_traits and the existing de
 The exact public specialization, inherited method/base layout, data/size selection, __do_string_hash, iterator_traits<const char*>, selected __murmur2_or_cityhash, __loadword/memcpy, CityHash helpers and pair/swap operations retain their declaration and template sources. Runtime proof consumes that complete selected body closure. Signature-only queries retain the const-value string_view versus const-reference string parameter distinction and caller conversion/copy/destruction exception sources without instantiating the byte algorithm. A query proof grants no runtime permission. A default char string_view temporary used as the exact lexical hash-query argument authenticates its constructor signature and selected declaration sources without requiring its unused concrete body.
 
 The implementation follows each SDK arithmetic width. In the ABI1 CityHash 4–8-byte branch, the uint32_t word is shifted before promotion to size_t; selecting the ABI2 macro branch is refused for runtime hashing. Safe byte assembly avoids alignment and aliasing assumptions and reads only complete in-range words. The long CityHash loop handles arbitrary admitted lengths, including repeated 64-byte chunks. Eight-target frontend/object validation is separate from native algorithm golden and runtime evidence.
+
+
+## Default-deleter unique owner exchange
+
+Exact direct C++17 `std::exchange` accepts the existing admitted scalar or array
+`std::unique_ptr` with its pinned default deleter. The destination is mutable;
+the replacement is a same-type rvalue owner or an admitted nullptr value.
+Arguments bind once before the old owner is read. Moving the old destination
+precedes releasing the replacement, so self exchange leaves the destination
+empty and the result owning its original resource. Exchange itself allocates
+and deletes nothing; argument evaluation and ordinary result cleanup retain
+their effects. Returned/ignored results, immediate access, outer assignment
+aliases and lifetime-extended results follow the existing ownership paths.
+The result destination is an initialization/elision slot, never an already-live
+outer assignment receiver. Arrays keep their allocation identity and cookies.
+
+The selected exchange signature/body, exact move and forward calls, both move
+constructions, move/null assignment, release/get_deleter/reset, empty deleter
+and array-checker operations and noexcept trait declarations retain their
+complete selected SDK sources. Source specializations and redeclarations,
+private calls, standalone function addresses, custom deleters and converting
+owners remain excluded. Pure signature queries authenticate layout and the
+actual exception sources without selecting runtime bodies, pointee destruction,
+heap wrappers or array cookies. The main source frontend remains C23-only.

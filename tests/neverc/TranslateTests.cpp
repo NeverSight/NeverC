@@ -365547,3 +365547,246 @@ int main(){return std::hash<std::u16string_view>{}(std::u16string_view(u"abc"))=
     expectNoArtifacts(Output);
   }
 }
+
+
+TEST_F(TranslateTest, CoreV2UniqueExchangeScalarEffectsAndSelfAliasing) {
+  const auto Output = tmpFile("unique-exchange-scalars.nc");
+  const auto Result = translate(fixture("unique-exchange-scalars.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-exchange-scalars") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueExchangeArrayOwnership) {
+  const auto Output = tmpFile("unique-exchange-arrays.nc");
+  const auto Result = translate(fixture("unique-exchange-arrays.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-exchange-arrays") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueExchangeResultDestruction) {
+  const auto Output = tmpFile("unique-exchange-lifetimes.nc");
+  const auto Result = translate(fixture("unique-exchange-lifetimes.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-exchange-lifetimes") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueExchangeAssignmentAliasesAndExtendedResults) {
+  const auto Output = tmpFile("unique-exchange-result-aliases.nc");
+  const auto Result = translate(fixture("unique-exchange-result-aliases.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-exchange-result-aliases") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueExchangeSignatureOnlyQueries) {
+  const auto Output = tmpFile("unique-exchange-queries.nc");
+  const auto Result = translate(fixture("unique-exchange-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("unique-exchange-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniqueExchangeRejectsSelectedSources) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"exchange-null-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int> exchange(unique_ptr<int>& p,nullptr_t&&) noexcept {return std::move(p);} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"exchange-owner-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int> exchange(unique_ptr<int>& p,unique_ptr<int>&&) noexcept {return std::move(p);} }}
+int main(){auto p=std::make_unique<int>(3);auto q=std::make_unique<int>(5);auto old=std::exchange(p,std::move(q));return *old==3&&*p==5&&!q?0:1;}
+)cpp"},
+    {"exchange-internal-move-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>&& move<unique_ptr<int>&>(unique_ptr<int>& p) noexcept {return static_cast<unique_ptr<int>&&>(p);} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"constructor-internal-forward-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> default_delete<int>&& forward<default_delete<int>>(default_delete<int>& d) noexcept {return static_cast<default_delete<int>&&>(d);} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"move-constructor-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>::unique_ptr(unique_ptr<int>&&) noexcept {} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"move-assignment-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>& unique_ptr<int>::operator=(unique_ptr<int>&&) noexcept {return *this;} }}
+int main(){auto p=std::make_unique<int>(3);auto q=std::make_unique<int>(5);auto old=std::exchange(p,std::move(q));return *old==3&&*p==5&&!q?0:1;}
+)cpp"},
+    {"null-assignment-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>& unique_ptr<int>::operator=(nullptr_t) noexcept {return *this;} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"release-null-branch-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> int* unique_ptr<int>::release() noexcept {return nullptr;} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"get-deleter-null-branch-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> default_delete<int>& unique_ptr<int>::get_deleter() noexcept {return __deleter_;} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"reset-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> void unique_ptr<int>::reset(int*) noexcept {} }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"padding-primary-redeclaration", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<class T,bool B> class __compressed_pair_padding; }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"array-checker-redeclaration", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { class __unique_ptr_array_bounds_stateless; }}
+int main(){auto p=std::make_unique<int[]>(2);p[0]=3;auto old=std::exchange(p,nullptr);return old[0]==3&&!p?0:1;}
+)cpp"},
+    {"move-exception-trait-redeclaration", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<class T> struct is_nothrow_move_constructible; }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"assignment-exception-trait-redeclaration", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<class T,class U> struct is_nothrow_assignable; }}
+int main(){auto p=std::make_unique<int>(3);auto old=std::exchange(p,nullptr);return *old==3&&!p?0:1;}
+)cpp"},
+    {"ignored-result-exchange-internal-move-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>&& move<unique_ptr<int>&>(unique_ptr<int>& p) noexcept {return static_cast<unique_ptr<int>&&>(p);} }}
+int main(){auto p=std::make_unique<int>(3);std::exchange(p,nullptr);return p?1:0;}
+)cpp"},
+    {"ignored-result-constructor-internal-forward-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> default_delete<int>&& forward<default_delete<int>>(default_delete<int>& d) noexcept {return static_cast<default_delete<int>&&>(d);} }}
+int main(){auto p=std::make_unique<int>(3);std::exchange(p,nullptr);return p?1:0;}
+)cpp"},
+    {"ignored-result-padding-primary-redeclaration", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<class T,bool B> class __compressed_pair_padding; }}
+int main(){auto p=std::make_unique<int>(3);std::exchange(p,nullptr);return p?1:0;}
+)cpp"},
+    {"ignored-result-array-checker-redeclaration", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { class __unique_ptr_array_bounds_stateless; }}
+int main(){auto p=std::make_unique<int[]>(2);std::exchange(p,nullptr);return p?1:0;}
+)cpp"},
+    {"query-only-move-constructor-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>::unique_ptr(unique_ptr<int>&&) noexcept {} }}
+using P=std::unique_ptr<int>;static_assert(noexcept(std::exchange(std::declval<P&>(),nullptr)));static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),nullptr)),P>::value);int main(){return 0;}
+)cpp"},
+    {"query-only-null-assignment-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>& unique_ptr<int>::operator=(nullptr_t) noexcept {return *this;} }}
+using P=std::unique_ptr<int>;static_assert(noexcept(std::exchange(std::declval<P&>(),nullptr)));static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),nullptr)),P>::value);int main(){return 0;}
+)cpp"},
+    {"query-only-move-assignment-specialization", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<> unique_ptr<int>& unique_ptr<int>::operator=(unique_ptr<int>&&) noexcept {return *this;} }}
+using P=std::unique_ptr<int>;static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<P&&>())));static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<P&&>())),P>::value);int main(){return 0;}
+)cpp"},
+    {"custom-deleter", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*p)const noexcept{delete p;}};int main(){std::unique_ptr<int,D>p(new int(3));auto old=std::exchange(p,nullptr);return *old==3?0:1;}
+)cpp"},
+    {"converting-owner", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+int main(){std::unique_ptr<const int>p(new int(3));auto q=std::make_unique<int>(5);auto old=std::exchange(p,std::move(q));return *old==3&&*p==5&&!q?0:1;}
+)cpp"},
+    {"standalone-exchange-address", R"cpp(#include <memory>
+#include <utility>
+#include <type_traits>
+int main(){using P=std::unique_ptr<int>;auto f=&std::exchange<P,P>;auto p=std::make_unique<int>(3);auto q=std::make_unique<int>(5);auto old=f(p,std::move(q));return *old==3?0:1;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unique-exchange-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unique-exchange-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    EXPECT_FALSE(fs::exists(Output));
+    EXPECT_FALSE(fs::exists(Output.string() + ".manifest.json"));
+    EXPECT_FALSE(fs::exists(Output.string() + ".map.json"));
+  }
+}

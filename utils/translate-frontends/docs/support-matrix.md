@@ -346,3 +346,6 @@ checks use normal CMake installation components and verify translation plus
 generated project/math execution at O0/O2 with development Clang/SDK/source paths
 unavailable. They also inspect symbols and dependencies outside that sandbox.
 No repository test exclusion is added by this change.
+
+
+`cpp-core-v2` default-deleter owner exchange: Exact direct `std::exchange` calls also accept admitted scalar or array `std::unique_ptr` owners with the pinned default deleter, replacing them with a same-type rvalue owner or `nullptr`. Arguments evaluate once before ownership moves; self exchange, returned and ignored owners, outer assignment aliases and extended result lifetimes preserve their cleanup. Pure signature queries create no ownership or heap helpers. Selected SDK declaration, constructor, assignment, helper and exception-trait sources remain checked; custom or converting owners and standalone function addresses remain excluded.
