@@ -5,6 +5,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
@@ -789,6 +790,10 @@ static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
     return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                          "__functional/operations.h");
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
+    if (approvedUniqueHashObject(S, SM, Method->getParent(), Method->getASTContext()))
+      return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                            "__memory/unique_ptr.h");
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
     if (auto StringHash = approvedStringHashObject(
             S, SM, Method->getParent(), Method->getASTContext()))
       return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
@@ -1085,10 +1090,369 @@ approvedStringHashObject(const State &S, const SourceManager &SM,
   return StringHashObjectInfo{Hash, Base, Value, bool(View)};
 }
 
+// This proof is private to the unique-owner hash's written enabling alias.
+// It authenticates the actual dependent alias/trait graph, then independently
+// checks its concrete pointer-hasher witness. It grants no SDK call permission.
+class UniqueHashEnablingSources
+    : public RecursiveASTVisitor<UniqueHashEnablingSources> {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  QualType Pointer, Hasher;
+  std::set<const Decl *> Seen;
+  std::set<const Decl *> ConcreteSeen;
+  std::set<std::string> Names;
+  unsigned Nodes = 0;
+
+  bool origin(const Decl *D) const {
+    const auto O = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return O && O->Root == "libcxx" &&
+           (llvm::StringRef(O->Path).starts_with("__type_traits/") ||
+            O->Path == "__functional/hash.h" ||
+            O->Path == "__fwd/functional.h" ||
+            O->Path == "__memory/unique_ptr.h" ||
+            O->Path == "__memory/shared_ptr.h" ||
+            O->Path == "__utility/declval.h" ||
+            O->Path == "__utility/forward.h" ||
+            O->Path == "__utility/move.h") &&
+           approvedStandardSDKDeclaration(S, SM, D);
+  }
+  bool related(QualType T, unsigned Depth = 0) const {
+    if (T.isNull() || Depth > 32) return false;
+    T = T.getNonReferenceType().getUnqualifiedType();
+    if (Context.hasSameType(T, Hasher) || Context.hasSameType(T, Pointer))
+      return true;
+    if (const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+            T->getAsCXXRecordDecl()))
+      for (const auto &A : R->getTemplateArgs().asArray())
+        if (related(A, Depth + 1)) return true;
+    return T->isPointerType() && related(T->getPointeeType(), Depth + 1);
+  }
+  bool related(const TemplateArgument &A, unsigned Depth = 0) const {
+    if (Depth > 32) return false;
+    if (A.getKind() == TemplateArgument::Type)
+      return related(A.getAsType(), Depth + 1);
+    if (A.getKind() == TemplateArgument::Pack)
+      for (const auto &P : A.pack_elements())
+        if (related(P, Depth + 1)) return true;
+    return false;
+  }
+  bool related(const TemplateArgumentList &Args) const {
+    for (const auto &A : Args.asArray())
+      if (related(A)) return true;
+    return false;
+  }
+  bool recordSource(const CXXRecordDecl *R) const {
+    if (!R || !origin(R)) return false;
+    for (const auto *D : R->redecls())
+      if (!origin(D)) return false;
+    if (const auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      if (T->getSpecializationKind() != TSK_ImplicitInstantiation)
+        return false;
+      if (const auto *P = T->getSpecializedTemplateOrPartial()
+                              .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+        for (const auto *D : P->redecls())
+          if (!origin(D)) return false;
+    }
+    return true;
+  }
+  bool functionSource(const FunctionDecl *F) const {
+    if (!F || !origin(F) || F->isInvalidDecl() || F->isDeleted() ||
+        F->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *D : F->redecls())
+      if (!origin(D)) return false;
+    return true;
+  }
+  bool variableSource(const VarDecl *V) const {
+    // The pinned convertibility probe contains an anonymous parameter in a
+    // function-pointer type, whose DeclContext is not the std namespace.
+    // It is signature grammar, not a static trait value or initializer.
+    if (const auto *P = dyn_cast_or_null<ParmVarDecl>(V);
+        P && !origin(P) && !P->getIdentifier() && !P->hasDefaultArg() &&
+        !P->hasInit() && !P->isParameterPack() &&
+        (P->getType()->isDependentType() ||
+         Context.hasSameType(P->getType(), Context.getSizeType())) &&
+        approvedSDKDeclaration(S, SM, P) &&
+        cstddefOrigin(S, SM, P->getLocation(), "libcxx",
+                       "__type_traits/is_core_convertible.h"))
+      return true;
+    if (!V || !origin(V) || V->isInvalidDecl() ||
+        V->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *D : V->redecls())
+      if (!origin(D)) return false;
+    const VarDecl *Holder = nullptr;
+    if (const auto *Initializer = V->getAnyInitializer(Holder))
+      if (!Holder || !origin(Holder) ||
+          !S.sdkFile(SM, Initializer->getExprLoc())) return false;
+    if (const auto *Pattern = V->getInstantiatedFromStaticDataMember())
+      for (const auto *D : Pattern->redecls())
+        if (!origin(D)) return false;
+    return true;
+  }
+  bool concrete(const CXXRecordDecl *R) {
+    if (!R || R->isDependentContext()) return true;
+    const auto T = Context.getRecordType(R);
+    // Only these exact original operand nodes are outside the private trait
+    // graph. A selected source specialization cannot escape by its location.
+    if (Context.hasSameUnqualifiedType(T, Hasher) ||
+        Context.hasSameUnqualifiedType(T, Pointer->getPointeeType())) return true;
+    const auto *C = dyn_cast<ClassTemplateSpecializationDecl>(R);
+    const auto *Primary = C ? C->getSpecializedTemplate() : nullptr;
+    const Decl *Identity = Primary ? static_cast<const Decl *>(Primary->getCanonicalDecl())
+                                   : static_cast<const Decl *>(R->getCanonicalDecl());
+    const auto O = S.sdkFile(SM, Identity->getLocation());
+    if (!O || O->Root != "libcxx" ||
+        !llvm::StringRef(O->Path).starts_with("__type_traits/")) return false;
+    R = R->getDefinition();
+    if (!R || !recordSource(R)) return false;
+    if (!ConcreteSeen.insert(R->getCanonicalDecl()).second) return true;
+    if (ConcreteSeen.size() > 256) return false;
+    if (Primary && !source(Primary)) return false;
+    // RAV deliberately skips implicit class specializations. Traverse only
+    // this authenticated selected record's actual bases and declarations.
+    for (const auto &B : R->bases())
+      if (!TraverseType(B.getType())) return false;
+    for (const auto *D : R->decls())
+      if (!TraverseDecl(const_cast<Decl *>(D))) return false;
+    return true;
+  }
+  bool source(const TemplateDecl *T) {
+    if (!T || ++Nodes > 200000 || !origin(T) ||
+        !origin(T->getTemplatedDecl())) return false;
+    Names.insert(T->getNameAsString());
+    if (!Seen.insert(T->getCanonicalDecl()).second) return true;
+    if (Seen.size() > 256) return false;
+    if (const auto *C = dyn_cast<ClassTemplateDecl>(T)) {
+      for (const auto *D : C->redecls())
+        if (!origin(D) || !origin(D->getTemplatedDecl())) return false;
+      // The owner layout and pointer hash have separate exact proofs. Never
+      // traverse their operations while authenticating a signature query.
+      if (C->getName() == "hash" || C->getName() == "unique_ptr") return true;
+      llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 4> Partials;
+      C->getPartialSpecializations(Partials);
+      for (const auto *P : Partials) {
+        for (const auto *D : P->redecls()) if (!origin(D)) return false;
+        if (!TraverseDecl(const_cast<ClassTemplatePartialSpecializationDecl *>(P)))
+          return false;
+      }
+      for (const auto *R : C->specializations())
+        if ((related(R->getTemplateArgs()) || C->getName() == "__all" ||
+             C->getName() == "enable_if") && !recordSource(R)) return false;
+    } else if (const auto *A = dyn_cast<TypeAliasTemplateDecl>(T)) {
+      for (const auto *D : A->redecls())
+        if (!origin(D) || !origin(D->getTemplatedDecl())) return false;
+    } else if (const auto *V = dyn_cast<VarTemplateDecl>(T)) {
+      for (const auto *D : V->redecls())
+        if (!origin(D) || !origin(D->getTemplatedDecl())) return false;
+      for (const auto *R : V->specializations())
+        if (related(R->getTemplateArgs())) {
+          if (R->getSpecializationKind() != TSK_ImplicitInstantiation)
+            return false;
+          for (const auto *D : R->redecls()) if (!origin(D)) return false;
+          // Follow the concrete selected initializer's value graph. Scalar
+          // conversion and Boolean nodes can lose the original pointer type;
+          // they must still close through their actual selected declarations.
+          if (!R->hasInit() || !TraverseStmt(const_cast<Expr *>(R->getInit()))) return false;
+        }
+    } else if (const auto *F = dyn_cast<FunctionTemplateDecl>(T)) {
+      for (const auto *D : F->redecls())
+        if (!origin(D) || !functionSource(cast<FunctionDecl>(D->getTemplatedDecl()))) return false;
+      for (const auto *R : F->specializations())
+        if (const auto *Args = R->getTemplateSpecializationArgs();
+            Args && related(*Args) && !functionSource(R)) return false;
+      // A dependent invocation's exact selected pointer method is checked
+      // independently below. No concrete invocation body is consumed here.
+      return true;
+    } else return false;
+    return TraverseDecl(const_cast<NamedDecl *>(T->getTemplatedDecl()));
+  }
+
+public:
+  UniqueHashEnablingSources(const State &S, const SourceManager &SM,
+                            const ASTContext &Context, QualType Pointer,
+                            QualType Hasher)
+      : S(S), SM(SM), Context(Context), Pointer(Pointer), Hasher(Hasher) {}
+  bool VisitTemplateSpecializationType(TemplateSpecializationType *T) {
+    if (!source(T->getTemplateName().getAsTemplateDecl())) return false;
+    if (T->isDependentType()) return true;
+    if (T->isTypeAlias()) return TraverseType(T->getAliasedType());
+    return concrete(T->getAsCXXRecordDecl());
+  }
+  bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
+    for (const auto *D : E->decls()) {
+      const auto *T = dyn_cast<TemplateDecl>(D);
+      if (T ? !source(T) : !origin(D)) return false;
+    }
+    return true;
+  }
+  bool VisitDeclRefExpr(DeclRefExpr *E) {
+    const auto *F = dyn_cast<FunctionDecl>(E->getDecl());
+    const auto *V = dyn_cast<VarDecl>(E->getDecl());
+    return origin(E->getDecl()) && origin(E->getFoundDecl()) &&
+           (!F || functionSource(F)) && (!V || variableSource(V)) &&
+           concrete(dyn_cast<CXXRecordDecl>(E->getDecl()->getDeclContext()));
+  }
+  bool VisitVarDecl(VarDecl *D) { return variableSource(D); }
+  bool VisitRecordType(RecordType *T) {
+    return concrete(dyn_cast<CXXRecordDecl>(T->getDecl()));
+  }
+  bool VisitTypedefType(TypedefType *T) {
+    const auto *D = T->getDecl();
+    if (origin(D)) return TraverseType(D->getUnderlyingType());
+    return (D->getUnderlyingType()->isBuiltinType() &&
+            Context.hasSameUnqualifiedType(D->getUnderlyingType(),
+                                            Context.getSizeType())) ||
+           Context.hasSameUnqualifiedType(D->getUnderlyingType(),
+                                           Pointer->getPointeeType());
+  }
+  bool VisitTypedefNameDecl(TypedefNameDecl *D) {
+    return origin(D) && TraverseType(D->getUnderlyingType());
+  }
+  bool VisitStmt(Stmt *) { return ++Nodes <= 200000; }
+  bool check(QualType Alias) {
+    if (!TraverseType(Alias)) return false;
+    const char *Required[] = {"__enable_hash_helper", "__enable_hash_helper_imp",
+        "__enable_if_t", "enable_if", "__all", "__has_enabled_hash",
+        "__check_hash_requirements", "is_copy_constructible",
+        "is_move_constructible", "is_default_constructible",
+        "__is_invocable_r_v", "__invokable_r"};
+    for (const auto *Name : Required) if (!Names.count(Name)) return false;
+    return true;
+  }
+};
+
+static bool uniqueHashMethodSource(const State &S, const SourceManager &SM,
+                                   const CXXMethodDecl *M,
+                                   llvm::StringRef Path) {
+  if (!M || M->isInvalidDecl() || M->isDeleted() ||
+      M->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+    return false;
+  const auto *Pattern = dyn_cast_or_null<CXXMethodDecl>(M->getInstantiatedFromMemberFunction());
+  if (!Pattern || Pattern->getParent()->getCanonicalDecl() ==
+                      M->getParent()->getCanonicalDecl()) return false;
+  const FunctionDecl *Functions[] = {M, Pattern};
+  for (const auto *F : Functions)
+    for (const auto *D : F->redecls())
+      if (!stringHashOrigin(S, SM, D, Path)) return false;
+  return true;
+}
+
+static bool uniqueHashEmptyLifecycle(const State &S, const SourceManager &SM,
+                                      const ClassTemplateSpecializationDecl *R,
+                                      const ASTContext &Context,
+                                      llvm::StringRef Path, bool PointerBase = false) {
+  if (!R || !R->isEmpty() || !R->field_empty() ||
+      R->getNumBases() != (PointerBase ? 1u : 0u) ||
+      !R->isStandardLayout() || !R->isTriviallyCopyable() ||
+      !R->hasTrivialDestructor() || R->hasUserDeclaredConstructor() ||
+      R->hasUserDeclaredDestructor() ||
+      Context.getTypeSize(Context.getRecordType(R)) != Context.getCharWidth() ||
+      Context.getTypeAlign(Context.getRecordType(R)) !=
+          Context.getTypeAlign(Context.UnsignedCharTy)) return false;
+  if (PointerBase) {
+    const auto &B = *R->bases_begin();
+    const auto *Base = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        B.getType()->getAsCXXRecordDecl()->getDefinition());
+    if (B.isVirtual() || B.getAccessSpecifier() != AS_public || !Base ||
+        !stringHashRecordSource(S, SM, Base, "__unary_function_keep_layout_base",
+                                "__functional/unary_function.h") ||
+        Base->getTemplateArgs().size() != 2 ||
+        Base->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        Base->getTemplateArgs().get(1).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Base->getTemplateArgs().get(0).getAsType(),
+                             R->getTemplateArgs().get(0).getAsType()) ||
+        !Context.hasSameType(Base->getTemplateArgs().get(1).getAsType(),
+                             Context.getSizeType()) ||
+        !uniqueHashEmptyLifecycle(S, SM, Base, Context,
+                                   "__functional/unary_function.h"))
+      return false;
+  }
+  for (const auto *M : R->methods())
+    if (isa<CXXConstructorDecl, CXXDestructorDecl>(M) ||
+        M->isCopyAssignmentOperator() || M->isMoveAssignmentOperator())
+      for (const auto *D : M->redecls()) {
+        const auto *Special = cast<CXXMethodDecl>(D);
+        if (!stringHashOrigin(S, SM, D, Path) || !Special->isImplicit() ||
+            !Special->isDefaulted() || !Special->isTrivial() ||
+            Special->isDeleted() || Special->isInvalidDecl() ||
+            Special->getTypeSourceInfo()) return false;
+      }
+  return true;
+}
+
+std::optional<UniqueHashObjectInfo>
+approvedUniqueHashObject(const State &S, const SourceManager &SM,
+                         const CXXRecordDecl *Record,
+                         const ASTContext &Context) {
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  if (!S.coreV2() || !Hash || Hash->getName() != "hash" ||
+      Hash->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Hash->getTemplateArgs().size() != 1 ||
+      Hash->getTemplateArgs().get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Value = Hash->getTemplateArgs().get(0).getAsType();
+  if (Value.hasQualifiers()) return std::nullopt;
+  const auto Owner = approvedUtilityUniquePtrLayout(
+      S, SM, Value->getAsCXXRecordDecl(), Context);
+  const auto *Partial = Hash->getSpecializedTemplateOrPartial()
+                            .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+  if (!Owner || Owner->CustomDeleter || !Partial ||
+      !stringHashRecordSource(S, SM, Hash, "hash", "__memory/unique_ptr.h") ||
+      !uniqueHashEmptyLifecycle(S, SM, Hash, Context, "__memory/unique_ptr.h"))
+    return std::nullopt;
+  const auto *Written = Partial->getTemplateArgsAsWritten();
+  const auto *WrittenType = Written && Written->NumTemplateArgs == 1 &&
+      Written->arguments()[0].getArgument().getKind() == TemplateArgument::Type
+      ? Written->arguments()[0].getTypeSourceInfo() : nullptr;
+  const auto Alias = WrittenType ? WrittenType->getType() : QualType();
+  const auto *Enable = Alias.isNull() ? nullptr
+      : Alias->getAs<TemplateSpecializationType>();
+  if (!Enable || !Enable->isTypeAlias() ||
+      Enable->getTemplateName().getAsTemplateDecl()->getName() !=
+          "__enable_hash_helper" || Enable->template_arguments().size() != 2)
+    return std::nullopt;
+  const ClassTemplateSpecializationDecl *PointerHash = nullptr;
+  for (const auto *R : Hash->getSpecializedTemplate()->specializations())
+    if (R->getTemplateArgs().size() == 1 &&
+        R->getTemplateArgs().get(0).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(R->getTemplateArgs().get(0).getAsType(),
+                             Owner->PointerType)) {
+      PointerHash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R->getDefinition());
+      break;
+    }
+  if (!PointerHash ||
+      !stringHashRecordSource(S, SM, PointerHash, "hash", "__functional/hash.h") ||
+      !pointerHashPartial(S, SM, PointerHash, Owner->PointerType, Context) ||
+      !uniqueHashEmptyLifecycle(S, SM, PointerHash, Context, "__functional/hash.h", true))
+    return std::nullopt;
+  unsigned Operators = 0;
+  for (const auto *M : PointerHash->methods())
+    if (M->getOverloadedOperator() == OO_Call) {
+      const auto *P = M->getType()->getAs<FunctionProtoType>();
+      if (++Operators != 1 || !M->isConst() || M->isStatic() ||
+          M->isVolatile() || M->isVariadic() || M->getRefQualifier() != RQ_None ||
+          M->getNumParams() != 1 || !P ||
+          P->getExceptionSpecType() != EST_BasicNoexcept || P->getNoexceptExpr() ||
+          !Context.hasSameType(M->getReturnType(), Context.getSizeType()) ||
+          !Context.hasSameType(M->getParamDecl(0)->getType(), Owner->PointerType) ||
+          !uniqueHashMethodSource(S, SM, M, "__functional/hash.h"))
+        return std::nullopt;
+    }
+  if (Operators != 1 ||
+      !UniqueHashEnablingSources(S, SM, Context, Owner->PointerType,
+          Context.getRecordType(PointerHash)).check(Alias)) return std::nullopt;
+  return UniqueHashObjectInfo{Hash, *Owner, PointerHash};
+}
+
 std::optional<FunctionalObjectRecord>
 approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context) {
+  if (auto UniqueHash = approvedUniqueHashObject(S, SM, Record, Context))
+    return FunctionalObjectRecord{UniqueHash->Record};
   if (auto StringHash = approvedStringHashObject(S, SM, Record, Context))
     return FunctionalObjectRecord{StringHash->Record};
   if (functionTraitObjectValue(S, SM, Record, Context))
@@ -2600,6 +2964,119 @@ public:
   }
 };
 
+std::optional<UniqueHashObjectInfo>
+approvedUniqueHashCall(const State &S, const SourceManager &SM,
+                       const CallExpr *Call, const ASTContext &Context,
+                       bool Runtime) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
+  const auto Object = approvedUniqueHashObject(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *P = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Operator || !Method || !Reference || !Object || !P ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      Operator->getOperator() != OO_Call || Call->getNumArgs() != 2 ||
+      !Call->isPRValue() || Method->getOverloadedOperator() != OO_Call ||
+      Method->isStatic() || !Method->isConst() || Method->isVolatile() ||
+      Method->isVariadic() || !Method->isInlined() ||
+      Method->getRefQualifier() != RQ_None || Method->getNumParams() != 1 ||
+      P->getExceptionSpecType() != EST_None || P->getNoexceptExpr() ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      Context.getRecordType(Object->Record)) ||
+      Call->getArg(0)->getType().isVolatileQualified() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(
+              Context.getRecordType(Object->Owner.Record).withConst())) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                      Context.getRecordType(Object->Owner.Record)) ||
+      Call->getArg(1)->getType().isVolatileQualified() ||
+      !Call->getArg(1)->isGLValue() ||
+      !uniqueHashMethodSource(S, SM, Method, "__memory/unique_ptr.h"))
+    return std::nullopt;
+  if (!Runtime) return Object;
+  if (Context.getTargetInfo().isBigEndian() || Context.getCharWidth() != 8 ||
+      Context.getTypeSize(Context.UnsignedIntTy) != 32 ||
+      (Context.getTypeSize(Context.getSizeType()) != 32 &&
+       Context.getTypeSize(Context.getSizeType()) != 64)) return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  const auto *Local = Body && Body->size() == 2
+      ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+  const auto *Alias = Local && Local->isSingleDecl()
+      ? dyn_cast<TypedefNameDecl>(Local->getSingleDecl()) : nullptr;
+  const auto *Return = Body && Body->size() == 2
+      ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const Expr *Value = Return ? Return->getRetValue() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Value)) {
+    if (Cleanup->getNumObjects()) return std::nullopt;
+    Value = Cleanup->getSubExpr();
+  }
+  const auto *PointerCall = dyn_cast_or_null<CXXOperatorCallExpr>(
+      Value ? Value->IgnoreParenImpCasts() : nullptr);
+  const auto *PointerMethod = dyn_cast_or_null<CXXMethodDecl>(
+      PointerCall ? PointerCall->getDirectCallee() : nullptr);
+  const auto *Get = PointerCall && PointerCall->getNumArgs() == 2
+      ? dyn_cast<CXXMemberCallExpr>(PointerCall->getArg(1)->IgnoreParenImpCasts())
+      : nullptr;
+  const auto *GetMethod = Get ? Get->getMethodDecl() : nullptr;
+  const auto *GetP = GetMethod ? GetMethod->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Parameter = Get ? dyn_cast<DeclRefExpr>(
+      Get->getImplicitObjectArgument()->IgnoreParenImpCasts()) : nullptr;
+  if (!Alias || Alias->getName() != "pointer" ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Object->Owner.PointerType) ||
+      !stringHashOrigin(S, SM, Alias, "__memory/unique_ptr.h") ||
+      !PointerMethod || PointerMethod->getParent()->getCanonicalDecl() !=
+          Object->PointerHash->getCanonicalDecl() ||
+      !approvedPointerHashOperation(S, SM, PointerCall, Context, false) ||
+      !Get || !GetMethod || !GetP || Get->getNumArgs() ||
+      !Get->isPRValue() || GetMethod->getName() != "get" ||
+      GetMethod->isStatic() || !GetMethod->isConst() || GetMethod->isVolatile() ||
+      GetMethod->isVariadic() || GetMethod->getNumParams() ||
+      GetMethod->getRefQualifier() != RQ_None || GetMethod->getPrimaryTemplate() ||
+      GetMethod->getParent()->getCanonicalDecl() !=
+          Object->Owner.Record->getCanonicalDecl() || !Parameter ||
+      Parameter->getDecl() != Method->getParamDecl(0) ||
+      GetP->getExceptionSpecType() != EST_BasicNoexcept || GetP->getNoexceptExpr() ||
+      !Context.hasSameType(GetMethod->getReturnType(), Object->Owner.PointerType) ||
+      !Context.hasSameType(Get->getType(), Object->Owner.PointerType) ||
+      !uniqueHashMethodSource(S, SM, GetMethod, "__memory/unique_ptr.h"))
+    return std::nullopt;
+  const auto *GetBody = dyn_cast_or_null<CompoundStmt>(GetMethod->getBody());
+  const auto *GetReturn = GetBody && GetBody->size() == 1
+      ? dyn_cast<ReturnStmt>(GetBody->body_front()) : nullptr;
+  const auto *Field = GetReturn ? dyn_cast<MemberExpr>(
+      GetReturn->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  const auto *PointerField = Field ? dyn_cast<FieldDecl>(Field->getMemberDecl()) : nullptr;
+  const auto *This = Field ? dyn_cast<CXXThisExpr>(
+      Field->getBase()->IgnoreParenImpCasts()) : nullptr;
+  if (!PointerField || PointerField->getName() != "__ptr_" || !This ||
+      !Field->isArrow() ||
+      PointerField->getParent()->getCanonicalDecl() !=
+          Object->Owner.Record->getCanonicalDecl() ||
+      !Context.hasSameType(PointerField->getType(), Object->Owner.PointerType) ||
+      !Context.hasSameType(This->getType(), Context.getPointerType(
+          Context.getRecordType(Object->Owner.Record).withConst())) ||
+      !stringHashOrigin(S, SM, PointerField, "__memory/unique_ptr.h"))
+    return std::nullopt;
+  // The pointer descriptor authenticates its exact union/assignment/return.
+  // Consume the selected return's byte algorithm recursively, including its
+  // primary/partial declarations, loadword/memcpy and ABI1 arithmetic arm.
+  const auto *PointerBody = dyn_cast_or_null<CompoundStmt>(PointerMethod->getBody());
+  const auto *PointerReturn = PointerBody && PointerBody->size() == 3
+      ? dyn_cast<ReturnStmt>(PointerBody->body_back()) : nullptr;
+  Value = PointerReturn ? PointerReturn->getRetValue() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Value))
+    Value = Cleanup->getSubExpr();
+  const auto *Bytes = dyn_cast_or_null<CXXOperatorCallExpr>(
+      Value ? Value->IgnoreParenImpCasts() : nullptr);
+  if (!Bytes || !StringHashSourceClosure(S, SM, Context).function(Bytes->getDirectCallee()))
+    return std::nullopt;
+  return Object;
+}
+
 std::optional<StringHashObjectInfo>
 approvedStringHashCall(const State &S, const SourceManager &SM,
                        const CallExpr *Call, const ASTContext &Context,
@@ -2662,6 +3139,10 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference,
     const CXXMethodDecl *SelectedMethod) {
+  if (Call && RequireOwnedReference)
+    if (auto UniqueHash = approvedUniqueHashCall(S, SM, Call, Context, true))
+      return FunctionalOperationInfo{FunctionalOperation::UniqueHash,
+          UniqueHash->Owner.PointerType, {}, Context.getSizeType(), Context.getSizeType()};
   if (Call && RequireOwnedReference)
     if (auto StringHash = approvedStringHashCall(S, SM, Call, Context, true))
       return FunctionalOperationInfo{FunctionalOperation::ByteHash,
@@ -3950,6 +4431,8 @@ static bool functionalWrapperSignatureOperation(const State &S,
 bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
                                       const ASTContext &Context) {
+  if (approvedUniqueHashCall(S, SM, Call, Context, false))
+    return true;
   if (approvedStringHashCall(S, SM, Call, Context, false))
     return true;
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);

@@ -17219,3 +17219,28 @@ private calls, standalone function addresses, custom deleters and converting
 owners remain excluded. Pure signature queries authenticate layout and the
 actual exception sources without selecting runtime bodies, pointee destruction,
 heap wrappers or array cookies. The main source frontend remains C23-only.
+
+## Default-deleter unique owner hashes
+
+Exact direct C++17 `std::hash<std::unique_ptr<T>>` and array-owner hash calls
+borrow the admitted owner with its pinned default deleter. The empty receiver
+and original argument evaluate once. Lowering binds the const owner's address,
+observes its pointer once and reuses the checked pointer value hash. It neither
+copies nor moves the owner. Null, const-pointee and moved owners preserve the
+SDK pointer-hash result within the same process. Temporary owner and source
+conversion arguments retain their original full-expression cleanup.
+
+The selected hash primary/partial/redeclaration families, written enabling
+aliases and actual constructibility/invocability trait graph are authenticated.
+Runtime proof additionally consumes the exact public return, the same const
+parameter's get body, pointer hash union/return and complete selected byte-hash
+closure, including loadword, memcpy, hasher declarations and ABI1 arithmetic.
+This private proof grants no independent SDK helper or function-address access.
+
+The public operator has no noexcept specifier: pure signature queries preserve
+that potentially throwing signature. They authenticate only layout, enabling
+sources and signatures, without selecting concrete hash/get bodies, pointee
+destruction, allocation or array cookies. Functions borrowing owners whose
+pointee constructor/destructor is deleted require no deletion helper. Custom
+deleters and unproved invoke/apply/reference-wrapper adapters remain excluded.
+The main source frontend remains C23-only.

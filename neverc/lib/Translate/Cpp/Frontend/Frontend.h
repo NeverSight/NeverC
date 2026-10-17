@@ -309,6 +309,7 @@ enum class FunctionalOperation {
   LogicalNot,
   Hash,
   ByteHash,
+  UniqueHash,
 };
 struct StringHashObjectInfo {
   const clang::CXXRecordDecl *Record, *Base;
@@ -626,6 +627,19 @@ approvedUtilityUniquePtrExchange(const State &S,
                                  const clang::CallExpr *Call,
                                  const clang::ASTContext &Context,
                                  bool Runtime);
+struct UniqueHashObjectInfo {
+  const clang::CXXRecordDecl *Record;
+  UtilityUniquePtrRecord Owner;
+  const clang::CXXRecordDecl *PointerHash;
+};
+std::optional<UniqueHashObjectInfo>
+approvedUniqueHashObject(const State &S, const clang::SourceManager &SM,
+                         const clang::CXXRecordDecl *Record,
+                         const clang::ASTContext &Context);
+std::optional<UniqueHashObjectInfo>
+approvedUniqueHashCall(const State &S, const clang::SourceManager &SM,
+                       const clang::CallExpr *Call,
+                       const clang::ASTContext &Context, bool Runtime);
 enum class UtilityUniquePtrConstruction {
   Default,
   Null,

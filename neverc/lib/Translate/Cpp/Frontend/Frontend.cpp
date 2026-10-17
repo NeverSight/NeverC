@@ -2905,6 +2905,8 @@ functionalReferenceDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
 
 static std::optional<FunctionalObjectRecord>
 functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
+  if (auto UniqueHash = approvedUniqueHashObject(A.S, A.Sources, Record, A.Context))
+    return FunctionalObjectRecord{UniqueHash->Record};
   if (auto StringHash = approvedStringHashObject(A.S, A.Sources, Record, A.Context))
     return FunctionalObjectRecord{StringHash->Record};
   const auto Object =
@@ -5434,6 +5436,9 @@ static bool stringHashDefaultViewQuerySource(
 
 static const FunctionProtoType *
 functionalObjectQueryTargetSource(Adapter &A, const CallExpr *Call) {
+  if (const auto Hash = approvedUniqueHashCall(A.S, A.Sources, Call, A.Context, false))
+    return utilityUniquePtrSource(A, Hash->Owner.Record, false)
+               ? operationCalleePrototype(Call) : nullptr;
   if (approvedStringHashCall(A.S, A.Sources, Call, A.Context, false))
     return operationCalleePrototype(Call);
   if (!approvedFunctionalSignatureQuery(A.S, A.Sources, Call, A.Context))
@@ -25740,9 +25745,17 @@ public:
       if (A.S.coreV2() &&
           approvedCstddefOperation(A.S, A.Sources, C, A.Context))
         return true;
-      if (A.S.coreV2() &&
-          approvedFunctionalOperation(A.S, A.Sources, C, A.Context))
-        return true;
+      if (A.S.coreV2())
+        if (const auto Operation = approvedFunctionalOperation(A.S, A.Sources, C, A.Context)) {
+          if (Operation->Operation == FunctionalOperation::UniqueHash) {
+            const auto Hash = approvedUniqueHashCall(A.S, A.Sources, C, A.Context, true);
+            if (!Hash || !utilityUniquePtrSource(A, Hash->Owner.Record, false))
+              A.reject(L, "unique pointer hash source",
+                       "The exact public borrowed hash and selected pointer algorithm sources are required.",
+                       "TR0203");
+          }
+          return true;
+        }
       if (A.S.coreV2() &&
           (unorderedGenericSwapCall(A.S, A.Sources, C, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, C, A.Context) ||

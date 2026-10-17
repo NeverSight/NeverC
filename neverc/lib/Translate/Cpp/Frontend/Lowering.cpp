@@ -4561,6 +4561,8 @@ class FunctionLowering {
     case FunctionalOperation::LogicalNot:
       return snapshot(
           UnaryExpression("!", cast(std::move(Left), "bool", L), "bool"), L);
+    case FunctionalOperation::UniqueHash:
+      reject(L, "unique pointer hash", "Owner hashing requires its exact direct public call.");
     case FunctionalOperation::ByteHash:
       reject(L, "string hash", "String hash requires its exact direct public call.");
     case FunctionalOperation::Hash:
@@ -5037,6 +5039,21 @@ class FunctionLowering {
     const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
     const bool Unary = Method->getNumParams() == 1;
     discardFunctionalObject(Call->getArg(0));
+    if (Info.Operation == FunctionalOperation::UniqueHash) {
+      const auto Hash = approvedUniqueHashCall(A.S, A.Sources, Call, A.Context, true);
+      if (!Hash)
+        reject(L, "unique pointer hash", "The exact borrowed owner hash source is unavailable.");
+      const auto *Argument = Call->getArg(1);
+      auto Address = snapshot(address(lvalue(Argument), Argument->getType(), L), L);
+      auto Pointer = snapshot(Expression{{"kind", "member"},
+          {"type", type(Hash->Owner.PointerType, L)},
+          {"name", "nct_unique_ptr_pointer"},
+          {"args", json::Array{dereference(std::move(Address), L)}},
+          {"loc", A.loc(L)}}, L);
+      auto PointerInfo = Info;
+      PointerInfo.Operation = FunctionalOperation::Hash;
+      return functionalOperationValues(L, std::move(Pointer), std::nullopt, PointerInfo);
+    }
     if (Info.Operation == FunctionalOperation::ByteHash) {
       const auto Object = approvedStringHashCall(
           A.S, A.Sources, Call, A.Context, true);
