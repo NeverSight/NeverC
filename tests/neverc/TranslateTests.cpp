@@ -46540,6 +46540,111 @@ int main(){std::array<int,2> a{{2,7}};std::optional<std::array<int,2>> o(a);std:
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairSelectedStringAndViewValuesRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-direct", R"cpp(#include <string>
+#include <utility>
+int main(){std::string a="short",b="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";std::pair<std::string,int> p(a,7),q(static_cast<std::string&&>(b),8);a[0]='X';if(p.first!="short"||p.second!=7||q.first.size()!=62||q.second!=8||!b.empty())return 1;return 0;}
+)cpp"},
+      {"pair-string-whole", R"cpp(#include <string>
+#include <utility>
+int main(){std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",b="otherabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";std::pair<std::string,std::string> p(a,b);std::pair<std::string,std::string> q(p);q.first[0]='X';q.second[0]='Y';if(p.first[0]!='a'||p.second[0]!='o')return 1;std::pair<std::string,std::string> z(static_cast<std::pair<std::string,std::string>&&>(q));if(z.first[0]!='X'||z.second[0]!='Y'||!q.first.empty()||!q.second.empty())return 2;return 0;}
+)cpp"},
+      {"pair-string-converting", R"cpp(#include <string>
+#include <utility>
+int main(){std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";std::pair<std::string,int> p(a,7);std::pair<std::string,long> q(p);q.first[0]='X';if(p.first[0]!='a'||q.second!=7)return 1;std::pair<std::string,long> z(static_cast<std::pair<std::string,int>&&>(p));return z.first.size()!=62||z.second!=7||!p.first.empty();}
+)cpp"},
+      {"pair-view-binding", R"cpp(#include <string_view>
+#include <utility>
+int main(){char data[6]={'h','e','l','l','o',0};std::string_view v(data,5);std::pair<std::string_view,int> p(v,7),q(p),z(static_cast<std::pair<std::string_view,int>&&>(q));std::pair<std::string_view,long> c(z);data[0]='H';return p.first.data()!=data||z.first.data()!=data||c.first.data()!=data||c.first[0]!='H'||c.second!=7;}
+)cpp"},
+      {"pair-string-return-ignore", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,std::string>;
+P make(){std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",b="secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";return P(static_cast<std::string&&>(a),static_cast<std::string&&>(b));}
+int main(){{P value=make();if(value.first.size()!=62||value.second.size()!=68)return 1;}make();return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-value-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-value-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-value-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedStringAndViewValuesRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"make-pair-string", R"cpp(#include <string>
+#include <utility>
+int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"make-pair-view", R"cpp(#include <string_view>
+#include <utility>
+int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);auto p=std::make_pair(s,7);return p.first.data()!=a||p.first.size()!=3||p.second!=7;}
+)cpp"},
+      {"default-string-pair", R"cpp(#include <string>
+#include <utility>
+int main(){std::pair<std::string,int> p{};return !p.first.empty()||p.second;}
+)cpp"},
+      {"const-string-destination", R"cpp(#include <string>
+#include <utility>
+int main(){std::string s="abc";std::pair<const std::string,int> p(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"const-view-destination", R"cpp(#include <string_view>
+#include <utility>
+int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);std::pair<const std::string_view,int> p(s,7);return p.first.data()!=a||p.second!=7;}
+)cpp"},
+      {"string-pair-constraint-source", R"cpp(#include <string>
+#include <utility>
+namespace std {template<> template<> constexpr bool pair<string,int>::_CheckArgs::__is_pair_constructible<string&,int>(){return true;}}
+int main(){std::string s="abc";std::pair<std::string,int> p(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"view-pair-constraint-source", R"cpp(#include <string_view>
+#include <utility>
+namespace std {template<> template<> constexpr bool pair<string_view,int>::_CheckArgs::__is_pair_constructible<string_view&,int>(){return true;}}
+int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);std::pair<std::string_view,int> p(s,7);return p.first.data()!=a||p.second!=7;}
+)cpp"},
+      {"pair-forward-use-identity-macro", R"cpp(#include <type_traits>
+#define forward forward
+#include <string_view>
+#include <utility>
+int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);std::pair<std::string_view,int> p(s,7);return p.first.data()!=a||p.second!=7;}
+)cpp"},
+      {"pair-converting-forward-use-identity-macro", R"cpp(#include <type_traits>
+#define forward forward
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+void probe(P&& p){std::pair<std::string_view,long> q(static_cast<P&&>(p));}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-value-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-value-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityCompositePairsRunAtBothOptimizations) {
   const auto Source = tmpFile("utility-composite-pair.cpp");
   const auto Output = tmpFile("utility-composite-pair.nc");

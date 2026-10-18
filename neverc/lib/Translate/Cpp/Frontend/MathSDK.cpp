@@ -5100,6 +5100,28 @@ static bool utilityPairSourceOwnedValue(const State &S, const SourceManager &SM,
          utilityArrayStorableValue(S, SM, Context, Type);
 }
 
+// Selected string/view values use their exact SDK operations. They never
+// become ordinary bitwise pair values or source-owned record constructors.
+static bool utilityPairSelectedStringValue(const State &S, const SourceManager &SM,
+                                           const ASTContext &Context, QualType Type) {
+  if (Type.isNull() || Type->isReferenceType() || Type.isConstQualified() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default) return false;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  return approvedUtilityStringRecord(S, SM, Record, Context).has_value() ||
+         approvedUtilityStringViewRecord(S, SM, Record, Context).has_value();
+}
+
+static bool utilityPairSelectedStringConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  if (!Construction || !utilityPairSelectedStringValue(S, SM, Context,
+                                                       Construction->getType())) return false;
+  const auto String = approvedUtilityStringConstruction(S, SM, Construction, Context);
+  return String == UtilityStringConstruction::Copy || String == UtilityStringConstruction::Move ||
+      approvedStringHashViewCopyArgument(S, SM, Construction, Context);
+}
+
 static bool utilitySelectedSourceConstructorArguments(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
@@ -5370,6 +5392,18 @@ static bool functionalReferenceForwardedParameter(const State &S,
                                                   const Expr *Expression,
                                                   const ParmVarDecl *Parameter);
 
+// Authenticate the actual forwarding identifier in the selected pair body.
+// The callee declaration alone does not expose a user identity macro here.
+static bool utilityPairForwardingUseSource(const State &S,
+                                           const SourceManager &SM,
+                                           const CallExpr *Call) {
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+  return Reference && !Reference->getLocation().isMacroID() &&
+         cstddefOrigin(S, SM, Reference->getLocation(), "libcxx",
+                        "__utility/pair.h");
+}
+
 static std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
                                   const CXXConstructExpr *Construction,
@@ -5381,7 +5415,8 @@ approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
   for (const auto *Field : Fields)
     if (!Field->getType()->isReferenceType() &&
         !utilityPairValue(S, SM, Context, Field->getType())) {
-      if (!utilityPairSourceOwnedValue(S, SM, Context, Field->getType()))
+      if (!utilityPairSourceOwnedValue(S, SM, Context, Field->getType()) &&
+          !utilityPairSelectedStringValue(S, SM, Context, Field->getType()))
         return std::nullopt;
       Owned = true;
     }
@@ -5441,13 +5476,17 @@ approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
         (!Selected->isTrivial() && !Selected->hasBody()) ||
         Selected->getParent()->getCanonicalDecl() !=
             Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
-        !S.owns(SM, Selected->getLocation()) ||
+        (utilityPairSelectedStringValue(S, SM, Context, Element)
+             ? !utilityPairSelectedStringConstruction(S, SM, Copy, Context)
+             : !S.owns(SM, Selected->getLocation())) ||
         !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
         !Context.hasSameUnqualifiedType(Source->getType(), Element) ||
         !Context.hasSameType(Parameter->getPointeeType(), Source->getType()) ||
         !(Direct && Direct->getDecl() == Constructor->getParamDecl(I)) &&
-            !approvedFunctionalForwardingCall(S, SM, Source,
-                                              Constructor->getParamDecl(I)))
+            (!approvedFunctionalForwardingCall(S, SM, Source,
+                                               Constructor->getParamDecl(I)) ||
+             !utilityPairForwardingUseSource(
+                 S, SM, dyn_cast<CallExpr>(Source->IgnoreParenImpCasts()))))
       return std::nullopt;
     const auto *Argument = Construction->getArg(I);
     if (!Context.hasSameUnqualifiedType(Argument->getType(), Element) ||
@@ -5520,7 +5559,8 @@ approvedUtilityPairSelectedWholeCopies(const State &S, const SourceManager &SM,
     const auto Element = Fields[I]->getType();
     if (Element->isReferenceType() || utilityPairValue(S, SM, Context, Element))
       continue;
-    if (!utilityPairSourceOwnedValue(S, SM, Context, Element))
+    if (!utilityPairSourceOwnedValue(S, SM, Context, Element) &&
+        !utilityPairSelectedStringValue(S, SM, Context, Element))
       return std::nullopt;
     const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
         functionalInvokeStrippedExpression(Initializers[I]->getInit()));
@@ -5553,7 +5593,9 @@ approvedUtilityPairSelectedWholeCopies(const State &S, const SourceManager &SM,
         (!Selected->isTrivial() && !Selected->hasBody()) ||
         Selected->getParent()->getCanonicalDecl() !=
             Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
-        !S.owns(SM, Selected->getLocation()) ||
+        (utilityPairSelectedStringValue(S, SM, Context, Element)
+             ? !utilityPairSelectedStringConstruction(S, SM, Copy, Context)
+             : !S.owns(SM, Selected->getLocation())) ||
         !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
         !Context.hasSameUnqualifiedType(Source->getType(), Element) ||
         !Context.hasSameType(SelectedType->getPointeeType(),
@@ -5625,7 +5667,8 @@ approvedUtilityPairSelectedConvertingCopies(
     const auto Element = DestinationFields[I]->getType();
     if (Element->isReferenceType() || utilityPairValue(S, SM, Context, Element))
       continue;
-    if (!utilityPairSourceOwnedValue(S, SM, Context, Element))
+    if (!utilityPairSourceOwnedValue(S, SM, Context, Element) &&
+        !utilityPairSelectedStringValue(S, SM, Context, Element))
       return std::nullopt;
     const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
         functionalInvokeStrippedExpression(Initializers[I]->getInit()));
@@ -5645,6 +5688,7 @@ approvedUtilityPairSelectedConvertingCopies(
       const auto *Reference =
           dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward));
       if (!Function || !Primary || !Reference || Forward->getNumArgs() != 1 ||
+          !utilityPairForwardingUseSource(S, SM, Forward) ||
           !Function->getIdentifier() || Function->getName() != "forward" ||
           !approvedStandardSDKDeclaration(S, SM, Function) ||
           !approvedStandardSDKDeclaration(S, SM, Primary) ||
@@ -5673,9 +5717,9 @@ approvedUtilityPairSelectedConvertingCopies(
         (!Selected->isTrivial() && !Selected->hasBody()) ||
         Selected->getParent()->getCanonicalDecl() !=
             Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
-        !S.owns(SM, Selected->getLocation()) ||
-        !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
-        !Context.hasSameUnqualifiedType(Argument->getType(), Element) ||
+        (utilityPairSelectedStringValue(S, SM, Context, Element)
+             ? !utilityPairSelectedStringConstruction(S, SM, Copy, Context)
+             : !S.owns(SM, Selected->getLocation())) ||
         !Context.hasSameUnqualifiedType(SourceValue, Element) ||
         !Context.hasSameType(SelectedType->getPointeeType(),
                              Argument->getType()) ||
@@ -17088,6 +17132,11 @@ approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
   if (!Call || Call->getNumArgs() != 2)
     return std::nullopt;
   const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+  // The SDK factory return needs its own exact constructor-source binding
+  // before it can use the direct selected String/View extension.
+  for (const auto *Field : Fields)
+    if (utilityPairSelectedStringValue(S, SM, Context, Field->getType()))
+      return std::nullopt;
   bool Owned = false;
   for (const auto *Field : Fields)
     Owned |= !Field->getType()->isReferenceType() &&
