@@ -5033,6 +5033,33 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression stringHashAtAddress(Expression Address, const CallExpr *Selected,
+                                 const FunctionalOperationInfo &Info,
+                                 SourceLocation L) {
+    const auto Hash = approvedStringHashSignatureQuery(
+        A.S, A.Sources, Selected, A.Context);
+    if (!Hash || Info.Operation != FunctionalOperation::ByteHash ||
+        !A.Context.hasSameUnqualifiedType(Info.LeftType, Hash->ValueType))
+      reject(L, "string hash adapter", "The selected carrier signature changed.");
+    Address = snapshot(std::move(Address), L);
+    if (Hash->View) {
+      const auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, Hash->ValueType->getAsCXXRecordDecl(), A.Context);
+      if (!View)
+        reject(L, "string view hash adapter", "The view layout is unavailable.");
+      auto Value = snapshot(dereference(std::move(Address), L), L);
+      auto Data = snapshot(fieldStorage(json::Object(Value), View->Data, L), L);
+      auto Length = snapshot(fieldStorage(std::move(Value), View->Size, L), L);
+      return callStringHash(std::move(Data), std::move(Length), L);
+    }
+    const auto String = approvedUtilityStringRecord(
+        A.S, A.Sources, Hash->ValueType->getAsCXXRecordDecl(), A.Context);
+    if (!String)
+      reject(L, "string hash adapter", "The string layout is unavailable.");
+    auto [Data, Length] = readStringAt(std::move(Address), *String, L);
+    return callStringHash(std::move(Data), std::move(Length), L);
+  }
+
   Expression uniqueHashAtAddress(Expression Address,
                                  const CallExpr *Selected,
                                  const FunctionalOperationInfo &Info,
@@ -5166,6 +5193,14 @@ class FunctionLowering {
     discardFunctionalObject(Call->getArg(0));
     auto Sources = captureUtilityInvocationArguments(
         Call, 1, Call->getNumArgs() - 1);
+    if (Info.Operation == FunctionalOperation::ByteHash) {
+      auto Address = utilityInvocationArgument(
+          std::move(Sources[0]),
+          Call->getDirectCallee()->getParamDecl(1)->getType(),
+          Approved.Method->getParamDecl(0)->getType(), nullptr, L);
+      return stringHashAtAddress(std::move(Address), Approved.StringHashCall,
+                                 Info, L);
+    }
     if (Info.Operation == FunctionalOperation::UniqueHash) {
       auto Address = utilityInvocationArgument(
           std::move(Sources[0]),
@@ -8303,6 +8338,14 @@ class FunctionLowering {
         if (Call->getNumArgs() != (Unary ? 2u : 3u))
           reject(L, "functional reference invoke",
                  "The checked function object arity must match its arguments.");
+        if (Info->Operation->Operation == FunctionalOperation::ByteHash) {
+          auto Address = utilityInvocationArgument(
+              std::move(Sources[0]),
+              Call->getDirectCallee()->getParamDecl(1 - OperatorOffset)->getType(),
+              Info->Method->getParamDecl(0)->getType(), nullptr, L);
+          return stringHashAtAddress(std::move(Address), Info->StringHashCall,
+                                     *Info->Operation, L);
+        }
         if (Info->Operation->Operation == FunctionalOperation::UniqueHash) {
           auto Address = utilityInvocationArgument(
               std::move(Sources[0]),
@@ -18917,6 +18960,18 @@ class FunctionLowering {
             reject(L, "utility tuple apply",
                    "The referenced function object arity differs from the tuple.");
           if (ReferenceCallable->Operation->Operation ==
+              FunctionalOperation::ByteHash) {
+            const auto Parameter =
+                ReferenceCallable->Method->getParamDecl(0)->getType();
+            auto Element = ApplyElement(json::Object(TupleValue), 0);
+            auto Address = Parameter->isReferenceType()
+                ? ApplyReferenceArgument(std::move(Element), 0, Parameter)
+                : ApplyRecordArgument(std::move(Element), 0, Parameter, nullptr);
+            return FinishInvocation(stringHashAtAddress(
+                std::move(Address), ReferenceCallable->StringHashCall,
+                *ReferenceCallable->Operation, L));
+          }
+          if (ReferenceCallable->Operation->Operation ==
               FunctionalOperation::UniqueHash) {
             auto Address = ApplyReferenceArgument(
                 ApplyElement(json::Object(TupleValue), 0), 0,
@@ -19038,6 +19093,17 @@ class FunctionLowering {
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
+        if (ObjectOperation->Operation.Operation ==
+            FunctionalOperation::ByteHash) {
+          const auto Parameter = ObjectOperation->Method->getParamDecl(0)->getType();
+          auto Element = ApplyElement(json::Object(TupleValue), 0);
+          auto Address = Parameter->isReferenceType()
+              ? ApplyReferenceArgument(std::move(Element), 0, Parameter)
+              : ApplyRecordArgument(std::move(Element), 0, Parameter, nullptr);
+          return FinishInvocation(stringHashAtAddress(
+              std::move(Address), ObjectOperation->StringHashCall,
+              ObjectOperation->Operation, L));
+        }
         if (ObjectOperation->Operation.Operation ==
             FunctionalOperation::UniqueHash) {
           auto Address = ApplyReferenceArgument(
@@ -31439,6 +31505,58 @@ class FunctionLowering {
                                 {"loc", A.loc(L)}});
   }
 
+  void moveStringAt(Expression Place, QualType T,
+                    const UtilityStringRecord &String, Expression SourceAddress,
+                    SourceLocation L) {
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    auto WordType = [&](const char *Name) {
+      const bool PointerWord = String.AlternateLayout
+          ? llvm::StringRef(Name) == "nct_string_word0"
+          : llvm::StringRef(Name) == "nct_string_word2";
+      return PointerWord ? String.PointerType : A.Context.getSizeType();
+    };
+    auto SourceWord = [&](const char *Name) {
+      return Expression{{"kind", "member"}, {"type", type(WordType(Name), L)},
+          {"name", Name}, {"args", json::Array{dereference(json::Object(SourceAddress), L)}},
+          {"loc", A.loc(L)}};
+    };
+    const auto BytePointerType = std::string("ptr:u8");
+    auto SourceBytes = temporary(BytePointerType, L);
+    auto TargetBytes = temporary(BytePointerType, L);
+    auto Count = temporary(SizeType, L);
+    assign(SourceBytes,
+           cast(cast(json::Object(SourceAddress), "ptr:void", L),
+                BytePointerType, L), L);
+    assign(TargetBytes,
+           cast(cast(address(json::Object(Place), T, L), "ptr:void", L),
+                BytePointerType, L), L);
+    assign(Count, quantity(0, SizeType, L), L);
+    const auto Check = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", json::Object(Count),
+                  quantity(A.Context.getTypeSizeInChars(T).getQuantity(),
+                           SizeType, L), "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(dereference(json::Object(TargetBytes), L),
+           dereference(json::Object(SourceBytes), L), L);
+    assign(SourceBytes,
+           binary("+", json::Object(SourceBytes),
+                  quantity(1, DifferenceType, L), BytePointerType, L), L);
+    assign(TargetBytes,
+           binary("+", json::Object(TargetBytes),
+                  quantity(1, DifferenceType, L), BytePointerType, L), L);
+    assign(Count,
+           binary("+", json::Object(Count), quantity(1, SizeType, L),
+                  SizeType, L), L);
+    jump(Check, L);
+    label(Done, L);
+    for (const char *Name : {"nct_string_word0", "nct_string_word1",
+                             "nct_string_word2"})
+      initializeZero(SourceWord(Name), WordType(Name), L);
+  }
+
   void constructSelectedMemorySource(Expression Place, QualType T,
                                      const CXXConstructExpr *Construction,
                                      Expression SourcePointer,
@@ -31465,6 +31583,25 @@ class FunctionLowering {
           {"name", "nct_unique_ptr_pointer"},
           {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
       assign(std::move(DestinationMember), std::move(Pointer), L);
+      return;
+    }
+    const auto StringKind = approvedUtilityStringConstruction(
+        A.S, A.Sources, Construction, A.Context);
+    if (StringKind == UtilityStringConstruction::Copy ||
+        StringKind == UtilityStringConstruction::Move) {
+      const auto String = approvedUtilityStringRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!String || !A.Context.hasSameUnqualifiedType(Construction->getType(), T) ||
+          Place.getString("type") != type(T, L))
+        reject(L, "tuple string construction", "The selected string layout changed.");
+      auto Source = snapshot(std::move(SourcePointer), L);
+      if (StringKind == UtilityStringConstruction::Move)
+        moveStringAt(std::move(Place), T, *String, std::move(Source), L);
+      else {
+        auto [Data, Length] = readStringAt(std::move(Source), *String, L);
+        constructStringBytes(std::move(Place), T, &*String, std::move(Data),
+                              std::move(Length), std::nullopt, L);
+      }
       return;
     }
     // The selected declaration or member initializer is a full-expression in
@@ -32817,40 +32954,7 @@ class FunctionLowering {
                             {"loc", A.loc(L)}};
         };
         if (*Kind == UtilityStringConstruction::Move) {
-          const auto BytePointerType = std::string("ptr:u8");
-          auto SourceBytes = temporary(BytePointerType, L);
-          auto TargetBytes = temporary(BytePointerType, L);
-          auto Count = temporary(SizeType, L);
-          assign(SourceBytes,
-                 cast(cast(json::Object(SourceAddress), "ptr:void", L),
-                      BytePointerType, L), L);
-          assign(TargetBytes,
-                 cast(cast(address(json::Object(Place), T, L), "ptr:void", L),
-                      BytePointerType, L), L);
-          assign(Count, quantity(0, SizeType, L), L);
-          const auto Check = labelName(), Advance = labelName(), Done = labelName();
-          jump(Check, L);
-          label(Check, L);
-          branch(binary("<", json::Object(Count),
-                        quantity(A.Context.getTypeSizeInChars(T).getQuantity(),
-                                 SizeType, L), "bool", L), Advance, Done, L);
-          label(Advance, L);
-          assign(dereference(json::Object(TargetBytes), L),
-                 dereference(json::Object(SourceBytes), L), L);
-          assign(SourceBytes,
-                 binary("+", json::Object(SourceBytes),
-                        quantity(1, DifferenceType, L), BytePointerType, L), L);
-          assign(TargetBytes,
-                 binary("+", json::Object(TargetBytes),
-                        quantity(1, DifferenceType, L), BytePointerType, L), L);
-          assign(Count,
-                 binary("+", json::Object(Count), quantity(1, SizeType, L),
-                        SizeType, L), L);
-          jump(Check, L);
-          label(Done, L);
-          for (const char *Name : {"nct_string_word0", "nct_string_word1",
-                                   "nct_string_word2"})
-            initializeZero(SourceWord(Name), WordType(Name), L);
+          moveStringAt(std::move(Place), T, *String, std::move(SourceAddress), L);
           return;
         }
         auto Flag = snapshot(SourceWord(String->AlternateLayout

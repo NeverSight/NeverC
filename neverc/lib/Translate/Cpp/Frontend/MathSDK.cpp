@@ -3360,10 +3360,10 @@ approvedUniqueHashSignatureQuery(const State &S, const SourceManager &SM,
   return uniqueHashCallImpl(S, SM, Selected, Context, false, false);
 }
 
-std::optional<StringHashObjectInfo>
-approvedStringHashCall(const State &S, const SourceManager &SM,
+static std::optional<StringHashObjectInfo>
+stringHashCallImpl(const State &S, const SourceManager &SM,
                        const CallExpr *Call, const ASTContext &Context,
-                       bool Runtime) {
+                       bool Runtime, bool RequireOwnedReference) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
       Call ? Call->getDirectCallee() : nullptr);
@@ -3379,7 +3379,7 @@ approvedStringHashCall(const State &S, const SourceManager &SM,
       Context.getTypeSize(Context.UnsignedIntTy) != 32 ||
       (Context.getTypeSize(Context.getSizeType()) != 32 &&
        Context.getTypeSize(Context.getSizeType()) != 64) ||
-      !S.owns(SM, Reference->getExprLoc()) ||
+      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())) ||
       Operator->getOperator() != OO_Call ||
       Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
       !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
@@ -3418,6 +3418,98 @@ approvedStringHashCall(const State &S, const SourceManager &SM,
   return Object;
 }
 
+std::optional<StringHashObjectInfo>
+approvedStringHashCall(const State &S, const SourceManager &SM,
+                       const CallExpr *Call, const ASTContext &Context,
+                       bool Runtime) {
+  return stringHashCallImpl(S, SM, Call, Context, Runtime, true);
+}
+
+std::optional<StringHashObjectInfo>
+approvedStringHashSignatureQuery(const State &S, const SourceManager &SM,
+                                 const CallExpr *Selected,
+                                 const ASTContext &Context) {
+  return stringHashCallImpl(S, SM, Selected, Context, false, false);
+}
+
+// Signature-only proof of the exact pinned view copy. This helper grants no
+// visitor/runtime permission and does not instantiate a constructor body.
+const Expr *approvedStringHashViewCopyArgument(
+    const State &S, const SourceManager &SM, const Expr *Argument,
+    const ASTContext &Context) {
+  std::vector<const CXXBindTemporaryExpr *> Bindings;
+  for (unsigned Depth = 0; Argument && Depth != 32; ++Depth) {
+    if (const auto *Paren = dyn_cast<ParenExpr>(Argument))
+      Argument = Paren->getSubExpr();
+    else if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument))
+      Argument = Temporary->getSubExpr();
+    else if (const auto *Bound = dyn_cast<CXXBindTemporaryExpr>(Argument)) {
+      Bindings.push_back(Bound);
+      Argument = Bound->getSubExpr();
+    }
+    else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+             Cast && Cast->getCastKind() == CK_NoOp)
+      Argument = Cast->getSubExpr();
+    else
+      break;
+  }
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(Argument);
+  const auto *Constructor = Copy ? Copy->getConstructor() : nullptr;
+  const auto *Pattern = Constructor
+      ? Constructor->getInstantiatedFromMemberFunction() : nullptr;
+  const auto *Prototype = Constructor
+      ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto View = approvedUtilityStringViewRecord(
+      S, SM, Constructor ? Constructor->getParent() : nullptr, Context);
+  if (!Copy || !Constructor || !Pattern || !Prototype || !View ||
+      Copy->getConstructionKind() != CXXConstructionKind::Complete ||
+      Copy->getNumArgs() != 1 || Copy->requiresZeroInitialization() ||
+      !Constructor->isCopyConstructor() || !Constructor->isDefaulted() ||
+      !Constructor->isTrivial() || Constructor->isDeleted() ||
+      Constructor->getPrimaryTemplate() || Constructor->isVariadic() ||
+      Constructor->getNumParams() != 1 ||
+      !Context.hasSameUnqualifiedType(Copy->getType(),
+                                      Context.getRecordType(View->Record)) ||
+      !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(View->Record).withConst())) ||
+      !Context.hasSameUnqualifiedType(Copy->getArg(0)->getType(), Copy->getType()) ||
+      Copy->getArg(0)->getType().isVolatileQualified() ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr())
+    return nullptr;
+  const FunctionDecl *Family[] = {Constructor, Pattern};
+  for (const auto *F : Family)
+    for (const auto *D : F->redecls())
+      if (!stringHashOrigin(S, SM, D, "string_view"))
+        return nullptr;
+  // Clang retains a bind in decltype even for this trivial view copy. It is
+  // part of the original exception graph; consume only its exact SDK lifetime
+  // metadata, without reading or completing a destructor body.
+  for (const auto *Bound : Bindings) {
+    const auto *Temporary = Bound->getTemporary();
+    const auto *Destructor = Temporary ? Temporary->getDestructor() : nullptr;
+    const auto *ViewDestructor = View->Record->getDestructor();
+    if (!Context.hasSameType(Bound->getType(), Copy->getType()) ||
+        !Destructor || !ViewDestructor || !Destructor->isImplicit() ||
+        !Destructor->isDefaulted() || !Destructor->isTrivial() ||
+        Destructor->isDeleted() || Destructor->isInvalidDecl() ||
+        Destructor->getNumParams() != 0 ||
+        !Context.hasSameType(Destructor->getReturnType(), Context.VoidTy) ||
+        Destructor->getCanonicalDecl() != ViewDestructor->getCanonicalDecl() ||
+        Destructor->getParent()->getCanonicalDecl() !=
+            View->Record->getCanonicalDecl())
+      return nullptr;
+    const FunctionDecl *Destructors[] = {
+        Destructor, Destructor->getInstantiatedFromMemberFunction()};
+    for (const auto *F : Destructors)
+      if (F)
+        for (const auto *D : F->redecls())
+          if (!stringHashOrigin(S, SM, D, "string_view"))
+            return nullptr;
+  }
+  return Copy->getArg(0);
+}
+
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference,
@@ -3427,8 +3519,9 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
             S, SM, Call, Context, true, RequireOwnedReference))
       return FunctionalOperationInfo{FunctionalOperation::UniqueHash,
           UniqueHash->Owner.PointerType, {}, Context.getSizeType(), Context.getSizeType()};
-  if (Call && RequireOwnedReference)
-    if (auto StringHash = approvedStringHashCall(S, SM, Call, Context, true))
+  if (Call)
+    if (auto StringHash = stringHashCallImpl(
+            S, SM, Call, Context, true, RequireOwnedReference))
       return FunctionalOperationInfo{FunctionalOperation::ByteHash,
           StringHash->ValueType, {}, Context.getSizeType(), Context.getSizeType()};
   if (Call) {
@@ -6015,9 +6108,11 @@ static bool utilityTupleValue(const State &S, const SourceManager &SM,
   const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
   if (approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return true;
-  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false,
-                                        false)
-      .has_value();
+  const auto Tuple = approvedUtilityTupleRecordImpl(
+      S, SM, Record, Context, Depth, false, false);
+  // A carrier tuple requires selected element operations; nesting cannot
+  // convert it back into a generic bitwise value.
+  return Tuple && !Tuple->SelectedStringCarrierValues;
 }
 
 static bool utilityTupleAssignableValue(const State &S, const SourceManager &SM,
@@ -6088,6 +6183,10 @@ static bool utilityTupleReferenceValue(const State &S, const SourceManager &SM,
     return false;
   return supportedFunctionalReferenceValue(S, SM, Context, Type) ||
          approvedUtilityUniquePtrLayout(
+             S, SM, Type->getAsCXXRecordDecl(), Context).has_value() ||
+         approvedUtilityStringRecord(
+             S, SM, Type->getAsCXXRecordDecl(), Context).has_value() ||
+         approvedUtilityStringViewRecord(
              S, SM, Type->getAsCXXRecordDecl(), Context).has_value();
 }
 
@@ -6121,6 +6220,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
     return std::nullopt;
   unsigned ReferenceElements = 0;
   bool OwnedElement = false;
+  bool SelectedStringCarrierValues = false;
   for (QualType Type : *Types) {
     if (Type->isReferenceType()) {
       ++ReferenceElements;
@@ -6138,7 +6238,11 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
         Element = Element ? Element->getDefinition() : nullptr;
         const bool UniqueOwner = !Type.isConstQualified() &&
             approvedUtilityUniquePtrLayout(S, SM, Element, Context).has_value();
-        if (!UniqueOwner &&
+        const bool StringCarrier = !Type.isConstQualified() &&
+            (approvedUtilityStringRecord(S, SM, Element, Context).has_value() ||
+             approvedUtilityStringViewRecord(S, SM, Element, Context).has_value());
+        SelectedStringCarrierValues |= StringCarrier;
+        if (!UniqueOwner && !StringCarrier &&
             (!Element || Type.isConstQualified() ||
              !S.owns(SM, Element->getLocation()) ||
              !utilityArrayStorableValue(S, SM, Context, Type)))
@@ -6349,10 +6453,11 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
   const uint64_t Padding = NativeSize > Rounded ? (NativeSize - End) / 8 : 0;
   if (!End && NativeSize > 8)
     return UtilityTupleRecord{Specialization, std::move(Elements),
-                              NativeSize / 8};
+                              NativeSize / 8, SelectedStringCarrierValues};
   if ((End ? Rounded : 8) != NativeSize && !Padding)
     return std::nullopt;
-  return UtilityTupleRecord{Specialization, std::move(Elements), Padding};
+  return UtilityTupleRecord{Specialization, std::move(Elements), Padding,
+                            SelectedStringCarrierValues};
 }
 
 std::optional<UtilityTupleRecord>
@@ -6375,6 +6480,159 @@ std::optional<UtilityTupleRecord> approvedUtilityMixedReferenceTupleRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
   return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, false, true);
+}
+
+// SDK carrier elements retain selected construction, never generic bitcopy.
+// The captured caller operand is valid only if every actual SDK constructor
+// forwards that exact slot. Same type and value category alone are insufficient.
+static const Expr *utilityTupleCarrierQualification(const Expr *E,
+                                                    const ASTContext &Context) {
+  for (unsigned Depth = 0; E && Depth != 16; ++Depth) {
+    if (const auto *Paren = dyn_cast<ParenExpr>(E))
+      E = Paren->getSubExpr();
+    else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
+             Cast && Cast->getCastKind() == CK_NoOp &&
+             Context.hasSameUnqualifiedType(Cast->getType(), Cast->getSubExpr()->getType()) &&
+             Cast->getType().isAtLeastAsQualifiedAs(Cast->getSubExpr()->getType(), Context))
+      E = Cast->getSubExpr();
+    else
+      return E;
+  }
+  return nullptr;
+}
+
+static bool utilityTupleCarrierParameter(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const Expr *E, const ParmVarDecl *Parameter, bool AllowDirect = false) {
+  E = utilityTupleCarrierQualification(E, Context);
+  if (!E || !Parameter || !Parameter->getType()->isReferenceType())
+    return false;
+  const auto ParameterType = Parameter->getType();
+  auto ExactParameter = [&](const Expr *Argument, const ParmVarDecl *P) {
+    Argument = utilityTupleCarrierQualification(Argument, Context);
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Argument);
+    return Reference && Reference->isLValue() && Reference->getDecl() == P &&
+           Context.hasSameType(Reference->getType(), P->getType().getNonReferenceType());
+  };
+  if (AllowDirect && ExactParameter(E, Parameter))
+    return true;
+  const auto *Forward = dyn_cast<CallExpr>(E);
+  const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+  const auto *Reference = Forward
+      ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward)) : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Forward || !Function || !Reference || Reference->getDecl() != Function ||
+      !Primary || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Function->getIdentifier() || Function->getName() != "forward" ||
+      Function->isInvalidDecl() || Function->isDeleted() || Function->isVariadic() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Forward->getNumArgs() != 1 || Function->getNumParams() != 1 ||
+      !ExactParameter(Forward->getArg(0), Parameter) || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+      !Context.hasSameType(Function->getReturnType(), ParameterType) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(ParameterType.getNonReferenceType())) ||
+      !Context.hasSameType(Arguments->get(0).getAsType(),
+          ParameterType->isLValueReferenceType() ? ParameterType : ParameterType->getPointeeType()) ||
+      !Context.hasSameType(Forward->getType(), ParameterType.getNonReferenceType()) ||
+      Forward->getValueKind() != Expr::getValueKindForType(ParameterType))
+    return false;
+  const FunctionDecl *Family[] = {Function, Primary->getTemplatedDecl()};
+  for (const auto *F : Family)
+    for (const auto *D : F->redecls())
+      if (!stringHashOrigin(S, SM, D, "__utility/forward.h"))
+        return false;
+  for (const auto *D : Primary->redecls())
+    if (!stringHashOrigin(S, SM, D, "__utility/forward.h"))
+      return false;
+  // Clang executes this exact pinned library cast as an implicit builtin and
+  // can leave its concrete SDK body uninstantiated. All source families, actual
+  // parameter identity, template argument, result and category were checked.
+  const auto *Builtin = Function->getAttr<BuiltinAttr>();
+  const auto *FunctionPointer =
+      Forward->getCallee()->getType()->getAs<PointerType>();
+  if (Builtin && Builtin->isImplicit() &&
+      Builtin->getID() == Builtin::BIforward &&
+      Function->getBuiltinID() == Builtin::BIforward && FunctionPointer &&
+      FunctionPointer->getPointeeType()->getAs<FunctionProtoType>() == Prototype)
+    return true;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1
+      ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Cast = Return ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens()) : nullptr;
+  return Cast && Cast->getCastKind() == CK_NoOp &&
+         Context.hasSameType(Cast->getTypeAsWritten(), ParameterType) &&
+         ExactParameter(Cast->getSubExpr(), Function->getParamDecl(0));
+}
+
+static bool utilityTupleStringCarrierFlow(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const CXXConstructorDecl *Tuple, const CXXConstructExpr *ImplCall,
+    const CXXConstructorDecl *Impl, const CXXConstructExpr *LeafCall,
+    const CXXConstructorDecl *Leaf, const CXXConstructExpr *Copy,
+    unsigned Index, unsigned Count) {
+  if (!Tuple || !ImplCall || !Impl || !LeafCall || !Leaf || !Copy ||
+      Tuple->getNumParams() != Count || Index >= Count ||
+      ImplCall->getNumArgs() != Count + 4 || Impl->getNumParams() != Count + 4 ||
+      LeafCall->getNumArgs() != 1 || Leaf->getNumParams() != 1 || Copy->getNumArgs() != 1 ||
+      Tuple->getNumCtorInitializers() != 1 || Impl->getNumCtorInitializers() != Count ||
+      Leaf->getNumCtorInitializers() != 1 ||
+      ImplCall->getConstructor()->getCanonicalDecl() != Impl->getCanonicalDecl() ||
+      LeafCall->getConstructor()->getCanonicalDecl() != Leaf->getCanonicalDecl() ||
+      ImplCall->getConstructionKind() != CXXConstructionKind::Complete ||
+      LeafCall->getConstructionKind() != CXXConstructionKind::NonVirtualBase)
+    return false;
+  const auto *TupleBody = dyn_cast_or_null<CompoundStmt>(Tuple->getBody());
+  const auto *ImplBody = dyn_cast_or_null<CompoundStmt>(Impl->getBody());
+  const auto *LeafBody = dyn_cast_or_null<CompoundStmt>(Leaf->getBody());
+  const auto *AssertionStatement = LeafBody && LeafBody->size() == 1
+      ? dyn_cast<DeclStmt>(LeafBody->body_front()) : nullptr;
+  const auto *Assertion = AssertionStatement && AssertionStatement->isSingleDecl()
+      ? dyn_cast<StaticAssertDecl>(AssertionStatement->getSingleDecl()) : nullptr;
+  if (!TupleBody || !TupleBody->body_empty() || !ImplBody || !ImplBody->body_empty() ||
+      !Assertion || !stringHashOrigin(S, SM, Assertion, "tuple"))
+    return false;
+  const CXXConstructorDecl *Family[] = {Tuple, Impl, Leaf};
+  for (const auto *Constructor : Family) {
+    const auto *Pattern = Constructor->getTemplateInstantiationPattern();
+    const FunctionDecl *Sources[] = {Constructor, Pattern};
+    for (const auto *F : Sources) {
+      if (!F)
+        return false;
+      for (const auto *D : F->redecls())
+        if (!stringHashOrigin(S, SM, D, "tuple"))
+          return false;
+    }
+  }
+  for (unsigned I = 0; I < 4; ++I) {
+    const auto *Tag = dyn_cast_or_null<CXXConstructExpr>(
+        utilityTupleCarrierQualification(ImplCall->getArg(I), Context));
+    const auto *Record = Tag ? Tag->getType()->getAsCXXRecordDecl() : nullptr;
+    if (!Tag || !Record || Tag->getNumArgs() ||
+        Tag->getConstructionKind() != CXXConstructionKind::Complete ||
+        !Tag->getConstructor()->isDefaultConstructor() || !Tag->getConstructor()->isTrivial() ||
+        !Record->isEmpty() || !Record->hasTrivialDestructor() ||
+        !Context.hasSameType(Tag->getType(), Impl->getParamDecl(I)->getType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Record) ||
+        !approvedStandardSDKDeclaration(S, SM, Tag->getConstructor()))
+      return false;
+  }
+  return utilityTupleCarrierParameter(S, SM, Context, Copy->getArg(0), Leaf->getParamDecl(0)) &&
+         utilityTupleCarrierParameter(S, SM, Context, LeafCall->getArg(0), Impl->getParamDecl(Index + 4)) &&
+         utilityTupleCarrierParameter(S, SM, Context, ImplCall->getArg(Index + 4),
+                                       Tuple->getParamDecl(Index), true);
+}
+
+static bool utilityTupleStringCarrierCopy(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  const auto String = approvedUtilityStringConstruction(S, SM, Construction, Context);
+  return String == UtilityStringConstruction::Copy ||
+         String == UtilityStringConstruction::Move ||
+         approvedStringHashViewCopyArgument(S, SM, Construction, Context);
 }
 
 static std::optional<std::vector<const CXXConstructExpr *>>
@@ -6657,8 +6915,9 @@ approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
       const bool OwnerMove = Copy &&
           approvedUtilityUniquePtrConstruction(S, SM, Copy, Context) ==
               UtilityUniquePtrConstruction::Move;
+      const bool StringCarrierCopy = utilityTupleStringCarrierCopy(S, SM, Copy, Context);
       if (!Copy || !Selected ||
-          (!OwnerMove &&
+          (!OwnerMove && !StringCarrierCopy &&
            (!utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
             !supportedConstructor(Selected) ||
             !S.owns(SM, Selected->getLocation()))) ||
@@ -13077,6 +13336,7 @@ approvedUtilityTupleSelectedCopies(
         utilityTupleValue(S, SM, Context, Element))
       continue;
     const CXXConstructorDecl *LeafConstructor = nullptr;
+    const CXXConstructExpr *CarrierLeafConstruction = nullptr;
     for (const auto *Initializer : ImplConstructor->inits()) {
       if (!Initializer->isBaseInitializer() ||
           Initializer->getBaseClass()
@@ -13088,6 +13348,7 @@ approvedUtilityTupleSelectedCopies(
           functionalInvokeStrippedExpression(Initializer->getInit()));
       if (!LeafConstruction || LeafConstructor)
         return std::nullopt;
+      CarrierLeafConstruction = LeafConstruction;
       LeafConstructor = dyn_cast_or_null<CXXConstructorDecl>(
           LeafConstruction->getConstructor()->getDefinition());
     }
@@ -13112,8 +13373,13 @@ approvedUtilityTupleSelectedCopies(
     const bool OwnerMove = Copy &&
         approvedUtilityUniquePtrConstruction(S, SM, Copy, Context) ==
             UtilityUniquePtrConstruction::Move;
+    const bool StringCarrierCopy = utilityTupleStringCarrierCopy(S, SM, Copy, Context);
+    if (StringCarrierCopy && !utilityTupleStringCarrierFlow(
+            S, SM, Context, TupleConstructor, ImplConstruction, ImplConstructor,
+            CarrierLeafConstruction, LeafConstructor, Copy, I, Tuple.Elements.size()))
+      return std::nullopt;
     if (!Constructor || !Argument || Parameter.isNull() ||
-        (!OwnerMove &&
+        (!OwnerMove && !StringCarrierCopy &&
          (!utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
           !supportedConstructor(Constructor) ||
           !S.owns(SM, Constructor->getLocation()))) ||
@@ -14903,6 +15169,48 @@ static std::optional<UniqueHashObjectInfo> uniqueHashForwardedCall(
   return Hash;
 }
 
+// This permits only an exact carrier reference through the authenticated
+// dispatch. General record conversions and reference-wrapper arguments remain
+// separate contracts.
+static bool stringHashCarrierForwarding(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const StringHashObjectInfo &Hash, QualType Source,
+    const Expr *SelectedArgument, const ParmVarDecl *ForwardedParameter) {
+  if (Source.isNull() || !ForwardedParameter ||
+      !ForwardedParameter->getType()->isReferenceType())
+    return false;
+  Source = Source.getNonReferenceType();
+  const auto Forwarded = ForwardedParameter->getType().getNonReferenceType();
+  if (!Context.hasSameUnqualifiedType(Source, Hash.ValueType) ||
+      !Context.hasSameUnqualifiedType(Forwarded, Hash.ValueType) ||
+      Source.isVolatileQualified() || Source.isRestrictQualified() ||
+      Source.getAddressSpace() != LangAS::Default ||
+      Forwarded.isVolatileQualified() || Forwarded.isRestrictQualified() ||
+      Forwarded.getAddressSpace() != LangAS::Default)
+    return false;
+  return functionalInvokeParameterReference(SelectedArgument,
+                                             ForwardedParameter) ||
+         approvedFunctionalForwardingCall(S, SM, SelectedArgument,
+                                          ForwardedParameter);
+}
+
+static std::optional<StringHashObjectInfo> stringHashForwardedCall(
+    const State &S, const SourceManager &SM, const CallExpr *Selected,
+    const ASTContext &Context, QualType Source,
+    const ParmVarDecl *ForwardedParameter) {
+  const auto Hash = stringHashCallImpl(S, SM, Selected, Context, true, false);
+  if (!Hash)
+    return std::nullopt;
+  const Expr *Argument = Selected->getArg(1);
+  if (Hash->View)
+    Argument = approvedStringHashViewCopyArgument(S, SM, Argument, Context);
+  if (!Argument || !stringHashCarrierForwarding(
+                       S, SM, Context, *Hash, Source, Argument,
+                       ForwardedParameter))
+    return std::nullopt;
+  return Hash;
+}
+
 static bool functionalObjectArgumentConversion(
     const ASTContext &Context, const FunctionalOperationInfo &Operation,
     QualType From, QualType To) {
@@ -15080,6 +15388,14 @@ std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperatio
       OperationCall->getNumArgs() != Call->getNumArgs() ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
+  if (Operation->Operation == FunctionalOperation::ByteHash) {
+    if (Call->getNumArgs() != 2 || DispatchFunction->getNumParams() != 2 ||
+        !stringHashForwardedCall(S, SM, OperationCall, Context,
+                                 Call->getArg(1)->getType(),
+                                 DispatchFunction->getParamDecl(1)))
+      return std::nullopt;
+    return FunctionalInvokeObjectCall{*Operation, Method, nullptr, OperationCall};
+  }
   if (Operation->Operation == FunctionalOperation::UniqueHash) {
     if (Call->getNumArgs() != 2 || DispatchFunction->getNumParams() != 2 ||
         !uniqueHashForwardedCall(S, SM, OperationCall, Context,
@@ -15703,13 +16019,20 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
         Executed->getValueKind() != Selected->getValueKind() ||
         Selected->getValueKind() != Call->getValueKind())
       return std::nullopt;
-    for (unsigned I = 0; I < Selected->getNumArgs(); ++I)
-      if (!Context.hasSameType(Selected->getArg(I)->getType(),
+    const auto ViewHash = stringHashCallImpl(
+        S, SM, Executed, Context, false, false);
+    for (unsigned I = 0; I < Selected->getNumArgs(); ++I) {
+      const Expr *Argument = Executed->getArg(I);
+      if (I == 1 && ViewHash && ViewHash->View)
+        Argument = approvedStringHashViewCopyArgument(S, SM, Argument, Context);
+      if (!Argument ||
+          !Context.hasSameType(Selected->getArg(I)->getType(),
                                Executed->getArg(I)->getType()) ||
           Selected->getArg(I)->getValueKind() != Executed->getArg(I)->getValueKind() ||
           !functionalInvokeParameterReference(
-              Executed->getArg(I), DispatchFunction->getParamDecl(I)))
+              Argument, DispatchFunction->getParamDecl(I)))
         return std::nullopt;
+    }
     return UtilityTupleApplyDispatch{*Tuple, Function, Dispatch,
                                     DispatchFunction, Executed, Selected};
   }
@@ -15919,6 +16242,14 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
                            Apply->Function->getReturnType()) ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
+  if (Operation->Operation == FunctionalOperation::ByteHash) {
+    if (Arity != 1 || Apply->DispatchFunction->getNumParams() != 2 ||
+        !stringHashForwardedCall(S, SM, OperationCall, Context,
+                                 Apply->Tuple.elementType(0),
+                                 Apply->DispatchFunction->getParamDecl(1)))
+      return std::nullopt;
+    return UtilityTupleApplyObjectOperation{*Operation, Method, nullptr, OperationCall};
+  }
   if (Operation->Operation == FunctionalOperation::UniqueHash) {
     if (Arity != 1 || Apply->DispatchFunction->getNumParams() != 2 ||
         !uniqueHashForwardedCall(S, SM, OperationCall, Context,
@@ -16177,6 +16508,16 @@ approvedFunctionalReferenceDirectInvoke(
         OperationCall->getNumArgs() != Call->getNumArgs() ||
         !Context.hasSameType(Operation->ResultType, Call->getType()))
       return std::nullopt;
+    if (Operation->Operation == FunctionalOperation::ByteHash) {
+      if (Call->getNumArgs() != 2 || DispatchFunction->getNumParams() != 2 ||
+          !stringHashForwardedCall(S, SM, OperationCall, Context,
+                                   Call->getArg(1)->getType(),
+                                   DispatchFunction->getParamDecl(1)))
+        return std::nullopt;
+      return FunctionalReferenceInvokeCall{
+          *Wrapper, FunctionalReferenceInvokeKind::FunctionObject, {},
+          std::move(Operation), OperationMethod, {}, nullptr, OperationCall};
+    }
     if (Operation->Operation == FunctionalOperation::UniqueHash) {
       if (Call->getNumArgs() != 2 || DispatchFunction->getNumParams() != 2 ||
           !uniqueHashForwardedCall(S, SM, OperationCall, Context,
@@ -16376,6 +16717,18 @@ approvedFunctionalReferenceInvokeCall(
   if (Inner->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
     if (!Inner->Operation)
       return std::nullopt;
+    if (Inner->Operation->Operation == FunctionalOperation::ByteHash) {
+      const auto Hash = stringHashCallImpl(
+          S, SM, Inner->StringHashCall, Context, true, false);
+      if (!Hash || Call->getNumArgs() != 2 ||
+          DispatchFunction->getNumParams() != 2 ||
+          !stringHashCarrierForwarding(S, SM, Context, *Hash,
+                                       Call->getArg(1)->getType(),
+                                       InnerCall->getArg(1),
+                                       DispatchFunction->getParamDecl(1)))
+        return std::nullopt;
+      return Inner;
+    }
     if (Inner->Operation->Operation == FunctionalOperation::UniqueHash) {
       const auto Hash = uniqueHashCallImpl(
           S, SM, Inner->UniqueHashCall, Context, true, false);
@@ -16499,6 +16852,19 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
   if (Apply->Tuple.size() != Arity)
     return std::nullopt;
   const auto TupleArgument = Call->getArg(1)->getType();
+  if (StandardObject && Reference->Operation->Operation ==
+                            FunctionalOperation::ByteHash) {
+    const auto Hash = stringHashCallImpl(
+        S, SM, Reference->StringHashCall, Context, true, false);
+    if (!Hash || Arity != 1 || Operation->getNumArgs() != 2 ||
+        Apply->DispatchFunction->getNumParams() != 2 ||
+        !stringHashCarrierForwarding(S, SM, Context, *Hash,
+                                     Apply->Tuple.elementType(0),
+                                     Operation->getArg(1),
+                                     Apply->DispatchFunction->getParamDecl(1)))
+      return std::nullopt;
+    return Reference;
+  }
   if (StandardObject && Reference->Operation->Operation ==
                             FunctionalOperation::UniqueHash) {
     const auto Hash = uniqueHashCallImpl(

@@ -365508,23 +365508,23 @@ int main(){const char*s="abc";return std::__do_string_hash(s,s+3)==0;}
 #include <tuple>
 int main(){auto method=&std::hash<std::string_view>::operator();return method==nullptr;}
 )cpp"},
-      {"invoke-adapter", R"cpp(#include <string>
+      {"invoke-adapter-carrier-wrapper", R"cpp(#include <string>
 #include <string_view>
 #include <functional>
 #include <tuple>
-int main(){return std::invoke(std::hash<std::string_view>{},std::string_view("abc"))==0;}
+int main(){std::string_view view("abc");return std::invoke(std::hash<std::string_view>{},std::ref(view))==0;}
 )cpp"},
-      {"apply-adapter", R"cpp(#include <string>
+      {"apply-adapter-carrier-wrapper", R"cpp(#include <string>
 #include <string_view>
 #include <functional>
 #include <tuple>
-int main(){return std::apply(std::hash<std::string_view>{},std::tuple<std::string_view>{std::string_view("abc")})==0;}
+int main(){std::string_view view("abc");return std::apply(std::hash<std::string_view>{},std::tuple<std::reference_wrapper<std::string_view>>(std::ref(view)))==0;}
 )cpp"},
-      {"reference-wrapper-adapter", R"cpp(#include <string>
+      {"reference-wrapper-adapter-carrier-wrapper", R"cpp(#include <string>
 #include <string_view>
 #include <functional>
 #include <tuple>
-int main(){std::hash<std::string_view> hash;return std::ref(hash)(std::string_view("abc"))==0;}
+int main(){std::string_view view("abc");std::hash<std::string_view> hash;return std::ref(hash)(std::ref(view))==0;}
 )cpp"},
       {"wide-view-hash", R"cpp(#include <string>
 #include <string_view>
@@ -367614,5 +367614,539 @@ int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(val
       EXPECT_NE(readFile(Response).find("TR0203"), std::string::npos);
       EXPECT_EQ(readFile(Response).find("TR0101"), std::string::npos);
     }
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2StringHashAdaptersValuesAndEffects) {
+  const auto Output = tmpFile("string-hash-adapters-values.nc");
+  const auto Result = translate(fixture("string-hash-adapters-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-adapters-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashAdaptersTupleAndTemporaryLifetimes) {
+  const auto Output = tmpFile("string-hash-adapters-lifetimes.nc");
+  const auto Result = translate(fixture("string-hash-adapters-lifetimes.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-adapters-lifetimes") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashAdaptersSignatureOnlyQueries) {
+  const auto Output = tmpFile("string-hash-adapters-queries.nc");
+  const auto Result = translate(fixture("string-hash-adapters-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-adapters-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashAdaptersQueriesIgnoreRuntimeByteSubstitutions) {
+  const auto Output = tmpFile("string-hash-adapters-copy-queries.nc");
+  const auto Result = translate(fixture("string-hash-adapters-copy-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-adapters-copy-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashAdaptersBorrowedFunctions) {
+  const auto Output = tmpFile("string-hash-adapters-borrowed.nc");
+  const auto Result = translate(fixture("string-hash-adapters-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("string-hash-adapters-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringHashAdaptersRejectSelectedSourcesAndConversions) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"string_view-public-redeclaration-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>struct hash<string_view>; }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string_view-public-redeclaration-apply", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>struct hash<string_view>; }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string_view-public-redeclaration-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>struct hash<string_view>; }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string_view-public-redeclaration-invoke-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>struct hash<string_view>; }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string_view-public-redeclaration-apply-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>struct hash<string_view>; }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string_view-helper-specialization-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string_view-helper-specialization-apply", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string_view-helper-specialization-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string_view-helper-specialization-invoke-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string_view-helper-specialization-apply-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string_view-copy-source-invoke", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string_view-copy-source-apply", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string_view-copy-source-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string_view-copy-source-invoke-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string_view-copy-source-apply-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string_view-abi2-invoke", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string_view-abi2-apply", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string_view-abi2-wrapper", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string_view-abi2-invoke-wrapper", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string_view-abi2-apply-wrapper", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string_view-copy-source-ignored", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;std::invoke(hash,value);return 0;}
+)cpp"},
+    {"string_view-helper-specialization-ignored", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;std::invoke(hash,value);return 0;}
+)cpp"},
+    {"string-public-redeclaration-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<class A>struct hash<basic_string<char,char_traits<char>,A>>; }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string-public-redeclaration-apply", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<class A>struct hash<basic_string<char,char_traits<char>,A>>; }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string-public-redeclaration-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<class A>struct hash<basic_string<char,char_traits<char>,A>>; }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string-public-redeclaration-invoke-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<class A>struct hash<basic_string<char,char_traits<char>,A>>; }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string-public-redeclaration-apply-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<class A>struct hash<basic_string<char,char_traits<char>,A>>; }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string-helper-specialization-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string-helper-specialization-apply", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string-helper-specialization-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string-helper-specialization-invoke-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string-helper-specialization-apply-wrapper", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string-copy-source-invoke", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string-copy-source-apply", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string-copy-source-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string-copy-source-invoke-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string-copy-source-apply-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string-abi2-invoke", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
+)cpp"},
+    {"string-abi2-apply", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
+)cpp"},
+    {"string-abi2-wrapper", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
+)cpp"},
+    {"string-abi2-invoke-wrapper", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
+)cpp"},
+    {"string-abi2-apply-wrapper", R"cpp(#define _LIBCPP_ABI_FIX_CITYHASH_IMPLEMENTATION
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
+)cpp"},
+    {"string-copy-source-ignored", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+#define memcpy user_word_copy
+#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;std::invoke(hash,value);return 0;}
+)cpp"},
+    {"string-helper-specialization-ignored", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
+int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;std::invoke(hash,value);return 0;}
+)cpp"},
+    {"private-view-base-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){return std::invoke(std::__string_view_hash<char>{},std::string_view("abc"))==0;}
+)cpp"},
+    {"private-string-base-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::string value("abc");return std::invoke(std::__string_hash<char,std::allocator<char>>{},value)==0;}
+)cpp"},
+    {"private-byte-hasher-invoke", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){return std::invoke(std::__murmur2_or_cityhash<std::size_t>{},"abc",3)==0;}
+)cpp"},
+    {"private-view-helper-apply", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){return std::apply(std::__string_view_hash<char>{},std::tuple<std::string_view>{std::string_view("abc")})==0;}
+)cpp"},
+    {"owner-view-wrapper-argument", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::hash<std::string_view> hash;std::string_view value("abc");return std::invoke(hash,std::ref(value))==0;}
+)cpp"},
+    {"owner-string-wrapper-argument", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::hash<std::string> hash;std::string value("abc");return std::invoke(hash,std::ref(value))==0;}
+)cpp"},
+    {"conversion-view-argument", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){std::hash<std::string_view> hash;return std::invoke(hash,"abc")==0;}
+)cpp"},
+    {"wide-view-adapter", R"cpp(#include <functional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){return std::invoke(std::hash<std::u16string_view>{},std::u16string_view(u"abc"))==0;}
+)cpp"},
+    {"nested-view-value-default", R"cpp(#include <string_view>
+#include <tuple>
+int main() {
+  std::tuple<std::tuple<std::string_view>> value{};
+  return std::get<0>(std::get<0>(value)).size() != 0;
+}
+)cpp"},
+    {"nested-string-value-copy", R"cpp(#include <string>
+#include <tuple>
+int main() {
+  std::tuple<std::tuple<std::string>> value{std::tuple<std::string>{std::string(193, 'q')}};
+  auto copied = value;
+  return std::get<0>(std::get<0>(copied)).size() != 193;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("string-hash-adapter-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("string-hash-adapter-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
   }
 }

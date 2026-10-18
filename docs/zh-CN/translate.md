@@ -507,7 +507,7 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 固定 SDK 的精确 `std::make_from_tuple` 接受经认证的 tuple、pair 和 array 输入，构造已接纳的标量或源码记录结果。输入只求值一次，保留所选转换、构造模板、默认实参及返回值／字段／数组最终目标的副作用和 C++17 复制消除。辅助函数的实参与默认临时对象先于调用方 tuple 临时对象销毁。运行时操作须有已检查的定义；纯 `decltype`／`noexcept` 查询检查两层工厂签名与异常来源，不生成运行时辅助函数。引用输入、引用结果和直接引用字段须证明所指对象仍存活；失效的转发载体、逃逸临时对象、未知或嵌套引用来源、带基类的结果记录、源码替换、私有辅助函数直接调用及独立函数地址仍被拒绝。NeverC 源语言仍仅为 C23。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#make-from-tuple-result-construction).
 
-固定 SDK 的直接 `std::hash<std::string_view>` 和 `std::hash<std::string>` 调用按已接纳 char 载体的逻辑字节计算哈希。输入只求值一次，完整的 32 位 Murmur2 和 64 位 CityHash 路径保留 SDK ABI1 算术及窄中间值截断，并认证所选公开、继承和辅助声明链。纯 `decltype`／`noexcept` 查询保留实参的异常来源，不生成算法运行时辅助函数。私有辅助调用、独立方法地址、源码替换及通过 invoke/apply/reference_wrapper 的调用仍不在本契约内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-and-string-view-hashing).
+固定 SDK 的直接 `std::hash<std::string_view>` 和 `std::hash<std::string>` 调用按已接纳 char 载体的逻辑字节计算哈希。输入只求值一次，完整的 32 位 Murmur2 和 64 位 CityHash 路径保留 SDK ABI1 算术及窄中间值截断，并认证所选公开、继承和辅助声明链。纯 `decltype`／`noexcept` 查询保留实参的异常来源，不生成算法运行时辅助函数。私有辅助调用、独立方法地址、源码替换仍不在本契约内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-and-string-view-hashing).
 
 经过检查的普通函数指针值也可存入 `std::optional` 和 `std::vector`，包括 `noexcept` 签名及已接纳的复合、嵌套 vector 元素。构造、复制、修改和 swap 保留指针值。optional 转换保留空源并转换所含指针值；回调相等比较接纳兼容签名、函数名和 `nullptr`。vector emplace 支持经检查的回调转换，并在扩容和移位时保留别名输入。回调排序、可能抛异常的 optional 访问及既有的 vector 分配函数定义要求仍受各自边界限制。 `find_if`、`find_if_not`、`none_of`、`all_of`、`any_of`、`count_if`、`copy_if`、`remove_copy_if`、`is_partitioned`、`partition_point`、`partition_copy`、`replace_if`、`replace_copy_if` 和 `remove_if` 的源代码谓词对象也接纳兼容的 `noexcept` 函数指针到普通函数指针参数的经检查转换；元素、替换值及输出存储类型仍须精确匹配。 [optional](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional) · [vector](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 
@@ -941,3 +941,5 @@ merge 接受同一默认 int/int unordered_map 的左值或右值源容器。成
 引用元组借用已支持的所有权对象；值元组通过已选中的同类型移动构造转移所有权并清空源，按元素逆序析构，不按位复制所有权对象。
 
 `cpp-core-v2`: 已支持的 float/double/long long 哈希验证选定的标量声明族、精确联合初始化、参数写入和返回；双字委托还验证完整的选中字节算法。同一运行时验证覆盖 invoke、apply、可调用引用包装器及丢弃结果的调用。标量 apply 和包装器 apply 的签名查询绑定实际保留的 SDK 调用，不要求 hash/标量/字节函数体或新增运行时辅助函数；原有源函数定义仍独立保留。正负零归一化、标量转换和实参副作用保持原行为。本项不扩展整数位宽或接纳 long double。
+
+`cpp-core-v2`: 类型完全匹配的 char 字符串和视图哈希支持 invoke、apply、直接 reference_wrapper 调用，以及对包装器的 invoke/apply。字符串实参借用原有 const 引用地址，视图形参接收独立的值快照；接收者和实参的副作用各发生一次。选定的单层字符串和视图元组复制、移动及临时清理保持所有权和生命周期。运行时调用（含丢弃结果）须验证完整的固定 SDK 字节算法。纯签名查询（含默认视图临时对象及替换运行时字节复制辅助函数的情况）验证实际选中的调用，不增加算法或堆辅助函数。源对象到载体的转换及载体的 reference_wrapper 实参仍待支持。

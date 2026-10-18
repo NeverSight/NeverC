@@ -2834,18 +2834,20 @@ utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
       A.S, A.Sources, A.Context.getRecordType(Record), A.Context, false, true);
   if (!Tuple || Tuple->ArrayElements)
     return std::nullopt;
-  bool OwningOwner = false;
+  bool OwningElement = false;
   for (unsigned I = 0; I < Tuple->size(); ++I) {
     const auto Element = Tuple->elementType(I);
     if (Element->isReferenceType())
       continue;
     if (approvedUtilityUniquePtrLayout(
+            A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context) ||
+        approvedUtilityStringRecord(
             A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
-      OwningOwner = true;
+      OwningElement = true;
     else if (!Record->hasTrivialDestructor() && needsDestruction(Element))
       return std::nullopt;
   }
-  if (!Record->hasTrivialDestructor() && !OwningOwner)
+  if (!Record->hasTrivialDestructor() && !OwningElement)
     return std::nullopt;
   const auto *Destructor = Record->getDestructor();
   if (!Destructor)
@@ -5162,10 +5164,19 @@ static const FunctionProtoType *
 functionalObjectInvokeTargetSource(Adapter &A, const CXXMethodDecl *Method,
                                    const CXXRecordDecl *Receiver,
                                    bool RequireDefinition = true,
-                                   const CallExpr *UniqueHashCall = nullptr) {
+                                   const CallExpr *UniqueHashCall = nullptr,
+                                   const CallExpr *StringHashCall = nullptr) {
   const auto Object = functionalObjectStorageSource(A, Receiver);
   if (!Method || !Object)
     return nullptr;
+  if (StringHashCall) {
+    const auto Hash = approvedStringHashSignatureQuery(
+        A.S, A.Sources, StringHashCall, A.Context);
+    return Hash && StringHashCall->getDirectCallee() == Method &&
+                   Hash->Record->getCanonicalDecl() ==
+                       Object->Record->getCanonicalDecl()
+               ? operationCalleePrototype(StringHashCall) : nullptr;
+  }
   const bool Inherited = Method->getParent()->getCanonicalDecl() !=
                          Object->Record->getCanonicalDecl();
   // The descriptor proves a wide/enum hash's exact public-to-base cast.
@@ -5414,6 +5425,25 @@ static bool functionalQueryDeclvalSource(Adapter &A, const Expr *Expression,
          utilitySDKFunctionSource(A, Function, "__utility/declval.h", false);
 }
 
+// Only the actual retained hash call may expose its pinned view copy.
+static bool stringHashQueryDeclvalSource(Adapter &A, const CallExpr *Selected,
+                                         unsigned Index, QualType Expected) {
+  if (!Selected || Index >= Selected->getNumArgs())
+    return false;
+  const Expr *Argument = Selected->getArg(Index);
+  const auto Hash = approvedStringHashSignatureQuery(
+      A.S, A.Sources, Selected, A.Context);
+  if (Index == 1 && Hash && Hash->View)
+    Argument = approvedStringHashViewCopyArgument(
+        A.S, A.Sources, Argument, A.Context);
+  return Argument && functionalQueryDeclvalSource(A, Argument, Expected);
+}
+
+// Defined after the invoke/reference/apply source proofs. The caller must own
+// an indexed lexical query; this returns its authenticated inner hash call.
+static const CallExpr *stringHashSelectedQuerySource(Adapter &A,
+                                                     const CallExpr *Outer);
+
 static const CXXConstructExpr *
 stringHashQueryArgumentConstruction(const CallExpr *Call) {
   if (!Call || Call->getNumArgs() != 2)
@@ -5437,8 +5467,9 @@ stringHashQueryArgumentConstruction(const CallExpr *Call) {
 
 static bool stringHashDefaultViewQuerySource(
     Adapter &A, const CallExpr *Call, const CXXConstructExpr *Construction) {
-  const auto Hash = approvedStringHashCall(
-      A.S, A.Sources, Call, A.Context, false);
+  const auto *Selected = stringHashSelectedQuerySource(A, Call);
+  const auto Hash = approvedStringHashSignatureQuery(
+      A.S, A.Sources, Selected, A.Context);
   const auto *Constructor = Construction ? Construction->getConstructor()
                                           : nullptr;
   const auto *Prototype =
@@ -5465,7 +5496,7 @@ functionalObjectQueryTargetSource(Adapter &A, const CallExpr *Call) {
   if (const auto Hash = approvedUniqueHashSignatureQuery(A.S, A.Sources, Call, A.Context))
     return utilityUniquePtrSource(A, Hash->Owner.Record, false)
                ? operationCalleePrototype(Call) : nullptr;
-  if (approvedStringHashCall(A.S, A.Sources, Call, A.Context, false))
+  if (approvedStringHashSignatureQuery(A.S, A.Sources, Call, A.Context))
     return operationCalleePrototype(Call);
   if (!approvedFunctionalSignatureQuery(A.S, A.Sources, Call, A.Context))
     return nullptr;
@@ -5623,11 +5654,10 @@ static const CallExpr *functionalResultQueryTargetSource(
     const auto Expected =
         I == 0 ? Callable : Pack.pack_elements()[I - 1].getAsType();
     if (!functionalQueryDeclvalSource(A, Dispatch->getArg(I), Expected) ||
-        !functionalQueryDeclvalSource(A,
-                                      Operator ? Selected->getArg(I)
-                                      : I == 0 ? Selected->getCallee()
-                                               : Selected->getArg(I - 1),
-                                      Expected))
+        !(Operator ? stringHashQueryDeclvalSource(A, Selected, I, Expected)
+                   : functionalQueryDeclvalSource(
+                         A, I == 0 ? Selected->getCallee()
+                                   : Selected->getArg(I - 1), Expected)))
       return nullptr;
   }
   // Every selected node comes from the pinned trait's actual substituted type.
@@ -5684,9 +5714,9 @@ functionalUserInvokeQuerySource(Adapter &A, const CallExpr *Call,
       Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
   if (!Operation || !Method || !Definition || !Target ||
       Operation->getOperator() != OO_Call || !ordinaryOperator(Method) ||
-      !Method->hasBody() || !Method->getTypeSourceInfo() ||
       !A.S.owns(A.Sources, Method->getLocation()) ||
       !A.S.owns(A.Sources, Definition->getLocation()) ||
+      !Method->hasBody() || !Method->getTypeSourceInfo() ||
       Call->getArg(0)->getType().isVolatileQualified() ||
       Method->getParent()->getCanonicalDecl() !=
           Definition->getCanonicalDecl() ||
@@ -5711,6 +5741,7 @@ functionalUserInvokeQuerySource(Adapter &A, const CallExpr *Call,
 struct FunctionalReferenceQuerySource {
   QualType Result;
   const CXXMethodDecl *UserMethod = nullptr;
+  const CallExpr *Selected = nullptr;
 };
 
 static FunctionalReferenceQuerySource
@@ -5788,6 +5819,7 @@ functionalReferenceQuerySource(Adapter &A, const CallExpr *Call) {
     if (Target)
       Source.Result = A.Context.getCanonicalType(Target->getReturnType());
   }
+  Source.Selected = Selected;
   // Follow the wrapper's actual substituted private result trait, while its
   // receiver storage and source target keep independent validation roots.
   return Target && operationCalleePrototype(Selected) == Target &&
@@ -5942,7 +5974,8 @@ static bool functionalObjectCallSource(Adapter &A, const CallExpr *Call) {
   const auto *Target = functionalObjectInvokeTargetSource(
       A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()),
       Call->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl(),
-      true, Operation->Operation == FunctionalOperation::UniqueHash ? Call : nullptr);
+      true, Operation->Operation == FunctionalOperation::UniqueHash ? Call : nullptr,
+      Operation->Operation == FunctionalOperation::ByteHash ? Call : nullptr);
   return Target && operationCalleePrototype(Call) == Target;
 }
 
@@ -5981,7 +6014,7 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call,
     if (Invoke->Operation)
       Target = functionalObjectInvokeTargetSource(
           A, Invoke->Method, Invoke->Wrapper.ReferentType->getAsCXXRecordDecl(),
-          true, Invoke->UniqueHashCall);
+          true, Invoke->UniqueHashCall, Invoke->StringHashCall);
   } else if (Invoke->Kind == FunctionalReferenceInvokeKind::UserFunctionObject) {
     Target = Invoke->Method->getType()->getAs<FunctionProtoType>();
   } else if (Invoke->Kind == FunctionalReferenceInvokeKind::Function ||
@@ -6063,7 +6096,8 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
 static bool utilityApplyInvocationSource(Adapter &A, const CallExpr *Call,
                                         const FunctionProtoType *Target,
                                         const CXXMethodDecl *Method = nullptr,
-                                        const CallExpr *SignatureCall = nullptr) {
+                                        const CallExpr *SignatureCall = nullptr,
+                                        const CallExpr *StringHashCall = nullptr) {
   const auto *Function = Call->getDirectCallee();
   const auto *Helper = functionalReturnedCall(Function);
   const auto *Dispatch =
@@ -6121,7 +6155,15 @@ static bool utilityApplyInvocationSource(Adapter &A, const CallExpr *Call,
       return false;
   }
   const auto *Dispatcher = Dispatch->getDirectCallee();
+  const auto ViewHash = StringHashCall == Inner
+      ? approvedStringHashSignatureQuery(A.S, A.Sources, Inner, A.Context)
+      : std::nullopt;
   auto ParameterCast = [&](const Expr *E, unsigned Index) {
+    if (Index == 1 && ViewHash && ViewHash->View) {
+      E = approvedStringHashViewCopyArgument(A.S, A.Sources, E, A.Context);
+      if (!E)
+        return false;
+    }
     E = E->IgnoreParenImpCasts();
     if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(E)) {
       if (!Method || !Index || !Temporary->getType()->isScalarType())
@@ -6218,8 +6260,8 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
       return {};
     const auto Expected = I == 0 ? Arguments->get(0).getAsType()
         : Arguments->get(1).pack_elements()[I - 1].getAsType();
-    if (!functionalQueryDeclvalSource(
-            A, Signature->DecltypeCall->getArg(I), Expected))
+    if (!stringHashQueryDeclvalSource(
+            A, Signature->DecltypeCall, I, Expected))
       return {};
   }
   const auto *Selected = Signature->Selected;
@@ -6231,6 +6273,11 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
       return {};
     Target = operationCalleePrototype(Selected);
     Result = A.Context.getCanonicalType(Target->getReturnType());
+  } else if (approvedStringHashSignatureQuery(
+                 A.S, A.Sources, Selected, A.Context)) {
+    Target = functionalObjectQueryTargetSource(A, Selected);
+    if (Target)
+      Result = A.Context.getCanonicalType(Target->getReturnType());
   } else if (scalarHashQueryObject(
                  A, Selected->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl())) {
     Target = functionalObjectQueryTargetSource(A, Selected);
@@ -6245,15 +6292,50 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
     if (!Wrapper ||
         (!approvedUniqueHashObject(
              A.S, A.Sources, Wrapper->ReferentType->getAsCXXRecordDecl(), A.Context) &&
-         !scalarHashQueryObject(A, Wrapper->ReferentType->getAsCXXRecordDecl())))
+         !scalarHashQueryObject(A, Wrapper->ReferentType->getAsCXXRecordDecl()) &&
+         !approvedStringHashObject(
+             A.S, A.Sources, Wrapper->ReferentType->getAsCXXRecordDecl(), A.Context)))
       return {};
     Target = operationCalleePrototype(Selected);
     Result = Reference.Result;
   }
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Selected->getDirectCallee());
   return Target && Method &&
-                 utilityApplyInvocationSource(A, Call, Target, Method, Selected)
+                 utilityApplyInvocationSource(
+                     A, Call, Target, Method, Selected,
+                     approvedStringHashSignatureQuery(
+                         A.S, A.Sources, Selected, A.Context) ? Selected : nullptr)
              ? Result : QualType();
+}
+
+static const CallExpr *stringHashSelectedQuerySource(Adapter &A,
+                                                     const CallExpr *Outer) {
+  if (!Outer || !A.S.UnevaluatedFunctionalCalls.count(Outer))
+    return nullptr;
+  if (approvedStringHashCall(A.S, A.Sources, Outer, A.Context, false))
+    return Outer;
+  const CallExpr *Selected = nullptr;
+  if (isa<CXXOperatorCallExpr>(Outer)) {
+    const auto Source = functionalReferenceQuerySource(A, Outer);
+    if (!Source.Result.isNull())
+      Selected = Source.Selected;
+  } else if (const auto *Invoke = functionalInvokeQueryTargetSource(A, Outer)) {
+    Selected = Invoke;
+  } else if (!utilityApplyQuerySource(A, Outer).isNull()) {
+    const auto Apply = approvedUtilityTupleApplySignatureCall(
+        A.S, A.Sources, Outer, A.Context);
+    Selected = Apply ? Apply->Selected : nullptr;
+  }
+  if (!Selected)
+    return nullptr;
+  // invoke/apply may select reference_wrapper::operator(). Its own exact
+  // result-trait proof retains the hash call; never authorize by method alone.
+  if (!approvedStringHashSignatureQuery(A.S, A.Sources, Selected, A.Context)) {
+    const auto Source = functionalReferenceQuerySource(A, Selected);
+    Selected = !Source.Result.isNull() ? Source.Selected : nullptr;
+  }
+  return approvedStringHashSignatureQuery(A.S, A.Sources, Selected, A.Context)
+             ? Selected : nullptr;
 }
 
 struct UtilityApplySource {
@@ -6309,11 +6391,11 @@ static UtilityApplySource utilityApplyResultSource(Adapter &A,
   }
   if (const auto Reference = approvedUtilityTupleApplyReferenceCall(
           A.S, A.Sources, Call, A.Context);
-      Reference && Reference->UniqueHashCall) {
+      Reference && (Reference->UniqueHashCall || Reference->StringHashCall)) {
     const auto *HashTarget = functionalObjectInvokeTargetSource(
         A, Reference->Method,
         Reference->Wrapper.ReferentType->getAsCXXRecordDecl(),
-        true, Reference->UniqueHashCall);
+        true, Reference->UniqueHashCall, Reference->StringHashCall);
     const auto *Helper = functionalReturnedCall(Function);
     const auto *Dispatch = Helper
         ? functionalReturnedCall(Helper->getDirectCallee()) : nullptr;
@@ -6333,9 +6415,10 @@ static UtilityApplySource utilityApplyResultSource(Adapter &A,
   const auto *Target = Object
       ? functionalObjectInvokeTargetSource(
             A, Object->Method, Callable->getAsCXXRecordDecl(),
-            true, Object->UniqueHashCall)
+            true, Object->UniqueHashCall, Object->StringHashCall)
       : nullptr;
-  if (!Target || !utilityApplyInvocationSource(A, Call, Target, Object->Method))
+  if (!Target || !utilityApplyInvocationSource(
+          A, Call, Target, Object->Method, nullptr, Object->StringHashCall))
     return {};
   // The exact SDK operation proves this scalar result, including its private
   // decltype spelling. The caller's written types and expressions keep their
@@ -6353,7 +6436,7 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
     return false;
   const auto *Target = functionalObjectInvokeTargetSource(
       A, Invoke->Method, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
-      true, Invoke->UniqueHashCall);
+      true, Invoke->UniqueHashCall, Invoke->StringHashCall);
   if (!Target)
     return false;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
@@ -6367,19 +6450,19 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
                                        Arguments->get(1), Target);
 }
 
-static bool uniqueHashAdapterSource(Adapter &A, const CallExpr *Call,
+static bool ownedHashAdapterSource(Adapter &A, const CallExpr *Call,
                                     UtilityOperation Operation) {
   if (Operation == UtilityOperation::FunctionalInvokeObject) {
     const auto Invoke = approvedFunctionalInvokeObjectOperation(
         A.S, A.Sources, Call, A.Context);
-    return !Invoke || !Invoke->UniqueHashCall ||
+    return !Invoke || (!Invoke->UniqueHashCall && !Invoke->StringHashCall) ||
            functionalObjectInvokeSource(A, Call);
   }
   if (Operation == UtilityOperation::FunctionalInvokeReference) {
     const auto Invoke = approvedFunctionalReferenceInvokeCall(
         A.S, A.Sources, Call, A.Context);
     const CXXMethodDecl *User = nullptr;
-    return !Invoke || !Invoke->UniqueHashCall ||
+    return !Invoke || (!Invoke->UniqueHashCall && !Invoke->StringHashCall) ||
            functionalReferenceInvokeSource(A, Call, User);
   }
   if (Operation == UtilityOperation::TupleApply) {
@@ -6387,8 +6470,8 @@ static bool uniqueHashAdapterSource(Adapter &A, const CallExpr *Call,
         A.S, A.Sources, Call, A.Context);
     const auto Reference = approvedUtilityTupleApplyReferenceCall(
         A.S, A.Sources, Call, A.Context);
-    if ((Object && Object->UniqueHashCall) ||
-        (Reference && Reference->UniqueHashCall))
+    if ((Object && (Object->UniqueHashCall || Object->StringHashCall)) ||
+        (Reference && (Reference->UniqueHashCall || Reference->StringHashCall)))
       return !utilityApplyResultSource(A, Call).Result.isNull();
   }
   return true;
@@ -9561,13 +9644,58 @@ utilityStringElementConstructionSource(Adapter &A,
     return false;
   if (Constructor->isDefaultConstructor() && !Constructor->getNumParams())
     return Prototype->isNothrow();
-  return Constructor->isCopyConstructor() && Constructor->getNumParams() == 1 &&
-         Prototype->getExceptionSpecType() == EST_None &&
-         A.Context.hasSameType(
-             Constructor->getParamDecl(0)->getType(),
-             A.Context.getLValueReferenceType(
-                 A.Context.getRecordType(Constructor->getParent())
-                     .withConst()));
+  if (Constructor->getNumParams() != 1)
+    return false;
+  const auto StringType = A.Context.getRecordType(Constructor->getParent());
+  return (Constructor->isCopyConstructor() &&
+          Prototype->getExceptionSpecType() == EST_None &&
+          A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                                A.Context.getLValueReferenceType(StringType.withConst()))) ||
+         (Constructor->isMoveConstructor() && Prototype->isNothrow() &&
+          A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                                A.Context.getRValueReferenceType(StringType)));
+}
+
+static bool utilityStringViewDestructionSource(Adapter &A,
+                                               const CXXRecordDecl *Record) {
+  const auto View =
+      approvedUtilityStringViewRecord(A.S, A.Sources, Record, A.Context);
+  const auto *Destructor = View ? View->Record->getDestructor() : nullptr;
+  const auto *Prototype =
+      Destructor ? Destructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!View || View->Record->hasUserDeclaredDestructor() || !Destructor ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      Destructor->getParent()->getCanonicalDecl() !=
+          View->Record->getCanonicalDecl())
+    return false;
+  unsigned Declarations = 0;
+  const CXXDestructorDecl *Family[] = {
+      Destructor,
+      dyn_cast_or_null<CXXDestructorDecl>(
+          Destructor->getInstantiatedFromMemberFunction())};
+  for (const auto *Member : Family) {
+    if (!Member)
+      continue;
+    for (const auto *Declaration : Member->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto *Method = cast<CXXDestructorDecl>(Declaration);
+      const auto Origin = A.S.sdkFile(A.Sources, Method->getLocation());
+      if (++Declarations > 64 || !Method->isImplicit() ||
+          !Method->isDefaulted() || !Method->isTrivial() ||
+          Method->isInvalidDecl() || Method->isDeleted() ||
+          Method->isVirtual() || Method->isVariadic() ||
+          Method->getNumParams() || Method->getAccess() != AS_public ||
+          Method->getTypeSourceInfo() || Method->getPrimaryTemplate() ||
+          Method->getTemplateSpecializationKind() == TSK_ExplicitSpecialization ||
+          Method->getLexicalDeclContext() != Method->getParent() ||
+          !A.Context.hasSameType(Method->getReturnType(), A.Context.VoidTy) ||
+          !approvedStandardSDKDeclaration(A.S, A.Sources, Method) ||
+          !Origin || Origin->Root != "libcxx" || Origin->Path != "string_view")
+        return false;
+    }
+  }
+  return true;
 }
 
 static bool utilityStringDestructionSource(Adapter &A,
@@ -10270,6 +10398,9 @@ public:
     if (utilityInitializerListDestructionSource(A, Record))
       return true;
     // The pinned string owns only its admitted character storage and allocator.
+    // The exact char view owns only its authenticated pointer/size storage.
+    if (utilityStringViewDestructionSource(A, Record))
+      return true;
     if (utilityStringDestructionSource(A, Record))
       return true;
     if (const auto Owner = utilityUniquePtrDestructionSource(A, Record)) {
@@ -16309,6 +16440,20 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         queueGenerated(Deleter, L);
       }
     }
+    const auto String = approvedUtilityStringConstruction(
+        A.S, A.Sources, Construction, A.Context);
+    if (String == UtilityStringConstruction::Copy ||
+        String == UtilityStringConstruction::Move) {
+      const auto *Constructor = Construction->getConstructor();
+      if (!utilityStringElementConstructionSource(A, Constructor)) {
+        A.reject(L, "tuple string construction source",
+                 "The exact selected string copy or move source is required.", "TR0203");
+        return false;
+      }
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->StringConstructors.insert(Constructor).second)
+          A.chargeExpansion(1, L);
+    }
     checkConstruction(Construction, L);
     // The authenticated SDK body supplies this source-owned constructor use.
     // Defaults still follow ordinary source and lifetime checks in the actual
@@ -17079,6 +17224,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, String->PointerType, false, Depth + 1);
           return;
         }
+        if (const auto View = approvedUtilityStringViewRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // Its exact pinned pointer/size shape supplies private SDK layout.
+          // Written caller aliases and template arguments keep their sources;
+          // private SDK field TypeLocs are not project traversal roots.
+          Self(Self, View->Data->getType().getCanonicalType(), false,
+               Depth + 1);
+          Self(Self, View->Size->getType().getCanonicalType(), false,
+               Depth + 1);
+          return;
+        }
         if (const auto Owner = utilityUniquePtrSource(A, Declaration)) {
           // Its pinned pointer/empty-deleter shape supplies the SDK layout.
           // Owning cleanup still consumes the original pointee layout source.
@@ -17134,6 +17290,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // Optional storage has the same pinned SDK boundary. In particular,
           // nested optionals need not inherit the implementation's base depth.
           Self(Self, Optional->ElementType, true, Depth + 1);
+          return;
+        }
+        auto CarrierTuple = approvedUtilityTupleRecord(
+            A.S, A.Sources, Declaration, A.Context);
+        if (!CarrierTuple)
+          CarrierTuple = approvedUtilityMixedReferenceTupleRecord(
+              A.S, A.Sources, Declaration, A.Context);
+        if (CarrierTuple && CarrierTuple->SelectedStringCarrierValues) {
+          // Selected carrier construction stays separate from bitwise values.
+          // The exact tuple layout supplies private SDK storage; every original
+          // element still contributes its own type and layout dependencies.
+          for (const auto &Element : CarrierTuple->Elements)
+            Self(Self, Element.getType(), true, Depth + 1);
           return;
         }
         if (const auto Tuple = approvedUtilityTupleLikeSource(A.S, A.Sources, T, A.Context)) {
@@ -18549,6 +18718,7 @@ private:
              utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
              utilityInitializerListDestructionSource(A,
                                                      Destructor->getParent()) ||
+             utilityStringViewDestructionSource(A, Destructor->getParent()) ||
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
              approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -18737,7 +18907,12 @@ private:
                   UtilityUniquePtrConstruction::NullDeleter &&
               *UniqueConstruction !=
                   UtilityUniquePtrConstruction::PointerDeleter));
+        const auto ViewQuery = StringHashQueryViews.find(Construction);
+        const bool DefaultViewQuery =
+            ViewQuery != StringHashQueryViews.end() &&
+            stringHashDefaultViewQuerySource(A, ViewQuery->second, Construction);
         bool SDKConstruction =
+            DefaultViewQuery ||
             unorderedResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -25972,9 +26147,9 @@ public:
       if (A.S.coreV2())
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
-          if (!uniqueHashAdapterSource(A, C, *Operation)) {
-            A.reject(L, "unique pointer hash adapter source",
-                     "The exact selected adapter, borrowed owner and pointer "
+          if (!ownedHashAdapterSource(A, C, *Operation)) {
+            A.reject(L, "hash adapter source",
+                     "The exact selected adapter, carrier and complete hash "
                      "algorithm sources are required.", "TR0203");
             return true;
           }

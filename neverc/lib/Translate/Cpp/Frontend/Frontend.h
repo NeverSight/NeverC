@@ -324,6 +324,16 @@ std::optional<StringHashObjectInfo>
 approvedStringHashCall(const State &S, const clang::SourceManager &SM,
                        const clang::CallExpr *Call,
                        const clang::ASTContext &Context, bool Runtime);
+// The owning query/adapter must bind this actual selected SDK call.
+// This signature API does not consume any runtime algorithm/constructor body.
+std::optional<StringHashObjectInfo>
+approvedStringHashSignatureQuery(const State &S, const clang::SourceManager &SM,
+                                 const clang::CallExpr *Selected,
+                                 const clang::ASTContext &Context);
+// Authenticate only the exact trivial pinned view copy, returning its argument.
+const clang::Expr *approvedStringHashViewCopyArgument(
+    const State &S, const clang::SourceManager &SM, const clang::Expr *Argument,
+    const clang::ASTContext &Context);
 struct FunctionalObjectRecord {
   const clang::CXXRecordDecl *Record;
 };
@@ -392,6 +402,7 @@ struct FunctionalInvokeObjectCall {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;
   const clang::CallExpr *UniqueHashCall = nullptr;
+  const clang::CallExpr *StringHashCall = nullptr;
 };
 std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(
     const State &S, const clang::SourceManager &SM,
@@ -463,6 +474,7 @@ struct FunctionalReferenceInvokeCall {
   const clang::CXXMethodDecl *Method;
   std::vector<const clang::CXXConstructExpr *> SelectedCopies;
   const clang::CallExpr *UniqueHashCall = nullptr;
+  const clang::CallExpr *StringHashCall = nullptr;
 };
 std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceInvokeCall(
@@ -513,6 +525,7 @@ struct UtilityTupleApplyObjectOperation {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;
   const clang::CallExpr *UniqueHashCall = nullptr;
+  const clang::CallExpr *StringHashCall = nullptr;
 };
 std::optional<UtilityTupleApplyObjectOperation>
 approvedUtilityTupleApplyObjectOperation(
@@ -1635,6 +1648,7 @@ struct UtilityTupleRecord {
   const clang::CXXRecordDecl *Record;
   std::vector<UtilityTupleElement> Elements;
   uint64_t StoragePaddingBytes = 0;
+  bool SelectedStringCarrierValues = false;
 };
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,

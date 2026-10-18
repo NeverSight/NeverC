@@ -507,7 +507,7 @@ Core v2 接受經過驗證的空與非空 `<tuple>` 值，包括建構、賦值�
 
 固定 SDK 的精確 `std::make_from_tuple` 接受經驗證的 tuple、pair 與 array 輸入，建構已接納的純量或來源記錄結果。輸入僅求值一次，保留所選轉換、建構範本、預設引數，以及傳回值／欄位／陣列最終目標的副作用和 C++17 複製省略。輔助函式的引數與預設暫存物件先於呼叫端 tuple 暫存物件銷毀。執行期操作須有已檢查的定義；純 `decltype`／`noexcept` 查詢檢查兩層工廠簽章與例外來源，不產生執行期輔助函式。參考輸入、參考結果和直接參考欄位須證明所指物件仍存活；失效的轉送載體、逸出暫存物件、未知或巢狀參考來源、具基底類別的結果記錄、來源替換、私有輔助函式直接呼叫及獨立函式位址仍被拒絕。NeverC 來源語言仍僅為 C23。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#make-from-tuple-result-construction).
 
-固定 SDK 的直接 `std::hash<std::string_view>` 與 `std::hash<std::string>` 呼叫依已接納 char 載體的邏輯位元組計算雜湊。輸入僅求值一次，完整的 32 位元 Murmur2 與 64 位元 CityHash 路徑保留 SDK ABI1 算術及窄中間值截斷，並驗證所選公開、繼承與輔助宣告鏈。純 `decltype`／`noexcept` 查詢保留引數的例外來源，不產生演算法執行期輔助函式。私有輔助呼叫、獨立方法位址、來源替換及透過 invoke/apply/reference_wrapper 的呼叫仍不在本契約內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-and-string-view-hashing).
+固定 SDK 的直接 `std::hash<std::string_view>` 與 `std::hash<std::string>` 呼叫依已接納 char 載體的邏輯位元組計算雜湊。輸入僅求值一次，完整的 32 位元 Murmur2 與 64 位元 CityHash 路徑保留 SDK ABI1 算術及窄中間值截斷，並驗證所選公開、繼承與輔助宣告鏈。純 `decltype`／`noexcept` 查詢保留引數的例外來源，不產生演算法執行期輔助函式。私有輔助呼叫、獨立方法位址、來源替換仍不在本契約內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-and-string-view-hashing).
 
 經過檢查的一般函式指標值也可存入 `std::optional` 與 `std::vector`，包括 `noexcept` 簽章及已接納的複合、巢狀 vector 元素。建構、複製、修改與 swap 保留指標值。optional 轉換保留空來源並轉換所含指標值；回呼相等比較接納相容簽章、函式名稱與 `nullptr`。vector emplace 支援經檢查的回呼轉換，並在擴容與移位時保留別名輸入。回呼排序、可能擲出例外的 optional 存取及既有的 vector 配置函式定義要求仍受各自邊界限制。 `find_if`、`find_if_not`、`none_of`、`all_of`、`any_of`、`count_if`、`copy_if`、`remove_copy_if`、`is_partitioned`、`partition_point`、`partition_copy`、`replace_if`、`replace_copy_if` 與 `remove_if` 的原始碼述詞物件也接納相容的 `noexcept` 函式指標到一般函式指標參數的經檢查轉換；元素、替換值與輸出儲存型別仍須精確符合。 [optional](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional) · [vector](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 
@@ -941,3 +941,5 @@ merge 接受同一預設 int/int unordered_map 的左值或右值來源容器。
 引用元組借用已支援的所有權物件；值元組透過已選定的同型別移動建構轉移所有權並清空來源，依元素逆序解構，不以位元複製所有權物件。
 
 `cpp-core-v2`: 已支援的 float/double/long long 雜湊驗證選定的純量宣告族、精確聯合初始化、引數寫入與回傳；雙字委派另驗證完整的選定位元組演算法。同一執行期驗證涵蓋 invoke、apply、可呼叫參考包裝器及捨棄結果的呼叫。純量 apply 與包裝器 apply 簽章查詢綁定實際保留的 SDK 呼叫，不需 hash/純量/位元組函式本體或新增執行期輔助函式；原有來源函式定義仍獨立保留。正負零正規化、純量轉換與引數副作用保持原行為。本項不擴充整數位寬或接納 long double。
+
+`cpp-core-v2`: 型別完全相符的 char 字串與檢視雜湊支援 invoke、apply、直接 reference_wrapper 呼叫及包裝器的 invoke/apply。字串引數借用原有 const 參考位址，檢視參數取得獨立值快照；接收者與引數的副作用各發生一次。所選單層字串與檢視元組的複製、移動及暫存清理保留所有權與生命週期。執行期呼叫（含捨棄結果）須驗證完整固定 SDK 位元組演算法。純簽章查詢（含預設檢視暫存值及替換執行期位元組複製輔助函式）驗證實際所選呼叫，不增加演算法或堆積輔助函式。來源轉載體及載體的 reference_wrapper 引數仍待支援。
