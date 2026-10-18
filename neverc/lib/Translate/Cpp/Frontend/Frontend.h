@@ -214,6 +214,10 @@ struct State {
   // File-entry names and identities are stable within one isolated request.
   mutable std::map<const void *, std::pair<llvm::sys::fs::UniqueID, SDKFile>>
       SDKFileCache;
+  // Completed root proofs are reusable only during one post-Sema Adapter run.
+  // They confer no caller operand, forwarding, lifetime or query permission.
+  const clang::ASTContext *StringHashSourceContext = nullptr;
+  mutable std::set<const clang::FunctionDecl *> CompletedStringHashSourceRoots;
   std::vector<std::string> Arguments;
   json::Array Diagnostics;
   json::Object Module;
@@ -1783,6 +1787,16 @@ struct UtilityTupleLikeSource {
     return ArrayElements ? ArrayElementType : Elements[Index].getType();
   }
 };
+// Layout evidence for an authenticated unevaluated tuple_cat signature only.
+// This descriptor grants no runtime construction, access or lifetime operation.
+std::optional<UtilityTupleLikeSource>
+approvedUtilityTupleCatQueryLayout(const State &S, const clang::SourceManager &SM,
+                                   clang::QualType Type,
+                                   const clang::ASTContext &Context);
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityTupleCatQueryOwnerLayout(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 // apply and tuple_cat may consume owned array and tuple elements. Selected
 // callback or result construction must separately prove every owned element.
 std::optional<UtilityTupleLikeSource>
@@ -2573,7 +2587,8 @@ public:
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);
   void checkQueryType(clang::QualType T, clang::SourceLocation L,
                       bool AllowIncompleteArrays = false,
-                      bool AllowIncompleteRecords = false, unsigned Depth = 0);
+                      bool AllowIncompleteRecords = false, unsigned Depth = 0,
+                      bool CatStorageMetadata = false);
   void checkTypeOnly(clang::QualType T, clang::SourceLocation L);
   uint64_t arrayTypeQueryValue(const clang::ArrayTypeTraitExpr *Query);
   bool emptyBaseChainShape(const clang::CXXRecordDecl *Record);

@@ -3221,11 +3221,25 @@ public:
   }
 };
 
+static bool completedStringHashSource(const State &S, const SourceManager &SM,
+                                      const FunctionDecl *Function,
+                                      const ASTContext &Context) {
+  if (!Function) return false;
+  const bool Local = S.StringHashSourceContext == &Context;
+  if (Local && S.CompletedStringHashSourceRoots.count(Function)) return true;
+  // Always start a fresh root budget. Neither failed nor recursive partial
+  // proofs may become cache entries, and builtin use sites remain checked by
+  // the complete original walker before any root is published.
+  if (!StringHashSourceClosure(S, SM, Context).function(Function)) return false;
+  if (Local && S.CompletedStringHashSourceRoots.size() < 128)
+    S.CompletedStringHashSourceRoots.insert(Function);
+  return true;
+}
+
 static bool selectedByteHashSource(const State &S, const SourceManager &SM,
                                    const CallExpr *Call,
                                    const ASTContext &Context) {
-  return Call && StringHashSourceClosure(S, SM, Context).function(
-                     Call->getDirectCallee());
+  return Call && completedStringHashSource(S, SM, Call->getDirectCallee(), Context);
 }
 
 static std::optional<UniqueHashObjectInfo>
@@ -3413,7 +3427,7 @@ stringHashCallImpl(const State &S, const SourceManager &SM,
     for (const auto *D : F->redecls())
       if (!stringHashOrigin(S, SM, D, Path))
         return std::nullopt;
-  if (Runtime && !StringHashSourceClosure(S, SM, Context).function(Method))
+  if (Runtime && !completedStringHashSource(S, SM, Method, Context))
     return std::nullopt;
   return Object;
 }
@@ -4133,7 +4147,7 @@ utilityDefaultDeleteExpression(const State &S, const SourceManager &SM,
 static std::optional<UtilityUniquePtrRecord>
 utilityUniquePtrRecord(const State &S, const SourceManager &SM,
                        const CXXRecordDecl *Record, const ASTContext &Context,
-                       bool RequireDeletion) {
+                       bool RequireDeletion, bool InspectDeletion = true) {
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
@@ -4300,7 +4314,8 @@ utilityUniquePtrRecord(const State &S, const SourceManager &SM,
     if (Layout.getFieldOffset(I) != 0)
       return std::nullopt;
   const auto *DefaultDeletion =
-      StandardDeleter ? utilityDefaultDeleteExpression(S, SM, *Deleter, Context)
+      StandardDeleter && InspectDeletion
+          ? utilityDefaultDeleteExpression(S, SM, *Deleter, Context)
                       : nullptr;
   if (RequireDeletion && StandardDeleter && !DefaultDeletion)
     return std::nullopt;
@@ -4320,6 +4335,13 @@ approvedUtilityUniquePtrLayout(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context) {
   return utilityUniquePtrRecord(S, SM, Record, Context, false);
+}
+
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityTupleCatQueryOwnerLayout(
+    const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context) {
+  return utilityUniquePtrRecord(S, SM, Record, Context, false, false);
 }
 
 std::optional<UtilityAllocatorRecord>
@@ -5122,10 +5144,23 @@ bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
          Arguments.get(1).getKind() == TemplateArgument::Type;
 }
 
+// Signature storage proofs are deliberately separate from runtime value and
+// lifetime admission. All recursive tuple/pair/array edges share one budget.
+struct UtilityCatLayoutProof {
+  unsigned Nodes = 0;
+  std::set<const Type *> Active;
+  std::set<std::pair<const Type *, unsigned>> Complete;
+};
+
+static bool utilityCatCarrier(const State &S, const SourceManager &SM,
+                              const ASTContext &Context, QualType Type,
+                              UtilityCatLayoutProof &Proof, unsigned Depth);
+
 static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context, bool RequireReferenceElements,
-    bool RequireMixedReferenceElements = false) {
+    bool RequireMixedReferenceElements = false,
+    UtilityCatLayoutProof *Query = nullptr, unsigned Depth = 0) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -5157,7 +5192,11 @@ static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
     return std::nullopt;
   const auto FirstType = Arguments.get(0).getAsType();
   const auto SecondType = Arguments.get(1).getAsType();
-  if (RequireMixedReferenceElements) {
+  if (Query) {
+    if (!utilityCatCarrier(S, SM, Context, FirstType, *Query, Depth + 1) ||
+        !utilityCatCarrier(S, SM, Context, SecondType, *Query, Depth + 1))
+      return std::nullopt;
+  } else if (RequireMixedReferenceElements) {
     if (FirstType->isReferenceType() == SecondType->isReferenceType())
       return std::nullopt;
     for (const auto Type : {FirstType, SecondType}) {
@@ -5210,6 +5249,23 @@ static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
       !Context.hasSameType(First->getType(), FirstType) ||
       !Context.hasSameType(Second->getType(), SecondType))
     return std::nullopt;
+  if (Query) {
+    const auto &Layout = Context.getASTRecordLayout(Specialization);
+    const uint64_t FirstBits = Context.getTypeSize(FirstType);
+    const uint64_t FirstAlign = Context.getTypeAlign(FirstType);
+    const uint64_t SecondBits = Context.getTypeSize(SecondType);
+    const uint64_t SecondAlign = Context.getTypeAlign(SecondType);
+    const uint64_t SecondOffset =
+        (FirstBits + SecondAlign - 1) / SecondAlign * SecondAlign;
+    const uint64_t Align = std::max(FirstAlign, SecondAlign);
+    const uint64_t End = SecondOffset + SecondBits;
+    if (Layout.getFieldCount() != 2 || Layout.getFieldOffset(0) != 0 ||
+        Layout.getFieldOffset(1) != SecondOffset ||
+        uint64_t(Layout.getAlignment().getQuantity()) * 8 != Align ||
+        uint64_t(Layout.getSize().getQuantity()) * 8 !=
+            (End + Align - 1) / Align * Align)
+      return std::nullopt;
+  }
   return UtilityPairRecord{Specialization, First, Second};
 }
 
@@ -6096,7 +6152,8 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context, unsigned Depth,
                                bool RequireReferenceElements = false,
-                               bool RequireMixedReferenceElements = false);
+                               bool RequireMixedReferenceElements = false,
+                               UtilityCatLayoutProof *Query = nullptr);
 
 static std::optional<UtilityTupleRecord>
 utilityTupleStorageRecord(const State &S, const SourceManager &SM,
@@ -6227,7 +6284,8 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context, unsigned Depth,
                                bool RequireReferenceElements,
-                               bool RequireMixedReferenceElements) {
+                               bool RequireMixedReferenceElements,
+                               UtilityCatLayoutProof *Query) {
   if (Depth > 64)
     return std::nullopt;
   const auto *Specialization =
@@ -6254,6 +6312,12 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
   bool OwnedElement = false;
   bool SelectedStringCarrierValues = false;
   for (QualType Type : *Types) {
+    if (Query) {
+      if (!utilityCatCarrier(S, SM, Context, Type, *Query, Depth + 1))
+        return std::nullopt;
+      ReferenceElements += Type->isReferenceType();
+      continue;
+    }
     if (Type->isReferenceType()) {
       ++ReferenceElements;
       if ((!RequireReferenceElements && !RequireMixedReferenceElements) ||
@@ -6302,7 +6366,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       }
     }
   }
-  if (!OwnedElement &&
+  if (!Query && !OwnedElement &&
       (!Specialization->hasTrivialCopyConstructor() ||
        !Specialization->hasTrivialDestructor()))
     return std::nullopt;
@@ -6444,7 +6508,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
     // classification. The concrete field, size, alignment and offset checks
     // below still authenticate that leaf.
     if (!LeafSpecialization->isStandardLayout() &&
-        !RequireReferenceElements && !RequireMixedReferenceElements &&
+        !Query && !RequireReferenceElements && !RequireMixedReferenceElements &&
         !approvedUtilityTupleMetadata(S, SM, ElementRecord))
       return std::nullopt;
     auto LeafFields = LeafSpecialization->fields();
@@ -7244,6 +7308,8 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
 // This proof consumes SDK signature metadata only. Carrier storage has an
 // independent descriptor; a trait containing a carrier is never itself a
 // carrier, and no selected runtime body or lifetime permission is produced.
+enum class UtilityTupleQueryMode { Construction, CatSignature };
+
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
   const State &S;
@@ -7255,6 +7321,25 @@ class UtilityTupleQueryGraph
   std::set<const Expr *> GeneratedExceptionLiterals;
   unsigned Depth = 0, Nodes = 0;
   bool Failed = false;
+  const UtilityTupleQueryMode Mode;
+  UtilityCatLayoutProof LayoutProof;
+  const FunctionDecl *CatInputFunction = nullptr;
+  std::set<const CXXRecordDecl *> CatInputOwners;
+  std::map<const CXXRecordDecl *,
+           std::set<std::pair<const ClassTemplateSpecializationDecl *, unsigned>>>
+      CatOwnerAtoms;
+  std::set<const Decl *> DefaultEqualityFamilies;
+  struct PackProjection {
+    const TemplateSpecializationType *Original;
+    const BuiltinTemplateDecl *Builtin;
+    const ClassTemplateSpecializationDecl *Owner;
+    const NonTypeTemplateParmDecl *Index;
+    const TemplateTypeParmDecl *Types;
+  };
+  std::vector<PackProjection> PackProjections;
+  std::set<const TemplateSpecializationType *> ArrayValueProjections;
+  std::map<const NonTypeTemplateParmDecl *, const TemplateParameterList *>
+      CatDefinitionParameters;
   std::set<const CXXMethodDecl *> ActiveMembers, CompletedMembers;
   std::set<const Type *> Types;
   std::set<const Stmt *> Expressions;
@@ -7275,11 +7360,16 @@ class UtilityTupleQueryGraph
       return false;
     const auto Origin = S.sdkFile(SM, D->getLocation());
     return Origin && Origin->Root == "libcxx" &&
-           (Origin->Path == "tuple" || Origin->Path == "__config" ||
+           (DefaultEqualityFamilies.count(D) ||
+            Origin->Path == "tuple" || Origin->Path == "__config" ||
             llvm::StringRef(Origin->Path).starts_with("__tuple/") ||
             llvm::StringRef(Origin->Path).starts_with("__type_traits/") ||
             Origin->Path == "__utility/declval.h" ||
             Origin->Path == "__cstddef/size_t.h" ||
+            (Mode == UtilityTupleQueryMode::CatSignature &&
+             (Origin->Path == "array" || Origin->Path == "__utility/pair.h" ||
+              Origin->Path == "__utility/integer_sequence.h" ||
+              Origin->Path == "__memory/unique_ptr.h")) ||
             Origin->Path == "string" || Origin->Path == "string_view" ||
             llvm::StringRef(Origin->Path).starts_with("__fwd/"));
   }
@@ -7437,6 +7527,8 @@ class UtilityTupleQueryGraph
     return true;
   }
   bool carrier(QualType T, unsigned Nesting = 0) {
+    if (Mode == UtilityTupleQueryMode::CatSignature)
+      return utilityCatCarrier(S, SM, Context, T, LayoutProof, Nesting);
     if (T.isNull() || Nesting > 64 || T.isVolatileQualified() ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
       return false;
@@ -7453,6 +7545,489 @@ class UtilityTupleQueryGraph
       return false;
     for (const auto &E : Tuple->Elements)
       if (!carrier(E.getType(), Nesting + 1)) return false;
+    return true;
+  }
+  bool defaultEqualityFamily(const NamedDecl *Candidate) {
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return false;
+    std::vector<const Decl *> Pending{Candidate};
+    std::set<const Decl *> Seen;
+    while (!Pending.empty()) {
+      const auto *Declaration = Pending.back();
+      Pending.pop_back();
+      if (!Declaration || !step() || Declaration->isInvalidDecl()) return false;
+      if (!Seen.insert(Declaration).second) continue;
+      if (Seen.size() > 64 || !approvedStandardSDKDeclaration(S, SM, Declaration))
+        return false;
+      const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+      const auto *Function = Template ? Template->getTemplatedDecl()
+          : dyn_cast<FunctionDecl>(Declaration);
+      if (!Function || isa<CXXMethodDecl>(Function) ||
+          Function->getOverloadedOperator() != OO_EqualEqual) return false;
+      const auto Origin = S.sdkFile(SM, Declaration->getLocation());
+      const bool IteratorCandidate = Origin && Origin->Root == "libcxx" &&
+          (Origin->Path == "__iterator/reverse_iterator.h" ||
+           Origin->Path == "__iterator/wrap_iter.h");
+      if (!pinned(Declaration) && !IteratorCandidate) return false;
+      if (Template) {
+        for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
+        Pending.push_back(Function);
+      } else {
+        for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
+        if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
+        if (const auto *Pattern = Function->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
+      }
+    }
+    // Only these actual candidates of the already checked original default
+    // receive family admission. No iterator type, alias, body or operation is
+    // granted merely because it lives in the same header.
+    DefaultEqualityFamilies.insert(Seen.begin(), Seen.end());
+    return family(Candidate);
+  }
+  bool catIndexAlias(const TemplateSpecializationType *Use,
+                     const TypeAliasTemplateDecl *Alias) {
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Use || !Alias ||
+        Use->isDependentType() || !Use->isTypeAlias() || !family(Alias) ||
+        Alias->getName() != "__make_indices_imp" ||
+        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__utility/integer_sequence.h"))
+      return false;
+    const auto *Declaration = Alias->getTemplatedDecl();
+    const auto *Parameters = Alias->getTemplateParameters();
+    if (!Declaration || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
+        Parameters->size() != 2 || Use->template_arguments().size() != 2)
+      return false;
+    const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
+    const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
+    for (const auto *Parameter : {Ep, Sp})
+      if (!Parameter || Parameter->hasDefaultArgument() || Parameter->isParameterPack() ||
+          !family(Parameter) || !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
+          !Parameter->getTypeSourceInfo() ||
+          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+    // Inspect the original alias DSL, without admitting the location-less
+    // compiler builtin as a general declaration or template name.
+    const auto *Original = dyn_cast<DependentTemplateSpecializationType>(
+        Declaration->getUnderlyingType().getTypePtr());
+    const auto *Qualifier = Original ? Original->getQualifier() : nullptr;
+    const auto *Raw = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *SequenceUse = Raw ? dyn_cast<TemplateSpecializationType>(Raw) : nullptr;
+    const auto *Builtin = SequenceUse ? dyn_cast_or_null<BuiltinTemplateDecl>(
+        SequenceUse->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto ParameterReference = [](const TemplateArgument &Argument,
+                                       const NonTypeTemplateParmDecl *Parameter) {
+      const auto *Reference = Argument.getKind() == TemplateArgument::Expression
+          ? dyn_cast<DeclRefExpr>(Argument.getAsExpr()) : nullptr;
+      return Reference && Reference->getDecl() == Parameter;
+    };
+    if (!Original || !Original->getIdentifier() ||
+        Original->getIdentifier()->getName() != "__to_tuple_indices" ||
+        Original->template_arguments().size() != 1 ||
+        !ParameterReference(Original->template_arguments()[0], Sp) ||
+        !Builtin || !Builtin->isImplicit() || !Builtin->getLocation().isInvalid() ||
+        !Builtin->getDeclContext()->isTranslationUnit() ||
+        Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
+        SequenceUse->template_arguments().size() != 3) return false;
+    const auto &SequenceArguments = SequenceUse->template_arguments();
+    const auto *Sequence = SequenceArguments[0].getKind() == TemplateArgument::Template
+        ? dyn_cast_or_null<ClassTemplateDecl>(SequenceArguments[0].getAsTemplate().getAsTemplateDecl()) : nullptr;
+    const auto *Difference = SequenceArguments[2].getKind() == TemplateArgument::Expression
+        ? dyn_cast<BinaryOperator>(SequenceArguments[2].getAsExpr()) : nullptr;
+    const auto *Left = Difference ? dyn_cast<DeclRefExpr>(Difference->getLHS()) : nullptr;
+    const auto *Right = Difference ? dyn_cast<DeclRefExpr>(Difference->getRHS()) : nullptr;
+    const auto Location = Declaration->getTypeSourceInfo()->getTypeLoc();
+    const auto OriginalLoc = Location.getAs<DependentTemplateSpecializationTypeLoc>();
+    const auto SequenceLoc = OriginalLoc
+        ? OriginalLoc.getQualifierLoc().getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
+        : TemplateSpecializationTypeLoc();
+    if (!OriginalLoc || OriginalLoc.getTypePtr() != Original || !SequenceLoc ||
+        SequenceLoc.getTypePtr() != SequenceUse || SequenceLoc.getNumArgs() != 3)
+      return false;
+    for (const auto L : {Location.getBeginLoc(), Location.getEndLoc(),
+                         OriginalLoc.getTemplateNameLoc(), SequenceLoc.getTemplateNameLoc(),
+                         SequenceLoc.getArgLoc(0).getTemplateNameLoc(),
+                         Difference ? Difference->getOperatorLoc() : SourceLocation(),
+                         Left ? Left->getLocation() : SourceLocation(),
+                         Right ? Right->getLocation() : SourceLocation()})
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
+    if (!Sequence || Sequence->getName() != "__integer_sequence" || !family(Sequence) ||
+        !cstddefOrigin(S, SM, Sequence->getLocation(), "libcxx", "__utility/integer_sequence.h") ||
+        SequenceArguments[1].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(SequenceArguments[1].getAsType(), Context.getSizeType()) ||
+        !TraverseType(SequenceArguments[1].getAsType()) ||
+        !Difference || Difference->getOpcode() != BO_Sub ||
+        !Left || Left->getDecl() != Ep || !Right || Right->getDecl() != Sp ||
+        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return false;
+    const auto *SizeSource = SequenceLoc.getArgLoc(1).getTypeSourceInfo();
+    const auto *OriginalOffset = dyn_cast<DeclRefExpr>(Original->template_arguments()[0].getAsExpr());
+    if (!SizeSource || !TraverseTypeLoc(SizeSource->getTypeLoc()) ||
+        !cstddefOrigin(S, SM, OriginalOffset->getLocation(), "libcxx", "__utility/integer_sequence.h"))
+      return false;
+    const auto *SequenceParameters = Sequence->getTemplateParameters();
+    const auto *IndexType = SequenceParameters->size() == 2
+        ? dyn_cast<TemplateTypeParmDecl>(SequenceParameters->getParam(0)) : nullptr;
+    const auto *Values = SequenceParameters->size() == 2
+        ? dyn_cast<NonTypeTemplateParmDecl>(SequenceParameters->getParam(1)) : nullptr;
+    const auto *ValueType = Values ? dyn_cast<TemplateTypeParmType>(Values->getType().getTypePtr()) : nullptr;
+    if (!IndexType || IndexType->hasDefaultArgument() || IndexType->isParameterPack() ||
+        !Values || !Values->isParameterPack() || Values->hasDefaultArgument() ||
+        !ValueType || ValueType->getDecl() != IndexType ||
+        !family(IndexType) || !family(Values)) return false;
+    const auto *SequenceDefinition = Sequence->getTemplatedDecl()->getDefinition();
+    if (!SequenceDefinition || !family(SequenceDefinition) ||
+        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return false;
+    const TypeAliasTemplateDecl *ToIndices = nullptr;
+    for (const auto *Member : SequenceDefinition->decls())
+      if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Member);
+          Template && Template->getName() == "__to_tuple_indices") {
+        if (ToIndices) return false;
+        ToIndices = Template;
+      }
+    const auto *ToParameters = ToIndices ? ToIndices->getTemplateParameters() : nullptr;
+    const auto *Offset = ToParameters && ToParameters->size() == 1
+        ? dyn_cast<NonTypeTemplateParmDecl>(ToParameters->getParam(0)) : nullptr;
+    const auto *ToDeclaration = ToIndices ? ToIndices->getTemplatedDecl() : nullptr;
+    const auto *IndicesUse = ToDeclaration
+        ? ToDeclaration->getUnderlyingType()->getAs<TemplateSpecializationType>() : nullptr;
+    const auto *Indices = IndicesUse ? dyn_cast_or_null<ClassTemplateDecl>(
+        IndicesUse->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *Expansion = IndicesUse && IndicesUse->template_arguments().size() == 1 &&
+        IndicesUse->template_arguments()[0].getKind() == TemplateArgument::Expression
+        ? dyn_cast<PackExpansionExpr>(IndicesUse->template_arguments()[0].getAsExpr()) : nullptr;
+    const auto *Conversion = Expansion
+        ? dyn_cast<ImplicitCastExpr>(Expansion->getPattern()) : nullptr;
+    const auto *Addition = Conversion && Conversion->getCastKind() == CK_Dependent &&
+        Conversion->isPRValue() && Context.hasSameType(Conversion->getType(), Context.getSizeType())
+        ? dyn_cast<BinaryOperator>(Conversion->getSubExpr()->IgnoreParens()) : nullptr;
+    const auto *ValueReference = Addition ? dyn_cast<DeclRefExpr>(Addition->getLHS()) : nullptr;
+    const auto *OffsetReference = Addition ? dyn_cast<DeclRefExpr>(Addition->getRHS()) : nullptr;
+    if (!ToIndices || !family(ToIndices) || !family(ToDeclaration) || !Offset ||
+        !family(Offset) || Offset->hasDefaultArgument() || Offset->isParameterPack() ||
+        !Context.hasSameType(Offset->getType(), Context.getSizeType()) ||
+        !Indices || Indices->getName() != "__tuple_indices" || !family(Indices) ||
+        !(cstddefOrigin(S, SM, Indices->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
+          cstddefOrigin(S, SM, Indices->getLocation(), "libcxx", "__utility/integer_sequence.h")) ||
+        !Addition || Addition->getOpcode() != BO_Add || !ValueReference ||
+        ValueReference->getDecl() != Values || !OffsetReference ||
+        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return false;
+    auto IndicesLoc = ToDeclaration->getTypeSourceInfo()->getTypeLoc();
+    for (unsigned I = 0; I <= 8 && IndicesLoc &&
+         !IndicesLoc.getAs<TemplateSpecializationTypeLoc>(); ++I)
+      IndicesLoc = IndicesLoc.getNextTypeLoc();
+    const auto IndexTemplateLoc = IndicesLoc.getAs<TemplateSpecializationTypeLoc>();
+    if (!IndexTemplateLoc || IndexTemplateLoc.getTypePtr() != IndicesUse ||
+        !cstddefOrigin(S, SM, IndexTemplateLoc.getTemplateNameLoc(), "libcxx", "__utility/integer_sequence.h"))
+      return false;
+    for (const auto L : {ToDeclaration->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
+                         ToDeclaration->getTypeSourceInfo()->getTypeLoc().getEndLoc(),
+                         Addition->getOperatorLoc(), ValueReference->getLocation(),
+                         OffsetReference->getLocation()})
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
+    const auto *IndexParameters = Indices->getTemplateParameters();
+    const auto *IndexPack = IndexParameters->size() == 1
+        ? dyn_cast<NonTypeTemplateParmDecl>(IndexParameters->getParam(0)) : nullptr;
+    const auto *IndexDefinition = Indices->getTemplatedDecl()->getDefinition();
+    if (!IndexPack || !IndexPack->isParameterPack() || IndexPack->hasDefaultArgument() ||
+        !family(IndexPack) || !Context.hasSameType(IndexPack->getType(), Context.getSizeType()) ||
+        !IndexPack->getTypeSourceInfo() ||
+        !TraverseTypeLoc(IndexPack->getTypeSourceInfo()->getTypeLoc()) ||
+        !IndexDefinition || !family(IndexDefinition) ||
+        !cstddefOrigin(S, SM, IndexDefinition->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
+        !IndexDefinition->field_empty() ||
+        IndexDefinition->getNumBases() || IndexDefinition->isUnion() ||
+        IndexDefinition->isDynamicClass()) return false;
+    uint64_t End = 0, Start = 0;
+    auto Concrete = [&](const TemplateArgument &Argument, uint64_t &Value) {
+      const llvm::APSInt *Integer = nullptr;
+      llvm::APSInt Stored;
+      QualType Type;
+      if (Argument.getKind() == TemplateArgument::Integral) {
+        Stored = Argument.getAsIntegral(); Integer = &Stored; Type = Argument.getIntegralType();
+      } else if (Argument.getKind() == TemplateArgument::Expression) {
+        const auto *Expression = dyn_cast<ConstantExpr>(Argument.getAsExpr());
+        if (!Expression || Expression->getResultStorageKind() == ConstantResultStorageKind::None ||
+            Expression->getAPValueResult().getKind() != APValue::Int) return false;
+        Stored = Expression->getResultAsAPSInt(); Integer = &Stored; Type = Expression->getType();
+      }
+      if (!Integer || !Context.hasSameType(Type, Context.getSizeType()) ||
+          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return false;
+      Value = Integer->getZExtValue(); return true;
+    };
+    if (!Concrete(Use->template_arguments()[0], End) ||
+        !Concrete(Use->template_arguments()[1], Start) || Start > End) return false;
+    const auto *ActualTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
+    const auto *ActualAlias = ActualTo ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        ActualTo->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *ActualSequence = ActualAlias
+        ? dyn_cast<ClassTemplateSpecializationDecl>(ActualAlias->getDeclContext()) : nullptr;
+    const auto *Result = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Use->getCanonicalTypeInternal()->getAsCXXRecordDecl());
+    if (!ActualAlias || !family(ActualAlias) ||
+        (ActualAlias->getCanonicalDecl() != ToIndices->getCanonicalDecl() &&
+         ActualAlias->getInstantiatedFromMemberTemplate() != ToIndices) ||
+        !ActualSequence || !family(ActualSequence) ||
+        ActualSequence->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        ActualSequence->getSpecializedTemplate()->getCanonicalDecl() != Sequence->getCanonicalDecl() ||
+        !Result || !family(Result) ||
+        (Result->getSpecializationKind() != TSK_ImplicitInstantiation &&
+         Result->getSpecializationKind() != TSK_Undeclared) ||
+        !Result->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
+        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return false;
+    // The final empty metadata specialization may remain lazy. Its actual
+    // family, original primary definition and every index are authenticated;
+    // this query neither asks Sema for a definition nor consumes a layout.
+    if (const auto *Definition = Result->getDefinition())
+      if (!family(Definition) || !Definition->field_empty() || Definition->getNumBases() ||
+          Definition->isUnion() || Definition->isDynamicClass()) return false;
+    const auto &ActualArguments = ActualSequence->getTemplateArgs();
+    const auto &ResultArguments = Result->getTemplateArgs();
+    if (ActualArguments.size() != 2 || ActualArguments[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(ActualArguments[0].getAsType(), Context.getSizeType()) ||
+        ActualArguments[1].getKind() != TemplateArgument::Pack ||
+        ActualArguments[1].pack_size() != End - Start || ResultArguments.size() != 1 ||
+        ResultArguments[0].getKind() != TemplateArgument::Pack ||
+        ResultArguments[0].pack_size() != End - Start) return false;
+    for (unsigned I = 0; I < End - Start; ++I) {
+      uint64_t Generated = 0, Index = 0;
+      if (!step() || !Concrete(ActualArguments[1].pack_elements()[I], Generated) ||
+          !Concrete(ResultArguments[0].pack_elements()[I], Index) ||
+          Generated != I || Index != Start + I) return false;
+    }
+    return true;
+  }
+  bool retainPackProjection(const TypeAliasTemplateDecl *Pattern,
+                            const CXXRecordDecl *Owner) {
+    if (!Pattern || Pattern->getName() != "__apply_quals") return true;
+    const auto *Actual = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Owner);
+    const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Pattern->getDeclContext());
+    if (!Actual || !Partial || !family(Actual) || !family(Partial) ||
+        Partial->getName() != "__make_tuple_types_flat" ||
+        !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "__tuple/make_tuple_types.h") ||
+        Actual->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplatePartialSpecializationDecl *>() != Partial)
+      return false;
+    const auto *Output = Pattern->getTemplatedDecl()->getUnderlyingType()->getAs<TemplateSpecializationType>();
+    if (!Output || Output->template_arguments().size() != 1 ||
+        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return false;
+    const auto *Expansion = dyn_cast<PackExpansionType>(Output->template_arguments()[0].getAsType().getTypePtr());
+    const auto *Copy = Expansion ? Expansion->getPattern()->getAs<TemplateSpecializationType>() : nullptr;
+    const auto *CopyAlias = Copy ? dyn_cast_or_null<TypeAliasTemplateDecl>(Copy->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!CopyAlias || CopyAlias->getName() != "__copy_cvref_t" || !family(CopyAlias) ||
+        Copy->template_arguments().size() != 2 ||
+        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return false;
+    const auto *Projection = Copy->template_arguments()[1].getAsType()->getAs<TemplateSpecializationType>();
+    const auto *Builtin = Projection ? dyn_cast_or_null<BuiltinTemplateDecl>(Projection->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Builtin) {
+      const auto *ValueAlias = Projection ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+          Projection->getTemplateName().getAsTemplateDecl()) : nullptr;
+      const auto *Parameters = Partial->getTemplateParameters();
+      const auto *Value = Parameters->size() == 3
+          ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+      const auto *Index = Parameters->size() == 3
+          ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2)) : nullptr;
+      const auto *ValueParameters = ValueAlias ? ValueAlias->getTemplateParameters() : nullptr;
+      const auto *IgnoredIndex = ValueParameters && ValueParameters->size() == 1
+          ? dyn_cast<NonTypeTemplateParmDecl>(ValueParameters->getParam(0)) : nullptr;
+      const auto *ValueType = ValueAlias ? dyn_cast<TemplateTypeParmType>(
+          ValueAlias->getTemplatedDecl()->getUnderlyingType().getTypePtr()) : nullptr;
+      const auto *Reference = Projection && Projection->template_arguments().size() == 1 &&
+          Projection->template_arguments()[0].getKind() == TemplateArgument::Expression
+          ? dyn_cast<DeclRefExpr>(Projection->template_arguments()[0].getAsExpr()) : nullptr;
+      if (!ValueAlias || ValueAlias->getName() != "__value_type" ||
+          ValueAlias->getDeclContext() != Partial || !family(ValueAlias) ||
+          !family(ValueAlias->getTemplatedDecl()) || !Value || Value->isParameterPack() ||
+          !family(Value) || !Index || !Index->isParameterPack() || !family(Index) ||
+          !IgnoredIndex || IgnoredIndex->isParameterPack() || IgnoredIndex->hasDefaultArgument() ||
+          !family(IgnoredIndex) || !Context.hasSameType(IgnoredIndex->getType(), Context.getSizeType()) ||
+          !ValueType || ValueType->getDecl() != Value || !Reference || Reference->getDecl() != Index ||
+          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return false;
+      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return false;
+      ArrayValueProjections.insert(Projection);
+      return true;
+    }
+    const auto *Parameters = Partial->getTemplateParameters();
+    const auto *Types = Parameters->size() == 3 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    const auto *Index = Parameters->size() == 3 ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2)) : nullptr;
+    const auto *Reference = Projection->template_arguments().size() == 2 &&
+        Projection->template_arguments()[0].getKind() == TemplateArgument::Expression
+        ? dyn_cast<DeclRefExpr>(Projection->template_arguments()[0].getAsExpr()) : nullptr;
+    const auto *Pack = Projection->template_arguments().size() == 2 &&
+        Projection->template_arguments()[1].getKind() == TemplateArgument::Type
+        ? dyn_cast<PackExpansionType>(Projection->template_arguments()[1].getAsType().getTypePtr()) : nullptr;
+    const auto *ParameterType = Pack ? dyn_cast<TemplateTypeParmType>(Pack->getPattern().getTypePtr()) : nullptr;
+    if (!Builtin->isImplicit() || !Builtin->getLocation().isInvalid() ||
+        !Builtin->getDeclContext()->isTranslationUnit() ||
+        Builtin->getBuiltinTemplateKind() != BTK__type_pack_element ||
+        !Types || !Types->isParameterPack() || !family(Types) ||
+        !Index || !Index->isParameterPack() || !family(Index) ||
+        !Context.hasSameType(Index->getType(), Context.getSizeType()) ||
+        !Reference || Reference->getDecl() != Index ||
+        !ParameterType || ParameterType->getDecl() != Types) return false;
+    for (const auto &Existing : PackProjections)
+      if (Existing.Original == Projection && Existing.Owner == Actual) return true;
+    if (PackProjections.size() >= 64) return false;
+    PackProjections.push_back({Projection, Builtin, Actual, Index, Types});
+    return true;
+  }
+  bool retainDefinitionParameters(const TypeAliasTemplateDecl *Alias) {
+    auto Keep = [&](const TemplateParameterList *Parameters) {
+      if (!Parameters) return false;
+      for (const auto *Declaration : *Parameters)
+        if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
+          if (!step() || !family(Parameter) || !Parameter->getTypeSourceInfo() ||
+              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+          const auto Inserted = CatDefinitionParameters.emplace(Parameter, Parameters);
+          if (!Inserted.second && Inserted.first->second != Parameters) return false;
+        }
+      return true;
+    };
+    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return false;
+    const auto *Owner = dyn_cast<CXXRecordDecl>(Alias->getDeclContext());
+    if (!Owner) return true;
+    if (!family(Owner)) return false;
+    if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Owner))
+      return Keep(Partial->getTemplateParameters());
+    if (const auto *Primary = Owner->getDescribedClassTemplate())
+      return family(Primary) && Keep(Primary->getTemplateParameters());
+    return true; // Instantiated owners are followed to their written pattern.
+  }
+  const TypeAliasDecl *catAliasWrittenSource(const TypeAliasTemplateDecl *Alias) {
+    const auto *Written = Alias;
+    for (unsigned Nesting = 0; Written && Nesting <= 64; ++Nesting) {
+      if (!step() || !family(Written) || !family(Written->getTemplatedDecl())) return nullptr;
+      const auto *Pattern = Written->getInstantiatedFromMemberTemplate();
+      if (!Pattern)
+        return retainDefinitionParameters(Written) ? Written->getTemplatedDecl() : nullptr;
+      const auto *Owner = dyn_cast<CXXRecordDecl>(Written->getDeclContext());
+      const auto *SourceOwner = dyn_cast<CXXRecordDecl>(Pattern->getDeclContext());
+      if (!Owner || !SourceOwner || !family(Owner) || !family(SourceOwner) ||
+          !retainPackProjection(Pattern, Owner)) return nullptr;
+      Written = Pattern;
+    }
+    return nullptr;
+  }
+  bool catPackElement(const TemplateSpecializationType *Use) {
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Use || !step()) return false;
+    const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(Use->getTemplateName().getAsTemplateDecl());
+    for (const auto &Projection : PackProjections) {
+      if (Builtin != Projection.Builtin) continue;
+      if (Use == Projection.Original) return true;
+      const auto Arguments = Use->template_arguments();
+      if (Use->isDependentType() || Arguments.empty() ||
+          Arguments[0].getKind() != TemplateArgument::Expression) continue;
+      const auto *Index = dyn_cast<ConstantExpr>(Arguments[0].getAsExpr());
+      const auto *Substitution = Index ? dyn_cast<SubstNonTypeTemplateParmExpr>(Index->getSubExpr()) : nullptr;
+      if (!Substitution || Substitution->getAssociatedDecl() != Projection.Owner ||
+          Substitution->getParameter() != Projection.Index ||
+          Index->getResultStorageKind() == ConstantResultStorageKind::None ||
+          Index->getAPValueResult().getKind() != APValue::Int ||
+          !Context.hasSameType(Index->getType(), Context.getSizeType())) continue;
+      const auto Number = Index->getResultAsAPSInt();
+      const auto &OwnerArguments = Projection.Owner->getTemplateArgs();
+      if (OwnerArguments.size() != 2 || OwnerArguments[0].getKind() != TemplateArgument::Type ||
+          Number.isNegative()) return false;
+      const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, OwnerArguments[0].getAsType(), Context);
+      if (!Storage || Storage->ArrayElements || Arguments.size() != Storage->size() + 1 ||
+          Number.getLimitedValue(Storage->size()) >= Storage->size()) return false;
+      for (unsigned I = 0; I < Storage->size(); ++I) {
+        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return false;
+        const auto Type = Arguments[I+1].getAsType();
+        const auto *Element = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
+        if (!Element || Element->getAssociatedDecl() != Projection.Owner ||
+            Element->getReplacedParameter() != Projection.Types || !Element->getPackIndex() ||
+            *Element->getPackIndex() != Storage->size() - 1 - I ||
+            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return false;
+      }
+      return Context.hasSameType(Use->getAliasedType(), Storage->elementType(Number.getZExtValue()));
+    }
+    return false;
+  }
+  bool bindCatInputs(const FunctionDecl *Function) {
+    if (Mode != UtilityTupleQueryMode::CatSignature) return true;
+    if (!Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
+        !family(Function) || !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "tuple") ||
+        Function->getNumParams() > 64) return false;
+    if (CatInputFunction) return CatInputFunction == Function;
+    CatInputFunction = Function;
+    auto Bind = [&](auto &&Self, QualType Type, unsigned Nesting) -> bool {
+      if (!step() || Nesting > 64 || Type.isNull()) return false;
+      if (Type->isReferenceType()) return Self(Self, Type->getPointeeType(), Nesting + 1);
+      if (!carrier(Type, Nesting)) return false;
+      if (utilityScalar(Context, Type) || Type->isVoidType()) return true;
+      const auto *Record = Type->getAsCXXRecordDecl();
+      if (const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, Type, Context)) {
+        if (Storage->ArrayElements)
+          return Self(Self, Storage->ArrayElementType, Nesting + 1);
+        for (unsigned I = 0; I < Storage->size(); ++I)
+          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return false;
+        return true;
+      }
+      if (const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false)) {
+        const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
+        if (!Instance || Instance->getTemplateArgs().size() != 2) return false;
+        CatInputOwners.insert(Instance->getCanonicalDecl());
+        for (unsigned I = 0; I < 2; ++I) {
+          const auto &Argument = Instance->getTemplateArgs().get(I);
+          if (Argument.getKind() != TemplateArgument::Type) return false;
+          const auto Input = Argument.getAsType();
+          const auto *InputRecord = Context.getBaseElementType(Input)->getAsCXXRecordDecl();
+          // External atoms belong to these exact owner input slots. Caller
+          // TypeLocs/template arguments still take the ordinary source path.
+          const auto *InputInstance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(InputRecord);
+          const auto *InputPrimary = InputInstance ? InputInstance->getSpecializedTemplate() : nullptr;
+          if (InputRecord && S.owns(SM, InputRecord->getLocation()) &&
+              (!InputPrimary || !approvedStandardSDKDeclaration(S, SM, InputPrimary)))
+            CatOwnerAtoms[InputRecord->getCanonicalDecl()].emplace(Instance, I);
+        }
+        return true;
+      }
+      return approvedUtilityStringRecord(S, SM, Record, Context).has_value() ||
+             approvedUtilityStringViewRecord(S, SM, Record, Context).has_value();
+    };
+    for (const auto *Parameter : Function->parameters())
+      if (!Parameter->getType()->isReferenceType() ||
+          !Bind(Bind, Parameter->getType(), 0)) return false;
+    return true;
+  }
+  bool ownerSource(const CXXRecordDecl *Record) {
+    const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false);
+    const auto *Instance = Owner
+        ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
+    const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    if (!Instance || !CatInputFunction ||
+        !CatInputOwners.count(Instance->getCanonicalDecl()) || !family(Instance) ||
+        !Parameters || Parameters->size() != 2 || Instance->getTemplateArgs().size() != 2)
+      return false;
+    const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
+    const auto *Dp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
+    if (!Tp || !Dp || Tp->hasDefaultArgument() || !Dp->hasDefaultArgument() ||
+        Tp->isParameterPack() || Dp->isParameterPack() || !family(Tp) || !family(Dp))
+      return false;
+    const auto &Default = Dp->getDefaultArgument();
+    const auto *Info = Default.getArgument().getKind() == TemplateArgument::Type
+        ? Default.getTypeSourceInfo() : nullptr;
+    const auto *Type = Info
+        ? Info->getType()->getAs<TemplateSpecializationType>() : nullptr;
+    const auto *Deletion = Type
+        ? dyn_cast_or_null<ClassTemplateDecl>(Type->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *Argument = Type && Type->template_arguments().size() == 1 &&
+        Type->template_arguments()[0].getKind() == TemplateArgument::Type
+        ? dyn_cast<TemplateTypeParmType>(Type->template_arguments()[0].getAsType().getTypePtr()) : nullptr;
+    if (!Info || !Type || Type->isTypeAlias() || !Deletion ||
+        Deletion->getName() != "default_delete" || !family(Deletion) ||
+        !cstddefOrigin(S, SM, Deletion->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
+        !Argument || Argument->getDecl() != Tp || !TraverseTypeLoc(Info->getTypeLoc()))
+      return false;
+    const auto *Actual = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Deleter.Record);
+    const bool DefaultFamily = Actual &&
+        Actual->getSpecializedTemplate()->getCanonicalDecl() == Deletion->getCanonicalDecl();
+    if (!Owner->CustomDeleter || DefaultFamily) {
+      if (!Actual || !family(Actual) ||
+          Actual->getSpecializedTemplate()->getCanonicalDecl() != Deletion->getCanonicalDecl() ||
+          Actual->getTemplateArgs().size() != 1 ||
+          Actual->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Actual->getTemplateArgs()[0].getAsType(),
+                              Instance->getTemplateArgs()[0].getAsType())) return false;
+    }
+    for (const auto &Input : Instance->getTemplateArgs().asArray())
+      if (!TraverseTemplateArgument(Input)) return false;
     return true;
   }
   bool fullSliceDefaults(const ClassTemplateSpecializationDecl *Instance) {
@@ -7485,8 +8060,11 @@ class UtilityTupleQueryGraph
         !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return false;
     const auto Object = Arguments[0].getAsType();
     if (Object->isReferenceType() || Object.hasLocalQualifiers() ||
-        !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl())) return false;
-    const auto Tuple = approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
+        (Mode != UtilityTupleQueryMode::CatSignature &&
+         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return false;
+    const auto Tuple = Mode == UtilityTupleQueryMode::CatSignature
+        ? approvedUtilityTupleCatQueryLayout(S, SM, Object, Context)
+        : approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
     if (!Tuple) return false;
     const auto Integral = [&](unsigned I, QualType T, uint64_t N) {
       const auto &Argument = Arguments[I];
@@ -7543,13 +8121,34 @@ class UtilityTupleQueryGraph
     const auto *Size = SizeReference(Default(Ep));
     const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Default(Sp));
     const auto *Parenthesized = dyn_cast_or_null<ParenExpr>(Default(Same));
-    const auto *Equality = Parenthesized ? dyn_cast<BinaryOperator>(Parenthesized->getSubExpr()) : nullptr;
-    const auto *Left = Equality ? dyn_cast<DeclRefExpr>(Equality->getLHS()) : nullptr;
-    const auto *OtherSize = Equality ? SizeReference(Equality->getRHS()) : nullptr;
+    const auto *Comparison = Parenthesized ? Parenthesized->getSubExpr() : nullptr;
+    const auto *Equality = dyn_cast_or_null<BinaryOperator>(Comparison);
+    const auto *Dependent = Mode == UtilityTupleQueryMode::CatSignature
+        ? dyn_cast_or_null<CXXOperatorCallExpr>(Comparison) : nullptr;
+    const auto *Lookup = Dependent
+        ? dyn_cast<UnresolvedLookupExpr>(Dependent->getCallee()) : nullptr;
+    const bool DependentEquality = Dependent && !Dependent->getDirectCallee() &&
+        Dependent->isTypeDependent() && Dependent->getOperator() == OO_EqualEqual &&
+        Dependent->getNumArgs() == 2 && Lookup && Lookup->requiresADL() &&
+        Lookup->getName().getNameKind() == DeclarationName::CXXOperatorName &&
+        Lookup->getName().getCXXOverloadedOperator() == OO_EqualEqual;
+    const auto *LeftExpression = Equality ? Equality->getLHS()
+        : DependentEquality ? Dependent->getArg(0) : nullptr;
+    const auto *RightExpression = Equality ? Equality->getRHS()
+        : DependentEquality ? Dependent->getArg(1) : nullptr;
+    const auto *Left = dyn_cast_or_null<DeclRefExpr>(LeftExpression);
+    const auto *OtherSize = RightExpression ? SizeReference(RightExpression) : nullptr;
     if (!Size || !Zero || !Zero->getValue().isZero() ||
         !Context.hasSameType(Zero->getType(), Context.IntTy) ||
-        !Equality || Equality->getOpcode() != BO_EQ || !Left || Left->getDecl() != Ep ||
-        !OtherSize || Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return false;
+        !(Equality ? Equality->getOpcode() == BO_EQ : DependentEquality) ||
+        !Left || Left->getDecl() != Ep || !OtherSize ||
+        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return false;
+    // The retained dependent lookup must close every original candidate.
+    // Ep and the already instantiated tuple_size value both have size_t;
+    // no candidate body, overload resolution or new evaluation is requested.
+    if (DependentEquality)
+      for (const auto *Candidate : Lookup->decls())
+        if (!defaultEqualityFamily(Candidate)) return false;
     {
       // This is the original definition's exact parameter, not an
       // instantiated metadata object's value member.
@@ -7586,7 +8185,26 @@ class UtilityTupleQueryGraph
 
   bool record(const CXXRecordDecl *R) {
     if (!R) return false;
-    if (carrier(Context.getRecordType(R))) return true;
+    if (carrier(Context.getRecordType(R))) {
+      if (Mode != UtilityTupleQueryMode::CatSignature) return true;
+      if (!family(R)) return false;
+      // The layout descriptor is structural evidence only. Close each actual
+      // tuple-like element in the SDK signature graph as well.
+      if (const auto Storage = approvedUtilityTupleCatQueryLayout(
+              S, SM, Context.getRecordType(R), Context)) {
+        if (!Records.insert(R).second) return true;
+        if (Storage->ArrayElements)
+          return TraverseType(Storage->ArrayElementType);
+        for (unsigned I = 0; I < Storage->size(); ++I)
+          if (!TraverseType(Storage->elementType(I))) return false;
+        return true;
+      }
+      if (approvedMemoryTemplateMetadata(S, SM, R) == MemoryTemplateMetadata::UniquePtr)
+        return ownerSource(R);
+      // String and view descriptors authenticate their exact traits/storage.
+      return approvedUtilityStringRecord(S, SM, R, Context).has_value() ||
+             approvedUtilityStringViewRecord(S, SM, R, Context).has_value();
+    }
     if (!family(R)) return false;
     if (!Records.insert(R).second) return true;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
@@ -7610,6 +8228,16 @@ class UtilityTupleQueryGraph
   bool value(const ValueDecl *D) {
     if (!family(D) || !TraverseType(D->getType())) return false;
     if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
+      if (Mode == UtilityTupleQueryMode::CatSignature)
+        if (const auto Found = CatDefinitionParameters.find(Parameter);
+            Found != CatDefinitionParameters.end()) {
+          const auto *Parameters = Found->second;
+          // This exact symbolic declaration belongs to an authenticated
+          // written definition. Reading its identity consumes no instance
+          // body, canonical dependent arguments, or default expression.
+          return Parameter->getIndex() < Parameters->size() &&
+              Parameters->getParam(Parameter->getIndex()) == Parameter;
+        }
       const auto Found = DefinitionParameters.find(Parameter);
       if (Found != DefinitionParameters.end()) {
         const auto *Primary = Found->second;
@@ -7636,13 +8264,46 @@ public:
   UtilityTupleQueryGraph(const State &S, const SourceManager &SM,
                         const ASTContext &Context,
                         const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
-                        const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits)
-      : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits) {}
+                        const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+                        UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
+      : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+  bool TraverseTemplateSpecializationType(TemplateSpecializationType *T) {
+    if (isa_and_nonnull<BuiltinTemplateDecl>(T->getTemplateName().getAsTemplateDecl()))
+      return catPackElement(T);
+    return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateSpecializationType(T);
+  }
+  bool TraverseTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc Location) {
+    if (isa_and_nonnull<BuiltinTemplateDecl>(Location.getTypePtr()->getTemplateName().getAsTemplateDecl())) {
+      // Only an authenticated original projection may supply a builtin token.
+      // Concrete generated projections are checked as types, without claiming
+      // that their scratch-space token locations are written SDK source.
+      return cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h") &&
+          catPackElement(Location.getTypePtr());
+    }
+    return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateSpecializationTypeLoc(Location);
+  }
   bool TraverseType(QualType T) {
     if (T.isNull()) return true;
     if (!step() || T.isVolatileQualified() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default)
       return false;
+    if (Mode == UtilityTupleQueryMode::CatSignature && CatInputFunction)
+      if (const auto *Leaf = dyn_cast<RecordType>(T.getTypePtr())) {
+        const auto *Record = dyn_cast<CXXRecordDecl>(Leaf->getDecl());
+        const auto Bound = Record ? CatOwnerAtoms.find(Record->getCanonicalDecl())
+                                  : CatOwnerAtoms.end();
+        if (Bound != CatOwnerAtoms.end()) {
+          for (const auto &[Owner, Slot] : Bound->second) {
+            if (!CatInputOwners.count(Owner->getCanonicalDecl()) ||
+                Slot >= Owner->getTemplateArgs().size()) return false;
+            const auto &Argument = Owner->getTemplateArgs()[Slot];
+            const auto *Input = Argument.getKind() == TemplateArgument::Type
+                ? Context.getBaseElementType(Argument.getAsType())->getAsCXXRecordDecl() : nullptr;
+            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+          }
+          return true;
+        }
+      }
     if (!Types.insert(T.getTypePtr()).second) return true;
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
@@ -7660,6 +8321,26 @@ public:
   }
   bool TraverseTypeLoc(TypeLoc Location) {
     if (Location.isNull()) return true;
+    if (Mode == UtilityTupleQueryMode::CatSignature)
+      if (const auto Wrapper = Location.getAs<ElaboratedTypeLoc>())
+        if (const auto Named = Wrapper.getNamedTypeLoc().getAs<TemplateSpecializationTypeLoc>()) {
+          bool Original = ArrayValueProjections.count(Named.getTypePtr());
+          for (const auto &Projection : PackProjections)
+            Original |= Named.getTypePtr() == Projection.Original;
+          if (Original) {
+            // Repair only this authenticated original projection wrapper.
+            // The real builtin/alias name token must remain SDK source.
+            if (!cstddefOrigin(S, SM, Named.getTemplateNameLoc(), "libcxx",
+                               "__tuple/make_tuple_types.h")) return false;
+            for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
+              if (L.isInvalid()) return false;
+              const auto Origin = S.sdkFile(SM, L);
+              if ((!Origin || Origin->Root != "libcxx") &&
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return false;
+            }
+            return TraverseTemplateSpecializationTypeLoc(Named);
+          }
+        }
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
       const auto Origin = S.sdkFile(SM, L);
       if (!Origin || Origin->Root != "libcxx") return false;
@@ -7721,7 +8402,12 @@ public:
     if (!Template || !family(Template)) return false;
     if (T->isTypeAlias()) {
       const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template);
-      const auto *Declaration = Alias ? Alias->getTemplatedDecl() : nullptr;
+      const auto *Declaration = Alias
+          ? (Mode == UtilityTupleQueryMode::CatSignature ? catAliasWrittenSource(Alias)
+                                                        : Alias->getTemplatedDecl())
+          : nullptr;
+      if (Mode == UtilityTupleQueryMode::CatSignature && Alias &&
+          Alias->getName() == "__make_indices_imp") return catIndexAlias(T, Alias);
       if (!Declaration || !Declaration->getTypeSourceInfo() ||
           !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
       return TraverseType(T->getAliasedType());
@@ -7812,7 +8498,7 @@ public:
     return TraverseStmt(const_cast<Expr *>(Source.Root));
   }
   bool function(const FunctionDecl *F) {
-    if (!family(F)) return false;
+    if (!family(F) || !bindCatInputs(F)) return false;
     if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
       if (Method->isImplicit() || Method->isDefaulted()) return specialMember(Method);
     for (const auto *Parameter : F->parameters())
@@ -7920,6 +8606,7 @@ public:
     return function(Constructor);
   }
   bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
+    if (!bindCatInputs(Function)) return false;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Primary || !Arguments || Source.Kind != TemplateSourceKind::Function ||
@@ -8042,7 +8729,8 @@ bool approvedUtilityTupleCatSignatureQuery(
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
-  UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits);
+  UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits,
+                               UtilityTupleQueryMode::CatSignature);
   if (!Call || !Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
       !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "tuple") ||
       !Call->isPRValue() || Call->isTypeDependent() || Call->isValueDependent() ||
@@ -8053,8 +8741,8 @@ bool approvedUtilityTupleCatSignatureQuery(
       !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
       !approvedUtilityReference(S, SM, Call, Function) || !Graph.function(Function) ||
       !Graph.TraverseType(Function->getReturnType())) return false;
-  const auto Result = utilityTupleStorageRecord(
-      S, SM, Call->getType()->getAsCXXRecordDecl(), Context, 0);
+  const auto Result = approvedUtilityTupleCatQueryLayout(
+      S, SM, Call->getType(), Context);
   if (!Result || !Graph.admittedCarrier(Call->getType())) return false;
   if (!Call->getNumArgs())
     return !Function->getPrimaryTemplate() && Result->Elements.empty();
@@ -8067,8 +8755,8 @@ bool approvedUtilityTupleCatSignatureQuery(
         !Context.hasSameType(Parameter->getPointeeType(), Argument->getType()) ||
         (Parameter->isLValueReferenceType() ? !Argument->isLValue() : Argument->isLValue()))
       return false;
-    const auto Input = approvedUtilityTupleLikeSource(
-        S, SM, Argument->getType(), Context, true, true);
+    const auto Input = approvedUtilityTupleCatQueryLayout(
+        S, SM, Argument->getType(), Context);
     if (!Input || Input->size() > Result->Elements.size() - Position) return false;
     for (uint64_t N = 0; N < Input->size(); ++N) {
       const auto Element = Input->ArrayElements ? Input->ArrayElementType
@@ -8084,7 +8772,8 @@ bool approvedUtilityTupleCatQueryTemplateSource(
     const TemplateUseSource &Source, const ASTContext &Context,
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
-  return UtilityTupleQueryGraph(S, SM, Context, Members, Traits)
+  return UtilityTupleQueryGraph(S, SM, Context, Members, Traits,
+                              UtilityTupleQueryMode::CatSignature)
       .catTemplateSource(Function, Source);
 }
 
@@ -8235,10 +8924,12 @@ bool approvedUtilityArrayMetadata(const State &S, const SourceManager &SM,
   return !Size.isNegative() && Size.getLimitedValue(65537) <= 65536;
 }
 
-std::optional<UtilityArrayRecord>
-approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
-                           const CXXRecordDecl *Record,
-                           const ASTContext &Context) {
+static std::optional<UtilityArrayRecord>
+approvedUtilityArrayRecordImpl(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context,
+                               UtilityCatLayoutProof *Query = nullptr,
+                               unsigned Depth = 0) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -8252,7 +8943,8 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
   if (!approvedUtilityArrayMetadata(S, SM, Specialization) ||
       !Specialization || !Template || !CanonicalTemplate ||
       Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
-      Specialization->getNumBases() || !Specialization->isStandardLayout() ||
+      Specialization->getNumBases() ||
+      (!Query && !Specialization->isStandardLayout()) ||
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
@@ -8276,7 +8968,8 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
       Elements->getAccess() != AS_public || Elements->isBitField() ||
       Elements->isMutable() || !Array || Element.isNull() ||
       !Element->isObjectType() || Element->isIncompleteType() ||
-      !utilityArrayStorableValue(S, SM, Context, Element) ||
+      !(Query ? utilityCatCarrier(S, SM, Context, Element, *Query, Depth + 1)
+              : utilityArrayStorableValue(S, SM, Context, Element)) ||
       !approvedStandardSDKDeclaration(S, SM, Elements) ||
       !cstddefOrigin(S, SM, Elements->getLocation(), "libcxx", "array"))
     return std::nullopt;
@@ -8322,7 +9015,75 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
       Array->getSize().getLimitedValue(65537) != Size ||
       !Context.hasSameType(Array->getElementType(), Element))
     return std::nullopt;
+  if (Query) {
+    const auto &Layout = Context.getASTRecordLayout(Specialization);
+    if (Layout.getFieldCount() != 1 || Layout.getFieldOffset(0) != 0 ||
+        uint64_t(Layout.getSize().getQuantity()) * 8 != Context.getTypeSize(Element) * Size ||
+        uint64_t(Layout.getAlignment().getQuantity()) * 8 != Context.getTypeAlign(Element))
+      return std::nullopt;
+  }
   return UtilityArrayRecord{Specialization, Elements, Element, Size};
+}
+
+std::optional<UtilityArrayRecord>
+approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
+                           const CXXRecordDecl *Record,
+                           const ASTContext &Context) {
+  return approvedUtilityArrayRecordImpl(S, SM, Record, Context);
+}
+
+static bool utilityCatCarrier(const State &S, const SourceManager &SM,
+                              const ASTContext &Context, QualType Type,
+                              UtilityCatLayoutProof &Proof, unsigned Depth) {
+  if (Depth > 64 || ++Proof.Nodes > 200000 || Type.isNull() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  if (Type->isReferenceType())
+    return utilityCatCarrier(S, SM, Context, Type->getPointeeType(), Proof, Depth + 1);
+  if (utilityScalar(Context, Type) || Type->isVoidType()) return true;
+  const auto *Key = Type.getCanonicalType().getTypePtr();
+  if (Proof.Complete.count({Key, Depth})) return true;
+  if (!Proof.Active.insert(Key).second) return false;
+  auto Restore = llvm::make_scope_exit([&] { Proof.Active.erase(Key); });
+  const auto *Record = Type->getAsCXXRecordDecl();
+  bool Accepted = false;
+  if (approvedUtilityStringRecord(S, SM, Record, Context) ||
+      approvedUtilityStringViewRecord(S, SM, Record, Context) ||
+      utilityUniquePtrRecord(S, SM, Record, Context, false, false))
+    Accepted = true;
+  else if (approvedUtilityTupleMetadata(S, SM, Record))
+    Accepted = approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth,
+                                             false, false, &Proof).has_value();
+  else if (approvedUtilityPairMetadata(S, SM, Record))
+    Accepted = approvedUtilityPairRecordImpl(S, SM, Record, Context,
+                                             false, false, &Proof, Depth).has_value();
+  else if (approvedUtilityArrayMetadata(S, SM, Record))
+    Accepted = approvedUtilityArrayRecordImpl(S, SM, Record, Context,
+                                              &Proof, Depth).has_value();
+  if (Accepted) Proof.Complete.insert({Key, Depth});
+  return Accepted;
+}
+
+std::optional<UtilityTupleLikeSource>
+approvedUtilityTupleCatQueryLayout(const State &S, const SourceManager &SM,
+                                   QualType Type, const ASTContext &Context) {
+  UtilityCatLayoutProof Proof;
+  if (!utilityCatCarrier(S, SM, Context, Type, Proof, 0)) return std::nullopt;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (approvedUtilityTupleMetadata(S, SM, Record)) {
+    const auto Tuple = approvedUtilityTupleRecordImpl(
+        S, SM, Record, Context, 0, false, false, &Proof);
+    if (Tuple) return UtilityTupleLikeSource{Tuple->Elements, nullptr, {}, 0};
+  } else if (approvedUtilityPairMetadata(S, SM, Record)) {
+    const auto Pair = approvedUtilityPairRecordImpl(
+        S, SM, Record, Context, false, false, &Proof, 0);
+    if (Pair) return UtilityTupleLikeSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
+  } else if (approvedUtilityArrayMetadata(S, SM, Record)) {
+    const auto Array = approvedUtilityArrayRecordImpl(S, SM, Record, Context, &Proof, 0);
+    if (Array) return UtilityTupleLikeSource{{}, Array->Elements, Array->ElementType, Array->Size};
+  }
+  return std::nullopt;
 }
 
 bool approvedUtilityArrayConstruction(const State &S, const SourceManager &SM,

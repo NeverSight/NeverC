@@ -2415,9 +2415,25 @@ static bool unorderedNodeTypeQueryMetadata(Adapter &A,
          unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete).has_value();
 }
 
+// Identity/source admission does not consume a runtime value, selected
+// constructor, lifetime or IR record. Its structural evidence is read-only.
+static bool tupleCatStorageMetadataType(Adapter &A, QualType Type) {
+  for (unsigned Depth = 0; Depth <= 64 && !Type.isNull(); ++Depth) {
+    const auto *Raw = Type.getCanonicalType().getTypePtr();
+    if (Raw->isPointerType() || Raw->isReferenceType())
+      Type = Raw->getPointeeType();
+    else
+      return approvedUtilityTupleCatQueryLayout(A.S, A.Sources, Type, A.Context).has_value() ||
+          approvedUtilityTupleCatQueryOwnerLayout(A.S, A.Sources,
+              Type->getAsCXXRecordDecl(), A.Context).has_value();
+  }
+  return false;
+}
+
 void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
   if (!functionMetadataType(T).isNull() || incompleteArrayMetadataType(T) ||
-      incompleteRecordMetadataType(T) || memoryTemplateMetadataType(*this, T))
+      incompleteRecordMetadataType(T) || memoryTemplateMetadataType(*this, T) ||
+      tupleCatStorageMetadataType(*this, T))
     checkQueryType(T, L, true, true);
   else
     type(T, L, true);
@@ -2425,7 +2441,8 @@ void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
 
 void Adapter::checkQueryType(QualType T, SourceLocation L,
                            bool AllowIncompleteArrays,
-                           bool AllowIncompleteRecords, unsigned Depth) {
+                           bool AllowIncompleteRecords, unsigned Depth,
+                           bool CatStorageMetadata) {
   if (T.isNull() || T->isDependentType() || T->isInstantiationDependentType()) {
     reject(L, "query type source", "Every queried type requires a resolved written type source.");
     throw Failure{};
@@ -2433,6 +2450,43 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
   if (Depth > 64) {
     reject(L, "query type depth", "Nested type metadata exceeds the depth limit.");
     throw Failure{};
+  }
+  if (AllowIncompleteRecords &&
+      (CatStorageMetadata || tupleCatStorageMetadataType(*this, T))) {
+    if (T.isVolatileQualified() || T.isRestrictQualified() ||
+        T.getAddressSpace() != LangAS::Default) {
+      reject(L, "type metadata qualifiers", "Storage type identity requires supported qualifiers.");
+      throw Failure{};
+    }
+    chargeExpansion(1, L);
+    if (T->isReferenceType() || T->isPointerType()) {
+      checkQueryType(T->getPointeeType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1, true);
+      return;
+    }
+    if (const auto Storage = approvedUtilityTupleCatQueryLayout(S, Sources, T, Context)) {
+      if (Storage->ArrayElements)
+        checkQueryType(Storage->ArrayElementType, L, AllowIncompleteArrays,
+                       AllowIncompleteRecords, Depth + 1, true);
+      else for (const auto &Element : Storage->Elements)
+        checkQueryType(Element.getType(), L, AllowIncompleteArrays,
+                       AllowIncompleteRecords, Depth + 1, true);
+      return;
+    }
+    const auto *Record = T->getAsCXXRecordDecl();
+    if (approvedUtilityStringRecord(S, Sources, Record, Context) ||
+        approvedUtilityStringViewRecord(S, Sources, Record, Context))
+      return;
+    if (const auto Owner = approvedUtilityTupleCatQueryOwnerLayout(S, Sources, Record, Context)) {
+      // Caller pointee and deleter inputs retain their ordinary independent
+      // type/source checks. No default-delete body is inspected here.
+      checkQueryType(Owner->ElementType, L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1, true);
+      checkQueryType(Context.getRecordType(Owner->Deleter.Record), L,
+                     AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1, true);
+      return;
+    }
+    // Scalar leaves keep the ordinary type boundary without an SDK value.
   }
   if ((AllowIncompleteArrays && incompleteArrayMetadataType(T)) ||
       (AllowIncompleteRecords && (incompleteRecordMetadataType(T) ||
@@ -2567,7 +2621,7 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       const auto &Arguments = Metadata->getTemplateArgs();
       for (const auto &Argument : Arguments.asArray())
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
-                       AllowIncompleteRecords, Depth + 1);
+                       AllowIncompleteRecords, Depth + 1, CatStorageMetadata);
     } else if (AllowIncompleteRecords && incompleteRecordMetadataIdentity(
                                              *this, T->getAsCXXRecordDecl())) {
       // Identity requires no size, field traversal, operation or IR record.
@@ -13761,6 +13815,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXConstructExpr *, const CallExpr *> StringHashQueryViews;
   std::map<const CXXConstructExpr *, const CallExpr *> HashCarrierQueryCopies;
   std::map<const CXXConstructExpr *, const Expr *> TupleConstructorQueryRoots;
+  std::map<const Expr *, const CallExpr *> TupleCatQueryExpressions;
+  std::map<const CallExpr *, std::set<const Type *>> TupleCatQueryTypes;
   std::set<const CXXConstructExpr *> PendingTupleConstructorQueries;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
@@ -16919,6 +16975,60 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Register(Initializer->getInit());
     }
   }
+  void retainTupleCatQueryExpressions(const CallExpr *Call) {
+    auto &Types = TupleCatQueryTypes[Call];
+    auto Collect = [&](auto &&Self, QualType Type, unsigned Depth) -> bool {
+      if (Type.isNull() || Depth > 64) return false;
+      A.chargeExpansion(1, Call->getExprLoc());
+      if (!Types.insert(Type.getCanonicalType().getTypePtr()).second) return true;
+      if (Type->isReferenceType()) return Self(Self, Type->getPointeeType(), Depth + 1);
+      if (const auto Storage = approvedUtilityTupleCatQueryLayout(A.S, A.Sources, Type, A.Context)) {
+        if (Storage->ArrayElements) return Self(Self, Storage->ArrayElementType, Depth + 1);
+        for (const auto &Element : Storage->Elements)
+          if (!Self(Self, Element.getType(), Depth + 1)) return false;
+      }
+      return true;
+    };
+    if (!Collect(Collect, Call->getType(), 0)) return;
+    for (const auto *Argument : Call->arguments())
+      if (!Collect(Collect, Argument->getType(), 0)) return;
+    std::vector<const Expr *> Pending{Call};
+    while (!Pending.empty()) {
+      const auto *Expression = Pending.back();
+      Pending.pop_back();
+      if (!Expression || isa<CXXDefaultArgExpr, CXXDefaultInitExpr, LambdaExpr>(Expression))
+        continue;
+      auto [Entry, Inserted] = TupleCatQueryExpressions.emplace(Expression, Call);
+      if (!Inserted) continue;
+      A.chargeExpansion(1, Expression->getExprLoc());
+      for (const auto *Child : Expression->children())
+        if (const auto *Operand = dyn_cast_or_null<Expr>(Child)) Pending.push_back(Operand);
+    }
+  }
+  const CallExpr *tupleCatQueryForExpression(const Expr *Expression) const {
+    for (unsigned Depth = 0; Expression && Depth <= 64; ++Depth) {
+      if (const auto Found = TupleCatQueryExpressions.find(Expression);
+          Found != TupleCatQueryExpressions.end()) {
+        const auto Types = TupleCatQueryTypes.find(Found->second);
+        return Types != TupleCatQueryTypes.end() &&
+            Types->second.count(Expression->getType().getCanonicalType().getTypePtr())
+            ? Found->second : nullptr;
+      }
+      if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Expression))
+        Expression = Wrapper->getSubExpr();
+      else if (const auto *Binding = dyn_cast<CXXBindTemporaryExpr>(Expression))
+        Expression = Binding->getSubExpr();
+      else if (const auto *Parenthesis = dyn_cast<ParenExpr>(Expression))
+        Expression = Parenthesis->getSubExpr();
+      else break;
+    }
+    return nullptr;
+  }
+  bool checkTupleCatQueryExpressionType(const Expr *Expression) {
+    if (!tupleCatQueryForExpression(Expression)) return false;
+    A.checkQueryType(Expression->getType(), Expression->getExprLoc(), true, true, 0, true);
+    return true;
+  }
   QualType utilityTupleCatQueryResultSource(const CallExpr *Call) {
     if (!approvedUtilityTupleCatSignatureQuery(A.S, A.Sources, Call, A.Context,
                                                A.SpecialMembers, A.OperationTraits)) return {};
@@ -16973,8 +17083,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             !Result.isNull())
           A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
         else if (const auto Result = utilityTupleCatQueryResultSource(Call);
-                 !Result.isNull())
+                 !Result.isNull()) {
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+          retainTupleCatQueryExpressions(Call);
+        }
         else if (const auto Result = utilityMakeUniqueQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
@@ -17185,7 +17297,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return {};
   }
   void collectOperationTypeSource(QualType InputType, SourceLocation L,
-                                  bool Layout) {
+                                  bool Layout, const CallExpr *CatQuery = nullptr) {
     if (ActiveOperationSources.empty() || InputType.isNull())
       return;
     std::set<std::pair<const Type *, bool>> Seen;
@@ -17274,6 +17386,27 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  RecordType && NeedLayout) {
         const auto *Declaration =
             dyn_cast_or_null<CXXRecordDecl>(RecordType->getDecl());
+        const auto QueryTypes = TupleCatQueryTypes.find(CatQuery);
+        if (QueryTypes != TupleCatQueryTypes.end() &&
+            QueryTypes->second.count(T.getCanonicalType().getTypePtr())) {
+          // Only an already authenticated lexical Cat query supplies this
+          // storage projection. Original expression/TypeLoc dependencies and
+          // every cleanup dependency keep their ordinary traversal.
+          if (const auto Storage = approvedUtilityTupleCatQueryLayout(A.S, A.Sources, T, A.Context)) {
+            if (Storage->ArrayElements)
+              Self(Self, Storage->ArrayElementType, true, Depth + 1);
+            else for (const auto &Element : Storage->Elements)
+              Self(Self, Element.getType(), true, Depth + 1);
+            return;
+          }
+          if (const auto Owner = approvedUtilityTupleCatQueryOwnerLayout(
+                  A.S, A.Sources, Declaration, A.Context)) {
+            Self(Self, Owner->ElementType, false, Depth + 1);
+            if (Owner->CustomDeleter)
+              Self(Self, A.Context.getRecordType(Owner->Deleter.Record), true, Depth + 1);
+            return;
+          }
+        }
         if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
           const auto *Map = cast<ClassTemplateSpecializationDecl>(Declaration);
           Self(Self, Map->getTemplateArgs().get(0).getAsType(), true, Depth + 1);
@@ -18903,7 +19036,8 @@ private:
         const auto *Reference = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts());
         const auto Callee = AuthenticatedUtilityReferences.find(Reference);
         if (!Result.isNull()) {
-          collectOperationTypeSource(Result.getNonReferenceType(), E->getExprLoc(), true);
+          collectOperationTypeSource(Result.getNonReferenceType(), E->getExprLoc(), true,
+                                     tupleCatQueryForExpression(E));
         } else if (Callee != AuthenticatedUtilityReferences.end() &&
                    (!applyResultSource(Callee->second).isNull() ||
                     functionalObjectCallSource(A, Callee->second) ||
@@ -18922,16 +19056,19 @@ private:
                 // This callee owns the exact authenticated hash base view.
                 // Its public receiver retains the original type dependencies.
                 Type = Cast->getSubExpr()->getType();
-            collectOperationTypeSource(Type, E->getExprLoc(), true);
+            collectOperationTypeSource(Type, E->getExprLoc(), true,
+                tupleCatQueryForExpression(Callee->second));
           }
         } else {
-          collectOperationTypeSource(E->getType(), E->getExprLoc(), true);
+          collectOperationTypeSource(E->getType(), E->getExprLoc(), true,
+                                     tupleCatQueryForExpression(E));
         }
       }
       if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S)) {
         if (Query->isArgumentType())
           operationTypeDependency(Query->getArgumentTypeInfo());
-        collectOperationTypeSource(Query->getTypeOfArgument(), Query->getExprLoc(), true);
+        collectOperationTypeSource(Query->getTypeOfArgument(), Query->getExprLoc(), true,
+            Query->isArgumentType() ? nullptr : tupleCatQueryForExpression(Query->getArgumentExpr()));
       }
       if (const auto *Query = dyn_cast<TypeTraitExpr>(S))
         for (const auto *Argument : Query->getArgs()) {
@@ -25884,7 +26021,7 @@ public:
                    (A.S.coreV2() || !FunctionDecay)) {
           if (A.S.coreV2() && ArrayReverseDecltypeResults.count(E))
             A.checkTypeOnly(E->getType(), E->getExprLoc());
-          else
+          else if (!checkTupleCatQueryExpressionType(E))
             A.type(E->getType(), E->getExprLoc(), true);
         }
       }
@@ -26059,8 +26196,12 @@ public:
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context))
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
-        else if (!approvedCstddefTypeQuery(A.S, A.Sources, Query,
-                                           A.Context))
+        else if (!Query->isArgumentType() &&
+                 checkTupleCatQueryExpressionType(Query->getArgumentExpr())) {
+          // This exact Cat result has independently authenticated storage.
+          // The operand's written source and lexical cleanup still traverse.
+        } else if (!approvedCstddefTypeQuery(A.S, A.Sources, Query,
+                                             A.Context))
           A.type(Operand, Query->getExprLoc());
       }
       if (const auto *C = dyn_cast<CaseStmt>(S); C && C->getRHS())
@@ -26977,6 +27118,14 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                   llvm::ArrayRef<FriendClassTemplateSource> FriendClasses) {
   CheckingSource = true;
   auto FinishSource = llvm::make_scope_exit([&] { CheckingSource = false; });
+  // Reuse successful roots only within this AST and run. Every later Sema
+  // completion suspends and invalidates the cache at its owning boundary.
+  S.StringHashSourceContext = &Context;
+  S.CompletedStringHashSourceRoots.clear();
+  auto FinishHashSourceCache = llvm::make_scope_exit([&] {
+    S.CompletedStringHashSourceRoots.clear();
+    S.StringHashSourceContext = nullptr;
+  });
   Allowlist Check(*this);
   Check.indexFriendSources(FriendFunctions, FriendDeclarations, FriendTemplates, TemplateBodies, FriendClasses);
   Check.indexTemplates();
@@ -27809,6 +27958,21 @@ class Consumer : public ASTConsumer {
     TemplateUses.push_back(std::move(Source));
   }
 
+  bool completeSDKType(QualType Type, SourceLocation Location) {
+    // Completion may instantiate declarations and source dependencies even
+    // when it fails. Suspend reuse and invalidate both sides of this Sema
+    // boundary, including any recursively entered completion callbacks.
+    const auto *SavedContext = S.StringHashSourceContext;
+    S.CompletedStringHashSourceRoots.clear();
+    S.StringHashSourceContext = nullptr;
+    auto RestoreCache = llvm::make_scope_exit([&] {
+      S.CompletedStringHashSourceRoots.clear();
+      S.StringHashSourceContext = SavedContext;
+    });
+    return !CI.getSema().RequireCompleteType(Location, Type,
+                                             diag::err_incomplete_type);
+  }
+
 public:
   Consumer(State &S, CompilerInstance &CI) : S(S), CI(CI) {}
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
@@ -28278,7 +28442,12 @@ public:
       struct BorrowedParameters : RecursiveASTVisitor<BorrowedParameters> {
         State &S;
         ASTContext &Context;
-        std::vector<std::pair<QualType, SourceLocation>> Types;
+        struct Layout {
+          QualType Type;
+          SourceLocation Location;
+          bool CatSignature;
+        };
+        std::vector<Layout> Types;
         BorrowedParameters(State &S, ASTContext &Context) : S(S), Context(Context) {}
         bool shouldVisitTemplateInstantiations() const { return true; }
         bool TraverseDecl(Decl *Declaration) {
@@ -28298,14 +28467,16 @@ public:
             for (const auto *Argument : Call->arguments()) {
               const auto *Input = Argument->getType()->getAsCXXRecordDecl();
               if (Input && !Input->getDefinition() &&
-                  approvedUtilityTupleMetadata(S, Context.getSourceManager(), Input))
-                Types.emplace_back(Argument->getType(), Argument->getExprLoc());
+                  (approvedUtilityTupleMetadata(S, Context.getSourceManager(), Input) ||
+                   approvedUtilityPairMetadata(S, Context.getSourceManager(), Input) ||
+                   approvedUtilityArrayMetadata(S, Context.getSourceManager(), Input)))
+                Types.push_back({Argument->getType(), Argument->getExprLoc(), true});
             }
           }
           if (Origin && Origin->Root == "libcxx" && Origin->Path == "tuple" && Record &&
               !Record->getDefinition() &&
               approvedUtilityTupleMetadata(S, Context.getSourceManager(), Record))
-            Types.emplace_back(Call->getType(), Call->getExprLoc());
+            Types.push_back({Call->getType(), Call->getExprLoc(), true});
           return true;
         }
         bool VisitParmVarDecl(ParmVarDecl *Parameter) {
@@ -28319,7 +28490,7 @@ public:
           const auto *Record = Referent->getAsCXXRecordDecl();
           if (Record && !Record->getDefinition() &&
               approvedUtilityTupleMetadata(S, Context.getSourceManager(), Record))
-            Types.emplace_back(Referent, Parameter->getLocation());
+            Types.push_back({Referent, Parameter->getLocation(), false});
           return true;
         }
       };
@@ -28335,16 +28506,18 @@ public:
                      "Reduce nested signature layout complexity.");
           return;
         }
-        for (const auto &[Type, Location] : Parameters.Types) {
+        for (const auto &[Type, Location, CatSignature] : Parameters.Types) {
           if (!reserveSourceUnits(C.getSourceManager(), Location, 1))
             return;
-        if (CI.getSema().RequireCompleteType(Location, Type,
-                                              diag::err_incomplete_type))
+        if (!completeSDKType(Type, Location))
           return;
         const auto *Record = Type->getAsCXXRecordDecl();
-        if (!approvedUtilityTupleRecord(S, C.getSourceManager(), Record, C) &&
-            !approvedUtilityReferenceTupleRecord(S, C.getSourceManager(), Record, C) &&
-            !approvedUtilityMixedReferenceTupleRecord(S, C.getSourceManager(), Record, C)) {
+        const bool Admitted = CatSignature
+            ? approvedUtilityTupleCatQueryLayout(S, C.getSourceManager(), Type, C).has_value()
+            : (approvedUtilityTupleRecord(S, C.getSourceManager(), Record, C).has_value() ||
+               approvedUtilityReferenceTupleRecord(S, C.getSourceManager(), Record, C).has_value() ||
+               approvedUtilityMixedReferenceTupleRecord(S, C.getSourceManager(), Record, C).has_value());
+        if (!Admitted) {
           S.diagnose("TR0203", "utility tuple signature layout",
                      "An emitted borrowed signature requires the exact admitted tuple storage.",
                      "Use a supported tuple element layout.");
@@ -28357,8 +28530,7 @@ public:
     }
     Adapter A(S, C);
     A.CompleteSDKRecord = [&](QualType Type, SourceLocation Location) {
-      return !CI.getSema().RequireCompleteType(Location, Type,
-                                               diag::err_incomplete_type);
+      return completeSDKType(Type, Location);
     };
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
     A.OperationTraits = std::move(OperationTraits);

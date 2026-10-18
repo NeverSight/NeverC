@@ -369084,3 +369084,520 @@ int main() { return 0; }
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2TupleLikeCatSignatureOnlyCarrierQueries) {
+  const auto Output = tmpFile("tuple-like-cat-signature-queries.nc");
+  const auto Result = translate(fixture("tuple-like-cat-signature-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("tuple-like-cat-signature-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeCatQueriesKeepSourceAndRuntimeBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"array-value-alias-identity-source-macro", R"cpp(#define __value_type __value_type
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<int,long>;using Input=std::array<Leaf,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,Leaf,int>));int main(){return 0;}
+)cpp"},
+    {"array-value-alias-renamed-source-macro", R"cpp(#define __value_type replaced_value_type
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<int,long>;using Input=std::array<Leaf,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,Leaf,int>));int main(){return 0;}
+)cpp"},
+    {"flat-pack-builtin-identity-source-macro", R"cpp(#define __type_pack_element __type_pack_element
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<int,long>;using Pair=std::pair<Leaf,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Pair&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int,int>));int main(){return 0;}
+)cpp"},
+    {"flat-pack-builtin-source-alias", R"cpp(template<__SIZE_TYPE__ I,class...Ts> using ReplacedTypePack=__type_pack_element<I,Ts...>;
+#define __type_pack_element ReplacedTypePack
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<int,long>;using Pair=std::pair<Leaf,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Pair&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int,int>));int main(){return 0;}
+)cpp"},
+    {"stateful-deleter-layout-control", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+struct D{int state;void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;static_assert(__is_same(decltype(std::tuple_cat(std::declval<std::tuple<U,int>&>(),std::declval<std::tuple<int>>())),std::tuple<U,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"owner-move-constructor-control", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using T=std::tuple<P,int>;static_assert(__is_same(decltype(T(std::declval<T&&>())),T));
+int main(){return 0;}
+)cpp"},
+    {"array-carrier-constructor-control", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using T=std::tuple<std::array<Leaf,2>,int>;static_assert(__is_same(decltype(T(std::declval<T&&>())),T));
+int main(){return 0;}
+)cpp"},
+    {"pair-size-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::pair<Leaf,int>;
+namespace std{template<>struct tuple_size<Input>:integral_constant<size_t,2>{};}
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<Leaf,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"pair-make-types-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::pair<Leaf,int>;
+namespace std{template<>struct __make_tuple_types<Input,2,0,true>{using type=__tuple_types<Leaf,int>;};}
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<Leaf,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"pair-function-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::pair<Leaf,int>;
+template<> std::tuple<Leaf,int,int> std::tuple_cat<Input&,std::tuple<int>>(Input&,std::tuple<int>&&);
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<Leaf,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"array-size-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::array<Leaf,2>;
+namespace std{template<>struct tuple_size<Input>:integral_constant<size_t,2>{};}
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<Leaf,Leaf,int>));
+int main(){return 0;}
+)cpp"},
+    {"array-make-types-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::array<Leaf,2>;
+namespace std{template<>struct __make_tuple_types<Input,2,0,true>{using type=__tuple_types<Leaf,Leaf>;};}
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<Leaf,Leaf,int>));
+int main(){return 0;}
+)cpp"},
+    {"array-function-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::array<Leaf,2>;
+template<> std::tuple<Leaf,Leaf,int> std::tuple_cat<Input&,std::tuple<int>>(Input&,std::tuple<int>&&);
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<Leaf,Leaf,int>));
+int main(){return 0;}
+)cpp"},
+    {"owner-size-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::tuple<P,int>;
+namespace std{template<>struct tuple_size<Input>:integral_constant<size_t,2>{};}
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"owner-make-types-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::tuple<P,int>;
+namespace std{template<>struct __make_tuple_types<Input,2,0,true>{using type=__tuple_types<P,int>;};}
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"owner-function-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::tuple<P,int>;
+template<> std::tuple<P,int,int> std::tuple_cat<Input&,std::tuple<int>>(Input&,std::tuple<int>&&);
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())), std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"pair-flat-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::pair<Leaf,int>;
+namespace std { template<> struct __make_tuple_types_flat<Input,__tuple_indices<0,1>> { template<class T> using __apply_quals=__tuple_types<Leaf,int>; }; }
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"pair-indices-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::pair<Leaf,int>;
+namespace std { template<> struct __make_tuple_indices<2,0> { using type=__tuple_indices<0,1>; }; }
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"array-flat-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::array<Leaf,2>;
+namespace std { template<> struct __make_tuple_types_flat<Input,__tuple_indices<0,1>> { template<class T> using __apply_quals=__tuple_types<Leaf,Leaf>; }; }
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,Leaf,int>));
+int main(){return 0;}
+)cpp"},
+    {"array-indices-source", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Input=std::array<Leaf,2>;
+namespace std { template<> struct __make_tuple_indices<2,0> { using type=__tuple_indices<0,1>; }; }
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,Leaf,int>));
+int main(){return 0;}
+)cpp"},
+    {"owner-instance-source", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+namespace std { template<> class unique_ptr<int> { public: int* pointer; }; }
+using P=std::unique_ptr<int>;
+using Input=std::tuple<P,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"default-deleter-instance-source", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+namespace std { template<> struct default_delete<int> { void operator()(int*) const noexcept {} }; }
+using P=std::unique_ptr<int>;
+using Input=std::tuple<P,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"custom-deleter-declaration-only", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+struct D { void operator()(int*) const noexcept; };
+using P=std::unique_ptr<int,D>; using Input=std::tuple<P,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"custom-deleter-nontrivial-constructor", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+struct D { D(){} void operator()(int*) const noexcept {} };
+using P=std::unique_ptr<int,D>; using Input=std::tuple<P,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"default-deleter-source-macro", R"cpp(#define default_delete replaced_default_delete
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using P=std::unique_ptr<int>;
+using Input=std::tuple<P,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<P,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-builtin-source-alias", R"cpp(#include <cstddef>
+template<template<class T,T...>class Seq,class T,T N>
+using ReplacedMakeSeq=__make_integer_seq<Seq,T,N>;
+#define __make_integer_seq ReplacedMakeSeq
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"reverse-equality-user-redeclaration", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+_LIBCPP_BEGIN_NAMESPACE_STD
+template<class I1,class I2> constexpr bool operator==(const reverse_iterator<I1>&,const reverse_iterator<I2>&);
+_LIBCPP_END_NAMESPACE_STD
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"wrap-equality-one-user-redeclaration", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+_LIBCPP_BEGIN_NAMESPACE_STD
+template<class I> constexpr bool operator==(const __wrap_iter<I>&,const __wrap_iter<I>&) noexcept;
+_LIBCPP_END_NAMESPACE_STD
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"wrap-equality-two-user-redeclaration", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+_LIBCPP_BEGIN_NAMESPACE_STD
+template<class I1,class I2> constexpr bool operator==(const __wrap_iter<I1>&,const __wrap_iter<I2>&) noexcept;
+_LIBCPP_END_NAMESPACE_STD
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"original-default-user-lookup-candidate", R"cpp(#include <__utility/pair.h>
+#include <__iterator/reverse_iterator.h>
+#include <__iterator/wrap_iter.h>
+#ifdef _LIBCPP___TUPLE_MAKE_TUPLE_TYPES_H
+#error default parsed before candidate insertion
+#endif
+_LIBCPP_BEGIN_NAMESPACE_STD
+struct QueryLookupMarker {};
+template<class T> bool operator==(QueryLookupMarker,T);
+_LIBCPP_END_NAMESPACE_STD
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-builtin-identity-source-macro", R"cpp(#define __make_integer_seq __make_integer_seq
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-transform-identity-source-macro", R"cpp(#define __to_tuple_indices __to_tuple_indices
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-sequence-user-specialization", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+_LIBCPP_BEGIN_NAMESPACE_STD
+template<> struct __integer_sequence<size_t,0,1> {
+ template<size_t S> using __to_tuple_indices=__tuple_indices<S,S+1>;
+};
+_LIBCPP_END_NAMESPACE_STD
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-result-user-specialization", R"cpp(#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+_LIBCPP_BEGIN_NAMESPACE_STD
+template<> struct __tuple_indices<0,1> {};
+_LIBCPP_END_NAMESPACE_STD
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-transform-source-macro", R"cpp(#define __to_tuple_indices replaced_to_tuple_indices
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"index-sequence-source-macro", R"cpp(#define __integer_sequence replaced_integer_sequence
+#include <array>
+#include <memory>
+#include <tuple>
+#include <utility>
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Input&>(),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"foreign-query-carrier-comma", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Other=std::array<Leaf,1>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Other&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int>));
+using Input=std::array<int,2>;
+static_assert(__is_same(decltype(std::tuple_cat((std::declval<Other&>(),std::declval<Input&>()),std::declval<std::tuple<int>>())),std::tuple<int,int,int>));
+int main(){return 0;}
+)cpp"},
+    {"runtime-array-after-query", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Other=std::array<Leaf,1>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Other&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int>));
+int main(){Other object{};return 0;}
+)cpp"},
+    {"runtime-pair-after-query", R"cpp(#include <array>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using P = std::unique_ptr<int>;
+struct NoDestroy { NoDestroy() = delete; ~NoDestroy() = delete; };
+using BorrowedOwner = std::unique_ptr<NoDestroy>;
+using Other=std::pair<Leaf,int>;
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Other&>(),std::declval<std::tuple<int>>())),std::tuple<Leaf,int,int>));
+int main(){Other object{};return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("tuple-like-cat-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("tuple-like-cat-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
