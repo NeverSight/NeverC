@@ -2,6 +2,7 @@
  * AES-GCM test suite — NIST SP 800-38D test vectors.
  */
 #include "neverc/std/crypto/gcm.h"
+#include "../../../std/src/crypto/gcm/gcm_ct_field.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,6 +48,86 @@ static void check_bytes(const char *name, const uint8_t *got,
     printf("  FAIL: %s\n    got: ", name);
     for (int i = 0; i < len; i++) printf("%02x", got[i]);
     printf("\n    exp: %s\n", expected_hex);
+}
+
+/* Independent polynomial oracle: form the full degree-254 product, then
+ * divide by u^128 + u^7 + u^2 + u + 1. It shares neither the runtime's word
+ * packing nor its shift/reduce recurrence. Branches here are test-only. */
+static void reference_field_mul(uint8_t out[16], const uint8_t h[16],
+                                 const uint8_t x[16]) {
+    uint8_t product[255] = {0};
+    for (unsigned i = 0; i < 128; i++) {
+        if ((x[i / 8] >> (7 - i % 8)) & 1u) {
+            for (unsigned j = 0; j < 128; j++)
+                product[i + j] ^= (h[j / 8] >> (7 - j % 8)) & 1u;
+        }
+    }
+    for (int degree = 254; degree >= 128; degree--) {
+        if (product[degree]) {
+            product[degree - 128] ^= 1;
+            product[degree - 127] ^= 1;
+            product[degree - 126] ^= 1;
+            product[degree - 121] ^= 1;
+        }
+    }
+    memset(out, 0, 16);
+    for (unsigned i = 0; i < 128; i++)
+        out[i / 8] |= product[i] << (7 - i % 8);
+}
+
+static void test_field_multiplication(void) {
+    printf("[GHASH polynomial multiplication, every pair of basis bits]\n");
+    for (unsigned i = 0; i < 128; i++) {
+        for (unsigned j = 0; j < 128; j++) {
+            uint8_t h[16] = {0}, x[16] = {0}, got[16], expected[16];
+            h[i / 8] = (uint8_t)(0x80u >> (i % 8));
+            x[j / 8] = (uint8_t)(0x80u >> (j % 8));
+            reference_field_mul(expected, h, x);
+            gcm_field_mul(got, h, x);
+            check_true("GHASH basis product", memcmp(got, expected, 16) == 0);
+        }
+    }
+
+    /* Dense inputs exercise combinations of basis bits and both word halves.
+     * Offsetting each byte buffer also checks unaligned input and output. */
+    uint32_t random = 0x319ab745u;
+    uint8_t h[17], x[17], got[17], expected[16];
+    for (unsigned sample = 0; sample < 260; sample++) {
+        for (unsigned i = 1; i <= 16; i++) {
+            random ^= random << 13;
+            random ^= random >> 17;
+            random ^= random << 5;
+            h[i] = (uint8_t)random;
+            x[i] = (uint8_t)(random >> 8);
+            if (sample < 4) {
+                h[i] = sample == 0 ? 0 : sample == 1 ? 0xff : 0xaa;
+                x[i] = sample == 2 ? 0x55 : h[i];
+            }
+        }
+        reference_field_mul(expected, h + 1, x + 1);
+        gcm_field_mul(got + 1, h + 1, x + 1);
+        check_true("GHASH dense unaligned product",
+                   memcmp(got + 1, expected, 16) == 0);
+        gcm_field_mul(got + 1, x + 1, h + 1);
+        check_true("GHASH commutative product",
+                   memcmp(got + 1, expected, 16) == 0);
+    }
+
+    /* The low-level helper promises to consume both inputs before output. */
+    for (int offset = -15; offset <= 15; offset++) {
+        uint8_t overlap[48];
+        memcpy(overlap + 16, x + 1, 16);
+        gcm_field_mul(overlap + 16 + offset, h + 1, overlap + 16);
+        check_true("GHASH output overlapping x",
+                   memcmp(overlap + 16 + offset, expected, 16) == 0);
+        memcpy(overlap + 16, h + 1, 16);
+        gcm_field_mul(overlap + 16 + offset, overlap + 16, x + 1);
+        check_true("GHASH output overlapping h",
+                   memcmp(overlap + 16 + offset, expected, 16) == 0);
+    }
+    reference_field_mul(expected, h + 1, h + 1);
+    gcm_field_mul(h + 1, h + 1, h + 1);
+    check_true("GHASH all operands alias", memcmp(h + 1, expected, 16) == 0);
 }
 
 /* NIST SP 800-38D Test Case 1: AES-128-GCM, no plaintext, no AAD */
@@ -596,6 +677,7 @@ static void test_null_nonce_rejected(void) {
 
 int main(void) {
     printf("=== NeverC AES-GCM Tests ===\n\n");
+    test_field_multiplication();
     test_case_1();
     test_case_2();
     test_case_3();

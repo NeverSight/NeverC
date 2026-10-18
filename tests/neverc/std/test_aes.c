@@ -125,6 +125,66 @@ static void test_key_schedule(void) {
     }
 }
 
+static void test_full_key_schedule(void) {
+    printf("[AES complete key schedules against scalar byte oracle]\n");
+    uint8_t sbox[256];
+    for (unsigned i = 0; i < 256; i++)
+        sbox[i] = reference_sbox((uint8_t)i);
+
+    uint32_t random = 0xc51a7e39u;
+    for (unsigned key_len = 16; key_len <= 32; key_len += 8) {
+        unsigned rounds = key_len / 4 + 6;
+        unsigned expanded_len = 16 * (rounds + 1);
+        for (unsigned sample = 0; sample < key_len * 8 + 34; sample++) {
+            uint8_t key[33] = {0}, expanded[240] = {0};
+            /* Zero, all ones, every individual key bit, then dense keys.
+             * key+1 also exercises unaligned key loads. */
+            if (sample == 1) memset(key + 1, 0xff, key_len);
+            if (sample >= 2 && sample < key_len * 8 + 2)
+                key[1 + (sample - 2) / 8] = (uint8_t)(1u << ((sample - 2) % 8));
+            if (sample >= key_len * 8 + 2) {
+                for (unsigned i = 1; i <= key_len; i++) {
+                    random ^= random << 13;
+                    random ^= random >> 17;
+                    random ^= random << 5;
+                    key[i] = (uint8_t)random;
+                }
+            }
+            memcpy(expanded, key + 1, key_len);
+            uint8_t rcon = 1;
+            for (unsigned offset = key_len; offset < expanded_len; offset += 4) {
+                uint8_t word[4];
+                memcpy(word, expanded + offset - 4, 4);
+                if (offset % key_len == 0) {
+                    uint8_t first = word[0];
+                    for (unsigned i = 0; i < 3; i++) word[i] = sbox[word[i + 1]];
+                    word[3] = sbox[first];
+                    word[0] ^= rcon;
+                    rcon = reference_mul(rcon, 2);
+                } else if (key_len == 32 && offset % key_len == 16) {
+                    for (unsigned i = 0; i < 4; i++) word[i] = sbox[word[i]];
+                }
+                for (unsigned i = 0; i < 4; i++)
+                    expanded[offset + i] = expanded[offset - key_len + i] ^ word[i];
+            }
+
+            neverc_aes_ctx_t ctx;
+            memset(&ctx, 0xa5, sizeof(ctx));
+            check_true("full schedule init", neverc_aes_init(&ctx, key + 1, (int)key_len) == 0);
+            check_true("full schedule round count", ctx.rounds == (int)rounds);
+            for (unsigned i = 0; i < 60; i++) {
+                const uint8_t *p = expanded + 4 * i;
+                uint32_t expected = (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 |
+                                    (uint32_t)p[2] << 8 | p[3];
+                check_true("every encryption key word", ctx.enc_key[i] == expected);
+                unsigned dec_index = i < expanded_len / 4
+                    ? 4 * (rounds - i / 4) + i % 4 : i;
+                check_true("every decryption key word", ctx.dec_key[dec_index] == expected);
+            }
+        }
+    }
+}
+
 static void test_aes128(void) {
     printf("[AES-128 FIPS 197]\n");
 
@@ -347,6 +407,7 @@ int main(void) {
     test_bit_transpose();
     test_substitution();
     test_key_schedule();
+    test_full_key_schedule();
     test_aes128();
     test_aes192();
     test_aes256();

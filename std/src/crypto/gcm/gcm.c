@@ -5,6 +5,7 @@
 #include "neverc/std/crypto/gcm.h"
 #include "neverc/std/crypto/subtle.h"
 #include "neverc/std/_platform.h"
+#include "gcm_ct_field.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -25,44 +26,20 @@ static void put_be64(uint8_t *p, uint64_t v) {
     put_be32(p + 4, (uint32_t)v);
 }
 
-/* GHASH multiplication in GF(2^128), with polynomial
- * x^128 + x^7 + x^2 + x + 1. This fixed 128-step portable fallback uses no
- * secret-indexed table and branches only on public loop counters. */
-static void ghash_mul(const neverc_gcm_ctx *ctx, uint8_t result[16],
-                      const uint8_t x[16]) {
-    uint8_t z[16] = {0};
-    uint8_t v[16];
-    memcpy(v, ctx->h, sizeof(v));
-    for (unsigned bit = 0; bit < 128; bit++) {
-        uint8_t selected = (uint8_t)(0u -
-            ((x[bit >> 3] >> (7 - (bit & 7))) & 1u));
-        for (int i = 0; i < 16; i++)
-            z[i] ^= v[i] & selected;
-
-        uint8_t reduce = (uint8_t)(0u - (v[15] & 1u));
-        for (int i = 15; i > 0; i--)
-            v[i] = (uint8_t)((v[i] >> 1) | (v[i - 1] << 7));
-        v[0] = (uint8_t)((v[0] >> 1) ^ (0xe1u & reduce));
-    }
-    memcpy(result, z, sizeof(z));
-    neverc_platform_secure_zero(z, sizeof(z));
-    neverc_platform_secure_zero(v, sizeof(v));
-}
-
 static void ghash_update(const neverc_gcm_ctx *ctx, uint8_t tag[16],
                          const uint8_t *data, size_t len) {
     uint8_t block[16];
     size_t i = 0;
     while (len - i >= 16) {
         xor_block(block, tag, data + i, 16);
-        ghash_mul(ctx, tag, block);
+        gcm_field_mul(tag, ctx->h, block);
         i += 16;
     }
     if (i < len) {
         memset(block, 0, 16);
         memcpy(block, data + i, len - i);
         xor_block(block, tag, block, 16);
-        ghash_mul(ctx, tag, block);
+        gcm_field_mul(tag, ctx->h, block);
     }
 }
 
@@ -108,7 +85,7 @@ static void gcm_finish_tag(const neverc_gcm_ctx *ctx,
     put_be64(len_block + 8, (uint64_t)ct_len * 8);
     uint8_t tmp[16];
     xor_block(tmp, ghash_val, len_block, 16);
-    ghash_mul(ctx, ghash_val, tmp);
+    gcm_field_mul(ghash_val, ctx->h, tmp);
 
     /* T = GHASH ^ E(K, J0) where J0 = nonce || 0x00000001 */
     uint8_t j0[16];
