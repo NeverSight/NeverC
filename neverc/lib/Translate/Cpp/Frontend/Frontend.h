@@ -1697,6 +1697,27 @@ bool approvedUtilityTupleConstructionSignature(
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context,
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+// Retention is inert: only the exact completed trait root may consume these
+// SDK selections. Function/location and construction identities remain distinct.
+using UtilityPairFunctionSources = std::map<
+    std::pair<const clang::FunctionDecl *, unsigned>,
+    std::vector<const TemplateUseSource *>>;
+using UtilityPairSelectionSources = std::map<
+    const clang::Expr *, std::vector<const SelectedTemplateCallSource *>>;
+bool approvedUtilityPairTraitSelectionLocation(
+    const State &S, const clang::SourceManager &SM,
+    clang::SourceLocation Location, const clang::FunctionDecl *Function);
+bool approvedUtilityPairConstructorTemplateSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const TemplateUseSource &Source,
+    const clang::ASTContext &Context,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::vector<const clang::TypeTraitExpr *> &Queries,
+    std::vector<const clang::Type *> &TypeSpellings,
+    std::vector<const clang::CXXMethodDecl *> &SourceMembers,
+    const UtilityPairFunctionSources &Functions,
+    const UtilityPairSelectionSources &Selections);
 bool approvedUtilityTupleConstructorQueryTemplateSource(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructorDecl *Constructor, const TemplateUseSource &Source,

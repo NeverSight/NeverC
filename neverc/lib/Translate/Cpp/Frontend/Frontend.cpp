@@ -10903,12 +10903,20 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           const auto *P = Default->getParam();
           const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
           const auto *Init = operationDefaultInitializer(A, P);
+          // Sema models convertibility copy-initialization at the actual
+          // trait's closing parenthesis. It remains the same exact retained
+          // SDK query/root; parameter, initializer and complete source checks
+          // below are unchanged.
           if (!Defaults || !Init || !Owner ||
               !UserSource ||
               Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
               P->getFunctionScopeIndex() != I || Default->hasRewrittenInit() ||
               (!A.S.owns(A.Sources, Default->getUsedLocation()) &&
-               !(ExactSDKQuery && Default->getUsedLocation() == SDKQuery->getExprLoc())) ||
+               !(ExactSDKQuery &&
+                 (Default->getUsedLocation() == SDKQuery->getExprLoc() ||
+                  ((SDKQuery->getTrait() == BTT_IsConvertible ||
+                    SDKQuery->getTrait() == BTT_IsConvertibleTo) &&
+                   Default->getUsedLocation() == SDKQuery->getEndLoc())))) ||
               selectedDefaultArgument(Default, A.Context) != Init)
             return false;
           auto Proof = Defaults->find({P, Init});
@@ -21125,7 +21133,174 @@ public:
     auto Found = DirectTemplateCallLocations.find(Reference);
     return Found == DirectTemplateCallLocations.end() ? SourceLocation() : Found->second;
   }
+  std::map<const CXXConstructExpr *,
+           std::map<const TypeTraitExpr *, const SelectedTemplateCallSource *>>
+      PairConstructorTraitBindings;
+  std::set<const TypeTraitExpr *> PairConstructorQueries, CompletedPairConstructorQueries;
+  std::map<const CXXConstructExpr *, std::set<const Type *>> PairConstructorTypeSpellings;
+  std::map<const CXXConstructExpr *, const SelectedTemplateCallSource *> PairConstructorSelections;
+  UtilityPairSelectionSources PairTraitSelections;
+  std::map<const CXXConstructExpr *, std::set<const CXXMethodDecl *>> PairConstructorSourceMembers;
+  std::map<const CXXMethodDecl *, OperationSourceDependencies> PairMemberSourceDependencies;
+  bool pairConstructorTemplateSource(const SelectedTemplateCallSource &Selection) {
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Selection.Expression);
+    const auto *Function = Selection.Function;
+    const auto Location = Selection.Location;
+    const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
+    if (!Construction || Construction->getConstructor() != Function ||
+        Found == FunctionSources.end() || Found->second.empty()) return false;
+    const TemplateUseSource *First = nullptr;
+    std::set<const TypeTraitExpr *> Queries;
+    std::set<const Type *> TypeSpellings;
+    std::set<const CXXMethodDecl *> Members;
+    for (const auto *Source : Found->second) {
+      std::vector<const TypeTraitExpr *> Local;
+      std::vector<const Type *> LocalTypes;
+      std::vector<const CXXMethodDecl *> LocalMembers;
+      if ((First && !equivalentUse(*First, *Source)) ||
+          Source->Location != Location ||
+          !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
+              Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
+              Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections))
+        return false;
+      Queries.insert(Local.begin(), Local.end());
+      TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
+      Members.insert(LocalMembers.begin(), LocalMembers.end());
+      First = Source;
+    }
+    // Whole-graph success precedes publication of exact purpose bindings.
+    PairConstructorSelections.emplace(Construction, &Selection);
+    PairConstructorTypeSpellings[Construction].insert(TypeSpellings.begin(), TypeSpellings.end());
+    PairConstructorSourceMembers[Construction].insert(Members.begin(), Members.end());
+    for (const auto *Member : Members) {
+      auto &Dependencies = PairMemberSourceDependencies[Member];
+      ActiveOperationSources.push_back(&Dependencies);
+      auto Restore = llvm::make_scope_exit([&] { ActiveOperationSources.pop_back(); });
+      collectOperationTypeSource(A.Context.getRecordType(Member->getParent()), Location, true);
+      collectOperationTypeSource(Member->getType(), Location, false);
+      queueSpecialMemberSignatures(Member);
+      if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Member)) {
+        Dependencies.Destructions.insert(Destructor->getParent());
+        queueOwningDestructorSignatures(Destructor->getParent(), Destructor, Location);
+      } else {
+        Dependencies.Families.insert(Member);
+      }
+    }
+    for (const auto *Query : Queries) {
+      PairConstructorTraitBindings[Construction].emplace(Query, &Selection);
+      const bool NewPurpose = PairConstructorQueries.insert(Query).second;
+      if (A.DeferredOperationQueries.insert(Query).second ||
+          (NewPurpose && A.VerifiedOperationQueries.count(Query)))
+        A.PendingOperationQueries.push_back(Query);
+      const bool Saved = A.CheckingSource;
+      A.CheckingSource = true;
+      auto Restore = llvm::make_scope_exit([&] { A.CheckingSource = Saved; });
+      // Return value is the actual trait result, including false. Source
+      // authentication is completed by the pending ordinary checker below.
+      (void)A.typeClassificationValue(Query);
+      queueConsumedOperationSignatures(Query);
+    }
+    return A.S.Diagnostics.empty();
+  }
+  bool finishPairConstructorSources() {
+    std::map<const Type *, std::vector<OperationTypeSourceKey>> WrittenTypes;
+    for (const auto &[Key, Source] : CheckedOperationTypes)
+      if (Source.Complete) {
+        const auto Type = QualType::getFromOpaquePtr(Key.first);
+        WrittenTypes[Type.getTypePtr()].push_back(Key);
+      }
+    OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+        &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+        &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+        &CompletedOperationDefaults);
+    for (const auto &[Construction, Spellings] : PairConstructorTypeSpellings) {
+      const auto *Selection = PairConstructorSelections[Construction];
+      if (!Selection || Selection->Expression != Construction ||
+          Selection->Function != Construction->getConstructor() ||
+          !A.S.owns(A.Sources, Selection->Location)) {
+        A.reject(Construction->getExprLoc(), "pair input source identity",
+                 "The completed input spelling must belong to this exact selected construction.");
+        return false;
+      }
+      for (const auto *Type : Spellings) {
+        bool Complete = false;
+        if (const auto *Alias = dyn_cast<TypedefType>(Type)) {
+          const auto *Info = Alias->getDecl()->getTypeSourceInfo();
+          Complete = owned(Alias->getDecl()) && Info &&
+              SourceCheck.requireType(operationTypeSourceKey(Info->getTypeLoc()));
+        } else if (const auto *Instance = dyn_cast<TemplateSpecializationType>(Type)) {
+          const auto Found = WrittenTypes.find(Type);
+          if (Found != WrittenTypes.end())
+            for (const auto &Key : Found->second) {
+              const TypeLoc Location(QualType::getFromOpaquePtr(Key.first), Key.second);
+              const auto Written = Location.getAs<TemplateSpecializationTypeLoc>();
+              if (!Written || !A.S.owns(A.Sources, Written.getTemplateNameLoc())) continue;
+              const auto Uses = TypeSources.find({Instance, Written.getTemplateNameLoc().getRawEncoding()});
+              if (Uses == TypeSources.end() || Uses->second.empty()) continue;
+              bool Actual = true;
+              for (const auto *Use : Uses->second)
+                Actual &= Use && Use->Type == Instance && Use->Written &&
+                    Use->Template == Instance->getTemplateName().getAsTemplateDecl() &&
+                    Use->Location == Written.getTemplateNameLoc();
+              if (Actual && SourceCheck.requireType(Key)) { Complete = true; break; }
+            }
+        }
+        if (!Complete) {
+          A.reject(Selection->Location, "pair input type source",
+                   "Each bound source spelling needs its original completed alias or template-use source.");
+          return false;
+        }
+      }
+      if (!SourceCheck.finish(Selection->Location)) {
+        A.reject(Selection->Location, "pair input source completion",
+                 "Every selected input spelling needs complete ordinary source dependencies.");
+        return false;
+      }
+    }
+    for (const auto &[Construction, Members] : PairConstructorSourceMembers) {
+      const auto *Selection = PairConstructorSelections[Construction];
+      if (!Selection || Selection->Expression != Construction ||
+          Selection->Function != Construction->getConstructor() ||
+          !A.S.owns(A.Sources, Selection->Location)) {
+        A.reject(Construction->getExprLoc(), "pair selected child source identity",
+                 "The source children must belong to this exact selected construction.");
+        return false;
+      }
+      for (const auto *Member : Members) {
+        const auto Dependencies = PairMemberSourceDependencies.find(Member);
+        if (Dependencies == PairMemberSourceDependencies.end() ||
+            !SourceCheck.exceptionSource(Member, true)) {
+          A.reject(Selection->Location, "pair selected child exception source",
+                   "Each retained source child needs its exact completed exception dependencies.");
+          return false;
+        }
+        SourceCheck.add(&Dependencies->second);
+      }
+      if (!SourceCheck.finish(Selection->Location)) {
+        A.reject(Selection->Location, "pair selected child source completion",
+                 "Every retained source child needs complete ordinary operation dependencies.");
+        return false;
+      }
+    }
+    for (const auto &[Construction, Bindings] : PairConstructorTraitBindings)
+      for (const auto &[Query, Selection] : Bindings)
+        if (!Selection || Selection->Expression != Construction ||
+            Selection->Function != Construction->getConstructor() ||
+            !A.S.owns(A.Sources, Selection->Location) ||
+            !A.VerifiedOperationQueries.count(Query) ||
+            !CompletedPairConstructorQueries.count(Query)) {
+          A.reject(Construction->getExprLoc(), "pair constructor source completion",
+                   "Every exact selected pair trait needs completed ordinary source.");
+          return false;
+        }
+    return true;
+  }
   void indexSelectedTemplateCalls(llvm::ArrayRef<SelectedTemplateCallSource> Sources) {
+    for (const auto &Source : Sources)
+      if (const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression))
+        if (Construction->getConstructor() == Source.Function &&
+            approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Source.Function))
+          PairTraitSelections[Construction].push_back(&Source);
     for (const auto &Source : Sources) {
       A.chargeExpansion(1, Source.Location);
       const FunctionDecl *Selected = nullptr;
@@ -21136,7 +21311,8 @@ public:
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
       if (Selected == Source.Function &&
-          tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected)) {
+          (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
+           approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Selected))) {
         // Collection is inert until an exact public factory binds this node.
         SelectedCallSources[Source.Expression].push_back(&Source);
         continue;
@@ -21202,6 +21378,14 @@ public:
                 : concreteMemberFunctionTemplate(Selected)) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
+        continue;
+      }
+      if (Construction && approvedUtilityPairMetadata(
+              A.S, A.Sources, ConstructionRecord) &&
+          !pairConstructorTemplateSource(Source)) {
+        A.reject(Source.Location, "pair constructor template source",
+                 "The selected pair construction needs its exact default, "
+                 "constraint and signature source.");
         continue;
       }
       if (UnsupportedUtilityUniquePtr) {
@@ -24038,14 +24222,16 @@ public:
               ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
               : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
                                      operationTraitNeedsExceptionSource(Query->getTrait()) ||
-                                         TupleFactoryExceptionQueries.count(Query),
+                                         TupleFactoryExceptionQueries.count(Query) ||
+                                         PairConstructorQueries.count(Query),
                                      &CompletedOperationDefaults, &CheckedOperationExpressions,
                                      &CheckedOperationTypes, &CompletedGeneratedOperations,
                                      &CompletedQueryConstructions,
                                      &CompletedQueryDestructorSignatures,
                                      &CompletedQueryCalls, &CompletedQueryTemplateSelections,
                                      (ArraySwapOperationQueries.count(Query) ||
-                                      TupleFactoryExceptionQueries.count(Query)) ? Query : nullptr,
+                                      TupleFactoryExceptionQueries.count(Query) ||
+                                      PairConstructorQueries.count(Query)) ? Query : nullptr,
                                      &CompletedSpecialMemberSignatures, PrepareSpecialMember));
         if (!Complete) {
           A.reject(Query->getExprLoc(), "operation trait source",
@@ -24053,6 +24239,8 @@ public:
           return false;
         }
         A.VerifiedOperationQueries.insert(Query);
+        if (PairConstructorQueries.count(Query))
+          CompletedPairConstructorQueries.insert(Query);
         if (TupleFactoryExceptionQueries.count(Query))
           CompletedTupleFactoryExceptionQueries.insert(Query);
       }
@@ -27150,7 +27338,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   if (!Traversed || !S.Diagnostics.empty())
     return;
   CheckingSource = false;
-  if (!Check.finishTypeQueries() || !Check.finishTupleFactories() ||
+  if (!Check.finishTypeQueries() || !Check.finishPairConstructorSources() ||
+      !Check.finishTupleFactories() ||
       !Check.finishAlgorithmPredicates())
     return;
   if (S.coreV2())
@@ -27889,8 +28078,10 @@ class Consumer : public ASTConsumer {
     auto &Sources = Context.getSourceManager();
     if (!S.owns(Sources, Location) &&
         !(Kind == TemplateSourceKind::Function &&
-          tupleFactorySelectionLocation(S, Sources, Location,
-              dyn_cast_or_null<FunctionDecl>(Declaration))))
+          (tupleFactorySelectionLocation(S, Sources, Location,
+              dyn_cast_or_null<FunctionDecl>(Declaration)) ||
+           approvedUtilityPairTraitSelectionLocation(S, Sources, Location,
+              dyn_cast_or_null<FunctionDecl>(Declaration)))))
       return;
     // These are successful Clang callbacks, not input protocol records. Bound
     // collection globally without eagerly rejecting an unused generic body.
@@ -27995,8 +28186,51 @@ public:
            Method->getParent()->getName() == "__tuple_leaf" ||
            Method->getParent()->getName() == "basic_string_view");
     }
+    bool PairSignatureMember = false;
+    if (Method && !Owned && (Method->isImplicit() || Method->isDefaulted()) &&
+        (isa<CXXDestructorDecl>(Method) ||
+         (isa<CXXConstructorDecl>(Method) &&
+          cast<CXXConstructorDecl>(Method)->isCopyOrMoveConstructor()))) {
+      const auto &Sources = Context.getSourceManager();
+      const auto Origin = S.sdkFile(Sources, Method->getLocation());
+      // Preserve actual Sema subobject choices before their owner is consumed.
+      // Retention alone grants no SDK type, operation or runtime permission.
+      PairSignatureMember = Origin && Origin->Root == "libcxx" &&
+          approvedStandardSDKDeclaration(S, Sources, Method) &&
+          approvedStandardSDKDeclaration(S, Sources, Method->getParent()) &&
+          ((Origin->Path == "__utility/pair.h" &&
+            approvedUtilityPairMetadata(S, Sources, Method->getParent())) ||
+           (Origin->Path == "array" &&
+            approvedUtilityArrayMetadata(S, Sources, Method->getParent())) ||
+           (Origin->Path == "__functional/reference_wrapper.h" &&
+            approvedFunctionalReferenceRecord(S, Sources, Method->getParent(), Context)) ||
+           ((Origin->Path == "__functional/weak_result_type.h" ||
+             Origin->Path == "__functional/unary_function.h" ||
+             Origin->Path == "__functional/binary_function.h" ||
+             Origin->Path == "__utility/empty.h") && Method->getParent()->isEmpty() &&
+            Method->getParent()->isStandardLayout() &&
+            Method->getParent()->hasTrivialCopyConstructor() &&
+            Method->getParent()->hasTrivialDestructor()));
+    }
+    const auto *DefaultConstructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+    const bool PairArrayDefaultMember = DefaultConstructor && !Owned &&
+        DefaultConstructor->isImplicit() && DefaultConstructor->isDefaulted() &&
+        DefaultConstructor->isDefaultConstructor() &&
+        approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method) &&
+        approvedUtilityArrayMetadata(S, Context.getSourceManager(), Method->getParent());
+    const auto OptionalOrigin = Method ? S.sdkFile(Context.getSourceManager(), Method->getLocation()) : std::nullopt;
+    const auto *OptionalCopy = dyn_cast_or_null<CXXConstructorDecl>(Method);
+    const bool PairOptionalMember = Method && !Owned &&
+        (isa<CXXDestructorDecl>(Method) || (OptionalCopy && OptionalCopy->isCopyOrMoveConstructor())) &&
+        (Method->isImplicit() || Method->isDefaulted()) && Method->isDefaulted() &&
+        !Method->getParent()->isUnion() &&
+        OptionalOrigin && OptionalOrigin->Root == "libcxx" &&
+        (OptionalOrigin->Path == "optional" || OptionalOrigin->Path == "__tuple/sfinae_helpers.h") &&
+        approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method) &&
+        approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method->getParent());
     if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
-        (!Owned && !TupleSignatureMember) ||
+        (!Owned && !TupleSignatureMember && !PairSignatureMember && !PairArrayDefaultMember &&
+         !PairOptionalMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
         !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
       return false;
@@ -28041,14 +28275,15 @@ public:
       return false;
     if (!S.owns(Context.getSourceManager(), Location)) {
       const auto Origin = S.sdkFile(Context.getSourceManager(), Location);
-      // These two immutable headers supply the exact two-operand traits in
-      // generic swap's conditional exception specification. Retention grants
-      // no source admission: a consuming descriptor must authenticate the
-      // selected specialization and each operand before checking this event.
+      // Immutable SDK traits retain the actual swap operands and zero-argument
+      // constructor event needed by selected pair default signatures. Retention
+      // grants no source admission: a consuming descriptor must authenticate
+      // the exact specialization, purpose and operands before using the event.
       if (!Origin || Origin->Root != "libcxx" ||
-          !((Count == 2 &&
-             (Origin->Path == "__type_traits/is_nothrow_constructible.h" ||
-              Origin->Path == "__type_traits/is_nothrow_assignable.h")) ||
+          !(((Count == 1 || Count == 2) &&
+             Origin->Path == "__type_traits/is_nothrow_constructible.h") ||
+            (Count == 2 &&
+             Origin->Path == "__type_traits/is_nothrow_assignable.h") ||
             (Count <= 65 && Origin->Path == "__type_traits/is_constructible.h") ||
             (Count == 2 && Origin->Path == "__type_traits/is_convertible.h")))
         return false;
@@ -28160,7 +28395,8 @@ public:
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
     if ((!S.owns(Sources, Location) &&
-         !tupleFactorySelectionLocation(S, Sources, Location, Function)) ||
+         !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
+         !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function)) ||
         !reserveSourceUnits(Sources, Location, 2))
       return;
     // All admitted producer paths capture direct nodes before casts or

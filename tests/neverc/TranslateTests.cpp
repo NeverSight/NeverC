@@ -46337,6 +46337,209 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairImplicitDefaultConstructorsRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-implicit-default-constructors.cpp");
+  const auto Output = tmpFile("pair-implicit-default-constructors.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+int unary(int n) { return n + 2; }
+int binary(int a, int b) { return a + b; }
+struct Storage { int value; };
+struct ImplicitDefault { ImplicitDefault() = default; int value; };
+struct ExplicitDefault { explicit ExplicitDefault() = default; int value; };
+struct ExplicitEmpty { explicit ExplicitEmpty() = default; };
+int main() {
+  std::pair<int, int> scalar{};
+  std::pair<ImplicitDefault, int> implicit{};
+  std::pair<ExplicitDefault, int> direct{};
+  std::pair<ExplicitEmpty, int> empty{};
+  std::pair<std::pair<int, int>, long> nested{};
+  std::pair<std::pair<std::pair<int, int>, long>, short> deep{};
+  std::pair<std::reference_wrapper<int(int)>, int> one(std::ref(unary), 3);
+  auto oneCopy = one;
+  std::pair<std::reference_wrapper<int(int, int)>, int> two(std::ref(binary), 4);
+  auto twoCopy = two;
+  Storage referent{7};
+  std::array<Storage, 2> row{{Storage{1}, Storage{2}}};
+  std::pair<std::reference_wrapper<Storage>, std::array<Storage, 2>> bound(std::ref(referent), row);
+  std::array<Storage, 0> zero{};
+  std::pair<std::reference_wrapper<Storage>, std::array<Storage, 0>> emptyBound(std::ref(referent), zero);
+  if (oneCopy.first(4) != 6 || oneCopy.second != 3 ||
+      twoCopy.first(4, 5) != 9 || twoCopy.second != 4 ||
+      &bound.first.get() != &referent || bound.second[1].value != 2 ||
+      &emptyBound.first.get() != &referent || emptyBound.second.size() != 0)
+    return 1;
+  return scalar.first || scalar.second || implicit.first.value ||
+         implicit.second || direct.first.value || direct.second || empty.second ||
+         nested.first.first || nested.first.second || nested.second ||
+         deep.first.first.first || deep.first.first.second ||
+         deep.first.second || deep.second;
+}
+)cpp");
+  const auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-implicit-default-constructors" + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_EQ(exec(Executable.string(), {}).exitCode, 0);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairImplicitDefaultConstructionRejectsReplacedSources) {
+  const struct {
+    const char *Name;
+    const char *Source;
+  } Cases[] = {
+      {"default-implicit-test-identity-macro", R"cpp(#define __test_implicit_default_constructible __test_implicit_default_constructible
+#include <utility>
+int main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}
+)cpp"},
+      {"default-implicit-test-source", R"cpp(#include <utility>
+namespace std { template<> void __test_implicit_default_constructible<const int&>(const int&); }
+int main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}
+)cpp"},
+      {"default-constraint-source", R"cpp(#include <utility>
+namespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_default<>(){return true;}}
+int main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}
+)cpp"},
+      {"default-implicit-source", R"cpp(#include <utility>
+namespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_implicit_default<>(){return true;}}
+int main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}
+)cpp"},
+      {"default-checkargs-dep-identity-macro", R"cpp(#define _CheckArgsDep _CheckArgsDep
+#include <utility>
+int main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}
+)cpp"},
+      {"default-exception-trait-identity-macro", R"cpp(#define is_nothrow_default_constructible is_nothrow_default_constructible
+#include <utility>
+int main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}
+)cpp"},
+      {"deleted-helper-primary-fallback", R"cpp(#include <utility>
+struct E{E()=default;int n;};
+namespace std{template<>void __test_implicit_default_constructible<const E&>(const E&)=delete;}
+int main(){std::pair<E,int> p{};return p.first.n||p.second;}
+)cpp"},
+      {"nested-default-inner-constraint-source", R"cpp(#include <utility>
+namespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_default<>(){return true;}}
+int main(){std::pair<std::pair<int,int>,long> p{};return p.first.first||p.first.second||p.second;}
+)cpp"},
+      {"nested-default-inner-implicit-source", R"cpp(#include <utility>
+namespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_implicit_default<>(){return true;}}
+int main(){std::pair<std::pair<int,int>,long> p{};return p.first.first||p.first.second||p.second;}
+)cpp"},
+      {"wrapper-base-use-identity-macro", R"cpp(#include <__functional/weak_result_type.h>
+#define __weak_result_type __weak_result_type
+#include <array>
+#include <functional>
+#include <utility>
+struct Item{int value;};
+int main(){Item a{7};std::array<Item,2> row{{Item{1},Item{2}}};std::pair<std::reference_wrapper<Item>,std::array<Item,2>> p(std::ref(a),row);return &p.first.get()!=&a||p.second[1].value!=2;}
+)cpp"},
+      {"zero-storage-use-identity-macro", R"cpp(#include <__utility/empty.h>
+#define __empty __empty
+#include <array>
+#include <functional>
+#include <utility>
+struct Item{int value;};
+int main(){Item a{7};std::array<Item,0> row{};std::pair<std::reference_wrapper<Item>,std::array<Item,0>> p(std::ref(a),row);return &p.first.get()!=&a||p.second.size()!=0;}
+)cpp"},
+      {"optional-base-alias-identity-macro", R"cpp(#define __optional_sfinae_ctor_base_t __optional_sfinae_ctor_base_t
+#include <optional>
+#include <utility>
+int main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}
+)cpp"},
+      {"optional-storage-identity-macro", R"cpp(#define __optional_destruct_base __optional_destruct_base
+#include <optional>
+#include <utility>
+int main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}
+)cpp"},
+      {"optional-default-source", R"cpp(#include <optional>
+#include <utility>
+namespace std {template<> constexpr optional<int>::optional() noexcept {}}
+int main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}
+)cpp"},
+      {"optional-value-type-use-identity-macro", R"cpp(#include <type_traits>
+#define remove_cv_t remove_cv_t
+#include <optional>
+#include <utility>
+int main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-implicit-default-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-implicit-default-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2PairSDKConstructorQueriesPreserveAdmittedValues) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"array-two", R"cpp(#include <array>
+#include <utility>
+int main(){std::pair<std::array<int,2>,int> p{};return p.first[0]||p.first[1]||p.second;}
+)cpp"},
+      {"array-zero", R"cpp(#include <array>
+#include <utility>
+int main(){std::pair<std::array<int,0>,int> p{};return p.first.size()||p.second;}
+)cpp"},
+      {"array-nested", R"cpp(#include <array>
+#include <utility>
+int main(){std::pair<std::array<std::array<int,2>,2>,long> p{};return p.first[0][1]||p.first[1][0]||p.second;}
+)cpp"},
+      {"optional", R"cpp(#include <optional>
+#include <utility>
+int main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}
+)cpp"},
+      {"optional-array", R"cpp(#include <optional>
+#include <array>
+#include <utility>
+int main(){std::pair<std::array<std::optional<int>,2>,int> p{};return p.first[0].has_value()||p.first[1].has_value()||p.second;}
+)cpp"},
+      {"optional-direct-copy", R"cpp(#include <optional>
+#include <utility>
+int main(){std::optional<int> o(7);std::pair<std::optional<int>,int> p(o,3);return !p.first.has_value()||*p.first!=7||p.second!=3;}
+)cpp"},
+      {"nested-optional-default", R"cpp(#include <optional>
+#include <utility>
+int main(){std::pair<std::optional<std::optional<int>>,int> p{};return p.first.has_value()||p.second;}
+)cpp"},
+      {"optional-record-copy", R"cpp(#include <optional>
+#include <utility>
+struct Item{int value;};
+int main(){std::optional<Item> o(Item{7});std::pair<std::optional<Item>,int> p(o,3);return !p.first.has_value()||(*p.first).value!=7||p.second!=3;}
+)cpp"},
+      {"optional-array-copy", R"cpp(#include <array>
+#include <optional>
+#include <utility>
+int main(){std::array<int,2> a{{2,7}};std::optional<std::array<int,2>> o(a);std::pair<std::optional<std::array<int,2>>,int> p(o,3);return !p.first.has_value()||(*p.first)[1]!=7||p.second!=3;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-sdk-default-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-sdk-default-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-sdk-default-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityCompositePairsRunAtBothOptimizations) {
   const auto Source = tmpFile("utility-composite-pair.cpp");
   const auto Output = tmpFile("utility-composite-pair.nc");
