@@ -126,32 +126,52 @@ static void test_cbc_256(void) {
     check_bytes("CBC-256 roundtrip", dec, pt, 64);
 }
 
-/* NIST SP 800-38A F.5.1: AES-128 CTR */
-static void test_ctr_128(void) {
-    printf("[AES-128 CTR — NIST SP 800-38A F.5.1]\n");
-    uint8_t key[16], iv[16], pt[64], ct[64], expected_ct[64];
-
-    hex_to_bytes("2b7e151628aed2a6abf7158809cf4f3c", key, 16);
-    hex_to_bytes("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", iv, 16);
+/* NIST SP 800-38A F.5.1, F.5.3, F.5.5: all AES key sizes in CTR mode. */
+static void test_ctr_vectors(void) {
+    printf("[AES-128/192/256 CTR — NIST SP 800-38A F.5]\n");
+    static const struct {
+        const char *key;
+        int key_len;
+        const char *ciphertext;
+    } cases[] = {
+        {"2b7e151628aed2a6abf7158809cf4f3c", 16,
+         "874d6191b620e3261bef6864990db6ce"
+         "9806f66b7970fdff8617187bb9fffdff"
+         "5ae4df3edbd5d35e5b4f09020db03eab"
+         "1e031dda2fbe03d1792170a0f3009cee"},
+        {"8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", 24,
+         "1abc932417521ca24f2b0459fe7e6e0b"
+         "090339ec0aa6faefd5ccc2c6f4ce8e94"
+         "1e36b26bd1ebc670d1bd1d665620abf7"
+         "4f78a7f6d29809585a97daec58c6b050"},
+        {"603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", 32,
+         "601ec313775789a5b7a7f504bbf3d228"
+         "f443e3ca4d62b59aca84e990cacaf5c5"
+         "2b0930daa23de94ce87017ba2d84988d"
+         "dfc9c58db67aada613c2dd08457941a6"}
+    };
+    uint8_t key[32], iv[16], pt[64], ct[64], expected_ct[64], final_iv[16];
+    hex_to_bytes("f0f1f2f3f4f5f6f7f8f9fafbfcfdff03", final_iv, 16);
     hex_to_bytes(
         "6bc1bee22e409f96e93d7e117393172a"
         "ae2d8a571e03ac9c9eb76fac45af8e51"
         "30c81c46a35ce411e5fbc1191a0a52ef"
         "f69f2445df4f9b17ad2b417be66c3710", pt, 64);
-    hex_to_bytes(
-        "874d6191b620e3261bef6864990db6ce"
-        "9806f66b7970fdff8617187bb9fffdff"
-        "5ae4df3edbd5d35e5b4f09020db03eab"
-        "1e031dda2fbe03d1792170a0f3009cee", expected_ct, 64);
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        hex_to_bytes(cases[i].key, key, cases[i].key_len);
+        hex_to_bytes(cases[i].ciphertext, expected_ct, 64);
+        hex_to_bytes("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", iv, 16);
+        check_int("CTR encrypt return",
+                  neverc_cipher_ctr_checked(key, cases[i].key_len, iv, ct, pt, 64), 0);
+        check_bytes("CTR ciphertext", ct, expected_ct, 64);
+        check_bytes("CTR updated IV", iv, final_iv, 16);
 
-    neverc_cipher_ctr(key, 16, iv, ct, pt, 64);
-    check_bytes("CTR-128 ciphertext", ct, expected_ct, 64);
-
-    /* CTR is self-inverse: encrypt ciphertext = plaintext */
-    uint8_t dec[64];
-    hex_to_bytes("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", iv, 16);
-    neverc_cipher_ctr(key, 16, iv, dec, expected_ct, 64);
-    check_bytes("CTR-128 decrypt", dec, pt, 64);
+        /* Decrypt the independent vector in-place. */
+        memcpy(ct, expected_ct, sizeof(ct));
+        hex_to_bytes("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", iv, 16);
+        neverc_cipher_ctr(key, cases[i].key_len, iv, ct, ct, 64);
+        check_bytes("CTR in-place decrypt", ct, pt, 64);
+    }
 }
 
 /* Partial block CTR: arbitrary length */
@@ -413,7 +433,7 @@ int main(void) {
     test_cbc_128();
     test_cbc_192();
     test_cbc_256();
-    test_ctr_128();
+    test_ctr_vectors();
     test_ctr_partial();
     test_cbc_invalid();
     test_invalid_key_and_spans();

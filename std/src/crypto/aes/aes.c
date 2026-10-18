@@ -1,39 +1,64 @@
 #include "neverc/std/crypto/aes.h"
 #include "neverc/std/_platform.h"
 #include <string.h>
-#include "aes_ct_sbox.h"
+#include "aes_ct_field.h"
 
 /*
  * AES (Rijndael) block cipher — FIPS 197.
  * Pure C implementation, supports AES-128/192/256.
  *
- * The portable backend uses a Boyar-Peralta bitsliced S-box and byte-oriented
- * linear layers. Memory addresses and branches are independent of key and
- * block contents; hardware-specific acceleration can be added above this safe
- * fallback without exposing a table-based path.
+ * The portable backend computes substitution with bitsliced composite-field
+ * inversion and uses byte-oriented linear layers. Memory addresses and branches
+ * are independent of key and block contents. No S-box or round-constant tables
+ * are used.
  */
 
-static void aes_sub_bytes(uint8_t *data, size_t len, int inverse) {
-    uint32_t q[8] = {0};
+/* Read/write at most eight bytes without alignment or host-endian assumptions. */
+static uint64_t aes_pack8(const uint8_t *data, size_t len) {
+    uint64_t word = 0;
     for (size_t i = 0; i < len; i++)
-        for (unsigned bit = 0; bit < 8; bit++)
-            q[bit] |= (uint32_t)((data[i] >> bit) & 1u) << i;
-    if (inverse)
-        aes_ct_inv_sbox(q);
-    else
-        aes_ct_sbox(q);
-    for (size_t i = 0; i < len; i++) {
-        uint8_t value = 0;
-        for (unsigned bit = 0; bit < 8; bit++)
-            value |= (uint8_t)(((q[bit] >> i) & 1u) << bit);
-        data[i] = value;
-    }
+        word |= (uint64_t)data[i] << (8 * i);
+    return aes_transpose8(word);
 }
 
-static const uint32_t rcon[10] = {
-    0x01000000, 0x02000000, 0x04000000, 0x08000000, 0x10000000,
-    0x20000000, 0x40000000, 0x80000000, 0x1b000000, 0x36000000,
-};
+static void aes_unpack8(uint8_t *data, size_t len, uint64_t planes) {
+    uint64_t word = aes_transpose8(planes);
+    for (size_t i = 0; i < len; i++)
+        data[i] = (uint8_t)(word >> (8 * i));
+}
+
+/* The key schedule substitutes four bytes and cipher rounds substitute sixteen.
+ * Transposing groups of eight avoids a separate extraction for every bit. */
+static void aes_sub_bytes(uint8_t *data, size_t len, int inverse) {
+    uint64_t lo, hi;
+    if (len == 16) {
+        lo = aes_pack8(data, 8);
+        hi = aes_pack8(data + 8, 8);
+    } else {
+        lo = aes_pack8(data, 4);
+        hi = 0;
+    }
+    uint32_t q[8];
+    for (unsigned bit = 0; bit < 8; bit++)
+        q[bit] = (uint32_t)((lo >> (8 * bit)) & 0xffu) |
+                 (uint32_t)(((hi >> (8 * bit)) & 0xffu) << 8);
+    if (inverse)
+        aes_field_inv_sbox(q);
+    else
+        aes_field_sbox(q);
+    lo = 0;
+    hi = 0;
+    for (unsigned bit = 0; bit < 8; bit++) {
+        lo |= (uint64_t)(q[bit] & 0xffu) << (8 * bit);
+        hi |= (uint64_t)((q[bit] >> 8) & 0xffu) << (8 * bit);
+    }
+    if (len == 16) {
+        aes_unpack8(data, 8, lo);
+        aes_unpack8(data + 8, 8, hi);
+    } else {
+        aes_unpack8(data, 4, lo);
+    }
+}
 
 static uint32_t sub_word(uint32_t w) {
     uint8_t bytes[4] = {
@@ -123,11 +148,13 @@ int neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len) {
         ek[i] = get_u32be(key + 4 * i);
 
     int total = 4 * (nr + 1);
+    uint8_t round_constant = 1;
     for (int i = nk; i < total; i++) {
         uint32_t t = ek[i - 1];
-        if (i % nk == 0)
-            t = sub_word(rot_word(t)) ^ rcon[i / nk - 1];
-        else if (nk > 6 && i % nk == 4)
+        if (i % nk == 0) {
+            t = sub_word(rot_word(t)) ^ ((uint32_t)round_constant << 24);
+            round_constant = aes_xtime(round_constant);
+        } else if (nk > 6 && i % nk == 4)
             t = sub_word(t);
         ek[i] = ek[i - nk] ^ t;
     }
