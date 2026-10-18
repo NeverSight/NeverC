@@ -1,5 +1,54 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-18
+
+- Cutoff: **2026-10-18 01:00 UTC / 09:00 Asia/Shanghai**. Source: dev [2f36a6ae](https://github.com/NeverSight/NeverC/commit/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598), authored October 17 at 23:56:48 UTC.
+- Daily incoming range [103155b5…2f36a6ae](https://github.com/NeverSight/NeverC/compare/103155b578f834d7374b37d8062ca9fa253f0ee2...2f36a6ae4d5e91c49a5fb936d75e03a1478e3598): **9 implementation commits / 59 changed paths**. All commit metadata and changed paths were inventoried; this is not a claim to have audited every path. Since the last published October 16 source snapshot, the wider range [4c33d439…2f36a6ae](https://github.com/NeverSight/NeverC/compare/4c33d439ec83024796ce388e82d885142b7b6407...2f36a6ae4d5e91c49a5fb936d75e03a1478e3598) contains 24 commits / 144 paths and is not today's complete code-review scope. This progress-only commit is excluded from product progress.
+- **No newly proven bug and no new source or fixture fix in this review.** The historical piecewise sampling-order discrepancy remains present in the inspected source; its earlier publication remains unresolved. No duplicate repair, retry of an uncertain pending write, or claim of a landed repair is made.
+- Strictly static: source, diffs, declarations, selected caller relationships, fixture source and existing GitHub metadata. **No build, test, benchmark, project execution, repository script, dynamic analysis or manual CI dispatch/rerun.** Repository guidance requesting execution is subordinate to this review's static-only constraint.
+- Read root AGENTS.md, README contribution section, docs/local-dev.md, .github/ci-policy.md and relevant compiler/static-analysis skill guidance. Root CONTRIBUTING.md is absent. Complete recursive neverc (2,626 entries), tests (1,253) and utils (142) inventories contain no nested AGENTS/CONTRIBUTING guide. dev is the default branch, push-enabled and unprotected; the returned ruleset is disabled.
+
+## Activity and review queue
+
+**9 ordinary open issues / 0 open PRs**, unchanged since yesterday and the last published snapshot. All-state issues returned 18 entries including historical PRs; all-state PRs returned eight entries. Both page-two requests were empty at 100/page. No interval issue/PR openings, closures or merges were found. Issue-comment and review-comment collections since October 17 01:00 UTC were empty. There is no open PR awaiting review or relevant open PR to reuse. Existing roadmap issues #7–#12 and #16–#18 remain open; this does not establish implementation completion.
+
+## Product delta and bounded static review
+
+The nine incoming commits introduce authenticated default C++ heap bridging, selected C++17 make_from_tuple construction, string/string-view hashing, unique-owner exchange and hashes, pointer/scalar hash source authentication and tuple ownership paths. These concern the bounded C++ translation adapter; NeverC's source language remains C23-only.
+
+Actual inspected scope:
+
+1. **Shared lowering and interfaces.** Read all available aggregate Lowering.cpp and Frontend.h changed hunks, including tuple-element bindings, direct/adapter unique-owner hashing, unique-owner exchange, make_from_tuple, typed allocation call-site changes, tuple owner moves, helper generation and retained default-heap calls. [Lowering.cpp](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp), [Frontend.h](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/Frontend/Frontend.h). The exchange path binds both expressions before moving ownership, clears the source and preserves a separately bound replacement address for self-alias cases. Tuple construction retains element storage rather than prematurely capturing a value, and distinguishes caller result lifetime from helper argument/default lifetime. These are static observations, not executed correctness claims.
+2. **Heap admission and caller closure.** Read Frontend.cpp lines 11341–11735, 8261–8350 and 27006–27065. Traced hosted CRT/size_t ABI restrictions, exact default declarations, source-overload-family exclusion, element alignment, typed source versus SDK allocation use, sized-delete fallback selection and publication of helpers only for retained calls. Compared the updated frontend README contract. Successful, nonoverflowing allocation is an explicit admission domain; exception/allocation-failure handling is excluded rather than silently claimed. [Frontend.cpp](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L11341-L11735).
+3. **String hash arithmetic.** Compared the new 32-bit Murmur2 and 64-bit CityHash lowering against the pinned __functional/hash.h algorithm, including short/medium/long branches, byte-load range guards, nonzero rotate counts, 64-byte loop updates, and the ABI1 32-bit intermediate shift before widening. No mismatch was proven in this bounded comparison. This does not verify all declaration/source authentication paths or every target data model. [Pinned hash header](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/SDK/libcxx/__functional/hash.h).
+4. **Historical sampling finding rechecked.** Lowering.cpp lines 6124–6138 still capture the area-vector begin pointer before the canonical generator call; the pinned piecewise constant and linear sampling bodies call the generator before reading area iterators. The previously reported sequencing discrepancy therefore has not disappeared from this source. No new exploitation claim or broadened finding is made; no uncertain earlier write was retried. [Current lowerer](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L6124-L6138), [constant header](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/SDK/libcxx/__random/piecewise_constant_distribution.h), [linear header](https://github.com/NeverSight/NeverC/blob/2f36a6ae4d5e91c49a5fb936d75e03a1478e3598/neverc/lib/Translate/Cpp/SDK/libcxx/__random/piecewise_linear_distribution.h).
+5. **Unexecuted fixture-source review.** Read all five unique-exchange fixtures (arrays, lifetimes, queries, result aliases, scalars), make-from-tuple conversions/references/lifetimes, default-heap-queries and unique-hash-adapters-lifetimes. Their assertions cover source effects, self exchange, outer assignment aliases, default/argument cleanup, reference origins and reverse tuple owner destruction. These are authored assertions, not observed test passes.
+
+**Limits:** Frontend.cpp and MathSDK.cpp aggregate patches were omitted by the compare response. Full Frontend.cpp and Lowering.cpp were retrieved through blob reads after contents reads returned empty content; only the ranges/hunks named above were examined. MathSDK.cpp blob reads failed with transport errors, so its new authentication implementation was not independently audited. The root recursive tree also failed; complete relevant subtrees were enumerated instead. The remaining fixtures, complete TranslateTests harness, all authentication/escape/lifetime dependencies, cross-target numerical behavior, runtime/std/LLVM and installed packages were not audited end to end. No whole-repository scan or verification pass is claimed.
+
+## Existing CI — exact source, not our validation
+
+Sampled **2026-10-18 00:58–00:59 UTC**, dev **2f36a6ae**:
+
+- **11 workflows: 2 success / 8 in progress / 1 queued / 0 failure at sampling.**
+- **22 check runs: 7 success / 11 in progress / 4 queued / 0 failure at sampling.**
+- Workflow and check collections used 100/page and both second pages were empty. No PR head exists.
+- Successful workflows: [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/39080938160) and [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/39080938084).
+- [Windows ARM64](https://github.com/NeverSight/NeverC/actions/runs/39080938087), [macOS ARM64](https://github.com/NeverSight/NeverC/actions/runs/39080938135) and [Linux x64](https://github.com/NeverSight/NeverC/actions/runs/39080938333) job steps were also read; each was still at Build neverc, with later package/test stages pending. Thus the historical MSVC C1053 or other older failures cannot be declared resolved at this newer SHA.
+- Remaining platform and VBS workflows were running; the Python bindings workflow was queued in the workflow sample while some matrix checks were already running in the later check sample. These separate sampling surfaces are not a suite pass.
+- No CI was manually started, rerun, modified or disabled. Any automatic check for the documentation commit belongs to its own later SHA.
+
+## Suggested priorities
+
+1. **Resolve the existing piecewise repair publication state, then rebase/review the minimal repair against current source.** Dependency: establish the earlier write's terminal outcome without blind retry. Acceptance: one nonduplicated repair with the correct generator-before-iterator order, exact remote diff and a focused regression fixture; later test claims must identify actual CI evidence, not this static review.
+2. **Complete the new source-authentication and ownership audit.** Dependency: retrieve the omitted MathSDK.cpp changes and remaining caller/escape proofs. Acceptance: document the actual selected-declaration checks, invalid replacements, borrowed/owned tuple paths and lifetime boundaries; repair only reproducible static contradictions.
+3. **Triage exact-head CI once results exist.** Dependency: completion/log availability for platform and Python jobs at 2f36a6ae or a named descendant. Acceptance: attribute failures to exact commands and revision evidence, verify whether the historical ARM64 size blocker persists, and keep running/queued jobs distinct from success.
+
+<details>
+<summary>Previous snapshots and human edits (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-16
 
 - Source checked at **2026-10-16 01:19 UTC / 09:19 Asia/Shanghai**: dev [4c33d439](https://github.com/NeverSight/NeverC/commit/4c33d439ec83024796ce388e82d885142b7b6407), authored October 15 at 19:28 UTC. CI below is the **01:02–01:05 UTC** exact-source observation, not a result for this later documentation commit.
@@ -1256,3 +1305,13 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Recorded exact-source CI: 4 failed, 4 running and 3 successful workflows. Read both MSVC ARM64 C1053 logs; retained the other three inaccessible-log/metadata diagnosis limits.
 - Added this English snapshot and dated entry while preserving the complete previous file verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
 
+
+</details>
+
+## Daily log — 2026-10-18
+
+- Inventoried nine incoming implementation commits and 59 paths; distinguished the wider 24-commit/144-path gap since the last published snapshot.
+- Reviewed the bounded lowering, heap admission, hash arithmetic, tuple ownership and fixture source described above. No newly proven defect and no new source/test commit; the historical piecewise sequencing discrepancy remains unresolved.
+- Kept fully paginated activity counts at 9 open issues / 0 open PRs, with no new review queue or interval state changes.
+- Recorded exact-source CI as 2 successful, 8 running and 1 queued workflows, without promoting historical or running results to a new validation pass.
+- Preserved the complete prior progress file and human edits. No execution, manual CI, dependency/security change, issue mutation, merge or deployment.
