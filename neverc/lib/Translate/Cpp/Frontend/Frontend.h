@@ -516,6 +516,11 @@ approvedUtilityTupleApplyUserCall(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CallExpr *Call,
                                   const clang::ASTContext &Context);
+// This query proves only source-owned scalar-result invocation with exact
+// borrowed tuple parameters; it does not consume a runtime dispatch body.
+const clang::CXXMethodDecl *approvedUtilityTupleApplyBorrowedUserSignatureCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 // Bind the authenticated dispatch's completed noexcept call to its retained
 // decltype call without consuming the runtime body. The caller authenticates
 // each decltype declval argument against the dispatch's template arguments.
@@ -1664,6 +1669,9 @@ struct UtilityTupleRecord {
   std::vector<UtilityTupleElement> Elements;
   uint64_t StoragePaddingBytes = 0;
   bool SelectedStringCarrierValues = false;
+  // Value children recursively retain selected construction and cleanup.
+  // References retain their bindings without owning their referents.
+  bool RequiresSelectedElementOperations = false;
 };
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
@@ -1678,6 +1686,31 @@ std::optional<UtilityTupleRecord> approvedUtilityReferenceTupleRecord(
 std::optional<UtilityTupleRecord> approvedUtilityMixedReferenceTupleRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+// Exact lexical query signatures consume retained semantic selections, never
+// runtime constructor bodies or ownership helpers.
+bool approvedUtilityTupleConstructionSignature(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedUtilityTupleConstructorQueryTemplateSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructorDecl *Constructor, const TemplateUseSource &Source,
+    const clang::ASTContext &Context,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+// The public tuple_cat return signature supplies metadata, never a selected
+// element construction or permission to execute its lazy body.
+bool approvedUtilityTupleCatSignatureQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedUtilityTupleCatQueryTemplateSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const TemplateUseSource &Source, const clang::ASTContext &Context,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 enum class UtilityTupleConstruction {
   Default,
   Elements,

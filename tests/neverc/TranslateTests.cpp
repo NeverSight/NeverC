@@ -368127,13 +368127,15 @@ int main() {
   return std::get<0>(std::get<0>(value)).size() != 0;
 }
 )cpp"},
-    {"nested-string-value-copy", R"cpp(#include <string>
+    {"nested-string-child-source-replacement", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
 #include <tuple>
-int main() {
-  std::tuple<std::tuple<std::string>> value{std::tuple<std::string>{std::string(193, 'q')}};
-  auto copied = value;
-  return std::get<0>(std::get<0>(copied)).size() != 193;
-}
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string>{public:std::string value;explicit tuple(std::string v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::string(193,'q'));Outer outer(inner);return 0;}
 )cpp"},
   };
   for (const auto &Case : Cases) {
@@ -368463,6 +368465,615 @@ std::invoke(hash, argument.get()); return 0; }
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("hash-carrier-wrapper-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("hash-carrier-wrapper-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedCarrierTuplesValuesAndRecursiveLifetimes) {
+  const auto Output = tmpFile("nested-carrier-tuples-values.nc");
+  const auto Result = translate(fixture("nested-carrier-tuples-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("nested-carrier-tuples-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const struct { const char *Name; const char *Source; } Copies[] = {
+    {"original-single-string-copy", R"cpp(#include <string>
+#include <tuple>
+int main() {
+  std::tuple<std::tuple<std::string>> value{std::tuple<std::string>{std::string(193, 'q')}};
+  auto copied = value;
+  return std::get<0>(std::get<0>(copied)).size() != 193;
+}
+)cpp"},
+    {"single-string-independent-copies", R"cpp(#include <string>
+#include <tuple>
+#include <utility>
+bool copied(int length) {
+  std::tuple<std::tuple<std::string>> value{std::tuple<std::string>{std::string(length, 'q')}};
+  auto copy = value;
+  std::get<0>(std::get<0>(copy))[0] = 'x';
+  auto moved = std::move(copy);
+  if (std::get<0>(std::get<0>(value)).size() != static_cast<std::size_t>(length) ||
+      std::get<0>(std::get<0>(value))[0] != 'q' ||
+      std::get<0>(std::get<0>(moved)).size() != static_cast<std::size_t>(length) ||
+      std::get<0>(std::get<0>(moved))[0] != 'x') return false;
+  std::get<0>(std::get<0>(moved))[1] = 'y';
+  return std::get<0>(std::get<0>(value))[1] == 'q';
+}
+int main() { return copied(5) && copied(193) ? 0 : 1; }
+)cpp"},
+  };
+  for (const auto &Case : Copies) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + ".cpp");
+    const auto Generated = tmpFile(std::string(Case.Name) + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Translated = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Generated.string()});
+    ASSERT_EQ(Translated.exitCode, 0) << Translated.out << Translated.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string(Case.Name) + Optimization);
+      const auto Compile = compileGenerated(Generated, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+}
+
+TEST_F(TranslateTest, CoreV2NestedCarrierTuplesSignatureOnlyQueries) {
+  const auto Output = tmpFile("nested-carrier-tuples-queries.nc");
+  const auto Result = translate(fixture("nested-carrier-tuples-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("nested-carrier-tuples-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedCarrierTuplesBorrowedNoncopyableReferents) {
+  const auto Output = tmpFile("nested-carrier-tuples-borrowed.nc");
+  const auto Result = translate(fixture("nested-carrier-tuples-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("nested-carrier-tuples-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedCarrierTuplesRetainSelectedSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"string-child-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string>{public:std::string value;explicit tuple(std::string v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::string(193,'q'));Outer outer(inner);return 0;}
+)cpp"},
+    {"string-child-specialization-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string>{public:std::string value;explicit tuple(std::string v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+static_assert(__is_same(decltype(Outer(std::declval<Inner&>())),Outer));
+int main(){return 0;}
+)cpp"},
+    {"string-child-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string>{public:std::string value;explicit tuple(std::string v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::string(193,'q'));(void)Outer(inner);return 0;}
+)cpp"},
+    {"string-forward-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+template<> Inner& std::forward<Inner&>(std::remove_reference_t<Inner&>& v) noexcept{return static_cast<Inner&>(v);}
+int main(){Inner inner(std::string(193,'q'));Outer outer(std::forward<Inner&>(inner));return 0;}
+)cpp"},
+    {"string-forward-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+template<> Inner& std::forward<Inner&>(std::remove_reference_t<Inner&>& v) noexcept{return static_cast<Inner&>(v);}
+int main(){Inner inner(std::string(193,'q'));(void)Outer(std::forward<Inner&>(inner));return 0;}
+)cpp"},
+    {"string-get-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+int main(){Inner inner(std::string(193,'q'));Outer outer(inner);redirected=&std::get<0>(outer);return &std::get<0>(outer)!=redirected;}
+)cpp"},
+    {"string-get-specialization-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+static_assert(__is_same(decltype(std::get<0>(std::declval<Outer&>())),Inner&));static_assert(noexcept(std::get<0>(std::declval<Outer&>())));
+int main(){return 0;}
+)cpp"},
+    {"string-get-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+int main(){Inner inner(std::string(193,'q'));Outer outer(inner);redirected=&std::get<0>(outer);std::get<0>(outer);return 0;}
+)cpp"},
+    {"view-child-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string_view>{public:std::string_view value;explicit tuple(std::string_view v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::string_view("abc",3));Outer outer(inner);return 0;}
+)cpp"},
+    {"view-child-specialization-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string_view>{public:std::string_view value;explicit tuple(std::string_view v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+static_assert(__is_same(decltype(Outer(std::declval<Inner&>())),Outer));
+int main(){return 0;}
+)cpp"},
+    {"view-child-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::string_view>{public:std::string_view value;explicit tuple(std::string_view v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::string_view("abc",3));(void)Outer(inner);return 0;}
+)cpp"},
+    {"view-forward-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+template<> Inner& std::forward<Inner&>(std::remove_reference_t<Inner&>& v) noexcept{return static_cast<Inner&>(v);}
+int main(){Inner inner(std::string_view("abc",3));Outer outer(std::forward<Inner&>(inner));return 0;}
+)cpp"},
+    {"view-forward-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+template<> Inner& std::forward<Inner&>(std::remove_reference_t<Inner&>& v) noexcept{return static_cast<Inner&>(v);}
+int main(){Inner inner(std::string_view("abc",3));(void)Outer(std::forward<Inner&>(inner));return 0;}
+)cpp"},
+    {"view-get-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+int main(){Inner inner(std::string_view("abc",3));Outer outer(inner);redirected=&std::get<0>(outer);return &std::get<0>(outer)!=redirected;}
+)cpp"},
+    {"view-get-specialization-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+static_assert(__is_same(decltype(std::get<0>(std::declval<Outer&>())),Inner&));static_assert(noexcept(std::get<0>(std::declval<Outer&>())));
+int main(){return 0;}
+)cpp"},
+    {"view-get-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::string_view;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+int main(){Inner inner(std::string_view("abc",3));Outer outer(inner);redirected=&std::get<0>(outer);std::get<0>(outer);return 0;}
+)cpp"},
+    {"owner-child-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::unique_ptr<int>>{public:std::unique_ptr<int> value;explicit tuple(std::unique_ptr<int> v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::make_unique<int>(7));Outer outer(std::move(inner));return 0;}
+)cpp"},
+    {"owner-child-specialization-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::unique_ptr<int>>{public:std::unique_ptr<int> value;explicit tuple(std::unique_ptr<int> v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+static_assert(__is_same(decltype(Outer(std::declval<Inner&&>())),Outer));
+int main(){return 0;}
+)cpp"},
+    {"owner-child-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+namespace std{template<>class tuple<std::unique_ptr<int>>{public:std::unique_ptr<int> value;explicit tuple(std::unique_ptr<int> v):value(std::move(v)){}tuple(const tuple&)=default;tuple(tuple&&)=default;};}
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+int main(){Inner inner(std::make_unique<int>(7));(void)Outer(std::move(inner));return 0;}
+)cpp"},
+    {"owner-forward-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+template<> Inner&& std::forward<Inner>(std::remove_reference_t<Inner>& v) noexcept{return static_cast<Inner&&>(v);}
+int main(){Inner inner(std::make_unique<int>(7));Outer outer(std::forward<Inner>(inner));return 0;}
+)cpp"},
+    {"owner-forward-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+template<> Inner&& std::forward<Inner>(std::remove_reference_t<Inner>& v) noexcept{return static_cast<Inner&&>(v);}
+int main(){Inner inner(std::make_unique<int>(7));(void)Outer(std::forward<Inner>(inner));return 0;}
+)cpp"},
+    {"owner-get-specialization-runtime", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+int main(){Inner inner(std::make_unique<int>(7));Outer outer(std::move(inner));redirected=&std::get<0>(outer);return &std::get<0>(outer)!=redirected;}
+)cpp"},
+    {"owner-get-specialization-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+static_assert(__is_same(decltype(std::get<0>(std::declval<Outer&>())),Inner&));static_assert(noexcept(std::get<0>(std::declval<Outer&>())));
+int main(){return 0;}
+)cpp"},
+    {"owner-get-specialization-ignored", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using V=std::unique_ptr<int>;using Inner=std::tuple<V>;using Outer=std::tuple<Inner>;
+Inner* redirected;template<> Inner& std::get<0,Inner>(Outer&)noexcept{return *redirected;}
+int main(){Inner inner(std::make_unique<int>(7));Outer outer(std::move(inner));redirected=&std::get<0>(outer);std::get<0>(outer);return 0;}
+)cpp"},
+    {"is_constructible-macro-source-query", R"cpp(#define __is_constructible(...) true
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string,std::string_view>;using Row=std::tuple<Leaf,int>;static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"is_nothrow_constructible-macro-source-query", R"cpp(#define __is_nothrow_constructible(...) false
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string,std::string_view>;using Row=std::tuple<Leaf,int>;static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"is_convertible-macro-source-query", R"cpp(#define __is_convertible(...) true
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string,std::string_view>;using Row=std::tuple<Leaf,int>;static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"string-enable-elements-query", R"cpp(#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string>;using Row=std::tuple<Leaf,int>;
+template<>template<>struct std::tuple<Leaf,int>::_EnableUTypesCtor<Leaf,int>:std::true_type{};
+static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"string-lazy-explicit-query", R"cpp(#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string>;using Row=std::tuple<Leaf,int>;
+namespace std{template<>struct _Lazy<_And,is_convertible<Leaf,Leaf>,is_convertible<int,int>>:true_type{};}
+static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"string-negation-explicit-query", R"cpp(#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string>;using Row=std::tuple<Leaf,int>;
+namespace std{template<>struct _Not<_Lazy<_And,is_convertible<Leaf,Leaf>,is_convertible<int,int>>>:false_type{};}
+static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"view-enable-elements-query", R"cpp(#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string_view>;using Row=std::tuple<Leaf,int>;
+template<>template<>struct std::tuple<Leaf,int>::_EnableUTypesCtor<Leaf,int>:std::true_type{};
+static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"view-lazy-explicit-query", R"cpp(#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string_view>;using Row=std::tuple<Leaf,int>;
+namespace std{template<>struct _Lazy<_And,is_convertible<Leaf,Leaf>,is_convertible<int,int>>:true_type{};}
+static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"view-negation-explicit-query", R"cpp(#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <type_traits>
+using Leaf=std::tuple<std::string_view>;using Row=std::tuple<Leaf,int>;
+namespace std{template<>struct _Not<_Lazy<_And,is_convertible<Leaf,Leaf>,is_convertible<int,int>>>:false_type{};}
+static_assert(__is_same(decltype(Row(std::declval<Leaf>(),1)),Row));int main(){return 0;}
+)cpp"},
+    {"converting-tuple-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Row=std::tuple<std::string>;using Source=std::tuple<std::string_view>;static_assert(__is_same(decltype(Row(std::declval<const Source&>())),Row));int main(){return 0;}
+)cpp"},
+    {"default-tuple-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<std::string,std::string_view>;using Row=std::tuple<Leaf,int>;
+static_assert(__is_same(decltype(Row()),Row));int main(){return 0;}
+)cpp"},
+    {"hidden-reference-conversion-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<std::string,std::string_view>;using Row=std::tuple<Leaf,int>;
+struct Converted{operator const Leaf&()const noexcept;};static_assert(__is_same(decltype(Row(static_cast<const Leaf&>(std::declval<Converted>()),1)),Row));int main(){return 0;}
+)cpp"},
+    {"hidden-value-conversion-query", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf=std::tuple<std::string,std::string_view>;using Row=std::tuple<Leaf,int>;
+struct Converted{operator Leaf()const;};static_assert(__is_same(decltype(Row(static_cast<Leaf>(std::declval<Converted>()),1)),Row));int main(){return 0;}
+)cpp"},
+    {"borrowed-int-bool-source", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+template<> std::unique_ptr<int>::operator bool()const noexcept{return true;}
+extern "C" bool borrowed_bool(const std::unique_ptr<int>& value){return bool(value);}
+)cpp"},
+    {"borrowed-nodestroy-bool-source", R"cpp(#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+struct NoDestroy{int value;NoDestroy()=delete;~NoDestroy()=delete;};
+template<> std::unique_ptr<NoDestroy>::operator bool()const noexcept{return true;}
+extern "C" bool borrowed_bool(const std::unique_ptr<NoDestroy>& value){return bool(value);}
+)cpp"},
+    {"cat-tuple-size-source", R"cpp(#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+namespace std { template<> struct tuple_size<Row> : integral_constant<size_t, 2> {}; }
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+    {"cat-make-types-source", R"cpp(#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+namespace std { template<> struct __make_tuple_types<Row, 2, 0, true> { using type = __tuple_types<Leaf, int>; }; }
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+    {"cat-return-source", R"cpp(#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+namespace std { template<> struct __tuple_cat_return_1<Row, true, tuple<int>> { using type = tuple<Leaf, int, int>; }; }
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+    {"cat-function-source", R"cpp(#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+template<> std::tuple<Leaf, int, int> std::tuple_cat<Row&, std::tuple<int>>(Row&, std::tuple<int>&&);
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+    {"cat-reference-builtin-macro-source", R"cpp(#define __remove_reference_t(...) __remove_reference_t(__VA_ARGS__)
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+    {"cat-cvref-builtin-macro-source", R"cpp(#define __remove_cvref(...) __remove_cvref(__VA_ARGS__)
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+    {"cat-default-parameter-macro-source", R"cpp(#define _Ep _Ep
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+using Leaf = std::tuple<std::string, std::string_view>;
+using Row = std::tuple<Leaf, int>;
+struct Read {
+  std::size_t operator()(const Leaf& leaf, int extra) const noexcept {
+    return 0;
+  }
+};
+static_assert(__is_same(decltype(std::tuple_cat(std::declval<Row&>(), std::declval<std::tuple<int>>())), std::tuple<Leaf, int, int>));
+int main() { return 0; }
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("nested-carrier-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("nested-carrier-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source,
         {"--profile", "cpp-core-v2", "-o", Output.string()});

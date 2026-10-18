@@ -6098,6 +6098,23 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                bool RequireReferenceElements = false,
                                bool RequireMixedReferenceElements = false);
 
+static std::optional<UtilityTupleRecord>
+utilityTupleStorageRecord(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record,
+                          const ASTContext &Context, unsigned Depth) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto Types = utilityTupleTypes(
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition));
+  if (!Types || Depth > 64)
+    return std::nullopt;
+  const auto References = llvm::count_if(*Types, [](QualType T) {
+    return T->isReferenceType();
+  });
+  return approvedUtilityTupleRecordImpl(
+      S, SM, Record, Context, Depth, References && References == Types->size(),
+      References && References != Types->size());
+}
+
 static bool utilityTupleValue(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type,
                               unsigned Depth = 0) {
@@ -6110,9 +6127,8 @@ static bool utilityTupleValue(const State &S, const SourceManager &SM,
     return true;
   const auto Tuple = approvedUtilityTupleRecordImpl(
       S, SM, Record, Context, Depth, false, false);
-  // A carrier tuple requires selected element operations; nesting cannot
-  // convert it back into a generic bitwise value.
-  return Tuple && !Tuple->SelectedStringCarrierValues;
+  // Value nesting must retain every selected element operation.
+  return Tuple && !Tuple->RequiresSelectedElementOperations;
 }
 
 static bool utilityTupleAssignableValue(const State &S, const SourceManager &SM,
@@ -6249,16 +6265,33 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           Type.isRestrictQualified() ||
           Type.getAddressSpace() != LangAS::Default)
         return std::nullopt;
-      if (!utilityTupleValue(S, SM, Context, Type, Depth + 1)) {
-        const auto *Element = Type->getAsCXXRecordDecl();
-        Element = Element ? Element->getDefinition() : nullptr;
+      const auto *Element = Type->getAsCXXRecordDecl();
+      Element = Element ? Element->getDefinition() : nullptr;
+      const bool NestedMetadata = approvedUtilityTupleMetadata(S, SM, Element);
+      // Prove a child once. Retrying generic and selected classification
+      // recursively would multiply work at every nested value layer.
+      const auto Nested = NestedMetadata
+          ? utilityTupleStorageRecord(S, SM, Element, Context, Depth + 1)
+          : std::optional<UtilityTupleRecord>();
+      if (NestedMetadata && !Nested)
+        return std::nullopt;
+      const bool NestedReferences = Nested && llvm::any_of(
+          Nested->Elements, [](const UtilityTupleElement &E) {
+            return E.getType()->isReferenceType();
+          });
+      const bool GenericValue = Nested
+          ? !Nested->RequiresSelectedElementOperations && !NestedReferences
+          : utilityTupleValue(S, SM, Context, Type, Depth + 1);
+      if (!GenericValue) {
         const bool UniqueOwner = !Type.isConstQualified() &&
             approvedUtilityUniquePtrLayout(S, SM, Element, Context).has_value();
         const bool StringCarrier = !Type.isConstQualified() &&
             (approvedUtilityStringRecord(S, SM, Element, Context).has_value() ||
              approvedUtilityStringViewRecord(S, SM, Element, Context).has_value());
-        SelectedStringCarrierValues |= StringCarrier;
-        if (!UniqueOwner && !StringCarrier &&
+        const bool SelectedNested = !Type.isConstQualified() && Nested.has_value();
+        SelectedStringCarrierValues |= StringCarrier ||
+            (Nested && Nested->SelectedStringCarrierValues);
+        if (!UniqueOwner && !StringCarrier && !SelectedNested &&
             (!Element || Type.isConstQualified() ||
              !S.owns(SM, Element->getLocation()) ||
              !utilityArrayStorableValue(S, SM, Context, Type)))
@@ -6469,11 +6502,11 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
   const uint64_t Padding = NativeSize > Rounded ? (NativeSize - End) / 8 : 0;
   if (!End && NativeSize > 8)
     return UtilityTupleRecord{Specialization, std::move(Elements),
-                              NativeSize / 8, SelectedStringCarrierValues};
+                              NativeSize / 8, SelectedStringCarrierValues, OwnedElement};
   if ((End ? Rounded : 8) != NativeSize && !Padding)
     return std::nullopt;
   return UtilityTupleRecord{Specialization, std::move(Elements), Padding,
-                            SelectedStringCarrierValues};
+                            SelectedStringCarrierValues, OwnedElement};
 }
 
 std::optional<UtilityTupleRecord>
@@ -6642,6 +6675,12 @@ static bool utilityTupleStringCarrierFlow(
                                        Tuple->getParamDecl(Index), true);
 }
 
+static std::optional<UtilityTupleConstruction>
+approvedUtilityTupleConstructionImpl(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context,
+    std::vector<const CXXConstructExpr *> *SelectedCopies, unsigned Depth);
+
 static bool utilityTupleStringCarrierCopy(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
@@ -6655,7 +6694,7 @@ static std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityTupleSelectedCopies(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const UtilityTupleRecord &Tuple,
-    const ASTContext &Context);
+    const ASTContext &Context, unsigned Depth = 0);
 
 static bool utilityTupleGeneratedSource(const Expr *Expression,
                                         const ParmVarDecl *Parameter,
@@ -6710,7 +6749,7 @@ static std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
                                         const CXXConstructExpr *Construction,
                                         const UtilityTupleRecord &Tuple,
-                                        const ASTContext &Context) {
+                                        const ASTContext &Context, unsigned Depth) {
   // A defaulted tuple constructor reaches each element through __base_,
   // __tuple_impl's leaf bases, and the leaf's __value_ member. Prove every
   // generated step before replacing that chain with direct field construction.
@@ -6932,8 +6971,12 @@ approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
           approvedUtilityUniquePtrConstruction(S, SM, Copy, Context) ==
               UtilityUniquePtrConstruction::Move;
       const bool StringCarrierCopy = utilityTupleStringCarrierCopy(S, SM, Copy, Context);
+      const auto NestedKind = approvedUtilityTupleConstructionImpl(
+          S, SM, Copy, Context, nullptr, Depth + 1);
+      const bool NestedCopy = NestedKind == UtilityTupleConstruction::CopyOrMove ||
+          NestedKind == UtilityTupleConstruction::OwnedCopyOrMove;
       if (!Copy || !Selected ||
-          (!OwnerMove && !StringCarrierCopy &&
+          (!OwnerMove && !StringCarrierCopy && !NestedCopy &&
            (!utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
             !supportedConstructor(Selected) ||
             !S.owns(SM, Selected->getLocation()))) ||
@@ -6961,12 +7004,14 @@ approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
   return Copies;
 }
 
-std::optional<UtilityTupleConstruction>
-approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
+static std::optional<UtilityTupleConstruction>
+approvedUtilityTupleConstructionImpl(const State &S, const SourceManager &SM,
                                  const CXXConstructExpr *Construction,
                                  const ASTContext &Context,
                                  std::vector<const CXXConstructExpr *>
-                                     *SelectedCopies) {
+                                     *SelectedCopies, unsigned Depth) {
+  if (Depth > 64)
+    return std::nullopt;
   if (SelectedCopies)
     SelectedCopies->clear();
   if (!Construction || Construction->isTypeDependent() ||
@@ -7016,7 +7061,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
   if (OwnedElements && Construction->getNumArgs() == 1 &&
       Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted()) {
     auto Copies = approvedUtilityTupleSelectedWholeCopies(S, SM, Construction,
-                                                          *Tuple, Context);
+                                                          *Tuple, Context, Depth);
     if (!Copies)
       return std::nullopt;
     if (SelectedCopies)
@@ -7143,7 +7188,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   auto Copies = OwnedElements
                     ? approvedUtilityTupleSelectedCopies(
-                          S, SM, Construction, *Tuple, Context)
+                          S, SM, Construction, *Tuple, Context, Depth)
                     : std::optional<std::vector<const CXXConstructExpr *>>();
   if (OwnedElements && !Copies)
     return std::nullopt;
@@ -7185,6 +7230,862 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
   if (SelectedCopies && Copies)
     *SelectedCopies = std::move(*Copies);
   return UtilityTupleConstruction::Elements;
+}
+
+std::optional<UtilityTupleConstruction>
+approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
+                                 const CXXConstructExpr *Construction,
+                                 const ASTContext &Context,
+                                 std::vector<const CXXConstructExpr *> *SelectedCopies) {
+  return approvedUtilityTupleConstructionImpl(
+      S, SM, Construction, Context, SelectedCopies, 0);
+}
+
+// This proof consumes SDK signature metadata only. Carrier storage has an
+// independent descriptor; a trait containing a carrier is never itself a
+// carrier, and no selected runtime body or lifetime permission is produced.
+class UtilityTupleQueryGraph
+    : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
+  const std::map<const TypeTraitExpr *, OperationTraitSource> &OperationTraits;
+  std::set<const OpaqueValueExpr *> Operands;
+  std::set<const Expr *> GeneratedExceptionLiterals;
+  unsigned Depth = 0, Nodes = 0;
+  bool Failed = false;
+  std::set<const CXXMethodDecl *> ActiveMembers, CompletedMembers;
+  std::set<const Type *> Types;
+  std::set<const Stmt *> Expressions;
+  std::set<const Decl *> Declarations;
+  std::set<const CXXRecordDecl *> Records;
+  std::map<const NonTypeTemplateParmDecl *, const ClassTemplateDecl *> DefinitionParameters;
+
+  bool step() {
+    if (Failed || ++Nodes > 200000 || Depth > 64) {
+      Failed = true;
+      return false;
+    }
+    return true;
+  }
+  bool pinned(const Decl *D) {
+    if (!D || !step() || D->isInvalidDecl() ||
+        !approvedStandardSDKDeclaration(S, SM, D))
+      return false;
+    const auto Origin = S.sdkFile(SM, D->getLocation());
+    return Origin && Origin->Root == "libcxx" &&
+           (Origin->Path == "tuple" || Origin->Path == "__config" ||
+            llvm::StringRef(Origin->Path).starts_with("__tuple/") ||
+            llvm::StringRef(Origin->Path).starts_with("__type_traits/") ||
+            Origin->Path == "__utility/declval.h" ||
+            Origin->Path == "__cstddef/size_t.h" ||
+            Origin->Path == "string" || Origin->Path == "string_view" ||
+            llvm::StringRef(Origin->Path).starts_with("__fwd/"));
+  }
+  bool family(const Decl *D) {
+    if (!pinned(D))
+      return false;
+    if (!Declarations.insert(D).second)
+      return true;
+    if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
+      for (const auto *Redeclaration : R->redecls())
+        if (!pinned(Redeclaration)) return false;
+      if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+        const auto *Primary = Instance->getSpecializedTemplate();
+        if (!family(Primary)) return false;
+        if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
+                .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+          if (!family(Partial)) return false;
+        if (const auto *Pattern = Instance->getTemplateInstantiationPattern())
+          if (!family(Pattern)) return false;
+      }
+    } else if (const auto *F = dyn_cast<FunctionDecl>(D)) {
+      for (const auto *Redeclaration : F->redecls())
+        if (!pinned(Redeclaration)) return false;
+      if (const auto *Primary = F->getPrimaryTemplate())
+        if (!family(Primary)) return false;
+      if (const auto *Pattern = F->getTemplateInstantiationPattern())
+        if (!family(Pattern)) return false;
+    } else if (const auto *T = dyn_cast<RedeclarableTemplateDecl>(D)) {
+      for (const auto *Redeclaration : T->redecls())
+        if (!pinned(Redeclaration) || !pinned(Redeclaration->getTemplatedDecl()))
+          return false;
+    } else if (const auto *V = dyn_cast<VarDecl>(D)) {
+      for (const auto *Redeclaration : V->redecls())
+        if (!pinned(Redeclaration)) return false;
+      if (const auto *Pattern = V->getInstantiatedFromStaticDataMember())
+        if (!family(Pattern)) return false;
+    }
+    return true;
+  }
+  bool selectedLeaf(const CXXMethodDecl *Method) {
+    const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
+    const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+    const auto *R = Method->getParent();
+    const auto String = approvedUtilityStringRecord(S, SM, R, Context);
+    if (!String || !family(Method)) return false;
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    if (!Prototype || Prototype->getNoexceptExpr() || Method->isDeleted() ||
+        Method->isInvalidDecl() || Method->isVariadic() || Method->getPrimaryTemplate())
+      return false;
+    if (Destructor)
+      return !Method->getNumParams() && !Method->isVirtual() &&
+             R->getDestructor() && R->getDestructor()->getCanonicalDecl() ==
+                 Destructor->getCanonicalDecl() && Prototype->isNothrow();
+    if (!Constructor || !Constructor->isCopyOrMoveConstructor() ||
+        Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg())
+      return false;
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto Type = Context.getRecordType(R);
+    const auto Expected = Constructor->isMoveConstructor()
+        ? Context.getRValueReferenceType(Type)
+        : Context.getLValueReferenceType(Type.withConst());
+    return Context.hasSameType(Parameter, Expected) &&
+           (Constructor->isMoveConstructor()
+                ? Prototype->getExceptionSpecType() == EST_BasicNoexcept
+                : Prototype->getExceptionSpecType() == EST_None);
+  }
+  bool specialMember(const CXXMethodDecl *Method, unsigned Nesting = 0) {
+    if (!Method || Nesting > 64 || !step() || Method->isInvalidDecl() ||
+        Method->isDeleted() || Method->isVariadic() || Method->isVirtual() ||
+        Method->getPrimaryTemplate() || !family(Method)) return false;
+    if (CompletedMembers.count(Method)) return true;
+    if (!ActiveMembers.insert(Method).second) return false;
+    auto Restore = llvm::make_scope_exit([&] { ActiveMembers.erase(Method); });
+    if (selectedLeaf(Method)) {
+      CompletedMembers.insert(Method);
+      return true;
+    }
+    const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
+    const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+    const auto *Record = Method->getParent()->getDefinition();
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    if (!Record || !Prototype || !(Method->isImplicit() || Method->isDefaulted()) ||
+        !(Constructor ? Constructor->isCopyOrMoveConstructor() : bool(Destructor)) ||
+        !Record->getIdentifier() || !family(Record) || Record->isUnion() ||
+        Record->isDynamicClass() || Record->getNumVBases() ||
+        !(Record->getName() == "tuple" || Record->getName() == "__tuple_impl" ||
+          Record->getName() == "__tuple_leaf" ||
+          approvedUtilityStringViewRecord(S, SM, Record, Context))) return false;
+    if (Constructor) {
+      const auto Type = Context.getRecordType(Record);
+      if (Constructor->getNumParams() != 1 ||
+          !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+              Constructor->isMoveConstructor() ? Context.getRValueReferenceType(Type)
+                  : Context.getLValueReferenceType(Type.withConst()))) return false;
+    } else if (Destructor->getNumParams()) return false;
+    // Bind each semantic choice to its actual base/field. A layout or a
+    // defaulted flag alone cannot authenticate a selected child operation.
+    std::set<std::pair<const void *, bool>> Expected;
+    for (const auto &Base : Record->bases()) {
+      if (Base.isVirtual()) return false;
+      Expected.emplace(&Base, false);
+      if (Constructor) Expected.emplace(&Base, true);
+    }
+    for (const auto *Field : Record->fields()) {
+      if (Field->isInvalidDecl() || Field->isBitField()) return false;
+      if (!Context.getBaseElementType(Field->getType())->isRecordType()) continue;
+      Expected.emplace(Field, false);
+      if (Constructor) Expected.emplace(Field, true);
+    }
+    const auto Found = SpecialMembers.find(Method->getCanonicalDecl());
+    if (Found == SpecialMembers.end()) {
+      if (!Method->isTrivial() || !Expected.empty()) return false;
+    } else {
+      const auto &Source = Found->second;
+      if (!Source.Complete || Source.Owner != Method) return false;
+      for (const auto &Selection : Source.Selections) {
+        const auto *Child = Selection.Method;
+        const void *Object = Selection.Base ? static_cast<const void *>(Selection.Base)
+                                            : Selection.Field;
+        if (!Child || bool(Selection.Base) == bool(Selection.Field) ||
+            !Expected.erase({Object, Selection.ConstructorDestruction})) return false;
+        const auto Type = Selection.Base ? Selection.Base->getType() : Selection.Field->getType();
+        const auto *Subrecord = Context.getBaseElementType(Type)->getAsCXXRecordDecl();
+        if (!Subrecord || Subrecord->getCanonicalDecl() !=
+                              Child->getParent()->getCanonicalDecl()) return false;
+        if (Selection.ConstructorDestruction) {
+          const auto *Dtor = dyn_cast<CXXDestructorDecl>(Child);
+          if (!Constructor || !Dtor || !Subrecord->getDestructor() ||
+              Subrecord->getDestructor()->getCanonicalDecl() != Dtor->getCanonicalDecl())
+            return false;
+        } else if (Constructor) {
+          const auto *Copy = dyn_cast<CXXConstructorDecl>(Child);
+          if (!Copy || !Copy->isCopyOrMoveConstructor()) return false;
+        } else if (!isa<CXXDestructorDecl>(Child)) return false;
+        if (!specialMember(Child, Nesting + 1)) return false;
+      }
+      if (!Expected.empty()) return false;
+    }
+    switch (Prototype->getExceptionSpecType()) {
+    case EST_None: case EST_BasicNoexcept: break;
+    case EST_NoexceptTrue: case EST_NoexceptFalse: {
+      const auto *E = Prototype->getNoexceptExpr();
+      const auto *Literal = dyn_cast_or_null<CXXBoolLiteralExpr>(E);
+      if (Prototype->getExceptionSpecType() == EST_NoexceptFalse && Literal &&
+          !Literal->getValue() && Literal->getBeginLoc().isInvalid() &&
+          Literal->getEndLoc().isInvalid() &&
+          Context.hasSameType(Literal->getType(), Context.BoolTy))
+        GeneratedExceptionLiterals.insert(Literal);
+      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return false;
+      break;
+    }
+    default: return false;
+    }
+    CompletedMembers.insert(Method);
+    return true;
+  }
+  bool carrier(QualType T, unsigned Nesting = 0) {
+    if (T.isNull() || Nesting > 64 || T.isVolatileQualified() ||
+        T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
+      return false;
+    if (T->isReferenceType())
+      return carrier(T->getPointeeType(), Nesting + 1);
+    if (utilityScalar(Context, T) || T->isVoidType())
+      return true;
+    const auto *R = T->getAsCXXRecordDecl();
+    if (approvedUtilityStringRecord(S, SM, R, Context) ||
+        approvedUtilityStringViewRecord(S, SM, R, Context))
+      return true;
+    const auto Tuple = utilityTupleStorageRecord(S, SM, R, Context, Nesting);
+    if (!Tuple)
+      return false;
+    for (const auto &E : Tuple->Elements)
+      if (!carrier(E.getType(), Nesting + 1)) return false;
+    return true;
+  }
+  bool fullSliceDefaults(const ClassTemplateSpecializationDecl *Instance) {
+    if (!Instance || Context.getExternalSource() ||
+        Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Instance->getDefinition() || !family(Instance)) return false;
+    const auto *Primary = Instance->getSpecializedTemplate();
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto &Arguments = Instance->getTemplateArgs();
+    if (!Parameters || Parameters->size() != 4 || Arguments.size() != 4 ||
+        Arguments[0].getKind() != TemplateArgument::Type ||
+        !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__tuple/make_tuple_types.h"))
+      return false;
+    const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
+    const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
+    const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2));
+    const auto *Same = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(3));
+    if (!Tp || !Ep || !Sp || !Same || Tp->hasDefaultArgument() ||
+        Tp->isParameterPack() || Ep->isParameterPack() || Sp->isParameterPack() ||
+        Same->isParameterPack() || !Ep->hasDefaultArgument() ||
+        !Sp->hasDefaultArgument() || !Same->hasDefaultArgument() ||
+        !family(Tp) || !family(Ep) || !family(Sp) || !family(Same) ||
+        !Context.hasSameType(Ep->getType(), Context.getSizeType()) ||
+        !Context.hasSameType(Sp->getType(), Context.getSizeType()) ||
+        !Context.hasSameType(Same->getType(), Context.BoolTy) ||
+        !Ep->getTypeSourceInfo() || !Sp->getTypeSourceInfo() ||
+        !Same->getTypeSourceInfo() ||
+        !TraverseTypeLoc(Ep->getTypeSourceInfo()->getTypeLoc()) ||
+        !TraverseTypeLoc(Sp->getTypeSourceInfo()->getTypeLoc()) ||
+        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return false;
+    const auto Object = Arguments[0].getAsType();
+    if (Object->isReferenceType() || Object.hasLocalQualifiers() ||
+        !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl())) return false;
+    const auto Tuple = approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
+    if (!Tuple) return false;
+    const auto Integral = [&](unsigned I, QualType T, uint64_t N) {
+      const auto &Argument = Arguments[I];
+      return Argument.getKind() == TemplateArgument::Integral &&
+          Context.hasSameType(Argument.getIntegralType(), T) &&
+          !Argument.getAsIntegral().isNegative() &&
+          Argument.getAsIntegral().getLimitedValue(N + 1) == N;
+    };
+    if (!Integral(1, Context.getSizeType(), Tuple->size()) ||
+        !Integral(2, Context.getSizeType(), 0) ||
+        !Integral(3, Context.BoolTy, 1)) return false;
+    const auto Default = [](const NonTypeTemplateParmDecl *P) -> const Expr * {
+      const auto &A = P->getDefaultArgument().getArgument();
+      return A.getKind() == TemplateArgument::Expression ? A.getAsExpr() : nullptr;
+    };
+    auto SizeReference = [&](const Expr *Expression) -> const ClassTemplateDecl * {
+      const auto *Reference = dyn_cast_or_null<DependentScopeDeclRefExpr>(Expression);
+      const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+      const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+      const auto *Size = Type ? QualType(Type, 0)->getAs<TemplateSpecializationType>() : nullptr;
+      const auto *Declaration = Size
+          ? dyn_cast_or_null<ClassTemplateDecl>(Size->getTemplateName().getAsTemplateDecl()) : nullptr;
+      if (!Reference || Reference->getDeclName().getAsString() != "value" ||
+          Reference->hasExplicitTemplateArgs() || !Declaration ||
+          Declaration->getName() != "tuple_size" || !family(Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__tuple/tuple_size.h") ||
+          Size->template_arguments().size() != 1 ||
+          Size->template_arguments()[0].getKind() != TemplateArgument::Type) return nullptr;
+      const auto *Alias = Size->template_arguments()[0].getAsType()
+          ->getAs<TemplateSpecializationType>();
+      const auto *AliasDeclaration = Alias
+          ? dyn_cast_or_null<TypeAliasTemplateDecl>(Alias->getTemplateName().getAsTemplateDecl()) : nullptr;
+      const auto *AliasParameters = AliasDeclaration ? AliasDeclaration->getTemplateParameters() : nullptr;
+      const auto *AliasType = AliasDeclaration
+          ? AliasDeclaration->getTemplatedDecl()->getUnderlyingType()->getAs<UnaryTransformType>() : nullptr;
+      const auto *Argument = Alias && Alias->template_arguments().size() == 1 &&
+              Alias->template_arguments()[0].getKind() == TemplateArgument::Type
+          ? dyn_cast<TemplateTypeParmType>(
+                Alias->template_arguments()[0].getAsType().getTypePtr()) : nullptr;
+      const auto *AliasParameter = AliasType
+          ? dyn_cast<TemplateTypeParmType>(AliasType->getBaseType().getTypePtr()) : nullptr;
+      if (!Alias || !Alias->isTypeAlias() || !AliasDeclaration ||
+          AliasDeclaration->getName() != "__libcpp_remove_reference_t" ||
+          !family(AliasDeclaration) || !AliasParameters || AliasParameters->size() != 1 ||
+          !AliasType || AliasType->getUTTKind() != UnaryTransformType::RemoveReference ||
+          !AliasParameter || AliasParameter->getDecl() != AliasParameters->getParam(0) ||
+          !Argument || Argument->getDecl() != Tp ||
+          !cstddefOrigin(S, SM, AliasDeclaration->getLocation(), "libcxx", "__type_traits/remove_reference.h") ||
+          !AliasDeclaration->getTemplatedDecl()->getTypeSourceInfo() ||
+          !TraverseTypeLoc(AliasDeclaration->getTemplatedDecl()->getTypeSourceInfo()->getTypeLoc()) ||
+          !TraverseStmt(const_cast<Expr *>(Expression))) return nullptr;
+      return Declaration;
+    };
+    const auto *Size = SizeReference(Default(Ep));
+    const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Default(Sp));
+    const auto *Parenthesized = dyn_cast_or_null<ParenExpr>(Default(Same));
+    const auto *Equality = Parenthesized ? dyn_cast<BinaryOperator>(Parenthesized->getSubExpr()) : nullptr;
+    const auto *Left = Equality ? dyn_cast<DeclRefExpr>(Equality->getLHS()) : nullptr;
+    const auto *OtherSize = Equality ? SizeReference(Equality->getRHS()) : nullptr;
+    if (!Size || !Zero || !Zero->getValue().isZero() ||
+        !Context.hasSameType(Zero->getType(), Context.IntTy) ||
+        !Equality || Equality->getOpcode() != BO_EQ || !Left || Left->getDecl() != Ep ||
+        !OtherSize || Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return false;
+    {
+      // This is the original definition's exact parameter, not an
+      // instantiated metadata object's value member.
+      const auto Inserted = DefinitionParameters.emplace(Ep, Primary);
+      if (!Inserted.second && Inserted.first->second != Primary) return false;
+      auto Restore = llvm::make_scope_exit([&] {
+        if (Inserted.second) DefinitionParameters.erase(Ep);
+      });
+      if (!TraverseStmt(const_cast<Expr *>(Default(Sp))) ||
+          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return false;
+    }
+    // The only lookup permitted here reads the specialization already used
+    // by Sema's defaults. External AST loading was excluded above.
+    void *InsertPosition = nullptr;
+    const TemplateArgument SizeArgument(Context.getCanonicalType(Object));
+    const auto *Witness = const_cast<ClassTemplateDecl *>(Size)->findSpecialization(
+        llvm::ArrayRef<TemplateArgument>(SizeArgument), InsertPosition);
+    if (!Witness || !approvedUtilityTupleLikeSizeTrait(S, SM, Witness, Object, *Tuple, Context) ||
+        !record(Witness)) return false;
+    bool HasValue = false;
+    for (const auto &Base : Witness->getDefinition()->bases()) {
+      const auto *Owner = Base.getType()->getAsCXXRecordDecl();
+      const auto *Definition = Owner ? Owner->getDefinition() : nullptr;
+      if (!Definition) return false;
+      for (const auto *Declaration : Definition->decls()) {
+        const auto *Value = dyn_cast<VarDecl>(Declaration);
+        if (!Value || Value->getName() != "value") continue;
+        if (HasValue || !value(Value)) return false;
+        HasValue = true;
+      }
+    }
+    return HasValue;
+  }
+
+  bool record(const CXXRecordDecl *R) {
+    if (!R) return false;
+    if (carrier(Context.getRecordType(R))) return true;
+    if (!family(R)) return false;
+    if (!Records.insert(R).second) return true;
+    const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
+    if (Instance && Instance->getIdentifier() && Instance->getName() == "__make_tuple_types" &&
+        !fullSliceDefaults(Instance)) return false;
+    if (!Instance) return false;
+    for (const auto &Argument : Instance->getTemplateArgs().asArray())
+      if (!TraverseTemplateArgument(Argument)) return false;
+    const auto *Definition = R->getDefinition();
+    if (!Definition) return true; // Unconsumed metadata remains lazy.
+    if (!family(Definition) || Definition->isUnion() ||
+        Definition->isDynamicClass() || Definition->getNumVBases())
+      return false;
+    for (const auto &Base : Definition->bases())
+      if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+    // Only referenced value/alias members are consumed below. Never walk
+    // metadata's unselected constructors or manufacture a definition.
+    return Definition->field_empty();
+  }
+  bool value(const ValueDecl *D) {
+    if (!family(D) || !TraverseType(D->getType())) return false;
+    if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
+      const auto Found = DefinitionParameters.find(Parameter);
+      if (Found != DefinitionParameters.end()) {
+        const auto *Primary = Found->second;
+        const auto *Parameters = Primary->getTemplateParameters();
+        return family(Primary) && Parameter->getDeclContext() == Primary->getTemplatedDecl() &&
+            Parameter->getIndex() < Parameters->size() &&
+            Parameters->getParam(Parameter->getIndex()) == Parameter;
+      }
+    }
+    if (const auto *R = dyn_cast<CXXRecordDecl>(D->getDeclContext()))
+      if (!record(R)) return false;
+    if (const auto *V = dyn_cast<VarDecl>(D)) {
+      if (!V->isConstexpr() || !V->isStaticDataMember()) return false;
+      const VarDecl *Holder = nullptr;
+      const auto *Initializer = V->getAnyInitializer(Holder);
+      return Initializer && Holder && family(Holder) &&
+             Holder->getCanonicalDecl() == V->getCanonicalDecl() &&
+             TraverseStmt(const_cast<Expr *>(Initializer));
+    }
+    return isa<NonTypeTemplateParmDecl>(D);
+  }
+
+public:
+  UtilityTupleQueryGraph(const State &S, const SourceManager &SM,
+                        const ASTContext &Context,
+                        const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+                        const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits)
+      : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits) {}
+  bool TraverseType(QualType T) {
+    if (T.isNull()) return true;
+    if (!step() || T.isVolatileQualified() || T.isRestrictQualified() ||
+        T.getAddressSpace() != LangAS::Default)
+      return false;
+    if (!Types.insert(T.getTypePtr()).second) return true;
+    ++Depth;
+    auto Restore = llvm::make_scope_exit([&] { --Depth; });
+    const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseType(T);
+    return Complete && !Failed;
+  }
+  bool TraverseStmt(Stmt *E) {
+    if (!E) return true;
+    if (!step()) return false;
+    if (!Expressions.insert(E).second) return true;
+    ++Depth;
+    auto Restore = llvm::make_scope_exit([&] { --Depth; });
+    const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseStmt(E);
+    return Complete && !Failed;
+  }
+  bool TraverseTypeLoc(TypeLoc Location) {
+    if (Location.isNull()) return true;
+    for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
+      const auto Origin = S.sdkFile(SM, L);
+      if (!Origin || Origin->Root != "libcxx") return false;
+    }
+    return TraverseType(Location.getType()) &&
+           RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
+  }
+  bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &Location) {
+    const auto &Argument = Location.getArgument();
+    const Expr *Written = nullptr;
+    switch (Argument.getKind()) {
+    case TemplateArgument::Integral: Written = Location.getSourceIntegralExpression(); break;
+    case TemplateArgument::Declaration: Written = Location.getSourceDeclExpression(); break;
+    case TemplateArgument::NullPtr: Written = Location.getSourceNullPtrExpression(); break;
+    case TemplateArgument::StructuralValue: Written = Location.getSourceStructuralValueExpression(); break;
+    default:
+      return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateArgumentLoc(Location);
+    }
+    return Written && TraverseStmt(const_cast<Expr *>(Written));
+  }
+  bool dataTraverseStmtPre(Stmt *) {
+    ++Depth;
+    if (step()) return true;
+    --Depth;
+    return false; // RAV skips this subtree; Failed still rejects the whole proof.
+  }
+  bool dataTraverseStmtPost(Stmt *) { --Depth; return true; }
+  bool VisitExpr(Expr *E) {
+    if (!step()) return false;
+    if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E))
+      return Operands.count(Opaque) && !Opaque->getSourceExpr();
+    const auto Origin = S.sdkFile(SM, E->getExprLoc());
+    return (GeneratedExceptionLiterals.count(E) ||
+            (Origin && Origin->Root == "libcxx")) && TraverseType(E->getType());
+  }
+  bool TraverseTemplateName(TemplateName Name) {
+    const auto *Template = Name.getAsTemplateDecl();
+    return Template && family(Template) &&
+        RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateName(Name);
+  }
+  bool VisitRecordType(RecordType *T) { return record(dyn_cast<CXXRecordDecl>(T->getDecl())); }
+  bool VisitTypedefType(TypedefType *T) {
+    const auto *Declaration = T->getDecl();
+    if (!family(Declaration)) return false;
+    if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext()))
+      if (!record(Owner)) return false;
+    return Declaration->getTypeSourceInfo() &&
+           TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
+  }
+  bool VisitTemplateTypeParmType(TemplateTypeParmType *T) {
+    return T->getDecl() && family(T->getDecl());
+  }
+  bool VisitSubstTemplateTypeParmType(SubstTemplateTypeParmType *T) {
+    return family(T->getAssociatedDecl()) && family(T->getReplacedParameter()) &&
+           TraverseType(T->getReplacementType());
+  }
+  bool VisitTemplateSpecializationType(TemplateSpecializationType *T) {
+    const auto *Template = T->getTemplateName().getAsTemplateDecl();
+    if (!Template || !family(Template)) return false;
+    if (T->isTypeAlias()) {
+      const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template);
+      const auto *Declaration = Alias ? Alias->getTemplatedDecl() : nullptr;
+      if (!Declaration || !Declaration->getTypeSourceInfo() ||
+          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+      return TraverseType(T->getAliasedType());
+    }
+    if (Template->getName() == "__make_tuple_types" && !T->isDependentType() &&
+        (T->template_arguments().size() != 1 ||
+         T->template_arguments()[0].getKind() != TemplateArgument::Type)) return false;
+    return T->isDependentType() || record(T->getAsCXXRecordDecl());
+  }
+  bool VisitDeclRefExpr(DeclRefExpr *E) {
+    const auto *D = E->getDecl();
+    if (const auto *F = dyn_cast<FunctionDecl>(D)) {
+      if (!family(F) || !TraverseType(F->getType())) return false;
+      if (const auto *Arguments = F->getTemplateSpecializationArgs())
+        for (const auto &A : Arguments->asArray())
+          if (!TraverseTemplateArgument(A)) return false;
+      return true;
+    }
+    return value(D);
+  }
+  bool VisitMemberExpr(MemberExpr *E) { return value(E->getMemberDecl()); }
+  bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
+    for (const auto *D : E->decls()) if (!family(D)) return false;
+    return true;
+  }
+  bool VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
+    return family(E->getAssociatedDecl()) && family(E->getParameter());
+  }
+  bool VisitCallExpr(CallExpr *E) {
+    const auto *F = E->getDirectCallee();
+    if (!F) return E->isTypeDependent() || E->isValueDependent();
+    return family(F) && F->getIdentifier() &&
+           (F->getName() == "__and_helper" || F->getName() == "__declval");
+  }
+  bool VisitCXXConstructExpr(CXXConstructExpr *E) {
+    // These nodes can occur only in the exact retained hypothetical graph;
+    // caller arguments never enter this SDK metadata walker.
+    const auto *Constructor = E->getConstructor();
+    if (Operands.empty() || !Constructor || !E->isPRValue() ||
+        E->getConstructionKind() != CXXConstructionKind::Complete ||
+        E->getNumArgs() != Constructor->getNumParams() ||
+        !Context.hasSameUnqualifiedType(E->getType(),
+            Context.getRecordType(Constructor->getParent())) ||
+        !specialMember(Constructor)) return false;
+    for (const auto *Argument : E->arguments())
+      if (isa<CXXDefaultArgExpr>(Argument)) return false;
+    return true;
+  }
+  bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
+    return !Operands.empty() && E->getTemporary() &&
+           specialMember(E->getTemporary()->getDestructor());
+  }
+  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return false; }
+  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return false; }
+  bool VisitCXXNewExpr(CXXNewExpr *) { return false; }
+  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return false; }
+  bool VisitLambdaExpr(LambdaExpr *) { return false; }
+  bool VisitTypeTraitExpr(TypeTraitExpr *E) {
+    for (const auto *Argument : E->getArgs())
+      if (!TraverseType(Argument->getType())) return false;
+    const bool Construction = E->getTrait() == TT_IsConstructible ||
+        E->getTrait() == TT_IsNothrowConstructible;
+    const bool Conversion = E->getTrait() == BTT_IsConvertible ||
+        E->getTrait() == BTT_IsConvertibleTo;
+    if (!Construction && !Conversion) return true;
+    if (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())
+      return false;
+    const auto Found = OperationTraits.find(E);
+    if (Found == OperationTraits.end()) return false;
+    const auto &Source = Found->second;
+    const unsigned Count = Construction ? E->getNumArgs() - 1 : 1;
+    if (!Source.Attempted || !Source.Complete || !Source.Root ||
+        Source.Operands.size() != Count || Source.Destructor ||
+        Source.DestructionPrototype || Source.DestructionLookupAttempted ||
+        Source.DestructionExceptionAttempted) return false;
+    const auto Saved = Operands;
+    auto Restore = llvm::make_scope_exit([&] { Operands = Saved; });
+    for (unsigned I = 0; I < Count; ++I) {
+      const auto *Operand = dyn_cast<OpaqueValueExpr>(Source.Operands[I]);
+      auto T = E->getArg(I + (Construction ? 1 : 0))->getType();
+      if (T->isObjectType() || T->isFunctionType())
+        T = Context.getRValueReferenceType(T);
+      if (!Operand || Operand->getSourceExpr() ||
+          !Context.hasSameType(Operand->getType(), T.getNonLValueExprType(Context)) ||
+          Operand->getValueKind() != Expr::getValueKindForType(T)) return false;
+      Operands.insert(Operand);
+    }
+    return TraverseStmt(const_cast<Expr *>(Source.Root));
+  }
+  bool function(const FunctionDecl *F) {
+    if (!family(F)) return false;
+    if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
+      if (Method->isImplicit() || Method->isDefaulted()) return specialMember(Method);
+    for (const auto *Parameter : F->parameters())
+      if (!family(Parameter) || !TraverseType(Parameter->getType())) return false;
+    const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
+    if (!Prototype) return false;
+    switch (Prototype->getExceptionSpecType()) {
+    case EST_None: case EST_BasicNoexcept: break;
+    case EST_NoexceptTrue: case EST_NoexceptFalse:
+      if (!Prototype->getNoexceptExpr() ||
+          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return false;
+      break;
+    default: return false;
+    }
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F)) {
+      const auto Explicit = Constructor->getExplicitSpecifier();
+      if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved)
+        return false;
+      const auto *Pattern = dyn_cast_or_null<CXXConstructorDecl>(
+          Constructor->getTemplateInstantiationPattern());
+      const auto *Primary = Constructor->getPrimaryTemplate();
+      const auto *PrimaryConstructor = Primary
+          ? dyn_cast<CXXConstructorDecl>(Primary->getTemplatedDecl()) : nullptr;
+      if (!Explicit.getExpr() &&
+          ((Pattern && Pattern->getExplicitSpecifier().getExpr()) ||
+           (PrimaryConstructor && PrimaryConstructor->getExplicitSpecifier().getExpr())))
+        return false;
+      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return false;
+    }
+    return !Failed;
+  }
+  bool templateSource(const TemplateUseSource &Source,
+                      const CXXConstructorDecl *Constructor) {
+    const auto *Primary = Constructor->getPrimaryTemplate();
+    if (!Primary || Source.Kind != TemplateSourceKind::Function ||
+        Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
+        Source.Origin || Source.WrittenStorageClass ||
+        Source.Declaration != Constructor || Source.Template != Primary ||
+        !Source.Canonical || !Source.Sugared || Source.DefaultsOverflow ||
+        Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
+        Source.Canonical->size() != Source.Sugared->size() ||
+        Source.Canonical->size() != Primary->getTemplateParameters()->size())
+      return false;
+    const auto *Selected = Constructor->getTemplateSpecializationArgs();
+    if (!Selected || Selected->size() != Source.Canonical->size()) return false;
+    for (unsigned I = 0; I < Selected->size(); ++I)
+      if (!Selected->get(I).structurallyEquals(Source.Canonical->get(I)) ||
+          !Source.Canonical->get(I).structurallyEquals(
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+    for (const auto *Arguments : {Source.Canonical, Source.Sugared})
+      for (const auto &Argument : Arguments->asArray())
+        if (!TraverseTemplateArgument(Argument)) return false;
+    std::set<unsigned> Defaults, Parameters;
+    const auto *Owners = Primary->getTemplateParameters();
+    for (const auto &Default : Source.Defaults) {
+      const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
+      if (!Parameter || !family(Parameter) || Parameter->isParameterPack() ||
+          Parameter->getIndex() >= Owners->size() ||
+          Owners->getParam(Parameter->getIndex()) != Parameter ||
+          !Defaults.insert(Parameter->getIndex()).second ||
+          !Parameter->hasDefaultArgument() ||
+          Default.Written.getArgument().getKind() != TemplateArgument::Expression ||
+          Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Expression ||
+          Default.Written.getArgument().getAsExpr() !=
+              Parameter->getDefaultArgument().getArgument().getAsExpr() ||
+          !TraverseTemplateArgument(Default.Written.getArgument()) ||
+          !TraverseTemplateArgument(Default.Converted.getArgument())) return false;
+      const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
+      const auto *Converted = Default.Converted.getArgument().getKind() == TemplateArgument::Expression
+          ? dyn_cast<ConstantExpr>(Default.Converted.getArgument().getAsExpr()) : nullptr;
+      if (!Converted || Canonical.getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Converted->getType(), Canonical.getIntegralType()) ||
+          Converted->getResultAsAPSInt() != Canonical.getAsIntegral() ||
+          Converted->getSubExpr()->IgnoreParens() != Default.Written.getArgument().getAsExpr())
+        return false;
+    }
+    for (const auto &ParameterType : Source.ParameterTypes) {
+      const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(ParameterType.Parameter);
+      if (!Parameter || !family(Parameter) || Parameter->isParameterPack() ||
+          Parameter->getIndex() >= Owners->size() ||
+          Owners->getParam(Parameter->getIndex()) != Parameter ||
+          ParameterType.PackIndex != 0 || !ParameterType.Type ||
+          !Parameters.insert(Parameter->getIndex()).second ||
+          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return false;
+      const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
+      if (Canonical.getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(ParameterType.Type->getType(), Canonical.getIntegralType()))
+        return false;
+    }
+    for (unsigned I = 0; I < Owners->size(); ++I) {
+      const auto *Declaration = Owners->getParam(I);
+      if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
+        if (!Parameters.count(I) ||
+            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return false;
+      } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Declaration)) {
+        const auto &Argument = Source.Canonical->get(I);
+        if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
+            Argument.getKind() != TemplateArgument::Template ||
+            Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Template ||
+            !Context.hasSameTemplateName(Argument.getAsTemplate(),
+                Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
+            !TraverseTemplateName(Argument.getAsTemplate())) return false;
+      } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+    }
+    return function(Constructor);
+  }
+  bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    if (!Primary || !Arguments || Source.Kind != TemplateSourceKind::Function ||
+        Source.Template != Primary || Source.Declaration != Function || Source.Type ||
+        Source.Underlying || Source.Selection || Source.Origin || Source.Instantiation ||
+        Source.WrittenStorageClass || Source.DefaultsOverflow ||
+        !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
+        !Source.Canonical || !Source.Sugared || Arguments->size() != 2 ||
+        Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
+        Primary->getTemplateParameters()->size() != 2) return false;
+    for (unsigned I = 0; I < 2; ++I) {
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
+          Primary->getTemplateParameters()->getParam(I));
+      if (!Parameter || Parameter->hasDefaultArgument() ||
+          Parameter->isParameterPack() != (I == 1) ||
+          !Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
+          !Source.Canonical->get(I).structurallyEquals(
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+      if (!TraverseTemplateArgument(Source.Canonical->get(I)) ||
+          !TraverseTemplateArgument(Source.Sugared->get(I))) return false;
+    }
+    return function(Function) && TraverseType(Function->getReturnType()) && !Failed;
+  }
+  bool admittedCarrier(QualType T) { return carrier(T); }
+};
+
+bool approvedUtilityTupleConstructionSignature(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  if (!Construction || !Construction->isPRValue() ||
+      Construction->isTypeDependent() || Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !S.owns(SM, Construction->getExprLoc())) return false;
+  const auto *Constructor = Construction->getConstructor();
+  UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits);
+  if (!Constructor || Constructor->isInvalidDecl() || Constructor->isDeleted() ||
+      Constructor->isVariadic() || Constructor->getAccess() != AS_public ||
+      Constructor->getNumParams() != Construction->getNumArgs() ||
+      !approvedUtilityTupleMetadata(S, SM, Constructor->getParent()) ||
+      !Graph.admittedCarrier(Construction->getType()) ||
+      !Context.hasSameUnqualifiedType(Construction->getType(),
+                                      Context.getRecordType(Constructor->getParent())) ||
+      !Graph.function(Constructor)) return false;
+  const bool Copy = Constructor->isCopyOrMoveConstructor();
+  if (Copy ? (!Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
+              Construction->getNumArgs() != 1)
+           : !Constructor->getPrimaryTemplate()) return false;
+  if (Copy && !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                              Construction->getType())) return false;
+  if (!Copy) {
+    const auto Tuple = utilityTupleStorageRecord(
+        S, SM, Construction->getType()->getAsCXXRecordDecl(), Context, 0);
+    if (!Tuple || Construction->getNumArgs() != Tuple->Elements.size() ||
+        Constructor->isDefaultConstructor()) return false;
+    for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+      if (!Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(),
+              Tuple->Elements[I].getType().getNonReferenceType())) return false;
+  }
+  for (unsigned I = 0; I < Construction->getNumArgs(); ++I) {
+    const auto Parameter = Constructor->getParamDecl(I)->getType();
+    const Expr *Argument = Construction->getArg(I);
+    unsigned ArgumentNodes = 0;
+    auto NoUserConversion = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> bool {
+      if (!Node || Depth > 64 || ++ArgumentNodes > 200000) return false;
+      if (const auto *Cast = dyn_cast<CastExpr>(Node))
+        if (Cast->getCastKind() == CK_UserDefinedConversion) return false;
+      if (const auto *Call = dyn_cast<CallExpr>(Node))
+        if (isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee())) return false;
+      for (const auto *Child : Node->children())
+        if (Child && !Self(Self, Child, Depth + 1)) return false;
+      return true;
+    };
+    if (!NoUserConversion(NoUserConversion, Argument, 0)) return false;
+    unsigned Depth = 0;
+    for (;;) {
+      if (++Depth > 64) return false;
+      if (const auto *P = dyn_cast<ParenExpr>(Argument)) { Argument = P->getSubExpr(); continue; }
+      if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+        if (Cast->getCastKind() != CK_NoOp ||
+            !Context.hasSameUnqualifiedType(Cast->getType(), Cast->getSubExpr()->getType()) ||
+            !Cast->getType().isAtLeastAsQualifiedAs(Cast->getSubExpr()->getType(), Context))
+          return false;
+        Argument = Cast->getSubExpr(); continue;
+      }
+      break;
+    }
+    if (isa<CXXDefaultArgExpr>(Argument) || !Parameter->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(Argument->getType(), Parameter->getPointeeType()) ||
+        !Parameter->getPointeeType().isAtLeastAsQualifiedAs(Argument->getType(), Context) ||
+        !Graph.admittedCarrier(Argument->getType()) ||
+        (Parameter->isRValueReferenceType() && Argument->isLValue()) ||
+        (Parameter->isLValueReferenceType() &&
+         !Parameter->getPointeeType().isConstQualified() && !Argument->isLValue())) return false;
+    if (const auto *Call = dyn_cast<CallExpr>(Argument))
+      if (isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee())) return false;
+  }
+  return true;
+}
+
+bool approvedUtilityTupleConstructorQueryTemplateSource(
+    const State &S, const SourceManager &SM,
+    const CXXConstructorDecl *Constructor, const TemplateUseSource &Source,
+    const ASTContext &Context,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  return UtilityTupleQueryGraph(S, SM, Context, Members, Traits).templateSource(Source, Constructor);
+}
+
+static const DeclRefExpr *approvedUtilityReference(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const FunctionDecl *Function);
+
+bool approvedUtilityTupleCatSignatureQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits);
+  if (!Call || !Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
+      !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "tuple") ||
+      !Call->isPRValue() || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Prototype || Function->isVariadic() ||
+      !Function->isInlined() || !Function->isConstexpr() || Call->getNumArgs() > 64 ||
+      Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+      Call->getNumArgs() != Function->getNumParams() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !approvedUtilityReference(S, SM, Call, Function) || !Graph.function(Function) ||
+      !Graph.TraverseType(Function->getReturnType())) return false;
+  const auto Result = utilityTupleStorageRecord(
+      S, SM, Call->getType()->getAsCXXRecordDecl(), Context, 0);
+  if (!Result || !Graph.admittedCarrier(Call->getType())) return false;
+  if (!Call->getNumArgs())
+    return !Function->getPrimaryTemplate() && Result->Elements.empty();
+  if (!Function->getPrimaryTemplate()) return false;
+  unsigned Position = 0;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    const auto *Argument = Call->getArg(I);
+    if (!Parameter->isReferenceType() ||
+        !Context.hasSameType(Parameter->getPointeeType(), Argument->getType()) ||
+        (Parameter->isLValueReferenceType() ? !Argument->isLValue() : Argument->isLValue()))
+      return false;
+    const auto Input = approvedUtilityTupleLikeSource(
+        S, SM, Argument->getType(), Context, true, true);
+    if (!Input || Input->size() > Result->Elements.size() - Position) return false;
+    for (uint64_t N = 0; N < Input->size(); ++N) {
+      const auto Element = Input->ArrayElements ? Input->ArrayElementType
+                                                : Input->Elements[N].getType();
+      if (!Context.hasSameType(Element, Result->Elements[Position++].getType())) return false;
+    }
+  }
+  return Position == Result->Elements.size();
+}
+
+bool approvedUtilityTupleCatQueryTemplateSource(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    const TemplateUseSource &Source, const ASTContext &Context,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  return UtilityTupleQueryGraph(S, SM, Context, Members, Traits)
+      .catTemplateSource(Function, Source);
 }
 
 std::optional<UtilityTupleAssignment>
@@ -10870,8 +11771,15 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
            Method->getName() == "release" || Method->getName() == "reset" ||
            Method->getName() == "swap")))))
     return std::nullopt;
+  // Reading the stored pointer does not select pointee deletion. Keep this
+  // exception limited to the actual conversion; mutating members retain the
+  // full owner proof below.
+  const bool BooleanObserver =
+      Method && Method->getDeclName().getNameKind() ==
+                    DeclarationName::CXXConversionFunctionName &&
+      Method->getNameAsString() == "operator bool";
   const auto Owner =
-      SignatureOnly
+      (SignatureOnly || BooleanObserver)
           ? approvedUtilityUniquePtrLayout(
                 S, SM, Method ? Method->getParent() : nullptr, Context)
           : approvedUtilityUniquePtrRecord(
@@ -13313,7 +14221,7 @@ static std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityTupleSelectedCopies(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const UtilityTupleRecord &Tuple,
-    const ASTContext &Context) {
+    const ASTContext &Context, unsigned Depth) {
   const auto *TupleConstructor = Construction
                                      ? dyn_cast_or_null<CXXConstructorDecl>(
                                            Construction->getConstructor()
@@ -13390,12 +14298,16 @@ approvedUtilityTupleSelectedCopies(
         approvedUtilityUniquePtrConstruction(S, SM, Copy, Context) ==
             UtilityUniquePtrConstruction::Move;
     const bool StringCarrierCopy = utilityTupleStringCarrierCopy(S, SM, Copy, Context);
-    if (StringCarrierCopy && !utilityTupleStringCarrierFlow(
+    const auto NestedKind = approvedUtilityTupleConstructionImpl(
+        S, SM, Copy, Context, nullptr, Depth + 1);
+    const bool NestedCopy = NestedKind == UtilityTupleConstruction::CopyOrMove ||
+        NestedKind == UtilityTupleConstruction::OwnedCopyOrMove;
+    if ((StringCarrierCopy || NestedCopy) && !utilityTupleStringCarrierFlow(
             S, SM, Context, TupleConstructor, ImplConstruction, ImplConstructor,
             CarrierLeafConstruction, LeafConstructor, Copy, I, Tuple.Elements.size()))
       return std::nullopt;
     if (!Constructor || !Argument || Parameter.isNull() ||
-        (!OwnerMove && !StringCarrierCopy &&
+        (!OwnerMove && !StringCarrierCopy && !NestedCopy &&
          (!utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
           !supportedConstructor(Constructor) ||
           !S.owns(SM, Constructor->getLocation()))) ||
@@ -16371,11 +17283,20 @@ static bool approvedUtilityTupleApplyTraitValue(
       Apply->Dispatch->getArg(Index + 1), Context);
 }
 
-std::optional<FunctionalMemberInvokeCall>
-approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
+static bool utilityTupleApplyNestedReferenceType(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  return !Type.isNull() && !Type.isVolatileQualified() &&
+         !Type.isRestrictQualified() && Type.getAddressSpace() == LangAS::Default &&
+         utilityTupleStorageRecord(
+             S, SM, Type->getAsCXXRecordDecl(), Context, 0).has_value();
+}
+
+static std::optional<FunctionalMemberInvokeCall>
+approvedUtilityTupleApplyUserCallImpl(const State &S, const SourceManager &SM,
                                   const CallExpr *Call,
-                                  const ASTContext &Context) {
-  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+                                  const ASTContext &Context, bool Runtime) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context, Runtime);
   if (!Apply)
     return std::nullopt;
   const auto *Tuple = &Apply->Tuple;
@@ -16425,18 +17346,24 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
              !supportedFunctionalResult(S, SM, Context, Result)))
     return std::nullopt;
 
+  bool HasNestedBorrow = false;
   const auto TupleArgument = Call->getArg(1)->getType();
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
+    if (!Runtime && Parameter->isRecordType())
+      return std::nullopt;
     const auto StoredElement = Tuple->elementType(I);
     const auto Element = StoredElement->isReferenceType()
                              ? StoredElement->getPointeeType()
                              : StoredElement;
     const bool TraitValue =
-        approvedUtilityTupleApplyTraitValue(S, SM, Call, I, Parameter, Context);
+        Runtime && approvedUtilityTupleApplyTraitValue(S, SM, Call, I, Parameter, Context);
     bool Supported = false;
     if (Parameter->isReferenceType()) {
       const auto ParameterReferent = Parameter->getPointeeType();
+      const bool NestedBorrow = utilityTupleApplyNestedReferenceType(
+          S, SM, ParameterReferent, Context);
+      HasNestedBorrow |= NestedBorrow;
       const bool ElementIsLValue = Element->isFunctionType() ||
                                    StoredElement->isLValueReferenceType() ||
                                    Call->getArg(1)->isLValue();
@@ -16450,8 +17377,8 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                                      Element)
               .has_value() ||
           (Category &&
-           supportedFunctionalInvokeReference(S, SM, Context,
-                                              ParameterReferent) &&
+           (supportedFunctionalInvokeReference(S, SM, Context,
+                                               ParameterReferent) || NestedBorrow) &&
            Context.hasSameUnqualifiedType(ParameterReferent, Element) &&
            (!StoredElement->isReferenceType() ||
             ParameterReferent.isAtLeastAsQualifiedAs(Element, Context)) &&
@@ -16473,9 +17400,25 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                           Parameter, Context, true)))
       return std::nullopt;
   }
+  if (!Runtime && !HasNestedBorrow)
+    return std::nullopt;
   return FunctionalMemberInvokeCall{
       Call->getArg(0), Call->getArg(0), Method,       nullptr,
       nullptr,         {},              std::nullopt, false};
+}
+
+std::optional<FunctionalMemberInvokeCall>
+approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call,
+                                  const ASTContext &Context) {
+  return approvedUtilityTupleApplyUserCallImpl(S, SM, Call, Context, true);
+}
+
+const CXXMethodDecl *approvedUtilityTupleApplyBorrowedUserSignatureCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto User = approvedUtilityTupleApplyUserCallImpl(S, SM, Call, Context, false);
+  return User ? User->Method : nullptr;
 }
 
 std::optional<UtilityTupleApplyObjectOperation>

@@ -31578,7 +31578,9 @@ class FunctionLowering {
   void constructSelectedMemorySource(Expression Place, QualType T,
                                      const CXXConstructExpr *Construction,
                                      Expression SourcePointer,
-                                     SourceLocation L) {
+                                     SourceLocation L, unsigned Depth = 0) {
+    if (Depth > 64)
+      reject(L, "nested tuple construction", "Selected tuple construction depth exceeded.");
     if (approvedUtilityUniquePtrConstruction(
             A.S, A.Sources, Construction, A.Context) ==
         UtilityUniquePtrConstruction::Move) {
@@ -31619,6 +31621,49 @@ class FunctionLowering {
         auto [Data, Length] = readStringAt(std::move(Source), *String, L);
         constructStringBytes(std::move(Place), T, &*String, std::move(Data),
                               std::move(Length), std::nullopt, L);
+      }
+      return;
+    }
+    std::vector<const CXXConstructExpr *> Copies;
+    const auto NestedKind = approvedUtilityTupleConstruction(
+        A.S, A.Sources, Construction, A.Context, &Copies);
+    if (NestedKind == UtilityTupleConstruction::CopyOrMove ||
+        NestedKind == UtilityTupleConstruction::OwnedCopyOrMove) {
+      auto Tuple = approvedUtilityTupleRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
+        Tuple = approvedUtilityReferenceTupleRecord(
+            A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
+        Tuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple || !A.Context.hasSameType(Construction->getType(), T) ||
+          Place.getString("type") != type(T, L))
+        reject(L, "nested tuple construction", "The selected nested tuple layout changed.");
+      auto Source = dereference(snapshot(std::move(SourcePointer), L), L);
+      if (NestedKind == UtilityTupleConstruction::CopyOrMove) {
+        assign(std::move(Place), std::move(Source), L);
+        return;
+      }
+      if (Copies.size() != Tuple->Elements.size())
+        reject(L, "nested tuple construction", "Every selected child construction is required.");
+      initializeTuplePadding(json::Object(Place), *Tuple, L);
+      A.chargeExpansion(Tuple->Elements.size(), L);
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+        const auto &Field = Tuple->Elements[I];
+        if (Field.EmptyBase)
+          continue;
+        auto Destination = fieldStorage(json::Object(Place), Field, L);
+        auto Value = fieldStorage(json::Object(Source), Field, L);
+        if (const auto *Copy = Copies[I]) {
+          const auto Referent = Copy->getConstructor()->getParamDecl(0)
+                                    ->getType()->getPointeeType();
+          constructSelectedMemorySource(
+              std::move(Destination), Field.getType(), Copy,
+              snapshot(address(std::move(Value), Referent, L), L), L, Depth + 1);
+        } else {
+          assign(std::move(Destination), std::move(Value), L);
+        }
       }
       return;
     }

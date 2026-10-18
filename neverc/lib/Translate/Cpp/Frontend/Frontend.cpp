@@ -2827,8 +2827,9 @@ utilityArrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
 }
 
 static std::optional<UtilityTupleLikeSource>
-utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
-  if (!Record || Record->hasUserDeclaredDestructor())
+utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record,
+                              unsigned Depth = 0) {
+  if (!Record || Depth > 64 || Record->hasUserDeclaredDestructor())
     return std::nullopt;
   const auto Tuple = approvedUtilityTupleLikeSource(
       A.S, A.Sources, A.Context.getRecordType(Record), A.Context, false, true);
@@ -2844,8 +2845,12 @@ utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
         approvedUtilityStringRecord(
             A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
       OwningElement = true;
-    else if (!Record->hasTrivialDestructor() && needsDestruction(Element))
-      return std::nullopt;
+    else if (!Record->hasTrivialDestructor() && needsDestruction(Element)) {
+      if (!utilityTupleDestructionSource(
+              A, Element->getAsCXXRecordDecl(), Depth + 1))
+        return std::nullopt;
+      OwningElement = true;
+    }
   }
   if (!Record->hasTrivialDestructor() && !OwningElement)
     return std::nullopt;
@@ -6329,6 +6334,13 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
     Target = functionalObjectQueryTargetSource(A, Selected);
     if (Target)
       Result = A.Context.getCanonicalType(Target->getReturnType());
+  } else if (const auto *User = approvedUtilityTupleApplyBorrowedUserSignatureCall(
+                 A.S, A.Sources, Call, A.Context)) {
+    if (functionalUserInvokeQuerySource(A, Call, Selected) != User)
+      return {};
+    Target = operationCalleePrototype(Selected);
+    if (Target)
+      Result = A.Context.getCanonicalType(Target->getReturnType());
   } else if (const auto Reference = functionalReferenceQuerySource(A, Selected);
              !Reference.Result.isNull()) {
     // Keep this pure apply branch limited to admitted owner and scalar hashes.
@@ -6399,7 +6411,8 @@ static UtilityApplySource utilityApplyResultSource(Adapter &A,
     return {};
   if (const auto Query = A.S.UnevaluatedFunctionalCalls.find(Call);
       Query != A.S.UnevaluatedFunctionalCalls.end())
-    return {Query->second};
+    return {Query->second, approvedUtilityTupleApplyBorrowedUserSignatureCall(
+                              A.S, A.Sources, Call, A.Context)};
   // Scalar/reference parameters and scalar/reference/void results add no
   // hidden record lifetime. Referent layouts keep their independent sources.
   auto Signature = [](const FunctionProtoType *Target) {
@@ -7270,7 +7283,9 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
   const auto *Prototype =
       Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
   if (!Info || !Prototype || !directMethodReference(Call) ||
-      !utilityUniquePtrSource(A, Info->Owner.Record, !SignatureOnly) ||
+      !utilityUniquePtrSource(
+          A, Info->Owner.Record,
+          !SignatureOnly && Info->Operation != UtilityUniquePtrOperation::Boolean) ||
       !utilitySDKFunctionSource(A, Method, "__memory/unique_ptr.h",
                                 !SignatureOnly))
     return std::nullopt;
@@ -13745,6 +13760,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const Expr *> IndexedUnevaluatedSources;
   std::map<const CXXConstructExpr *, const CallExpr *> StringHashQueryViews;
   std::map<const CXXConstructExpr *, const CallExpr *> HashCarrierQueryCopies;
+  std::map<const CXXConstructExpr *, const Expr *> TupleConstructorQueryRoots;
+  std::set<const CXXConstructExpr *> PendingTupleConstructorQueries;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   std::vector<const CXXMethodDecl *> ConsumedSpecialMemberSignatures;
@@ -16902,6 +16919,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Register(Initializer->getInit());
     }
   }
+  QualType utilityTupleCatQueryResultSource(const CallExpr *Call) {
+    if (!approvedUtilityTupleCatSignatureQuery(A.S, A.Sources, Call, A.Context,
+                                               A.SpecialMembers, A.OperationTraits)) return {};
+    const auto *Function = Call->getDirectCallee();
+    if (!Function->getPrimaryTemplate()) return A.Context.getCanonicalType(Function->getReturnType());
+    const auto *Reference = directFunctionReference(Call);
+    if (!Reference) return {};
+    std::set<unsigned> Locations;
+    const TemplateUseSource *First = nullptr;
+    for (const auto Location : {Reference->getExprLoc(), Reference->getBeginLoc(), Call->getExprLoc()}) {
+      if (Location.isInvalid() || !Locations.insert(Location.getRawEncoding()).second) continue;
+      const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
+      if (Found == FunctionSources.end()) continue;
+      for (const auto *Source : Found->second) {
+        if ((First && !equivalentUse(*First, *Source)) ||
+            !approvedUtilityTupleCatQueryTemplateSource(A.S, A.Sources, Function, *Source,
+                A.Context, A.SpecialMembers, A.OperationTraits)) return {};
+        First = Source;
+      }
+    }
+    return First ? A.Context.getCanonicalType(Function->getReturnType()) : QualType{};
+  }
   void registerUnevaluatedOperations(const Expr *Expression) {
     if (!A.S.coreV2())
       return;
@@ -16917,6 +16956,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       // source validation reaches them while checking an unevaluated call.
       if (isa<CXXDefaultArgExpr, CXXDefaultInitExpr, LambdaExpr>(Current))
         continue;
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(Current))
+        if (approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction, A.Context, A.SpecialMembers, A.OperationTraits) &&
+            TupleConstructorQueryRoots.emplace(Construction, Expression).second)
+          A.chargeExpansion(1, Construction->getExprLoc());
       if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Current);
           Call && Call->getOperator() == OO_Subscript)
         A.S.UnevaluatedArraySubscripts.insert(Call);
@@ -16929,6 +16972,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (const auto Result = functionalQuerySource(A, Call);
             !Result.isNull())
           A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
+        else if (const auto Result = utilityTupleCatQueryResultSource(Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityMakeUniqueQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
@@ -17352,7 +17398,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (!CarrierTuple)
           CarrierTuple = approvedUtilityMixedReferenceTupleRecord(
               A.S, A.Sources, Declaration, A.Context);
-        if (CarrierTuple && CarrierTuple->SelectedStringCarrierValues) {
+        if (CarrierTuple && CarrierTuple->RequiresSelectedElementOperations) {
           // Selected carrier construction stays separate from bitwise values.
           // The exact tuple layout supplies private SDK storage; every original
           // element still contributes its own type and layout dependencies.
@@ -18970,8 +19016,11 @@ private:
         const bool CarrierViewCopyQuery =
             CopyQuery != HashCarrierQueryCopies.end() &&
             hashCarrierViewCopyQuerySource(A, CopyQuery->second, Construction);
+        const auto TupleQuery = TupleConstructorQueryRoots.find(Construction);
+        const bool TupleSignatureQuery = TupleQuery != TupleConstructorQueryRoots.end() &&
+            IndexedUnevaluatedSources.count(TupleQuery->second) && approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction, A.Context, A.SpecialMembers, A.OperationTraits);
         bool SDKConstruction =
-            DefaultViewQuery || CarrierViewCopyQuery ||
+            DefaultViewQuery || CarrierViewCopyQuery || TupleSignatureQuery ||
             unorderedResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -21028,13 +21077,55 @@ public:
         continue;
       }
       if (!UtilityConstruction && !ApprovedUtilityCall && !owned(Selected)) {
-        A.reject(Source.Location, "selected member template source",
-                 "A retained record requires its actual direct source-owned "
-                 "template call.");
-        continue;
+        // Retention precedes lexical query indexing; this candidate is inert
+        // until the complete original query and successful deduction close.
+        if (!Construction || !approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction, A.Context, A.SpecialMembers, A.OperationTraits)) {
+          A.reject(Source.Location, "selected member template source",
+                   "A retained record requires its actual direct source-owned template call.");
+          continue;
+        }
+        if (PendingTupleConstructorQueries.insert(Construction).second)
+          A.chargeExpansion(1, Source.Location);
       }
       SelectedCallSources[Source.Expression].push_back(&Source);
     }
+  }
+  bool finishTupleConstructorQueries() {
+    for (const auto *Construction : PendingTupleConstructorQueries)
+      if (!TupleConstructorQueryRoots.count(Construction)) {
+        A.reject(Construction->getExprLoc(), "tuple constructor query source",
+                 "A deferred SDK signature requires its exact lexical query source.");
+        return false;
+      }
+    for (const auto &[Construction, Query] : TupleConstructorQueryRoots) {
+      const auto *Constructor = Construction->getConstructor();
+      if (!IndexedUnevaluatedSources.count(Query) ||
+          !approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction,
+              A.Context, A.SpecialMembers, A.OperationTraits)) return false;
+      if (!Constructor->getPrimaryTemplate()) continue;
+      const auto Found = SelectedCallSources.find(Construction);
+      if (Found == SelectedCallSources.end() || Found->second.empty()) return false;
+      const TemplateUseSource *First = nullptr;
+      for (const auto *Selected : Found->second) {
+        if (Selected->Expression != Construction || Selected->Function != Constructor ||
+            !A.S.owns(A.Sources, Selected->Location)) return false;
+        const auto Sources = FunctionSources.find({Constructor, Selected->Location.getRawEncoding()});
+        if (Sources == FunctionSources.end() || Sources->second.empty()) return false;
+        for (const auto *Source : Sources->second) {
+          if ((First && !equivalentUse(*First, *Source)) ||
+              !sameArguments(Source->Canonical, Constructor->getTemplateSpecializationArgs()) ||
+              !sameCanonicalArguments(Source->Canonical, Source->Sugared) ||
+              !approvedUtilityTupleConstructorQueryTemplateSource(A.S, A.Sources, Constructor,
+                  *Source, A.Context, A.SpecialMembers, A.OperationTraits)) {
+            A.reject(Construction->getExprLoc(), "tuple constructor template query source",
+                     "Every successful deduction, default, constraint and signature source must close.");
+            return false;
+          }
+          First = Source;
+        }
+      }
+    }
+    return A.S.Diagnostics.empty();
   }
   bool variableSourceIdentity(const VarTemplateSpecializationDecl *Variable,
                                const TemplateUseSource &Source, bool GenericFull = false) {
@@ -26481,6 +26572,14 @@ public:
                    "translation unit.",
                    "TR0203");
     if (const auto *C = dyn_cast<CXXConstructExpr>(S)) {
+      if (const auto Query = TupleConstructorQueryRoots.find(C);
+          Query != TupleConstructorQueryRoots.end()) {
+        if (!IndexedUnevaluatedSources.count(Query->second) ||
+            !approvedUtilityTupleConstructionSignature(A.S, A.Sources, C, A.Context,
+                                                       A.SpecialMembers, A.OperationTraits))
+          A.reject(L, "tuple constructor query", "The exact selected signature source is required.");
+        return true; // RAV still traverses all original lexical children.
+      }
       if (const auto Query = StringHashQueryViews.find(C);
           Query != StringHashQueryViews.end()) {
         if (!stringHashDefaultViewQuerySource(A, Query->second, C))
@@ -26892,6 +26991,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     Check.checkExplicitMemberClassInstantiation(Directive);
   prepareBorrowedQueryLayouts(*this);
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
+  if (Traversed && S.Diagnostics.empty())
+    Traversed = Check.finishTupleConstructorQueries();
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishGeneratedMethods();
   if (!Traversed && S.Diagnostics.empty())
@@ -27713,8 +27814,25 @@ public:
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
   bool retainNeverCSpecialMemberSource(
       ASTContext &Context, const CXXMethodDecl *Method) override {
+    const bool Owned = Method && S.owns(Context.getSourceManager(), Method->getLocation());
+    bool TupleSignatureMember = false;
+    if (Method && !Owned && (Method->isImplicit() || Method->isDefaulted()) &&
+        (isa<CXXDestructorDecl>(Method) ||
+         (isa<CXXConstructorDecl>(Method) &&
+          cast<CXXConstructorDecl>(Method)->isCopyOrMoveConstructor()))) {
+      const auto Origin = S.sdkFile(Context.getSourceManager(), Method->getLocation());
+      TupleSignatureMember = Origin && Origin->Root == "libcxx" &&
+          (Origin->Path == "tuple" || Origin->Path == "string_view") &&
+          approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method) &&
+          approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method->getParent()) &&
+          Method->getParent()->getIdentifier() &&
+          (Method->getParent()->getName() == "tuple" ||
+           Method->getParent()->getName() == "__tuple_impl" ||
+           Method->getParent()->getName() == "__tuple_leaf" ||
+           Method->getParent()->getName() == "basic_string_view");
+    }
     if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
-        !S.owns(Context.getSourceManager(), Method->getLocation()) ||
+        (!Owned && !TupleSignatureMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
         !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
       return false;
@@ -27767,7 +27885,8 @@ public:
           !((Count == 2 &&
              (Origin->Path == "__type_traits/is_nothrow_constructible.h" ||
               Origin->Path == "__type_traits/is_nothrow_assignable.h")) ||
-            (Count <= 65 && Origin->Path == "__type_traits/is_constructible.h")))
+            (Count <= 65 && Origin->Path == "__type_traits/is_constructible.h") ||
+            (Count == 2 && Origin->Path == "__type_traits/is_convertible.h")))
         return false;
     }
     if (Count > 65) {
@@ -28152,6 +28271,90 @@ public:
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
+    // Layout preparation precedes moving or indexing any retained Sema
+    // events. Completing a layout can produce further substitutions; all of
+    // them must reach the same ordinary source checks as the original parse.
+    if (S.coreV2()) {
+      struct BorrowedParameters : RecursiveASTVisitor<BorrowedParameters> {
+        State &S;
+        ASTContext &Context;
+        std::vector<std::pair<QualType, SourceLocation>> Types;
+        BorrowedParameters(State &S, ASTContext &Context) : S(S), Context(Context) {}
+        bool shouldVisitTemplateInstantiations() const { return true; }
+        bool TraverseDecl(Decl *Declaration) {
+          if (Declaration && !isa<TranslationUnitDecl>(Declaration) &&
+              !S.owns(Context.getSourceManager(), Declaration->getLocation()))
+            return true;
+          return RecursiveASTVisitor<BorrowedParameters>::TraverseDecl(Declaration);
+        }
+        bool VisitCallExpr(CallExpr *Call) {
+          const auto *Function = Call->getDirectCallee();
+          const auto *Record = Call->getType()->getAsCXXRecordDecl();
+          if (!Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
+              !S.owns(Context.getSourceManager(), Call->getExprLoc()) ||
+              !approvedStandardSDKDeclaration(S, Context.getSourceManager(), Function)) return true;
+          const auto Origin = S.sdkFile(Context.getSourceManager(), Function->getLocation());
+          if (Origin && Origin->Root == "libcxx" && Origin->Path == "tuple") {
+            for (const auto *Argument : Call->arguments()) {
+              const auto *Input = Argument->getType()->getAsCXXRecordDecl();
+              if (Input && !Input->getDefinition() &&
+                  approvedUtilityTupleMetadata(S, Context.getSourceManager(), Input))
+                Types.emplace_back(Argument->getType(), Argument->getExprLoc());
+            }
+          }
+          if (Origin && Origin->Root == "libcxx" && Origin->Path == "tuple" && Record &&
+              !Record->getDefinition() &&
+              approvedUtilityTupleMetadata(S, Context.getSourceManager(), Record))
+            Types.emplace_back(Call->getType(), Call->getExprLoc());
+          return true;
+        }
+        bool VisitParmVarDecl(ParmVarDecl *Parameter) {
+          const auto *Function = dyn_cast<FunctionDecl>(Parameter->getDeclContext());
+          const auto Type = Parameter->getType();
+          if (!Function || Function->isDependentContext() || !Function->hasBody() ||
+              !S.owns(Context.getSourceManager(), Function->getLocation()) ||
+              !Type->isReferenceType())
+            return true;
+          const auto Referent = Type->getPointeeType();
+          const auto *Record = Referent->getAsCXXRecordDecl();
+          if (Record && !Record->getDefinition() &&
+              approvedUtilityTupleMetadata(S, Context.getSourceManager(), Record))
+            Types.emplace_back(Referent, Parameter->getLocation());
+          return true;
+        }
+      };
+      unsigned Rounds = 0;
+      for (;;) {
+        BorrowedParameters Parameters(S, C);
+        Parameters.TraverseDecl(C.getTranslationUnitDecl());
+        if (Parameters.Types.empty())
+          break;
+        if (++Rounds > 64 || Parameters.Types.size() > 200000) {
+          S.diagnose("TR0201", "utility tuple signature layout depth",
+                     "Borrowed signature layout preparation must remain bounded.",
+                     "Reduce nested signature layout complexity.");
+          return;
+        }
+        for (const auto &[Type, Location] : Parameters.Types) {
+          if (!reserveSourceUnits(C.getSourceManager(), Location, 1))
+            return;
+        if (CI.getSema().RequireCompleteType(Location, Type,
+                                              diag::err_incomplete_type))
+          return;
+        const auto *Record = Type->getAsCXXRecordDecl();
+        if (!approvedUtilityTupleRecord(S, C.getSourceManager(), Record, C) &&
+            !approvedUtilityReferenceTupleRecord(S, C.getSourceManager(), Record, C) &&
+            !approvedUtilityMixedReferenceTupleRecord(S, C.getSourceManager(), Record, C)) {
+          S.diagnose("TR0203", "utility tuple signature layout",
+                     "An emitted borrowed signature requires the exact admitted tuple storage.",
+                     "Use a supported tuple element layout.");
+          return;
+        }
+        }
+        if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
+          return;
+      }
+    }
     Adapter A(S, C);
     A.CompleteSDKRecord = [&](QualType Type, SourceLocation Location) {
       return !CI.getSema().RequireCompleteType(Location, Type,
