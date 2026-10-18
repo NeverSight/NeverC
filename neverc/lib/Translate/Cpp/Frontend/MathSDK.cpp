@@ -6181,6 +6181,22 @@ static bool utilityTupleReferenceValue(const State &S, const SourceManager &SM,
   if (Type.isNull() || Type.isVolatileQualified() ||
       Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
     return false;
+  // A tied wrapper stores only the wrapper address. Its referent remains
+  // subject to the actual selected hash/conversion proof at the call site.
+  if (const auto Wrapper = approvedFunctionalReferenceRecord(
+          S, SM, Type->getAsCXXRecordDecl(), Context)) {
+    const auto Referent = Wrapper->ReferentType;
+    if (!Referent.isNull() && !Referent.isVolatileQualified() &&
+        !Referent.isRestrictQualified() &&
+        Referent.getAddressSpace() == LangAS::Default &&
+        (approvedUtilityUniquePtrLayout(
+             S, SM, Referent->getAsCXXRecordDecl(), Context) ||
+         approvedUtilityStringRecord(
+             S, SM, Referent->getAsCXXRecordDecl(), Context) ||
+         approvedUtilityStringViewRecord(
+             S, SM, Referent->getAsCXXRecordDecl(), Context)))
+      return true;
+  }
   return supportedFunctionalReferenceValue(S, SM, Context, Type) ||
          approvedUtilityUniquePtrLayout(
              S, SM, Type->getAsCXXRecordDecl(), Context).has_value() ||
@@ -15128,12 +15144,249 @@ approvedFunctionalMemberInvokeCall(
                                                std::nullopt, true);
 }
 
+// Admit only parentheses and cv-increasing no-op casts of the same object.
+// In particular, do not strip a user-defined conversion or a selected copy.
+static const Expr *hashCarrierAccessOperand(const Expr *Expression,
+                                             const ASTContext &Context) {
+  for (unsigned Depth = 0; Expression && Depth != 32; ++Depth) {
+    if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression)) {
+      Expression = Parentheses->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression);
+    if (!Cast)
+      return Expression;
+    // Retain this wrapper for the caller to authenticate the exact cast/call
+    // pair. Generic stripping still never peels a user-defined conversion.
+    if (Cast->getCastKind() == CK_UserDefinedConversion)
+      return Cast;
+    const auto From = Cast->getSubExpr()->getType();
+    const auto To = Cast->getType();
+    if (Cast->getCastKind() != CK_NoOp ||
+        !Context.hasSameUnqualifiedType(From, To) ||
+        !To.isAtLeastAsQualifiedAs(From, Context) ||
+        From.isVolatileQualified() || To.isVolatileQualified() ||
+        From.isRestrictQualified() || To.isRestrictQualified() ||
+        From.getAddressSpace() != LangAS::Default ||
+        To.getAddressSpace() != LangAS::Default ||
+        Cast->getValueKind() != Cast->getSubExpr()->getValueKind())
+      return nullptr;
+    Expression = Cast->getSubExpr();
+  }
+  return nullptr;
+}
+
+// This proves declaration/signature identity without reading an access body.
+// Runtime validation layers the exact stored-pointer body proof below it.
+static std::optional<FunctionalReferenceAccessCall>
+hashCarrierConversionSignature(const State &S, const SourceManager &SM,
+                               const CallExpr *Call,
+                               const ASTContext &Context) {
+  const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = dyn_cast_or_null<CXXConversionDecl>(
+      Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference =
+      Call ? dyn_cast_or_null<MemberExpr>(directMethodReference(Call)) : nullptr;
+  const auto *Object = Conversion ? Conversion->getImplicitObjectArgument() : nullptr;
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Record = Wrapper
+      ? dyn_cast<ClassTemplateSpecializationDecl>(Wrapper->Record) : nullptr;
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  const auto *PatternRecord = Primary
+      ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
+  const auto *Pattern = Method
+      ? dyn_cast_or_null<CXXConversionDecl>(Method->getInstantiatedFromMemberFunction()) : nullptr;
+  const auto *PatternPrototype = Pattern
+      ? Pattern->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Conversion || !Method || !Reference || Reference->isArrow() || !Object ||
+      !Wrapper || !Prototype || !Record || !Primary || !PatternRecord ||
+      !Pattern || !PatternPrototype ||
+      Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Record->getSpecializedTemplateOrPartial()
+          .is<ClassTemplatePartialSpecializationDecl *>() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Method->isInvalidDecl() || Method->isDeleted() || Method->isStatic() ||
+      Method->isVariadic() || !Method->isConst() || Method->isVolatile() ||
+      !Method->isInlined() || Method->getRefQualifier() != RQ_None ||
+      Method->getNumParams() || Method->getDescribedFunctionTemplate() ||
+      Method->getPrimaryTemplate() || Call->getNumArgs() || !Call->isLValue() ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                           Wrapper->ReferentType) ||
+      !Context.hasSameType(Call->getType(), Wrapper->ReferentType) ||
+      Object->getType().isVolatileQualified() ||
+      Object->getType().isRestrictQualified() ||
+      Object->getType().getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Object->getType(),
+                                      Context.getRecordType(Wrapper->Record)) ||
+      Pattern->getParent() != PatternRecord ||
+      Pattern->getInstantiatedFromMemberFunction() ||
+      Pattern->getLocation() != Method->getLocation() ||
+      Pattern->isInvalidDecl() || Pattern->isDeleted() || Pattern->isStatic() ||
+      Pattern->isVariadic() || !Pattern->isConst() || Pattern->isVolatile() ||
+      !Pattern->isInlined() || Pattern->getRefQualifier() != RQ_None ||
+      Pattern->getNumParams() || Pattern->getDescribedFunctionTemplate() ||
+      PatternPrototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      PatternPrototype->getNoexceptExpr() ||
+      !Pattern->getReturnType()->isLValueReferenceType() ||
+      std::distance(PatternRecord->field_begin(), PatternRecord->field_end()) != 1)
+    return std::nullopt;
+  const auto *PatternPointer = *PatternRecord->field_begin();
+  if (!PatternPointer->getType()->isPointerType() ||
+      PatternPointer->getLocation() != Wrapper->Pointer->getLocation() ||
+      !Context.hasSameType(Pattern->getReturnType()->getPointeeType(),
+                           PatternPointer->getType()->getPointeeType()))
+    return std::nullopt;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *Declaration) {
+    return Declaration && ++Declarations <= 96 && !Declaration->isInvalidDecl() &&
+           approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                          "__functional/reference_wrapper.h");
+  };
+  auto PinnedFamily = [&](const Decl *Declaration) {
+    const auto Origin = Declaration
+        ? S.sdkFile(SM, Declaration->getLocation()) : std::nullopt;
+    return Declaration && ++Declarations <= 96 &&
+           (isa<ClassTemplateDecl>(Declaration) || isa<CXXRecordDecl>(Declaration)) &&
+           !Declaration->isInvalidDecl() &&
+           approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           Origin && Origin->Root == "libcxx" &&
+           (Origin->Path == "__functional/reference_wrapper.h" ||
+            Origin->Path == "__fwd/functional.h");
+  };
+  if (!Pinned(Reference->getMemberDecl()) || !Pinned(PatternPointer))
+    return std::nullopt;
+  for (const auto *Declaration : Method->redecls())
+    if (!Pinned(Declaration))
+      return std::nullopt;
+  for (const auto *Declaration : Pattern->redecls())
+    if (!Pinned(Declaration))
+      return std::nullopt;
+  for (const auto *Declaration : Primary->redecls())
+    if (!PinnedFamily(Declaration) || !PinnedFamily(Declaration->getTemplatedDecl()))
+      return std::nullopt;
+  for (const auto *Declaration : PatternRecord->redecls())
+    if (!PinnedFamily(Declaration))
+      return std::nullopt;
+  for (const auto *Declaration : Record->redecls())
+    if (!PinnedFamily(Declaration))
+      return std::nullopt;
+  return FunctionalReferenceAccessCall{*Wrapper, Object, false};
+}
+
+std::optional<HashCarrierWrapperArgument>
+approvedHashCarrierWrapperArgument(
+    const State &S, const SourceManager &SM, const CallExpr *SelectedHash,
+    const ASTContext &Context, HashCarrierAccessMode Mode) {
+  if (!SelectedHash || SelectedHash->getNumArgs() != 2)
+    return std::nullopt;
+  const bool Runtime = Mode == HashCarrierAccessMode::Runtime;
+  QualType ValueType;
+  bool View = false;
+  if (const auto Hash = uniqueHashCallImpl(
+          S, SM, SelectedHash, Context, Runtime, false)) {
+    ValueType = Context.getRecordType(Hash->Owner.Record);
+  } else if (const auto Hash = stringHashCallImpl(
+                 S, SM, SelectedHash, Context, Runtime, false)) {
+    ValueType = Hash->ValueType;
+    View = Hash->View;
+  } else {
+    return std::nullopt;
+  }
+  const Expr *Operand = SelectedHash->getArg(1);
+  if (View)
+    Operand = approvedStringHashViewCopyArgument(S, SM, Operand, Context);
+  Operand = hashCarrierAccessOperand(Operand, Context);
+  const auto *ConversionCast = dyn_cast_or_null<ImplicitCastExpr>(Operand);
+  if (ConversionCast) {
+    if (ConversionCast->getCastKind() != CK_UserDefinedConversion)
+      return std::nullopt;
+    Operand = ConversionCast->getSubExpr()->IgnoreParens();
+  }
+  const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(Operand);
+  auto Access = hashCarrierConversionSignature(S, SM, Conversion, Context);
+  if (!Access || !Context.hasSameUnqualifiedType(Access->Wrapper.ReferentType,
+                                               ValueType) ||
+      Access->Wrapper.ReferentType.isVolatileQualified() ||
+      Access->Wrapper.ReferentType.isRestrictQualified() ||
+      Access->Wrapper.ReferentType.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  if (ConversionCast &&
+      (ConversionCast->getConversionFunction() != Conversion->getDirectCallee() ||
+       !Context.hasSameType(ConversionCast->getType(), Conversion->getType()) ||
+       ConversionCast->getValueKind() != Conversion->getValueKind()))
+    return std::nullopt;
+  if (Runtime) {
+    const auto Checked = approvedFunctionalReferenceAccessCallImpl(
+        S, SM, Conversion, Context, false);
+    if (!Checked || Checked->ObjectIsArrow || Checked->Object != Access->Object ||
+        Checked->Wrapper.Record->getCanonicalDecl() !=
+            Access->Wrapper.Record->getCanonicalDecl())
+      return std::nullopt;
+  }
+  return HashCarrierWrapperArgument{*Access, Conversion, ValueType, View};
+}
+
+// The retained hash proof authenticates its conversion/access. This binds an
+// exact wrapper at one already checked dispatch layer to its actual parameter.
+// Intermediate wrapper invoke/apply layers retain their own forwarding/get
+// proofs; no unrelated conversion or record value receives permission here.
+static bool hashCarrierWrapperForwarding(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const CallExpr *SelectedHash, QualType Source,
+    const Expr *SelectedArgument, const ParmVarDecl *ForwardedParameter) {
+  if (!SelectedHash || Source.isNull() || !SelectedArgument ||
+      !ForwardedParameter || !ForwardedParameter->getType()->isReferenceType())
+    return false;
+  Source = Source.getNonReferenceType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Source->getAsCXXRecordDecl(), Context);
+  if (!Wrapper)
+    return false;
+  const auto Argument = approvedHashCarrierWrapperArgument(
+      S, SM, SelectedHash, Context, HashCarrierAccessMode::Runtime);
+  const auto Forwarded = ForwardedParameter->getType().getNonReferenceType();
+  if (!Argument ||
+      Argument->Access.Wrapper.Record->getCanonicalDecl() !=
+          Wrapper->Record->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Source, Forwarded) ||
+      Source.isVolatileQualified() || Source.isRestrictQualified() ||
+      Source.getAddressSpace() != LangAS::Default ||
+      Forwarded.isVolatileQualified() || Forwarded.isRestrictQualified() ||
+      Forwarded.getAddressSpace() != LangAS::Default)
+    return false;
+  const Expr *HashArgument = SelectedHash->getArg(1);
+  if (Argument->View)
+    HashArgument = approvedStringHashViewCopyArgument(
+        S, SM, HashArgument, Context);
+  // Only the actual retained conversion is unwrapped at the innermost layer.
+  // An outer forwarding slot must still name the original wrapper parameter.
+  const Expr *Value = SelectedArgument == HashArgument ||
+                              SelectedArgument == SelectedHash->getArg(1)
+                          ? Argument->Access.Object
+                          : SelectedArgument;
+  Value = hashCarrierAccessOperand(Value, Context);
+  return Value &&
+         Context.hasSameUnqualifiedType(Value->getType(), Source) &&
+         (functionalInvokeParameterReference(Value, ForwardedParameter) ||
+          approvedFunctionalForwardingCall(S, SM, Value, ForwardedParameter));
+}
+
 // This is an exact owner-reference flow check. The scalar conversion and
 // wrapper-argument paths retain their independent restrictions.
 static bool uniqueHashOwnerForwarding(
     const State &S, const SourceManager &SM, const ASTContext &Context,
     const UniqueHashObjectInfo &Hash, QualType Source,
-    const Expr *SelectedArgument, const ParmVarDecl *ForwardedParameter) {
+    const Expr *SelectedArgument, const ParmVarDecl *ForwardedParameter,
+    const CallExpr *SelectedHash = nullptr) {
+  if (hashCarrierWrapperForwarding(S, SM, Context, SelectedHash, Source,
+                                    SelectedArgument, ForwardedParameter))
+    return true;
   if (Source.isNull())
     return false;
   Source = Source.getNonReferenceType();
@@ -15164,7 +15417,7 @@ static std::optional<UniqueHashObjectInfo> uniqueHashForwardedCall(
       uniqueHashCallImpl(S, SM, Selected, Context, true, false);
   if (!Hash || !uniqueHashOwnerForwarding(
                    S, SM, Context, *Hash, Source, Selected->getArg(1),
-                   ForwardedParameter))
+                   ForwardedParameter, Selected))
     return std::nullopt;
   return Hash;
 }
@@ -15175,7 +15428,11 @@ static std::optional<UniqueHashObjectInfo> uniqueHashForwardedCall(
 static bool stringHashCarrierForwarding(
     const State &S, const SourceManager &SM, const ASTContext &Context,
     const StringHashObjectInfo &Hash, QualType Source,
-    const Expr *SelectedArgument, const ParmVarDecl *ForwardedParameter) {
+    const Expr *SelectedArgument, const ParmVarDecl *ForwardedParameter,
+    const CallExpr *SelectedHash = nullptr) {
+  if (hashCarrierWrapperForwarding(S, SM, Context, SelectedHash, Source,
+                                    SelectedArgument, ForwardedParameter))
+    return true;
   if (Source.isNull() || !ForwardedParameter ||
       !ForwardedParameter->getType()->isReferenceType())
     return false;
@@ -15206,7 +15463,7 @@ static std::optional<StringHashObjectInfo> stringHashForwardedCall(
     Argument = approvedStringHashViewCopyArgument(S, SM, Argument, Context);
   if (!Argument || !stringHashCarrierForwarding(
                        S, SM, Context, *Hash, Source, Argument,
-                       ForwardedParameter))
+                       ForwardedParameter, Selected))
     return std::nullopt;
   return Hash;
 }
@@ -16021,9 +16278,13 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
       return std::nullopt;
     const auto ViewHash = stringHashCallImpl(
         S, SM, Executed, Context, false, false);
+    const auto Carrier = approvedHashCarrierWrapperArgument(
+        S, SM, Executed, Context, HashCarrierAccessMode::Signature);
     for (unsigned I = 0; I < Selected->getNumArgs(); ++I) {
       const Expr *Argument = Executed->getArg(I);
-      if (I == 1 && ViewHash && ViewHash->View)
+      if (I == 1 && Carrier)
+        Argument = Carrier->Access.Object;
+      else if (I == 1 && ViewHash && ViewHash->View)
         Argument = approvedStringHashViewCopyArgument(S, SM, Argument, Context);
       if (!Argument ||
           !Context.hasSameType(Selected->getArg(I)->getType(),
@@ -16725,7 +16986,7 @@ approvedFunctionalReferenceInvokeCall(
           !stringHashCarrierForwarding(S, SM, Context, *Hash,
                                        Call->getArg(1)->getType(),
                                        InnerCall->getArg(1),
-                                       DispatchFunction->getParamDecl(1)))
+                                       DispatchFunction->getParamDecl(1), Inner->StringHashCall))
         return std::nullopt;
       return Inner;
     }
@@ -16737,7 +16998,7 @@ approvedFunctionalReferenceInvokeCall(
           !uniqueHashOwnerForwarding(S, SM, Context, *Hash,
                                      Call->getArg(1)->getType(),
                                      InnerCall->getArg(1),
-                                     DispatchFunction->getParamDecl(1)))
+                                     DispatchFunction->getParamDecl(1), Inner->UniqueHashCall))
         return std::nullopt;
       return Inner;
     }
@@ -16861,7 +17122,7 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
         !stringHashCarrierForwarding(S, SM, Context, *Hash,
                                      Apply->Tuple.elementType(0),
                                      Operation->getArg(1),
-                                     Apply->DispatchFunction->getParamDecl(1)))
+                                     Apply->DispatchFunction->getParamDecl(1), Reference->StringHashCall))
       return std::nullopt;
     return Reference;
   }
@@ -16874,7 +17135,7 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
         !uniqueHashOwnerForwarding(S, SM, Context, *Hash,
                                    Apply->Tuple.elementType(0),
                                    Operation->getArg(1),
-                                   Apply->DispatchFunction->getParamDecl(1)))
+                                   Apply->DispatchFunction->getParamDecl(1), Reference->UniqueHashCall))
       return std::nullopt;
     return Reference;
   }

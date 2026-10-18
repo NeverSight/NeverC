@@ -5194,18 +5194,18 @@ class FunctionLowering {
     auto Sources = captureUtilityInvocationArguments(
         Call, 1, Call->getNumArgs() - 1);
     if (Info.Operation == FunctionalOperation::ByteHash) {
-      auto Address = utilityInvocationArgument(
+      auto Address = hashInvocationArgument(
           std::move(Sources[0]),
           Call->getDirectCallee()->getParamDecl(1)->getType(),
-          Approved.Method->getParamDecl(0)->getType(), nullptr, L);
+          Approved.Method->getParamDecl(0)->getType(), Approved.StringHashCall, L);
       return stringHashAtAddress(std::move(Address), Approved.StringHashCall,
                                  Info, L);
     }
     if (Info.Operation == FunctionalOperation::UniqueHash) {
-      auto Address = utilityInvocationArgument(
+      auto Address = hashInvocationArgument(
           std::move(Sources[0]),
           Call->getDirectCallee()->getParamDecl(1)->getType(),
-          Approved.Method->getParamDecl(0)->getType(), nullptr, L);
+          Approved.Method->getParamDecl(0)->getType(), Approved.UniqueHashCall, L);
       return uniqueHashAtAddress(std::move(Address), Approved.UniqueHashCall,
                                  Info, L);
     }
@@ -8339,18 +8339,18 @@ class FunctionLowering {
           reject(L, "functional reference invoke",
                  "The checked function object arity must match its arguments.");
         if (Info->Operation->Operation == FunctionalOperation::ByteHash) {
-          auto Address = utilityInvocationArgument(
+          auto Address = hashInvocationArgument(
               std::move(Sources[0]),
               Call->getDirectCallee()->getParamDecl(1 - OperatorOffset)->getType(),
-              Info->Method->getParamDecl(0)->getType(), nullptr, L);
+              Info->Method->getParamDecl(0)->getType(), Info->StringHashCall, L);
           return stringHashAtAddress(std::move(Address), Info->StringHashCall,
                                      *Info->Operation, L);
         }
         if (Info->Operation->Operation == FunctionalOperation::UniqueHash) {
-          auto Address = utilityInvocationArgument(
+          auto Address = hashInvocationArgument(
               std::move(Sources[0]),
               Call->getDirectCallee()->getParamDecl(1 - OperatorOffset)->getType(),
-              Info->Method->getParamDecl(0)->getType(), nullptr, L);
+              Info->Method->getParamDecl(0)->getType(), Info->UniqueHashCall, L);
           return uniqueHashAtAddress(std::move(Address), Info->UniqueHashCall,
                                      *Info->Operation, L);
         }
@@ -18847,6 +18847,26 @@ class FunctionLowering {
         return snapshot(
             address(std::move(Place), Parameter.getUnqualifiedType(), L), L);
       };
+      auto ApplyHashArgument = [&](Expression Element, QualType Parameter,
+                                   const CallExpr *SelectedHash) {
+        const auto Carrier = approvedHashCarrierWrapperArgument(
+            A.S, A.Sources, SelectedHash, A.Context,
+            HashCarrierAccessMode::Signature);
+        if (!Carrier)
+          return Parameter->isReferenceType()
+              ? ApplyReferenceArgument(std::move(Element), 0, Parameter)
+              : ApplyRecordArgument(std::move(Element), 0, Parameter, nullptr);
+        if (Carrier->View && !InvocationFullExpression) {
+          beginFullExpression();
+          InvocationFullExpression = true;
+        }
+        // ApplyElement already dereferences a tied tuple's reference slot.
+        // Capture the wrapper address before reading its stored referent.
+        const auto Source = Tuple->elementType(0).getNonReferenceType();
+        return hashCarrierWrapperArgumentAddress(
+            snapshot(address(std::move(Element), Source, L), L), Source,
+            SelectedHash, L);
+      };
       auto CallableType = Call->getArg(0)->getType();
       const auto MemberCallable = approvedUtilityTupleApplyMemberCall(
           A.S, A.Sources, Call, A.Context);
@@ -18964,18 +18984,17 @@ class FunctionLowering {
             const auto Parameter =
                 ReferenceCallable->Method->getParamDecl(0)->getType();
             auto Element = ApplyElement(json::Object(TupleValue), 0);
-            auto Address = Parameter->isReferenceType()
-                ? ApplyReferenceArgument(std::move(Element), 0, Parameter)
-                : ApplyRecordArgument(std::move(Element), 0, Parameter, nullptr);
+            auto Address = ApplyHashArgument(
+                std::move(Element), Parameter, ReferenceCallable->StringHashCall);
             return FinishInvocation(stringHashAtAddress(
                 std::move(Address), ReferenceCallable->StringHashCall,
                 *ReferenceCallable->Operation, L));
           }
           if (ReferenceCallable->Operation->Operation ==
               FunctionalOperation::UniqueHash) {
-            auto Address = ApplyReferenceArgument(
-                ApplyElement(json::Object(TupleValue), 0), 0,
-                ReferenceCallable->Method->getParamDecl(0)->getType());
+            auto Address = ApplyHashArgument(
+                ApplyElement(json::Object(TupleValue), 0),
+                ReferenceCallable->Method->getParamDecl(0)->getType(), ReferenceCallable->UniqueHashCall);
             return uniqueHashAtAddress(std::move(Address),
                                        ReferenceCallable->UniqueHashCall,
                                        *ReferenceCallable->Operation, L);
@@ -19097,18 +19116,17 @@ class FunctionLowering {
             FunctionalOperation::ByteHash) {
           const auto Parameter = ObjectOperation->Method->getParamDecl(0)->getType();
           auto Element = ApplyElement(json::Object(TupleValue), 0);
-          auto Address = Parameter->isReferenceType()
-              ? ApplyReferenceArgument(std::move(Element), 0, Parameter)
-              : ApplyRecordArgument(std::move(Element), 0, Parameter, nullptr);
+          auto Address = ApplyHashArgument(
+              std::move(Element), Parameter, ObjectOperation->StringHashCall);
           return FinishInvocation(stringHashAtAddress(
               std::move(Address), ObjectOperation->StringHashCall,
               ObjectOperation->Operation, L));
         }
         if (ObjectOperation->Operation.Operation ==
             FunctionalOperation::UniqueHash) {
-          auto Address = ApplyReferenceArgument(
-              ApplyElement(json::Object(TupleValue), 0), 0,
-              ObjectOperation->Method->getParamDecl(0)->getType());
+          auto Address = ApplyHashArgument(
+              ApplyElement(json::Object(TupleValue), 0),
+              ObjectOperation->Method->getParamDecl(0)->getType(), ObjectOperation->UniqueHashCall);
           return uniqueHashAtAddress(std::move(Address),
                                      ObjectOperation->UniqueHashCall,
                                      ObjectOperation->Operation, L);
@@ -31792,6 +31810,57 @@ class FunctionLowering {
     if (!Binding.ReferentType->isFunctionType())
       Referent = dereference(std::move(Referent), L);
     return snapshot(cast(std::move(Referent), type(Parameter, L), L), L);
+  }
+
+  // WrapperAddress is captured by the owned invocation/apply path. Its source
+  // parameter/tuple slot must already be bound to SelectedHash by the proof.
+  Expression hashCarrierWrapperArgumentAddress(
+      Expression WrapperAddress, QualType SourceType,
+      const CallExpr *SelectedHash, SourceLocation L) {
+    const auto Checked = approvedHashCarrierWrapperArgument(
+        A.S, A.Sources, SelectedHash, A.Context,
+        HashCarrierAccessMode::Signature);
+    if (SourceType.isNull())
+      reject(L, "hash carrier wrapper", "The captured wrapper source type is required.");
+    SourceType = SourceType.getNonReferenceType();
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+        SelectedHash ? SelectedHash->getDirectCallee() : nullptr);
+    if (!Checked || !Method || Method->getNumParams() != 1 ||
+        SourceType.isNull() || SourceType.isVolatileQualified() ||
+        SourceType.isRestrictQualified() ||
+        SourceType.getAddressSpace() != LangAS::Default ||
+        !A.Context.hasSameUnqualifiedType(
+            SourceType, A.Context.getRecordType(Checked->Access.Wrapper.Record)))
+      reject(L, "hash carrier wrapper", "The captured exact wrapper source is required.");
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    if (!A.Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(),
+                                          Checked->ValueType) ||
+        (Checked->View ? Parameter->isReferenceType()
+                       : !Parameter->isLValueReferenceType() ||
+                             !Parameter->getPointeeType().isConstQualified()))
+      reject(L, "hash carrier wrapper", "The selected borrow or view-copy parameter changed.");
+    auto ReferentAddress = functionalReferenceArgumentAddress(
+        dereference(snapshot(std::move(WrapperAddress), L), L),
+        Checked->Access.Wrapper, L);
+    // Owners/strings retain this referent address. A view goes through the
+    // existing exact record-parameter copy, producing independent storage.
+    return utilityInvocationArgument(
+        std::move(ReferentAddress),
+        A.Context.getLValueReferenceType(Checked->Access.Wrapper.ReferentType),
+        Parameter, nullptr, L);
+  }
+
+  Expression hashInvocationArgument(Expression Source, QualType Forwarded,
+                                    QualType Parameter,
+                                    const CallExpr *SelectedHash,
+                                    SourceLocation L) {
+    if (approvedHashCarrierWrapperArgument(
+            A.S, A.Sources, SelectedHash, A.Context,
+            HashCarrierAccessMode::Signature))
+      return hashCarrierWrapperArgumentAddress(std::move(Source), Forwarded,
+                                               SelectedHash, L);
+    return utilityInvocationArgument(std::move(Source), Forwarded, Parameter,
+                                      nullptr, L);
   }
 
   Expression utilityInvocationArgument(Expression Source, QualType Forwarded,

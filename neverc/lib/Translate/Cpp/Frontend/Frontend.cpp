@@ -5439,6 +5439,27 @@ static bool stringHashQueryDeclvalSource(Adapter &A, const CallExpr *Selected,
   return Argument && functionalQueryDeclvalSource(A, Argument, Expected);
 }
 
+// Used only while authenticating an actual retained hash call's result trait
+// or its paired apply noexcept/decltype graphs. Keep the original wrapper
+// declval type; changing Expected to the carrier would lose argument identity.
+static bool hashCarrierQueryDeclvalSource(Adapter &A, const CallExpr *Selected,
+                                          unsigned Index, QualType Expected) {
+  if (!Selected || Index >= Selected->getNumArgs() || Expected.isNull())
+    return false;
+  if (Index == 1) {
+    const auto Argument = approvedHashCarrierWrapperArgument(
+        A.S, A.Sources, Selected, A.Context, HashCarrierAccessMode::Signature);
+    if (Argument) {
+      if (!A.Context.hasSameUnqualifiedType(
+              Expected.getNonReferenceType(),
+              A.Context.getRecordType(Argument->Access.Wrapper.Record)))
+        return false;
+      return functionalQueryDeclvalSource(A, Argument->Access.Object, Expected);
+    }
+  }
+  return stringHashQueryDeclvalSource(A, Selected, Index, Expected);
+}
+
 // Defined after the invoke/reference/apply source proofs. The caller must own
 // an indexed lexical query; this returns its authenticated inner hash call.
 static const CallExpr *stringHashSelectedQuerySource(Adapter &A,
@@ -5487,6 +5508,25 @@ static bool stringHashDefaultViewQuerySource(
          Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
          !Prototype->getNoexceptExpr() &&
          utilitySDKFunctionSource(A, Constructor, "string_view", false);
+}
+
+// Bind only the view copy inside the actual retained carrier-wrapper hash
+// query. The conversion, copy and original operands keep their own sources;
+// no runtime body or general generated SDK special member receives permission.
+static bool hashCarrierViewCopyQuerySource(
+    Adapter &A, const CallExpr *Outer,
+    const CXXConstructExpr *Construction) {
+  if (!Outer || !Construction ||
+      !A.S.UnevaluatedFunctionalCalls.count(Outer))
+    return false;
+  const auto *Selected = stringHashSelectedQuerySource(A, Outer);
+  const auto Carrier = approvedHashCarrierWrapperArgument(
+      A.S, A.Sources, Selected, A.Context, HashCarrierAccessMode::Signature);
+  return Carrier && Carrier->View &&
+         stringHashQueryArgumentConstruction(Selected) == Construction &&
+         approvedStringHashViewCopyArgument(
+             A.S, A.Sources, Selected->getArg(1), A.Context) ==
+             Construction->getArg(0);
 }
 
 static const FunctionProtoType *
@@ -5654,7 +5694,7 @@ static const CallExpr *functionalResultQueryTargetSource(
     const auto Expected =
         I == 0 ? Callable : Pack.pack_elements()[I - 1].getAsType();
     if (!functionalQueryDeclvalSource(A, Dispatch->getArg(I), Expected) ||
-        !(Operator ? stringHashQueryDeclvalSource(A, Selected, I, Expected)
+        !(Operator ? hashCarrierQueryDeclvalSource(A, Selected, I, Expected)
                    : functionalQueryDeclvalSource(
                          A, I == 0 ? Selected->getCallee()
                                    : Selected->getArg(I - 1), Expected)))
@@ -6097,7 +6137,7 @@ static bool utilityApplyInvocationSource(Adapter &A, const CallExpr *Call,
                                         const FunctionProtoType *Target,
                                         const CXXMethodDecl *Method = nullptr,
                                         const CallExpr *SignatureCall = nullptr,
-                                        const CallExpr *StringHashCall = nullptr) {
+                                        const CallExpr *CarrierHashCall = nullptr) {
   const auto *Function = Call->getDirectCallee();
   const auto *Helper = functionalReturnedCall(Function);
   const auto *Dispatch =
@@ -6155,11 +6195,17 @@ static bool utilityApplyInvocationSource(Adapter &A, const CallExpr *Call,
       return false;
   }
   const auto *Dispatcher = Dispatch->getDirectCallee();
-  const auto ViewHash = StringHashCall == Inner
+  const auto ViewHash = CarrierHashCall == Inner
       ? approvedStringHashSignatureQuery(A.S, A.Sources, Inner, A.Context)
       : std::nullopt;
+  const auto Carrier = CarrierHashCall == Inner
+      ? approvedHashCarrierWrapperArgument(A.S, A.Sources, Inner, A.Context,
+                                            HashCarrierAccessMode::Signature)
+      : std::nullopt;
   auto ParameterCast = [&](const Expr *E, unsigned Index) {
-    if (Index == 1 && ViewHash && ViewHash->View) {
+    if (Index == 1 && Carrier)
+      E = Carrier->Access.Object;
+    else if (Index == 1 && ViewHash && ViewHash->View) {
       E = approvedStringHashViewCopyArgument(A.S, A.Sources, E, A.Context);
       if (!E)
         return false;
@@ -6260,7 +6306,7 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
       return {};
     const auto Expected = I == 0 ? Arguments->get(0).getAsType()
         : Arguments->get(1).pack_elements()[I - 1].getAsType();
-    if (!stringHashQueryDeclvalSource(
+    if (!hashCarrierQueryDeclvalSource(
             A, Signature->DecltypeCall, I, Expected))
       return {};
   }
@@ -6303,8 +6349,10 @@ static QualType utilityApplyQuerySource(Adapter &A, const CallExpr *Call) {
   return Target && Method &&
                  utilityApplyInvocationSource(
                      A, Call, Target, Method, Selected,
-                     approvedStringHashSignatureQuery(
-                         A.S, A.Sources, Selected, A.Context) ? Selected : nullptr)
+                     (approvedUniqueHashSignatureQuery(
+                          A.S, A.Sources, Selected, A.Context) ||
+                      approvedStringHashSignatureQuery(
+                          A.S, A.Sources, Selected, A.Context)) ? Selected : nullptr)
              ? Result : QualType();
 }
 
@@ -6418,7 +6466,8 @@ static UtilityApplySource utilityApplyResultSource(Adapter &A,
             true, Object->UniqueHashCall, Object->StringHashCall)
       : nullptr;
   if (!Target || !utilityApplyInvocationSource(
-          A, Call, Target, Object->Method, nullptr, Object->StringHashCall))
+          A, Call, Target, Object->Method, nullptr,
+          Object->StringHashCall ? Object->StringHashCall : Object->UniqueHashCall))
     return {};
   // The exact SDK operation proves this scalar result, including its private
   // decltype spelling. The caller's written types and expressions keep their
@@ -13695,6 +13744,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const CallExpr *> CompletedQueryCalls;
   std::set<const Expr *> IndexedUnevaluatedSources;
   std::map<const CXXConstructExpr *, const CallExpr *> StringHashQueryViews;
+  std::map<const CXXConstructExpr *, const CallExpr *> HashCarrierQueryCopies;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   std::vector<const CXXMethodDecl *> ConsumedSpecialMemberSignatures;
@@ -16939,6 +16989,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const auto *Construction = stringHashQueryArgumentConstruction(Call);
         if (stringHashDefaultViewQuerySource(A, Call, Construction))
           StringHashQueryViews.emplace(Construction, Call);
+        const auto *Selected = stringHashSelectedQuerySource(A, Call);
+        const auto *Copy = stringHashQueryArgumentConstruction(Selected);
+        if (hashCarrierViewCopyQuerySource(A, Call, Copy) &&
+            HashCarrierQueryCopies.emplace(Copy, Call).second)
+          A.chargeExpansion(1, Copy->getExprLoc());
       }
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
@@ -18911,8 +18966,12 @@ private:
         const bool DefaultViewQuery =
             ViewQuery != StringHashQueryViews.end() &&
             stringHashDefaultViewQuerySource(A, ViewQuery->second, Construction);
+        const auto CopyQuery = HashCarrierQueryCopies.find(Construction);
+        const bool CarrierViewCopyQuery =
+            CopyQuery != HashCarrierQueryCopies.end() &&
+            hashCarrierViewCopyQuerySource(A, CopyQuery->second, Construction);
         bool SDKConstruction =
-            DefaultViewQuery ||
+            DefaultViewQuery || CarrierViewCopyQuery ||
             unorderedResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||

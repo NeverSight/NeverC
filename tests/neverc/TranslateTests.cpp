@@ -365508,23 +365508,23 @@ int main(){const char*s="abc";return std::__do_string_hash(s,s+3)==0;}
 #include <tuple>
 int main(){auto method=&std::hash<std::string_view>::operator();return method==nullptr;}
 )cpp"},
-      {"invoke-adapter-carrier-wrapper", R"cpp(#include <string>
+      {"invoke-adapter-source-conversion", R"cpp(#include <string>
 #include <string_view>
 #include <functional>
 #include <tuple>
-int main(){std::string_view view("abc");return std::invoke(std::hash<std::string_view>{},std::ref(view))==0;}
+struct Converted{std::string_view*value;operator const std::string_view&()const noexcept{return *value;}};int main(){std::string_view view("abc");return std::invoke(std::hash<std::string_view>{},Converted{&view})==0;}
 )cpp"},
-      {"apply-adapter-carrier-wrapper", R"cpp(#include <string>
+      {"apply-adapter-source-conversion", R"cpp(#include <string>
 #include <string_view>
 #include <functional>
 #include <tuple>
-int main(){std::string_view view("abc");return std::apply(std::hash<std::string_view>{},std::tuple<std::reference_wrapper<std::string_view>>(std::ref(view)))==0;}
+struct Converted{std::string_view*value;operator const std::string_view&()const noexcept{return *value;}};int main(){std::string_view view("abc");return std::apply(std::hash<std::string_view>{},std::tuple<Converted>(Converted{&view}))==0;}
 )cpp"},
-      {"reference-wrapper-adapter-carrier-wrapper", R"cpp(#include <string>
+      {"reference-wrapper-adapter-source-conversion", R"cpp(#include <string>
 #include <string_view>
 #include <functional>
 #include <tuple>
-int main(){std::string_view view("abc");std::hash<std::string_view> hash;return std::ref(hash)(std::ref(view))==0;}
+struct Converted{std::string_view*value;operator const std::string_view&()const noexcept{return *value;}};int main(){std::string_view view("abc");std::hash<std::string_view> hash;return std::ref(hash)(Converted{&view})==0;}
 )cpp"},
       {"wide-view-hash", R"cpp(#include <string>
 #include <string_view>
@@ -366080,26 +366080,26 @@ using P=std::unique_ptr<int>;static_assert(!noexcept(std::hash<P>{}(std::declval
 #include <type_traits>
 using P=std::unique_ptr<int>;int main(){auto p=&std::hash<P>::operator();return p==nullptr;}
 )cpp"},
-    {"invoke-adapter-owner-wrapper", R"cpp(#include <memory>
+    {"invoke-adapter-source-conversion", R"cpp(#include <memory>
 #include <functional>
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);return std::invoke(std::hash<P>{},std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){auto p=std::make_unique<int>(3);return std::invoke(std::hash<P>{},Converted{&p})==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"apply-adapter-owner-wrapper", R"cpp(#include <memory>
+    {"apply-adapter-source-conversion", R"cpp(#include <memory>
 #include <functional>
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);return std::apply(std::hash<P>{},std::tuple<std::reference_wrapper<P>>(std::ref(p)))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){auto p=std::make_unique<int>(3);return std::apply(std::hash<P>{},std::tuple<Converted>(Converted{&p}))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"reference-wrapper-adapter-owner-wrapper", R"cpp(#include <memory>
+    {"reference-wrapper-adapter-source-conversion", R"cpp(#include <memory>
 #include <functional>
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int>;int main(){auto p=std::make_unique<int>(3);std::hash<P> h;return std::ref(h)(std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){auto p=std::make_unique<int>(3);std::hash<P> h;return std::ref(h)(Converted{&p})==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
     {"static-value-specialization", R"cpp(#include <memory>
 #include <functional>
@@ -366443,29 +366443,29 @@ struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <type_traits>
 using P=std::unique_ptr<int,D>;int main(){auto p=&std::hash<P>::operator();return p==nullptr;}
 )cpp"},
-    {"invoke-adapter-owner-wrapper", R"cpp(#include <memory>
+    {"invoke-adapter-source-conversion", R"cpp(#include <memory>
 #include <functional>
 struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::invoke(std::hash<P>{},std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int,D>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::invoke(std::hash<P>{},Converted{&p})==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"apply-adapter-owner-wrapper", R"cpp(#include <memory>
+    {"apply-adapter-source-conversion", R"cpp(#include <memory>
 #include <functional>
 struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::apply(std::hash<P>{},std::tuple<std::reference_wrapper<P>>(std::ref(p)))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int,D>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){auto p=std::unique_ptr<int,D>(new int(3));return std::apply(std::hash<P>{},std::tuple<Converted>(Converted{&p}))==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
-    {"reference-wrapper-adapter-owner-wrapper", R"cpp(#include <memory>
+    {"reference-wrapper-adapter-source-conversion", R"cpp(#include <memory>
 #include <functional>
 struct D{void operator()(int*p)const noexcept{delete p;}};
 #include <utility>
 #include <tuple>
 #include <type_traits>
-using P=std::unique_ptr<int,D>;int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P> h;return std::ref(h)(std::ref(p))==std::hash<int*>{}(p.get())?0:1;}
+using P=std::unique_ptr<int,D>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){auto p=std::unique_ptr<int,D>(new int(3));std::hash<P> h;return std::ref(h)(Converted{&p})==std::hash<int*>{}(p.get())?0:1;}
 )cpp"},
     {"static-value-specialization", R"cpp(#include <memory>
 #include <functional>
@@ -367344,29 +367344,29 @@ using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);ret
 extern "C" void*user_word_copy(void*to,const void*,std::size_t size){auto*bytes=static_cast<unsigned char*>(to);for(std::size_t i=0;i<size;++i)bytes[i]=0;return to;}
 using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto w=std::ref(h);std::apply(w,std::tie(p));return 0;}
 )cpp"},
-    {"invoke-owner-wrapper", R"cpp(#include <memory>
+    {"invoke-source-conversion", R"cpp(#include <memory>
 #include <functional>
 #include <tuple>
 #include <utility>
 #include <type_traits>
 #include <cstddef>
-using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto r=std::ref(p);return int(std::invoke(h,std::ref(p))!=0);}
+using P=std::unique_ptr<int>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){P p;std::hash<P>h;return int(std::invoke(h,Converted{&p})!=0);}
 )cpp"},
-    {"apply-owner-wrapper", R"cpp(#include <memory>
+    {"apply-source-conversion", R"cpp(#include <memory>
 #include <functional>
 #include <tuple>
 #include <utility>
 #include <type_traits>
 #include <cstddef>
-using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto r=std::ref(p);return int(std::apply(h,std::tie(r))!=0);}
+using P=std::unique_ptr<int>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){P p;std::hash<P>h;Converted converted{&p};return int(std::apply(h,std::tie(converted))!=0);}
 )cpp"},
-    {"wrapper-owner-wrapper", R"cpp(#include <memory>
+    {"wrapper-source-conversion", R"cpp(#include <memory>
 #include <functional>
 #include <tuple>
 #include <utility>
 #include <type_traits>
 #include <cstddef>
-using P=std::unique_ptr<int>;int main(){P p;std::hash<P>h;auto r=std::ref(p);return int(std::ref(h)(std::ref(p))!=0);}
+using P=std::unique_ptr<int>;struct Converted{P*value;operator const P&()const noexcept{return *value;}};int main(){P p;std::hash<P>h;return int(std::ref(h)(Converted{&p})!=0);}
 )cpp"},
     {"tuple-default-selected-release", R"cpp(#include <memory>
 #include <functional>
@@ -368092,19 +368092,19 @@ int main(){return std::invoke(std::__murmur2_or_cityhash<std::size_t>{},"abc",3)
 #include <utility>
 int main(){return std::apply(std::__string_view_hash<char>{},std::tuple<std::string_view>{std::string_view("abc")})==0;}
 )cpp"},
-    {"owner-view-wrapper-argument", R"cpp(#include <functional>
+    {"owner-view-source-conversion", R"cpp(#include <functional>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <utility>
-int main(){std::hash<std::string_view> hash;std::string_view value("abc");return std::invoke(hash,std::ref(value))==0;}
+struct Converted{std::string_view*value;operator const std::string_view&()const noexcept{return *value;}};int main(){std::hash<std::string_view> hash;std::string_view value("abc");return std::invoke(hash,Converted{&value})==0;}
 )cpp"},
-    {"owner-string-wrapper-argument", R"cpp(#include <functional>
+    {"owner-string-source-conversion", R"cpp(#include <functional>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <utility>
-int main(){std::hash<std::string> hash;std::string value("abc");return std::invoke(hash,std::ref(value))==0;}
+struct Converted{std::string*value;operator const std::string&()const noexcept{return *value;}};int main(){std::hash<std::string> hash;std::string value("abc");return std::invoke(hash,Converted{&value})==0;}
 )cpp"},
     {"conversion-view-argument", R"cpp(#include <functional>
 #include <string>
@@ -368140,6 +368140,329 @@ int main() {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("string-hash-adapter-guard-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("string-hash-adapter-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+
+TEST_F(TranslateTest, CoreV2HashCarrierWrappersValuesEffectsAndTemporaryLifetimes) {
+  const auto Output = tmpFile("hash-carrier-wrappers-values.nc");
+  const auto Result = translate(fixture("hash-carrier-wrappers-values.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("hash-carrier-wrappers-values") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashCarrierWrappersSignatureOnlyQueries) {
+  const auto Output = tmpFile("hash-carrier-wrappers-queries.nc");
+  const auto Result = translate(fixture("hash-carrier-wrappers-queries.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("hash-carrier-wrappers-queries") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashCarrierWrappersBorrowedNoncopyableReferents) {
+  const auto Output = tmpFile("hash-carrier-wrappers-borrowed.nc");
+  const auto Result = translate(fixture("hash-carrier-wrappers-borrowed.cpp"),
+      {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(std::string("hash-carrier-wrappers-borrowed") + Optimization);
+    const auto Compile = compileGenerated(Output, Executable, Optimization, {"-c"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    EXPECT_TRUE(fs::is_regular_file(Executable));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashCarrierWrappersRejectSelectedAccessSources) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+    {"owner-conversion-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int>; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int>(7); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument) != hash(value); }
+)cpp"},
+    {"owner-conversion-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int>; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>())) == noexcept(std::declval<H&>()(std::declval<A&>())));
+int main() { return 0; }
+)cpp"},
+    {"owner-conversion-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int>; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int>(7); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument); return 0; }
+)cpp"},
+    {"owner-get-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int>; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int>(7); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument.get()) != hash(value); }
+)cpp"},
+    {"owner-get-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int>; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>().get())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>().get())) == noexcept(std::declval<H&>()(std::declval<A&>().get())));
+int main() { return 0; }
+)cpp"},
+    {"owner-get-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int>; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int>(7); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument.get()); return 0; }
+)cpp"},
+    {"array-owner-conversion-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int[]>; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int[]>(2); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument) != hash(value); }
+)cpp"},
+    {"array-owner-conversion-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int[]>; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>())) == noexcept(std::declval<H&>()(std::declval<A&>())));
+int main() { return 0; }
+)cpp"},
+    {"array-owner-conversion-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int[]>; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int[]>(2); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument); return 0; }
+)cpp"},
+    {"array-owner-get-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int[]>; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int[]>(2); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument.get()) != hash(value); }
+)cpp"},
+    {"array-owner-get-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int[]>; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>().get())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>().get())) == noexcept(std::declval<H&>()(std::declval<A&>().get())));
+int main() { return 0; }
+)cpp"},
+    {"array-owner-get-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::unique_ptr<int[]>; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { auto value = std::make_unique<int[]>(2); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument.get()); return 0; }
+)cpp"},
+    {"string-conversion-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { std::string value(193, 'q'); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument) != hash(value); }
+)cpp"},
+    {"string-conversion-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>())) == noexcept(std::declval<H&>()(std::declval<A&>())));
+int main() { return 0; }
+)cpp"},
+    {"string-conversion-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { std::string value(193, 'q'); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument); return 0; }
+)cpp"},
+    {"string-get-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { std::string value(193, 'q'); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument.get()) != hash(value); }
+)cpp"},
+    {"string-get-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>().get())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>().get())) == noexcept(std::declval<H&>()(std::declval<A&>().get())));
+int main() { return 0; }
+)cpp"},
+    {"string-get-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { std::string value(193, 'q'); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument.get()); return 0; }
+)cpp"},
+    {"view-conversion-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string_view; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { std::string_view value("abc", 3); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument) != hash(value); }
+)cpp"},
+    {"view-conversion-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string_view; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>())) == noexcept(std::declval<H&>()(std::declval<A&>())));
+int main() { return 0; }
+)cpp"},
+    {"view-conversion-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string_view; V* redirected;
+template<> std::reference_wrapper<V>::operator V&() const noexcept { return *redirected; }
+int main() { std::string_view value("abc", 3); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument); return 0; }
+)cpp"},
+    {"view-get-runtime", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string_view; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { std::string_view value("abc", 3); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+return std::invoke(hash, argument.get()) != hash(value); }
+)cpp"},
+    {"view-get-query", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string_view; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+using H = std::hash<V>; using A = std::reference_wrapper<V>;
+static_assert(__is_same(decltype(std::invoke(std::declval<H&>(), std::declval<A&>().get())), decltype(sizeof(0))));
+static_assert(noexcept(std::invoke(std::declval<H&>(), std::declval<A&>().get())) == noexcept(std::declval<H&>()(std::declval<A&>().get())));
+int main() { return 0; }
+)cpp"},
+    {"view-get-ignored", R"cpp(#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+using V = std::string_view; V* redirected;
+template<> V& std::reference_wrapper<V>::get() const noexcept { return *redirected; }
+int main() { std::string_view value("abc", 3); redirected = &value; std::hash<V> hash; auto argument = std::ref(value);
+std::invoke(hash, argument.get()); return 0; }
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("hash-carrier-wrapper-guard-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("hash-carrier-wrapper-guard-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source,
         {"--profile", "cpp-core-v2", "-o", Output.string()});

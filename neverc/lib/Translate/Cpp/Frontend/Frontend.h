@@ -460,6 +460,21 @@ std::optional<FunctionalReferenceAccessCall>
 approvedFunctionalReferenceAccessCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+enum class HashCarrierAccessMode { Runtime, Signature };
+struct HashCarrierWrapperArgument {
+  FunctionalReferenceAccessCall Access;
+  const clang::CallExpr *Conversion;
+  clang::QualType ValueType;
+  bool View;
+};
+// The caller must bind the actual selected inner hash call to its owned outer
+// operation. This helper gives no generic record conversion or visitor permit.
+std::optional<HashCarrierWrapperArgument>
+approvedHashCarrierWrapperArgument(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *SelectedHash, const clang::ASTContext &Context,
+    HashCarrierAccessMode Mode);
+
 enum class FunctionalReferenceInvokeKind {
   Function,
   FunctionPointer,
