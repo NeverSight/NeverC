@@ -46645,6 +46645,187 @@ int main(){return 0;}
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairSelectedOwnerMovesRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-owner-direct", R"cpp(#include <memory>
+#include <utility>
+int main(){std::unique_ptr<int> a(new int(41));int* raw=a.get();
+ std::pair<std::unique_ptr<int>,int> p(std::move(a),7);
+ return a.get()!=nullptr||p.first.get()!=raw||*p.first!=41||p.second!=7;}
+)cpp"},
+      {"pair-owner-whole-converting", R"cpp(#include <memory>
+#include <utility>
+int main(){using P=std::pair<std::unique_ptr<int>,int>;
+ std::unique_ptr<int> a(new int(43));P p(std::move(a),9);int* raw=p.first.get();
+ P q(std::move(p));std::pair<std::unique_ptr<int>,long> z(std::move(q));
+ return p.first.get()!=nullptr||q.first.get()!=nullptr||z.first.get()!=raw||
+        *z.first!=43||z.second!=9;}
+)cpp"},
+      {"pair-owner-repeated-move", R"cpp(#include <memory>
+#include <utility>
+int main(){using P=std::pair<std::unique_ptr<int>,int>;
+ std::unique_ptr<int> a(new int(47));int* raw=a.get();
+ P p(std::move(a),1);P q(std::move(a),2);P z(std::move(p));P w(std::move(p));
+ return a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=nullptr||
+        w.first.get()!=nullptr||z.first.get()!=raw||*z.first!=47;}
+)cpp"},
+      {"pair-owner-return-ignore", R"cpp(#include <memory>
+#include <utility>
+int deleted;
+struct Item{int value;Item(int n):value(n){}~Item(){++deleted;}};
+using P=std::pair<std::unique_ptr<Item>,int>;
+P make(int n){std::unique_ptr<Item> a(new Item(n));return P(std::move(a),n);}
+int main(){{P p=make(5);if(p.first->value!=5||p.second!=5||deleted)return 1;}
+ if(deleted!=1)return 2;make(7);return deleted!=2;}
+)cpp"},
+      {"pair-owner-array", R"cpp(#include <memory>
+#include <utility>
+int deleted;
+struct Item{int value;Item():value(3){}~Item(){++deleted;}};
+int main(){{std::unique_ptr<Item[]> a(new Item[3]);Item* raw=a.get();
+ std::pair<std::unique_ptr<Item[]>,int> p(std::move(a),3);
+ std::pair<std::unique_ptr<Item[]>,int> q(std::move(p));
+ if(a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=raw||
+    q.first[2].value!=3||deleted)return 1;}
+ return deleted!=3;}
+)cpp"},
+      {"pair-owner-empty-deleter", R"cpp(#include <memory>
+#include <utility>
+int deleted;
+struct D{void operator()(int* p)const noexcept{++deleted;delete p;}};
+int main(){{using U=std::unique_ptr<int,D>;U a(new int(53));int* raw=a.get();
+ std::pair<U,int> p(std::move(a),4);std::pair<U,long> q(std::move(p));
+ if(a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=raw||
+    *q.first!=53||deleted)return 1;}return deleted!=1;}
+)cpp"},
+      {"pair-owner-argument-effects", R"cpp(#include <memory>
+#include <utility>
+using U=std::unique_ptr<int>;
+int calls;
+U& source(U& value){++calls;return value;}
+int scalar(){++calls;return 9;}
+int main(){U a(new int(59));std::pair<U,int> p(std::move(source(a)),scalar());
+ if(calls!=2||a.get()!=nullptr||*p.first!=59||p.second!=9)return 1;
+ U b(new int(61));std::pair<U,U> q(std::move(source(b)),std::move(source(b)));
+ return calls!=4||b.get()!=nullptr||*q.first!=61||q.second.get()!=nullptr;}
+)cpp"},
+      {"pair-owner-second-slot", R"cpp(#include <memory>
+#include <utility>
+int deleted,wrong;
+const void* expected;
+struct D{void operator()(int* p)const noexcept{if(static_cast<const void*>(this)!=expected)++wrong;++deleted;delete p;}};
+using U=std::unique_ptr<int,D>;using P=std::pair<int,U>;
+int main(){{U a(new int(67));P p(7,std::forward<U>(a));int* raw=p.second.get();
+ std::pair<long,U> q(std::move(p));expected=static_cast<const void*>(&q.second.get_deleter());
+ if(a.get()!=nullptr||p.second.get()!=nullptr||q.second.get()!=raw||*q.second!=67||q.first!=7||deleted)return 1;}
+ return deleted!=1||wrong;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-owner-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-owner-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-owner-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedOwnerMovesRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-owner-factory", R"cpp(#include <memory>
+#include <utility>
+int main(){std::unique_ptr<int> a(new int(3));
+ auto p=std::make_pair(std::move(a),7);return a.get()!=nullptr||*p.first!=3;}
+)cpp"},
+      {"pair-owner-const-destination", R"cpp(#include <memory>
+#include <utility>
+int main(){std::unique_ptr<int> a(new int(3));
+ std::pair<const std::unique_ptr<int>,int> p(std::move(a),7);
+ return a.get()!=nullptr||*p.first!=3;}
+)cpp"},
+      {"pair-owner-converting-owner", R"cpp(#include <memory>
+#include <utility>
+int main(){std::unique_ptr<int> a(new int(3));
+ std::pair<std::unique_ptr<int>,int> p(std::move(a),7);
+ std::pair<std::unique_ptr<const int>,long> q(std::move(p));
+ return p.first.get()!=nullptr||*q.first!=3||q.second!=7;}
+)cpp"},
+      {"pair-owner-selected-move-replaced", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>unique_ptr<int>::unique_ptr(unique_ptr<int>&&)noexcept{}}}
+using U=std::unique_ptr<int>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-selected-release-replaced", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::release()noexcept{return nullptr;}}}
+using U=std::unique_ptr<int>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-selected-delete-replaced", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>void default_delete<int>::operator()(int*)const noexcept{}}}
+using U=std::unique_ptr<int>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-forward-identity-macro", R"cpp(#include <type_traits>
+#define forward forward
+#include <memory>
+#include <utility>
+using U=std::unique_ptr<int>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-caller-move-specialization", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>unique_ptr<int>&&move<unique_ptr<int>&>(unique_ptr<int>&p)noexcept{return static_cast<unique_ptr<int>&&>(p);}}}
+int main(){std::unique_ptr<int> a(new int(3));std::pair<std::unique_ptr<int>,int> p(std::move(a),7);return a.get()!=nullptr||*p.first!=3;}
+)cpp"},
+      {"pair-owner-caller-move-redeclaration", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+int main(){std::unique_ptr<int> a(new int(3));std::pair<std::unique_ptr<int>,int> p(std::move(a),7);return a.get()!=nullptr||*p.first!=3;}
+)cpp"},
+      {"pair-owner-selected-destructor-replaced", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>unique_ptr<int>::~unique_ptr()noexcept{}}}
+using U=std::unique_ptr<int>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-array-original-pointee-bound", R"cpp(#include <memory>
+#include <utility>
+struct Item{int values[(sizeof(long double),2)];~Item(){}};using U=std::unique_ptr<Item[]>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-custom-original-default-deleter", R"cpp(#include <type_traits>
+#define default_delete default_delete
+#include <memory>
+#include <utility>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-custom-default-deleter-redeclaration", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<class T>struct default_delete;}}
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;void use(U&& a){std::pair<U,int> p(static_cast<U&&>(a),7);}int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-owner-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-owner-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityCompositePairsRunAtBothOptimizations) {
   const auto Source = tmpFile("utility-composite-pair.cpp");
   const auto Output = tmpFile("utility-composite-pair.nc");
