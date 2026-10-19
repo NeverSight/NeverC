@@ -963,3 +963,5 @@ merge 接受同一默认 int/int unordered_map 的左值或右值源容器。成
 `cpp-core-v2`：选定的 std::pair 赋值及成员/非成员 swap 使用原始选中的 string、string_view 和 unique_ptr 操作。赋值保留目标引用、独立字符串副本、移后源 owner 清空及旧目标释放；交换保留借用绑定、字段顺序、owner 地址与清理。约束、异常表达式、转发及各子操作均保留其精确 SDK 或源码要求。
 
 `cpp-core-v2`: 选定的 std::pair 比较对已接纳的 char 字符串、string_view 和 unique_ptr 元素保留原有字段顺序与短路行为。字符串和视图按无符号字节、嵌入零及长度比较；所有者比较观察到的指针，不移动或删除对象。引用绑定与外层操作数仅求值一次的副作用保持不变。选定的 pair 运算符、子比较及所使用的 SDK 辅助函数均须验证原始源码。
+
+`cpp-core-v2`: 选定的 std::pair 分段构造从两个 tuple 参数对象初始化已接纳的标量、源代码记录、string、string_view 和 unique_ptr 字段，保留参数副作用、值 tuple 的独立副本、先 first 后 second 的构造顺序、选定的尾部默认参数及清理。两层 SDK 构造函数、get/forward 使用、推导和异常规格来源均须独立检查。引用字段必须指向仍然存活的调用方对象；指向按值 tuple 参数的引用及尚未证明的空基类 tuple 投影仍被拒绝。

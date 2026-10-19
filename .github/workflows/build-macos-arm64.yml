@@ -135,7 +135,7 @@ jobs:
           cp "$RUNNER_TEMP/cpp-pair-comparison-baseline/provenance.json" \
             "$RUNNER_TEMP/cpp-pair-selected/baseline-provenance.json"
           "${{ steps.python.outputs.python-path }}" \
-            neverc/utils/ci/check-cpp-pair-comparison-operations.py \
+            neverc/utils/ci/check-cpp-pair-piecewise-operations.py \
             --repo neverc --build build \
             --clangxx "$(brew --prefix llvm@20)/bin/clang++" \
             --baseline-provenance "$RUNNER_TEMP/cpp-pair-comparison-baseline/provenance.json" \

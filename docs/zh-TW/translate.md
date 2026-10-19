@@ -963,3 +963,5 @@ merge 接受同一預設 int/int unordered_map 的左值或右值來源容器。
 `cpp-core-v2`：選定的 std::pair 賦值及成員/非成員 swap 使用原始選中的 string、string_view 和 unique_ptr 操作。賦值保留目標參考、獨立字串副本、移後來源 owner 清空及舊目標釋放；交換保留借用綁定、欄位順序、owner 位址與清理。約束、例外運算式、轉發及各子操作均保留其精確 SDK 或原始碼要求。
 
 `cpp-core-v2`: 選定的 std::pair 比較對已接納的 char 字串、string_view 和 unique_ptr 元素保留原有欄位順序與短路行為。字串與檢視按無號位元組、內嵌零及長度比較；擁有者比較觀察到的指標，不移動或刪除物件。參照繫結與外層運算元僅求值一次的副作用保持不變。選定的 pair 運算子、子比較及所使用的 SDK 輔助函式均須驗證原始碼。
+
+`cpp-core-v2`: 選定的 std::pair 分段建構從兩個 tuple 參數物件初始化已接納的純量、原始碼記錄、string、string_view 和 unique_ptr 欄位，保留引數副作用、值 tuple 的獨立副本、先 first 後 second 的建構順序、選定的尾端預設引數及清理。兩層 SDK 建構函式、get/forward 使用、推導及例外規格來源均須獨立檢查。參照欄位必須指向仍存活的呼叫端物件；指向傳值 tuple 參數的參照及尚未證明的空基底 tuple 投影仍被拒絕。

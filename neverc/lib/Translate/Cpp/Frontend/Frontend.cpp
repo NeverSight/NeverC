@@ -10476,6 +10476,266 @@ static bool selectedSpecialMemberSignature(Adapter &A, const CXXMethodDecl *Meth
 
 // Source completion is independent of a trait's computed Boolean and of the
 // hypothetical root's fast admission path. Share this proof with query type roots.
+// The structural descriptor binds the two exact constructor layers and every
+// consumed get/forward. This pass independently closes original source uses.
+// Child initialization/defaults/cleanup and trait completion remain ordinary
+// deferred dependencies; passing this class alone is not runtime admission.
+class UtilityPairPiecewiseOuterSources
+    : public RecursiveASTVisitor<UtilityPairPiecewiseOuterSources> {
+  Adapter &A;
+  const UtilityPairPiecewiseConstruction &Piecewise;
+  std::set<const FunctionDecl *> Functions, ActiveFunctions;
+  std::set<const Expr *> BoundChildren;
+  std::set<const CXXConstructorDecl *> ErasedConstructors;
+  unsigned Nodes = 0;
+  bool Failed = false;
+
+  bool step(SourceLocation Location) {
+    A.chargeExpansion(1, Location);
+    if (Failed || ++Nodes > 32768) {
+      Failed = true;
+      return false;
+    }
+    return true;
+  }
+  bool location(SourceLocation L) const {
+    if (L.isInvalid())
+      return false;
+    const auto Spelling = A.S.sdkFile(A.Sources, A.Sources.getSpellingLoc(L));
+    const auto Expansion = A.S.sdkFile(A.Sources, A.Sources.getExpansionLoc(L));
+    return Spelling && Spelling->Root == "libcxx" &&
+           Expansion && Expansion->Root == "libcxx";
+  }
+  bool declaration(const Decl *D) {
+    return D && step(D->getLocation()) && !D->isInvalidDecl() &&
+           approvedStandardSDKDeclaration(A.S, A.Sources, D) &&
+           location(D->getLocation());
+  }
+  bool erasedConstruction(const CXXConstructExpr *C) {
+    const auto *Constructor = C ? C->getConstructor() : nullptr;
+    const auto *Record = Constructor ? Constructor->getParent() : nullptr;
+    if (!Constructor || !Record || !Constructor->isTrivial() ||
+        !Constructor->isDefaulted() || Constructor->isDeleted() ||
+        Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+        Constructor->getPrimaryTemplate())
+      return false;
+    bool Bound = approvedUtilityPiecewiseConstructType(
+        A.S, A.Sources, C->getType(), A.Context);
+    for (unsigned I = 3; I != 5; ++I)
+      Bound |= A.Context.hasSameType(C->getType(),
+          Piecewise.PrivateConstructor->getParamDecl(I)->getType());
+    if (!Bound || !declaration(Record))
+      return false;
+    for (const auto *D : Constructor->redecls())
+      if (!declaration(D))
+        return false;
+    ErasedConstructors.insert(Constructor->getCanonicalDecl());
+    return true;
+  }
+  bool family(const FunctionDecl *Function) {
+    if (!Function || !step(Function->getLocation()) ||
+        Function->isInvalidDecl() || Function->isDeleted() ||
+        Function->isVariadic() ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    if (Functions.count(Function))
+      return !Failed;
+    if (!ActiveFunctions.insert(Function).second)
+      return false;
+    bool Complete = false;
+    auto Finish = llvm::make_scope_exit([&] {
+      ActiveFunctions.erase(Function);
+      if (!Complete)
+        Failed = true;
+    });
+    if (Functions.size() + ActiveFunctions.size() > 128)
+      return false;
+    for (const auto *D : Function->redecls())
+      if (!declaration(D) || !signature(D))
+        return false;
+    if (const auto *Primary = Function->getPrimaryTemplate())
+      for (const auto *D : Primary->redecls())
+        if (!declaration(D) || !declaration(D->getTemplatedDecl()) ||
+            !signature(D->getTemplatedDecl()))
+          return false;
+    const auto *Pattern = Function->getTemplateInstantiationPattern();
+    if (Pattern && (!declaration(Pattern) || !signature(Pattern)))
+      return false;
+    const auto *Definition = Function->getDefinition();
+    if (!Definition || !declaration(Definition) || !signature(Definition))
+      return false;
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Definition)) {
+      if (Constructor->getCanonicalDecl() != Piecewise.PublicConstructor->getCanonicalDecl() &&
+          Constructor->getCanonicalDecl() != Piecewise.PrivateConstructor->getCanonicalDecl())
+        return false;
+      for (const auto *Initializer : Constructor->inits())
+        if (!TraverseStmt(const_cast<Expr *>(Initializer->getInit())))
+          return false;
+    }
+    Complete = TraverseStmt(const_cast<Stmt *>(Definition->getBody())) && !Failed;
+    if (Complete)
+      Functions.insert(Function);
+    return Complete;
+  }
+  bool signature(const FunctionDecl *Function) {
+    const auto *Info = Function->getTypeSourceInfo();
+    if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
+      return false;
+    for (const auto *Parameter : Function->parameters()) {
+      const auto *Written = Parameter->getTypeSourceInfo();
+      if (!declaration(Parameter) || !Written ||
+          !A.Context.hasSameType(Written->getType(), Parameter->getType()) ||
+          !TraverseTypeLoc(Written->getTypeLoc()))
+        return false;
+    }
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    return Prototype && (!Prototype->getNoexceptExpr() ||
+        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())));
+  }
+public:
+  UtilityPairPiecewiseOuterSources(Adapter &A,
+      const UtilityPairPiecewiseConstruction &Piecewise)
+      : A(A), Piecewise(Piecewise) {
+    for (const auto &Element : Piecewise.Elements)
+      BoundChildren.insert(Element.Initializer);
+  }
+  bool shouldWalkTypesOfTypeLocs() const { return false; }
+  bool deduction(const TemplateUseSource &Source, const CXXConstructorDecl *Function) {
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const bool Public = Function == Piecewise.PublicConstructor;
+    if ((!Public && Function != Piecewise.PrivateConstructor) || !Primary ||
+        !Arguments || !Parameters || Source.Kind != TemplateSourceKind::Function ||
+        Source.Template != Primary || Source.Declaration != Function ||
+        Source.Type || Source.Underlying || Source.Written || Source.Selection ||
+        Source.Origin || Source.Instantiation || Source.WrittenStorageClass ||
+        Source.DefaultsOverflow || !Source.Defaults.empty() ||
+        !Source.Canonical || !Source.Sugared ||
+        Parameters->size() != (Public ? 2u : 4u) ||
+        Source.Canonical->size() != Parameters->size() ||
+        Source.Sugared->size() != Parameters->size() ||
+        Arguments->size() != Parameters->size())
+      return false;
+    for (unsigned I = 0; I < Arguments->size(); ++I) {
+      if (!Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
+          !Source.Canonical->get(I).structurallyEquals(
+              A.Context.getCanonicalTemplateArgument(Source.Sugared->get(I))) ||
+          Arguments->get(I).getKind() != TemplateArgument::Pack)
+        return false;
+    }
+    std::set<std::pair<unsigned, unsigned>> Written;
+    for (const auto &Type : Source.ParameterTypes) {
+      const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Type.Parameter);
+      const unsigned I = Parameter ? Parameter->getIndex() : 0;
+      if (Public || !Parameter || I < 2 || I >= 4 ||
+          Parameters->getParam(I) != Parameter || !Parameter->isParameterPack() ||
+          Parameter->hasDefaultArgument() || !Type.Type || !declaration(Parameter) ||
+          !A.Context.hasSameType(Type.Type->getType(), A.Context.getSizeType()) ||
+          !TraverseTypeLoc(Type.Type->getTypeLoc()) ||
+          !Written.emplace(I, Type.PackIndex).second)
+        return false;
+      const auto &Pack = Arguments->get(I);
+      if (Pack.pack_size()) {
+        if (Type.PackIndex >= Pack.pack_size())
+          return false;
+        const auto &Value = Pack.pack_elements()[Type.PackIndex];
+        if (Value.getKind() != TemplateArgument::Integral ||
+            !A.Context.hasSameType(Value.getIntegralType(), Type.Type->getType()) ||
+            Value.getAsIntegral().getLimitedValue() != Type.PackIndex)
+          return false;
+      } else if (Type.PackIndex != ~0u) {
+        return false;
+      }
+    }
+    if (!Public)
+      for (unsigned I = 2; I != 4; ++I) {
+        const auto Size = Arguments->get(I).pack_size();
+        if (!Size) {
+          if (!Written.count({I, ~0u}))
+            return false;
+        } else {
+          for (unsigned J = 0; J < Size; ++J)
+            if (!Written.count({I, J}))
+              return false;
+        }
+      }
+    return !Failed;
+  }
+  bool VisitStmt(Stmt *Statement) {
+    return step(Statement->getBeginLoc()) &&
+           location(Statement->getBeginLoc()) && location(Statement->getEndLoc());
+  }
+  bool VisitTypeLoc(TypeLoc Type) {
+    return step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
+           location(Type.getEndLoc());
+  }
+  bool VisitDeclRefExpr(DeclRefExpr *Reference) {
+    if (!location(Reference->getLocation()))
+      return false;
+    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl()))
+      return declaration(Function);
+    return declaration(Reference->getDecl());
+  }
+  bool VisitMemberExpr(MemberExpr *Member) {
+    return location(Member->getMemberLoc()) && declaration(Member->getMemberDecl());
+  }
+  bool VisitCXXConstructExpr(CXXConstructExpr *Construction) {
+    if (BoundChildren.count(Construction))
+      return true;
+    if (Construction == Piecewise.Delegation)
+      return family(Construction->getConstructor());
+    // WalkUpFromCXXConstructExpr also reaches CXXTemporaryObjectExpr. Its
+    // specialized RAV traversal must retain the same erased-tag/index proof.
+    return erasedConstruction(Construction);
+  }
+  bool TraverseCXXConstructExpr(CXXConstructExpr *Construction) {
+    if (BoundChildren.count(Construction))
+      return true; // The caller separately completes this exact child operation.
+    if (Construction == Piecewise.Delegation)
+      return family(Construction->getConstructor());
+    return erasedConstruction(Construction) &&
+        RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseCXXConstructExpr(Construction);
+  }
+  bool TraverseStmt(Stmt *Statement) {
+    if (!Statement)
+      return false;
+    if (const auto *Expression = dyn_cast<Expr>(Statement))
+      if (BoundChildren.count(Expression))
+        return true;
+    return RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseStmt(Statement);
+  }
+  bool VisitCallExpr(CallExpr *Call) {
+    const auto *Function = Call->getDirectCallee();
+    if (!Function || !location(Call->getExprLoc()))
+      return false;
+    return family(Function);
+  }
+  bool check() {
+    bool Complete = false;
+    auto Finish = llvm::make_scope_exit([&] {
+      if (!Complete)
+        Failed = true;
+    });
+    if (Failed || Piecewise.Elements.size() != 2 ||
+        !family(Piecewise.PublicConstructor) ||
+        !family(Piecewise.PrivateConstructor))
+      return false;
+    // Field initializers are deliberately separate from the outer proof. Each
+    // selected get/forward retains its actual source use and complete family.
+    for (const auto &Element : Piecewise.Elements)
+      for (unsigned I = 0; I < Element.Getters.size(); ++I) {
+        const auto *Get = Element.Getters[I].first;
+        const auto *Forward = Element.Forwarders[I];
+        if (!location(Get->getExprLoc()) || !location(Forward->getExprLoc()) ||
+            !family(Get->getDirectCallee()) || !family(Forward->getDirectCallee()))
+          return false;
+      }
+    Complete = !Failed;
+    return Complete;
+  }
+};
+
 class OperationSourceChecker {
   Adapter &A;
   const std::set<const FunctionDecl *> *Definitions;
@@ -14272,6 +14532,33 @@ static bool tupleFactorySelectionLocation(
          (isa<CXXConstructorDecl>(Function) || isa<CXXConversionDecl>(Function));
 }
 
+// Collection is inert. Only an exact source-owned piecewise root may bind
+// these SDK-location events to its selected delegation or field constructor.
+static bool pairPiecewiseSelectionLocation(
+    const State &S, const SourceManager &SM, SourceLocation Location,
+    const FunctionDecl *Function) {
+  const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(Location));
+  const auto Expansion = S.sdkFile(SM, SM.getExpansionLoc(Location));
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  if (!Spelling || !Expansion || Spelling->Root != "libcxx" ||
+      Expansion->Root != "libcxx" || Spelling->Path != "__utility/pair.h" ||
+      Expansion->Path != "__utility/pair.h" || !Constructor ||
+      !concreteMemberFunctionTemplate(Constructor) ||
+      Constructor->isInvalidDecl() || Constructor->isDeleted() ||
+      Constructor->isVariadic() || Constructor->getNumParams() > 64)
+    return false;
+  if (S.owns(SM, Constructor->getLocation()))
+    return true;
+  return approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      approvedStandardSDKDeclaration(S, SM, Constructor->getPrimaryTemplate()) &&
+      (approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
+       approvedMemoryTemplateMetadata(S, SM, Constructor->getParent()) ==
+           MemoryTemplateMetadata::UniquePtr ||
+       (Constructor->getParent()->getIdentifier() &&
+        Constructor->getParent()->getName() == "basic_string" &&
+        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string")));
+}
+
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
@@ -17009,10 +17296,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
 
   bool checkUtilitySelectedConstruction(const CXXConstructExpr *Construction,
-                                        SourceLocation L) {
+                                        SourceLocation L,
+                                        std::optional<unsigned> SuppliedArguments = std::nullopt) {
     if (!Construction)
       return true;
     A.chargeExpansion(1, L);
+    const auto *Selected = Construction->getConstructor();
+    const unsigned ExplicitArguments = SuppliedArguments.value_or(
+        std::min(1u, Construction->getNumArgs()));
+    if (!Selected || ExplicitArguments > Construction->getNumArgs() ||
+        Construction->getNumArgs() != Selected->getNumParams()) {
+      A.reject(L, "selected construction arguments",
+               "Each selected parameter needs its exact argument slot.");
+      return false;
+    }
+    for (unsigned I = 0; I < Construction->getNumArgs(); ++I) {
+      const bool Default = isa<CXXDefaultArgExpr>(Construction->getArg(I));
+      if (SuppliedArguments && Default != (I >= ExplicitArguments)) {
+        A.reject(L, "selected construction default boundary",
+                 "Only actual trailing defaults may follow supplied arguments.");
+        return false;
+      }
+    }
     const auto OwnerKind = approvedUtilityUniquePtrConstruction(
         A.S, A.Sources, Construction, A.Context);
     if (OwnerKind == UtilityUniquePtrConstruction::Default ||
@@ -17072,7 +17377,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // The authenticated SDK body supplies this source-owned constructor use.
     // Defaults still follow ordinary source and lifetime checks in the actual
     // selected parameter scope, using the source caller's diagnostic location.
-    for (unsigned I = 1; I < Construction->getNumArgs(); ++I)
+    for (unsigned I = ExplicitArguments; I < Construction->getNumArgs(); ++I)
       if (!traverseDefaultArgument(
               const_cast<CXXDefaultArgExpr *>(
                   cast<CXXDefaultArgExpr>(Construction->getArg(I))), L))
@@ -17334,7 +17639,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       A.chargeExpansion(1, Source->Location);
       if (Source->Expression != Expression || Source->Function != Function ||
           (!A.S.owns(A.Sources, Source->Location) &&
-           !tupleFactorySelectedSource(Expression, Function, Source->Location))) {
+           !tupleFactorySelectedSource(Expression, Function, Source->Location) &&
+           !pairPiecewiseChildSelectedSource(Expression, Function, Source->Location))) {
         A.reject(L, "selected member template identity", "Retained source must identify this actual expression and selected function.");
         return false;
       }
@@ -17347,6 +17653,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     const auto *Constructor = C->getConstructor();
+    if (A.S.coreV2())
+      if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
+              A.S, A.Sources, C, A.Context)) {
+        if (!checkPairPiecewiseConstruction(C, *Piecewise, L) && A.S.Diagnostics.empty())
+          A.reject(L, "pair piecewise selected child source",
+                   "Every bound child, trailing default and selected source packet must close.", "TR0203");
+        return;
+      }
     const CXXConstructorDecl *ArrayElementConstructor = nullptr;
     std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
@@ -18682,6 +18996,8 @@ private:
                  ? TupleFactoryOrigin{nullptr, true, false, false, true}
                  : TupleFactoryOrigin{Variable, false, false, false, true};
     }
+    if (isa<StringLiteral>(E))
+      return {nullptr, true, false, false, true};
     if (isa<CXXThisExpr>(E))
       return {nullptr, true, false, false, true, nullptr,
               tupleFactoryEnclosingFunction(E)};
@@ -18791,7 +19107,7 @@ private:
     }
     return false;
   }
-  bool tupleFactoryInputAlive(const CallExpr *Call,
+  bool tupleFactoryInputAlive(const Expr *Call,
                               const TupleFactoryOrigin &Origin) const {
     if (!Origin.Valid || Origin.Self)
       return false;
@@ -18822,7 +19138,7 @@ private:
     }
     return false;
   }
-  bool tupleFactoryUseLifetime(const CallExpr *Call,
+  bool tupleFactoryUseLifetime(const Expr *Call,
                                const TupleFactoryOrigin &Origin) const {
     if (!Origin.Valid)
       return false;
@@ -18883,6 +19199,258 @@ private:
     }
     return false;
   }
+    const CXXConstructExpr *ActivePairPiecewise = nullptr;
+  std::map<const CXXConstructExpr *, OperationSourceDependencies> PairPiecewiseSources;
+  std::map<const CXXConstructExpr *, std::set<const CXXConstructorDecl *>>
+      PairPiecewiseSourceConstructors;
+  std::set<const CXXConstructExpr *> PendingPairPiecewise;
+
+  const Expr *pairPiecewiseOperation(const Expr *Expression) const {
+    for (unsigned Depth = 0; Expression && Depth < 64; ++Depth) {
+      if (const auto *Paren = dyn_cast<ParenExpr>(Expression)) {
+        Expression = Paren->getSubExpr();
+      } else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression)) {
+        if (Cleanup->getNumObjects()) return nullptr;
+        Expression = Cleanup->getSubExpr();
+      } else if (const auto *Bound = dyn_cast<CXXBindTemporaryExpr>(Expression)) {
+        Expression = Bound->getSubExpr();
+      } else if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Expression)) {
+        if (Temporary->getStorageDuration() != SD_FullExpression) return nullptr;
+        Expression = Temporary->getSubExpr();
+      } else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression)) {
+        switch (Cast->getCastKind()) {
+        case CK_NoOp: case CK_LValueToRValue: case CK_ArrayToPointerDecay:
+        case CK_FunctionToPointerDecay: case CK_IntegralCast:
+        case CK_IntegralToBoolean: case CK_IntegralToFloating:
+        case CK_FloatingToIntegral: case CK_FloatingToBoolean:
+        case CK_FloatingCast: case CK_NullToPointer: case CK_PointerToBoolean:
+          Expression = Cast->getSubExpr(); break;
+        default: return nullptr;
+        }
+      } else {
+        return Expression;
+      }
+    }
+    return nullptr;
+  }
+  bool pairPiecewiseChildSelectedSource(const Expr *Expression,
+      const FunctionDecl *Function, SourceLocation Location) const {
+    if (!ActivePairPiecewise ||
+        !pairPiecewiseSelectionLocation(A.S, A.Sources, Location, Function))
+      return false;
+    const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
+        A.S, A.Sources, ActivePairPiecewise, A.Context);
+    if (!Piecewise) return false;
+    for (const auto &Element : Piecewise->Elements)
+      if (pairPiecewiseOperation(Element.Initializer) == Expression)
+        if (const auto *Construction = dyn_cast<CXXConstructExpr>(Expression))
+          return Construction->getConstructor() == Function;
+    return false;
+  }
+  bool checkPairPiecewiseConstruction(const CXXConstructExpr *Construction,
+      const UtilityPairPiecewiseConstruction &Piecewise, SourceLocation L) {
+    if (!A.S.owns(A.Sources, Construction->getExprLoc()) ||
+        Piecewise.Elements.size() != 2 || !pairPiecewiseLifetime(Construction, Piecewise)) {
+      A.reject(L, "pair piecewise lifetime",
+               "The exact tuple references must outlive their use and destination bindings.");
+      return false;
+    }
+    UtilityPairPiecewiseOuterSources Outer(A, Piecewise);
+    if (!Outer.check()) {
+      A.reject(L, "pair piecewise outer source",
+               "Both selected constructor layers and every get/forward require original SDK sources.");
+      return false;
+    }
+    for (const auto *Use : {Construction, Piecewise.Delegation}) {
+      const auto Found = SelectedCallSources.find(Use);
+      if (Found == SelectedCallSources.end() || Found->second.empty()) {
+        A.reject(L, "pair piecewise selected source",
+                 "Each exact public or delegating constructor needs its retained successful selection.");
+        return false;
+      }
+      const TemplateUseSource *First = nullptr;
+      for (const auto *Selection : Found->second) {
+        if (!Selection || Selection->Expression != Use ||
+            Selection->Function != Use->getConstructor() ||
+            (Use == Construction ? !A.S.owns(A.Sources, Selection->Location)
+              : !pairPiecewiseSelectionLocation(A.S, A.Sources, Selection->Location,
+                                                Selection->Function)))
+          return false;
+        const auto Sources = FunctionSources.find(
+            {Selection->Function, Selection->Location.getRawEncoding()});
+        if (Sources == FunctionSources.end() || Sources->second.empty())
+          return false;
+        for (const auto *Source : Sources->second) {
+          if (!Source || Source->Location != Selection->Location ||
+              (First && !equivalentUse(*First, *Source)) ||
+              !Outer.deduction(*Source, Use->getConstructor()))
+            return false;
+          First = Source;
+        }
+        if (Use == Construction && !pairConstructorTemplateSource(*Selection))
+          return false;
+      }
+    }
+    auto &Dependencies = PairPiecewiseSources[Construction];
+    ActiveOperationSources.push_back(&Dependencies);
+    const auto *Saved = ActivePairPiecewise;
+    ActivePairPiecewise = Construction;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActivePairPiecewise = Saved;
+      ActiveOperationSources.pop_back();
+    });
+    for (const auto &Element : Piecewise.Elements) {
+      for (const auto &Stored : Element.Tuple.Elements)
+        if (Stored.EmptyBase) {
+          A.reject(L, "pair piecewise tuple storage",
+                   "Every selected tuple argument needs a proved live storage projection.");
+          return false;
+        }
+      Dependencies.Destructions.insert(Element.Tuple.Record);
+      queueOwningDestructorSignatures(Element.Tuple.Record,
+          Element.Tuple.Record->getDestructor(), L);
+      const auto Type = Element.Field->getType();
+      if (const auto *Record = Type->isReferenceType() ? nullptr : Type->getAsCXXRecordDecl()) {
+        Dependencies.Destructions.insert(Record);
+        queueOwningDestructorSignatures(Record, Record->getDestructor(), L);
+      }
+      const auto *Operation = pairPiecewiseOperation(Element.Initializer);
+      const auto *Child = dyn_cast_or_null<CXXConstructExpr>(Operation);
+      if (!Child) {
+        if (Element.Tuple.Elements.empty()) {
+          if (!isa_and_nonnull<ImplicitValueInitExpr>(Operation)) return false;
+        } else if (Element.Forwarders.size() != 1 || Operation != Element.Forwarders[0]) {
+          return false;
+        }
+        continue;
+      }
+      if (Element.Forwarders.size() != Element.Tuple.Elements.size()) return false;
+      for (unsigned I = 0; I < Element.Forwarders.size(); ++I)
+        if (I >= Child->getNumArgs() ||
+            pairPiecewiseOperation(Child->getArg(I)) != Element.Forwarders[I])
+          return false;
+      const auto *Constructor = Child->getConstructor();
+      if (A.S.owns(A.Sources, Constructor->getLocation())) {
+        collectOperationFunctionTypeSource(Constructor);
+        PairPiecewiseSourceConstructors[Construction].insert(Constructor);
+        if (Constructor->isImplicit() || defaultedDeclaration(Constructor))
+          Dependencies.Families.insert(Constructor);
+        else
+          Dependencies.Definitions.insert(Constructor);
+      } else if (approvedUtilityStringRecord(A.S, A.Sources,
+                     Constructor->getParent(), A.Context)) {
+        if (!approvedUtilityStringConstruction(A.S, A.Sources, Child, A.Context) ||
+            !utilityStringOperationSource(A, Constructor)) return false;
+      } else if (approvedUtilityStringViewRecord(A.S, A.Sources,
+                     Constructor->getParent(), A.Context)) {
+        if (!approvedUtilityStringViewConstruction(A.S, A.Sources, Child, A.Context) ||
+            !utilitySDKFunctionSource(A, Constructor, "string_view",
+                                     !Constructor->isTrivial())) return false;
+      } else if (approvedUtilityUniquePtrRecord(A.S, A.Sources,
+                     Constructor->getParent(), A.Context)) {
+        Dependencies.UniquePtrConstructors.insert(Constructor);
+      } else {
+        return false;
+      }
+      if (!checkUtilitySelectedConstruction(Child, L, Element.Tuple.Elements.size()))
+        return false;
+    }
+    if (!A.S.Diagnostics.empty()) return false;
+    PendingPairPiecewise.insert(Construction);
+    return true;
+  }
+public:
+  bool finishPairPiecewiseConstructions() {
+    OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+        &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+        &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+        &CompletedOperationDefaults);
+    for (const auto *Construction : PendingPairPiecewise) {
+      auto Reject = [&] {
+        A.reject(Construction->getExprLoc(), "pair piecewise source completion",
+                 "Tuple parameters, selected child signatures, defaults and destruction require completed sources.",
+                 "TR0203");
+        return false;
+      };
+      const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
+          A.S, A.Sources, Construction, A.Context);
+      if (!Piecewise || !pairPiecewiseLifetime(Construction, *Piecewise)) return Reject();
+      for (const auto *Constructor : PairPiecewiseSourceConstructors[Construction])
+        if (!SourceCheck.exceptionSource(Constructor, false)) return Reject();
+      SourceCheck.add(&PairPiecewiseSources[Construction]);
+      if (!SourceCheck.finish(Construction->getExprLoc())) return Reject();
+    }
+    // Publish only after every consumed root has closed. A shared SDK child
+    // initializer or earlier metadata success is never a runtime certificate.
+    A.VerifiedPairPiecewiseConstructions.insert(
+        PendingPairPiecewise.begin(), PendingPairPiecewise.end());
+    return A.S.Diagnostics.empty();
+  }
+private:
+
+// Insert in Check after the existing tuple-factory origin helpers. Their
+// input/use lifetime entry points take const Expr *, preserving call behavior
+// while allowing this exact constructor use to share the same origin proof.
+bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
+                           const UtilityPairPiecewiseConstruction &Piecewise) {
+  if (!Construction || Construction->getNumArgs() != 3 ||
+      Piecewise.Elements.size() != 2)
+    return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Element = Piecewise.Elements[I];
+    const auto *Argument = Construction->getArg(I + 1);
+    std::vector<TupleFactoryOrigin> Origins;
+    for (unsigned J = 0; J < Element.Tuple.Elements.size(); ++J) {
+      const bool Reference = Element.Tuple.Elements[J].getType()->isReferenceType();
+      auto Origin = tupleFactoryElementOrigin(Argument, J, Reference);
+      if (Reference && !tupleFactoryInputAlive(Construction, Origin))
+        return false;
+      Origins.push_back(Origin);
+    }
+    const auto FieldType = Element.Field->getType();
+    if (FieldType->isReferenceType()) {
+      // A value tuple parameter dies when this erased constructor returns.
+      // A source lvalue tuple does not make its by-value parameter persistent.
+      if (Element.Tuple.Elements.size() != 1 ||
+          !Element.Tuple.Elements[0].getType()->isReferenceType() ||
+          !tupleFactoryUseLifetime(Construction, Origins[0]))
+        return false;
+      continue;
+    }
+    const auto *Record = FieldType->getAsCXXRecordDecl();
+    if (!Record || !A.S.owns(A.Sources, Record->getLocation()))
+      continue;
+    // Source records containing references or pointers need their own selected
+    // constructor borrow summary. Do not infer that summary from their layout
+    // or inherit the containing pair's lifetime for an arbitrary referent.
+    std::set<const CXXRecordDecl *> Seen;
+    auto ContainsBorrow = [&](auto &&Self, QualType Type, unsigned Depth) -> bool {
+      if (Depth > 64 || Type.isNull())
+        return true;
+      if (Type->isReferenceType() || Type->isPointerType())
+        return true;
+      const auto *Nested = A.Context.getBaseElementType(Type)->getAsCXXRecordDecl();
+      if (!Nested)
+        return false;
+      Nested = Nested->getDefinition();
+      if (!Nested)
+        return true;
+      if (!Seen.insert(Nested->getCanonicalDecl()).second)
+        return false;
+      for (const auto &Base : Nested->bases())
+        if (Self(Self, Base.getType(), Depth + 1))
+          return true;
+      for (const auto *Field : Nested->fields())
+        if (Self(Self, Field->getType(), Depth + 1))
+          return true;
+      return false;
+    };
+    if (ContainsBorrow(ContainsBorrow, FieldType, 0))
+      return false;
+  }
+  return true;
+}
+
   bool tupleFactoryLifetime(const CallExpr *Call,
                             const UtilityMakeFromTupleCall &Factory) {
     auto Element = [&](unsigned I) {
@@ -21880,6 +22448,7 @@ public:
         Selected = Allocation->getOperatorNew();
       if (Selected == Source.Function &&
           (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
+           pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected))) {
         // Collection is inert until an exact public factory binds this node.
@@ -21929,6 +22498,8 @@ public:
                                                 A.Context) ||
            approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                            A.Context) ||
+           approvedUtilityPairPiecewiseConstruction(A.S, A.Sources, Construction,
+                                                    A.Context) ||
            approvedUtilityTupleConstruction(A.S, A.Sources, Construction,
                                             A.Context) ||
            UtilityOptionalMetadata ||
@@ -27539,6 +28110,8 @@ public:
                                                         A.Context) ||
                    approvedUtilityPairConstruction(A.S, A.Sources, C,
                                                    A.Context) ||
+                   approvedUtilityPairPiecewiseConstruction(A.S, A.Sources, C,
+                                                            A.Context) ||
                    approvedUtilityTupleConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
                    approvedUtilityArrayConstruction(A.S, A.Sources, C,
@@ -27927,7 +28500,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     return;
   CheckingSource = false;
   if (!Check.finishTypeQueries() || !Check.finishPairConstructorSources() ||
-      !Check.finishTupleFactories() ||
+      !Check.finishPairPiecewiseConstructions() || !Check.finishTupleFactories() ||
       !Check.finishAlgorithmPredicates())
     return;
   if (S.coreV2())
@@ -28671,6 +29244,8 @@ class Consumer : public ASTConsumer {
            approvedUtilityPairTraitSelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)) ||
            approvedUtilityPairFactorySelectionLocation(S, Sources, Location,
+              dyn_cast_or_null<FunctionDecl>(Declaration)) ||
+           pairPiecewiseSelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)))))
       return;
     // These are successful Clang callbacks, not input protocol records. Bound
@@ -28870,7 +29445,7 @@ public:
       // grants no source admission: a consuming descriptor must authenticate
       // the exact specialization, purpose and operands before using the event.
       if (!Origin || Origin->Root != "libcxx" ||
-          !(((Count == 1 || Count == 2) &&
+          !(((Count >= 1 && Count <= 65) &&
              Origin->Path == "__type_traits/is_nothrow_constructible.h") ||
             (Count == 2 &&
              Origin->Path == "__type_traits/is_nothrow_assignable.h") ||
@@ -28987,7 +29562,8 @@ public:
     if ((!S.owns(Sources, Location) &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
-         !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function)) ||
+         !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
+         !pairPiecewiseSelectionLocation(S, Sources, Location, Function)) ||
         !reserveSourceUnits(Sources, Location, 2))
       return;
     // All admitted producer paths capture direct nodes before casts or

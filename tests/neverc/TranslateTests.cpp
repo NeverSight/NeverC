@@ -46928,6 +46928,177 @@ int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairPiecewiseConstructionRunsAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-piecewise-scalars", R"cpp(#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-source-records-order", R"cpp(#include <tuple>
+#include <utility>
+int trace,destroyed;struct X{int value;X(int a,int b):value(a+b){trace=trace*10+1;}~X(){++destroyed;}};struct Y{int value;explicit Y(int n):value(n){trace=trace*10+2;}~Y(){++destroyed;}};
+int main(){{std::pair<X,Y> p(std::piecewise_construct,std::tuple<int,int>(3,4),std::tuple<int>(9));if(p.first.value!=7||p.second.value!=9||trace!=12||destroyed)return 1;}return destroyed!=2;}
+)cpp"},
+      {"pair-piecewise-string-fill", R"cpp(#include <string>
+#include <tuple>
+#include <utility>
+int main(){std::pair<std::string,int> p(std::piecewise_construct,std::forward_as_tuple(3,'x'),std::forward_as_tuple(7));return p.first.size()!=3||p.first[0]!='x'||p.first[2]!='x'||p.second!=7;}
+)cpp"},
+      {"pair-piecewise-owner-pointer", R"cpp(#include <memory>
+#include <tuple>
+#include <utility>
+int destroyed;struct X{int value;~X(){++destroyed;}};
+int main(){{X* raw=new X{17};std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::forward_as_tuple(raw),std::forward_as_tuple(9));if(p.first.get()!=raw||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-reference-bindings", R"cpp(#include <tuple>
+#include <utility>
+int main(){int x=3,y=9;std::pair<int&,int&> p(std::piecewise_construct,std::forward_as_tuple(x),std::forward_as_tuple(y));p.first=7;p.second=11;return &p.first!=&x||&p.second!=&y||x!=7||y!=11;}
+)cpp"},
+      {"pair-piecewise-empty-defaults", R"cpp(#include <memory>
+#include <string>
+#include <tuple>
+#include <utility>
+int main(){std::pair<std::string,std::unique_ptr<int>> p(std::piecewise_construct,std::tuple<>(),std::tuple<>());return !p.first.empty()||p.second.get()!=nullptr;}
+)cpp"},
+      {"pair-piecewise-value-tuple-isolation", R"cpp(#include <tuple>
+#include <utility>
+struct X{int value;explicit X(int&& n):value(n){n=7;}};
+int main(){std::tuple<int> input(3);std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));return p.first.value!=3||p.second!=9||std::get<0>(input)!=3;}
+)cpp"},
+      {"pair-piecewise-value-tuple-cleanup", R"cpp(#include <tuple>
+#include <utility>
+int live,copies,destroyed;struct Token{int value;explicit Token(int n):value(n){++live;}Token(const Token& t):value(t.value){++live;++copies;}~Token(){--live;++destroyed;}};
+struct X{int value;explicit X(Token&& t):value(t.value){if(live!=2)value=-1;t.value=7;}};
+int main(){auto input=std::make_tuple(Token(3));if(live!=1)return 1;copies=0;destroyed=0;{std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));if(p.first.value!=3||p.second!=9||std::get<0>(input).value!=3||copies!=1||live!=1||destroyed!=1)return 2;}return live!=1||destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-forwarded-owner-tuple", R"cpp(#include <memory>
+#include <tuple>
+#include <utility>
+int destroyed;struct X{int value;~X(){++destroyed;}};
+int main(){{std::tuple<std::unique_ptr<X>> input(std::unique_ptr<X>(new X{17}));std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::move(input),std::tuple<int>(9));if(std::get<0>(input).get()!=nullptr||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-first-before-second-binding", R"cpp(#include <tuple>
+#include <utility>
+int trace;struct X{int value;explicit X(int& n):value(n){trace=trace*10+1;n=7;}};struct Y{int value;explicit Y(int& n):value(n){trace=trace*10+2;n=11;}};
+int main(){int n=3;std::pair<X,Y> p(std::piecewise_construct,std::forward_as_tuple(n),std::forward_as_tuple(n));return p.first.value!=3||p.second.value!=7||n!=11||trace!=12;}
+)cpp"},
+      {"pair-piecewise-source-trailing-default", R"cpp(#include <tuple>
+#include <utility>
+int defaults,destroyed;struct Default{Default(){++defaults;}~Default(){++destroyed;}};struct X{int value;explicit X(int n,const Default& d=Default()):value(n){}};
+int main(){std::pair<X,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first.value!=3||p.second!=9||defaults!=1||destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-source-default-full-expression", R"cpp(#include <tuple>
+#include <utility>
+int trace;struct Default{Default(){trace=trace*10+1;}~Default(){trace=trace*10+3;}};struct X{int value;explicit X(int n,const Default& d=Default()):value(n){trace=trace*10+2;}};struct Y{int value;explicit Y(int n):value(n){trace=trace*10+4;}};
+int main(){std::pair<X,Y> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first.value!=3||p.second.value!=9||trace!=1234;}
+)cpp"},
+      {"pair-piecewise-caller-argument-effects", R"cpp(#include <tuple>
+#include <utility>
+int first_calls,second_calls;std::tuple<int> first(){++first_calls;return std::tuple<int>(3);}std::tuple<int> second(){++second_calls;return std::tuple<int>(9);}
+int main(){std::pair<int,int> p(std::piecewise_construct,first(),second());return p.first!=3||p.second!=9||first_calls!=1||second_calls!=1;}
+)cpp"},
+      {"pair-piecewise-mixed-reference-values", R"cpp(#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){int n=3;std::pair<int&,std::string_view> p(std::piecewise_construct,std::forward_as_tuple(n),std::forward_as_tuple("abc",3));p.first=7;return &p.first!=&n||n!=7||p.second.size()!=3||p.second[2]!='c';}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-piecewise-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-piecewise-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-piecewise-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+
+
+TEST_F(TranslateTest, CoreV2PairPiecewiseConstructionRequiresExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-piecewise-forward-identity", R"cpp(#include <type_traits>
+#define forward forward
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-get-identity", R"cpp(#include <type_traits>
+#define get get
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-piecewise-construct-t-identity", R"cpp(#include <type_traits>
+#define piecewise_construct_t piecewise_construct_t
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-tuple-identity", R"cpp(#include <type_traits>
+#define tuple tuple
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-tuple-indices-identity", R"cpp(#include <type_traits>
+#define __tuple_indices __tuple_indices
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-make-tuple-indices-identity", R"cpp(#include <type_traits>
+#define __make_tuple_indices __make_tuple_indices
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-is-nothrow-constructible-identity", R"cpp(#include <type_traits>
+#define is_nothrow_constructible is_nothrow_constructible
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-tuple-selected-get", R"cpp(#include <tuple>
+#include <utility>
+namespace std{inline namespace __1{template<>int& get<0,int>(tuple<int>& t)noexcept{static int n=3;return n;}}}
+void use(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}int main(){return 0;}
+)cpp"},
+      {"pair-piecewise-standalone-tag", R"cpp(#include <tuple>
+#include <utility>
+int main(){std::piecewise_construct_t tag{};std::pair<int,int> p(tag,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-reference-to-value-parameter", R"cpp(#include <tuple>
+#include <utility>
+void use(){std::pair<int&&,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}
+int main(){use();return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-piecewise-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-piecewise-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+
+
 TEST_F(TranslateTest, CoreV2PairSelectedComparisonsRunAtBothOptimizations) {
   const struct { const char *Name; const char *Source; } Cases[] = {
       {"pair-string-comparison-embedded-zero", R"cpp(#include <string>
