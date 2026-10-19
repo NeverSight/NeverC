@@ -304,6 +304,17 @@ protected:
     return ncc(Args);
   }
 
+  CmdResult compileGeneratedWithMath(const fs::path &Source,
+                                     const fs::path &Output,
+                                     const std::string &Optimization) {
+    std::vector<std::string> Extra = {"-fno-fast-math", "-ffp-contract=off"};
+#if defined(__linux__)
+    // The C23 driver leaves hosted math imports to an explicit libm link.
+    Extra.push_back("-lm");
+#endif
+    return compileGenerated(Source, Output, Optimization, Extra);
+  }
+
   std::string nativeTarget() {
     auto Result = ncc({"-dumpmachine"});
     if (!Result.ok()) {
@@ -360842,7 +360853,7 @@ TEST_F(TranslateTest, CoreV2PiecewiseLinearPreservesBitsStateAndOwnership) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360860,7 +360871,7 @@ TEST_F(TranslateTest, CoreV2PiecewiseLinearCallbacksPreserveBoundaryReferences) 
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360878,7 +360889,7 @@ TEST_F(TranslateTest, CoreV2PiecewiseLinearObjectsPreserveCopiedLifetimes) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360949,7 +360960,7 @@ TEST_F(TranslateTest, CoreV2ExponentialPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361007,7 +361018,7 @@ TEST_F(TranslateTest, CoreV2ExtremeValuePreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361069,7 +361080,7 @@ TEST_F(TranslateTest, CoreV2NormalPreservesCachedStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361140,7 +361151,7 @@ TEST_F(TranslateTest, CoreV2LognormalPreservesCachedStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361220,7 +361231,7 @@ TEST_F(TranslateTest, CoreV2WeibullPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361289,7 +361300,7 @@ TEST_F(TranslateTest, CoreV2GammaPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361365,7 +361376,7 @@ TEST_F(TranslateTest, CoreV2ChiSquaredPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361444,7 +361455,7 @@ TEST_F(TranslateTest, CoreV2FisherFPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361525,7 +361536,7 @@ TEST_F(TranslateTest, CoreV2StudentTPreservesCacheParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361614,7 +361625,7 @@ TEST_F(TranslateTest, CoreV2CauchyPreservesDoublePrecisionAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361675,7 +361686,7 @@ TEST_F(TranslateTest, CoreV2PoissonPreservesIntegerStateParametersAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361766,7 +361777,7 @@ TEST_F(TranslateTest, CoreV2NegativeBinomialAndGeometricPreserveMixtureStateAndS
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361867,7 +361878,7 @@ TEST_F(TranslateTest, CoreV2BinomialPreservesModalParametersEndpointsAndSamples)
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
