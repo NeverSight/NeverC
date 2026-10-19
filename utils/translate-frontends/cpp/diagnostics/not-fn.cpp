@@ -20,6 +20,7 @@ class NotFnVisitor : public RecursiveASTVisitor<NotFnVisitor> {
   std::set<const FunctionDecl *> Functions;
   std::set<const CXXRecordDecl *> Records;
   unsigned Factories = 0, Calls = 0;
+  unsigned ActiveClosure = 0;
   bool Overflow = false;
 
   bool sdk(const Decl *D) const {
@@ -72,6 +73,7 @@ class NotFnVisitor : public RecursiveASTVisitor<NotFnVisitor> {
     const auto *D = F->getDefinition();
     if (!D)
       return;
+    ++ActiveClosure;
     if (const auto *C = dyn_cast<CXXConstructorDecl>(D)) {
       for (const auto *Init : C->inits()) {
         OS << "CONSTRUCTOR-INITIALIZER\n";
@@ -81,6 +83,7 @@ class NotFnVisitor : public RecursiveASTVisitor<NotFnVisitor> {
     }
     if (const auto *Body = D->getBody())
       TraverseStmt(const_cast<Stmt *>(Body));
+    --ActiveClosure;
   }
 public:
   explicit NotFnVisitor(ASTContext &Context) : Context(Context) {}
@@ -88,7 +91,8 @@ public:
     const auto *F = Call->getDirectCallee();
     if (!F || !sdk(F))
       return true;
-    if (F->getIdentifier() && F->getName() == "not_fn") {
+    bool Root = F->getIdentifier() && F->getName() == "not_fn";
+    if (Root) {
       ++Factories;
       llvm::outs() << "NOT-FN-FACTORY\n";
       record(Call->getType()->getAsCXXRecordDecl());
@@ -97,20 +101,28 @@ public:
       if (M->getOverloadedOperator() == OO_Call &&
           M->getParent()->getIdentifier() &&
           M->getParent()->getName() == "__perfect_forward_impl") {
+        Root = true;
         ++Calls;
         llvm::outs() << "NOT-FN-CALL cv=" << M->getMethodQualifiers().getAsString()
                      << " ref=" << unsigned(M->getRefQualifier()) << "\n";
       }
-    function(F);
+    // Header declarations contain unrelated nondependent calls. Only an
+    // actual adapter root and its selected body closure belong in this probe.
+    if (Root || ActiveClosure)
+      function(F);
     return true;
   }
   bool VisitCXXConstructExpr(CXXConstructExpr *C) {
-    function(C->getConstructor());
+    const auto *R = C->getType()->getAsCXXRecordDecl();
+    if (ActiveClosure || (R && R->getIdentifier() && R->getName() == "__not_fn_t"))
+      function(C->getConstructor());
     return true;
   }
   bool VisitCXXInheritedCtorInitExpr(CXXInheritedCtorInitExpr *C) {
-    llvm::outs() << "NOT-FN-INHERITED-CONSTRUCTOR\n";
-    function(C->getConstructor());
+    if (ActiveClosure) {
+      llvm::outs() << "NOT-FN-INHERITED-CONSTRUCTOR\n";
+      function(C->getConstructor());
+    }
     return true;
   }
   void finish() {
