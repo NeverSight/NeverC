@@ -126,7 +126,9 @@ add_test(NAME PluginSDKGenerationConsistency COMMAND "@PYTHON@" "@ROOT@/utils/pl
         tests, owner = build_gtest(
             root, output, clangxx, compiler, sources,
             ['LLVMObject', 'LLVMSupport'], 'linker-sdk-tests', run,
-            'build/configure-owning-libraries', 1800)
+            'build/configure-owning-libraries', 1800,
+            definitions={'NEVERC_PLUGINSDK_SINGLE_HEADER':
+                         root / 'pluginsdk/include/neverc/Plugin/NevercPluginAPI.h'})
         report['cmake_gtest_owner'] = owner
         report['gtest_binary'] = binary(tests)
         assert run([tests, '--gtest_list_tests'], 'gtest/list') == 0

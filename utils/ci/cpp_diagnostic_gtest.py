@@ -4,7 +4,7 @@ import hashlib
 
 
 def build_gtest(root, output, clangxx, compiler, sources, libraries, binary_name,
-                run, configure_label, build_timeout):
+                run, configure_label, build_timeout, definitions=None):
     """Reuse the compiler artifact; build only the requested harness and owners."""
     root, output = Path(root), Path(output)
     support = output / 'llvm-support'
@@ -25,11 +25,22 @@ def build_gtest(root, output, clangxx, compiler, sources, libraries, binary_name
               'target_compile_definitions(' + target + ' PRIVATE',
               '  NEVERC_BINARY=\\"' + Path(compiler).as_posix() + '\\"',
               '  TEST_SOURCE_DIR=\\"' + (root / 'tests/neverc').as_posix() + '\\"',
-              '  TEST_C_DIR=\\"' + (root / 'tests/c').as_posix() + '\\")',
+              '  TEST_C_DIR=\\"' + (root / 'tests/C').as_posix() + '\\")',
               'target_compile_options(' + target + ' PRIVATE',
               '  -O0 -g0 -fno-fast-math -ffp-contract=off)',
               'target_link_libraries(' + target + ' PRIVATE',
               '  GTest::gtest_main GTest::gtest ' + ' '.join(libraries) + ')']
+    if definitions:
+        lines += ['target_compile_definitions(' + target + ' PRIVATE']
+        for name, value in definitions.items():
+            # Match the owning test target's quoted path definition. The
+            # single-header probe intentionally does not include the modular
+            # SDK and therefore needs this exact original compile contract.
+            assert name.isidentifier()
+            value = Path(value).as_posix()
+            assert not any(c in value for c in ['"', ';', '\n', '\r'])
+            lines += ['  ' + name + '=\\"' + value + '\\"']
+        lines += [')']
     hook.write_text('\n'.join(lines) + '\n')
     # This tree has no llvm-config tool and relocates Support to CSupport.
     # Let its real library targets provide all transitive archives and public
@@ -55,5 +66,6 @@ def build_gtest(root, output, clangxx, compiler, sources, libraries, binary_name
                     'sha256': hashlib.sha256(hook.read_bytes()).hexdigest(),
                     'target': target, 'libraries': libraries,
                     'header_owner': 'actual repository LLVMSupport PUBLIC CSupport include paths',
+                    'compile_definitions': {k: Path(v).as_posix() for k, v in (definitions or {}).items()},
                     'compiler_artifact_rebuilt': False,
                     'cmake_hook': 'CMAKE_PROJECT_LLVM_INCLUDE'}
