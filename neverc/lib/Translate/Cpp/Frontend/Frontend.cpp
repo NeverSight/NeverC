@@ -10554,10 +10554,12 @@ class UtilityPairPiecewiseOuterSources
       if (!declaration(D) || !signature(D))
         return false;
     if (const auto *Primary = Function->getPrimaryTemplate())
-      for (const auto *D : Primary->redecls())
-        if (!declaration(D) || !declaration(D->getTemplatedDecl()) ||
-            !signature(D->getTemplatedDecl()))
+      for (const auto *D : Primary->redecls()) {
+        const auto *Templated = dyn_cast<FunctionDecl>(D->getTemplatedDecl());
+        if (!declaration(D) || !Templated || !declaration(Templated) ||
+            !signature(Templated))
           return false;
+      }
     const auto *Pattern = Function->getTemplateInstantiationPattern();
     if (Pattern && (!declaration(Pattern) || !signature(Pattern)))
       return false;
@@ -14547,6 +14549,8 @@ static bool pairPiecewiseSelectionLocation(
       Constructor->isInvalidDecl() || Constructor->isDeleted() ||
       Constructor->isVariadic() || Constructor->getNumParams() > 64)
     return false;
+  const auto ConstructorOrigin =
+      S.sdkFile(SM, Constructor->getLocation());
   if (S.owns(SM, Constructor->getLocation()))
     return true;
   return approvedStandardSDKDeclaration(S, SM, Constructor) &&
@@ -14556,7 +14560,8 @@ static bool pairPiecewiseSelectionLocation(
            MemoryTemplateMetadata::UniquePtr ||
        (Constructor->getParent()->getIdentifier() &&
         Constructor->getParent()->getName() == "basic_string" &&
-        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string")));
+        ConstructorOrigin && ConstructorOrigin->Root == "libcxx" &&
+        ConstructorOrigin->Path == "string"));
 }
 
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
@@ -30310,6 +30315,11 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
                                "-Wc++26-extensions", "-Werror=writable-strings",
                                "-fno-ms-compatibility", "-fno-ms-extensions",
+                               // Disabling extensions does not stop Clang
+                               // from detecting an installed MSVC version.
+                               // Keep the pinned libc++ ABI configuration
+                               // independent of that host installation.
+                               "-fms-compatibility-version=0",
                                "-fno-delayed-template-parsing",
                                "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
                                "-D_NEVERC_CPP_CORE_V2_SDK",

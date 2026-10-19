@@ -84,6 +84,23 @@ jobs:
         neverc/llvm
         cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
+    - name: Validate native SDK and Mach-O recovery boundaries
+      id: cpp_ci_recovery
+      shell: bash
+      run: |
+        "${{ steps.python.outputs.python-path }}" neverc/utils/ci/check-cpp-ci-recovery.py \
+          --repo "$PWD/neverc" --compiler "$PWD/build/bin/neverc" \
+          --output "$RUNNER_TEMP/cpp-ci-recovery"
+
+    - name: Upload native platform recovery evidence
+      if: ${{ !cancelled() && steps.cpp_ci_recovery.outcome != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-ci-recovery-windows-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-ci-recovery
+        if-no-files-found: error
+        retention-days: 14
+
     - name: Verify compiled C++ SDK catalog bytes
       shell: bash
       run: |

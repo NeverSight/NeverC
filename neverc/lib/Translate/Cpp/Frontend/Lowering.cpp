@@ -9314,7 +9314,7 @@ class FunctionLowering {
       auto BoundaryType =
           Counted ? Call->getArg(1)->getType() : PointerQualType;
       if (Counted) {
-        if (const auto *Enumeration = BoundaryType->getAs<EnumType>())
+        if (const auto *Enumeration = BoundaryType->template getAs<EnumType>())
           BoundaryType = Enumeration->getDecl()->getPromotionType();
         else if (A.Context.isPromotableIntegerType(BoundaryType))
           BoundaryType = A.Context.getPromotedIntegerType(BoundaryType);
