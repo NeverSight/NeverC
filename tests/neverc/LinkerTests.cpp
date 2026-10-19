@@ -246,6 +246,13 @@ private:
 
 class LinkerTest : public NeverCTest {
 protected:
+  CmdResult ncc(const std::vector<std::string> &Args) const {
+    // Keep allocator runtime injection out of isolated object/linker fixtures.
+    std::vector<std::string> LinkerArgs = {"-fno-builtin-mimalloc"};
+    LinkerArgs.insert(LinkerArgs.end(), Args.begin(), Args.end());
+    return NeverCTest::ncc(LinkerArgs);
+  }
+
   uint64_t requireELFSymbolAddress(llvm::StringRef Bytes,
                                    llvm::StringRef Name) const {
     llvm::Expected<uint64_t> Address = findELFSymbolAddress(Bytes, Name);

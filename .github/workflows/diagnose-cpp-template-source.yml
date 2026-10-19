@@ -84,7 +84,7 @@ jobs:
         \    result=0\n  else\n    result=$?\n  fi\n  echo \"runtime-aggregate-array O$optimization upstream result:\
         \ $result, expected 10\"\n  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
-      != 'verified-formal' }}
+      != 'verified-formal' && inputs.fixture_group != 'linker-sdk' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -307,6 +307,66 @@ jobs:
           '
         if-no-files-found: error
         retention-days: 14
+  inspect-linker-sdk:
+    permissions:
+      contents: read
+      actions: read
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'linker-sdk' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      NEVERC_PCG_STRICT: '1'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Prepare retained formal replay bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-linker-sdk-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-linker-sdk-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-linker-sdk-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest);
+        print(sys.version)'' | tee "$RUNNER_TEMP/cpp-linker-sdk-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-linker-sdk-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-linker-sdk-bootstrap/dependencies.log"
+
+        '
+    - name: Download exact existing compiler without rebuilding
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: "set -o pipefail\npython3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 \\\n  --revision\
+        \ 1617f18ead74a8fa719e3d1bd02f9c84a10de551 \\\n  --output \"$RUNNER_TEMP/cpp-linker-sdk-prior\" 2>&1 | tee\
+        \ \"$RUNNER_TEMP/cpp-linker-sdk-bootstrap/download.log\"\n"
+    - name: Execute original linker suites and real SDK generation consistency
+      run: "python3 utils/ci/check-cpp-linker-sdk-replay.py --repo \"$GITHUB_WORKSPACE\" \\\n  --clangxx /usr/bin/clang++-22\
+        \ \\\n  --baseline \"$RUNNER_TEMP/cpp-linker-sdk-prior/provenance.json\" \\\n  --output \"$RUNNER_TEMP/cpp-linker-sdk\"\
+        \n"
+    - name: Upload real XML programs sources and raw replay logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-linker-sdk-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-linker-sdk
+
+          ${{ runner.temp }}/cpp-linker-sdk-bootstrap
+
+          !${{ runner.temp }}/cpp-linker-sdk/llvm-support/**
+
+          '
+        if-no-files-found: error
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -319,6 +379,7 @@ jobs:
         - template-source
         - ci-recovery
         - verified-formal
+        - linker-sdk
   push:
     branches:
     - dev
