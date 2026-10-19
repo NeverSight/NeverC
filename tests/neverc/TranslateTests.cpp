@@ -46928,6 +46928,151 @@ int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-copy-assignment", R"cpp(#include <string>
+#include <utility>
+int main(){using P=std::pair<std::string,int>;P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3),b(std::string("xyz"),9);P* returned=&(b=a);a.first[0]='Z';return returned!=&b||b.first[0]!='a'||b.first.size()!=62||b.second!=3||a.first[0]!='Z';}
+)cpp"},
+      {"pair-owner-move-assignment", R"cpp(#include <memory>
+#include <utility>
+int deleted;struct Item{int value;~Item(){++deleted;}};
+int main(){{using U=std::unique_ptr<Item>;using P=std::pair<U,int>;P a(U(new Item{11}),3),b(U(new Item{22}),7);Item* raw=a.first.get();P* returned=&(b=std::move(a));if(returned!=&b||a.first.get()!=nullptr||b.first.get()!=raw||b.first->value!=11||b.second!=3||deleted!=1)return 1;}return deleted!=2;}
+)cpp"},
+      {"pair-string-member-free-swap", R"cpp(#include <string>
+#include <utility>
+int main(){using P=std::pair<std::string,int>;P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3),b(std::string("secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),9);a.swap(b);if(a.first.size()!=68||b.first.size()!=62||a.second!=9||b.second!=3)return 1;std::swap(a,b);return a.first[0]!='a'||b.first[0]!='s'||a.second!=3||b.second!=9;}
+)cpp"},
+      {"pair-owner-member-free-swap", R"cpp(#include <memory>
+#include <utility>
+int main(){using U=std::unique_ptr<int>;using P=std::pair<U,int>;P a(U(new int(17)),3),b(U(new int(29)),9);int* x=a.first.get();int* y=b.first.get();a.swap(b);if(a.first.get()!=y||b.first.get()!=x||a.second!=9||b.second!=3)return 1;std::swap(a,b);return a.first.get()!=x||b.first.get()!=y||*a.first!=17||*b.first!=29;}
+)cpp"},
+      {"pair-view-assignment-swap", R"cpp(#include <string_view>
+#include <utility>
+int main(){char x[3]={'a','b',0},y[3]={'c','d',0};using P=std::pair<int,std::string_view>;P a(3,std::string_view(x,2)),b(9,std::string_view(y,2));P* returned=&(b=a);x[0]='Z';if(returned!=&b||b.second.data()!=x||b.second[0]!='Z'||b.first!=3)return 1;b.second=std::string_view(y,2);a.swap(b);if(a.second.data()!=y||b.second.data()!=x)return 2;std::swap(a,b);return a.second.data()!=x||b.second.data()!=y;}
+)cpp"},
+      {"pair-string-move-self-assignment", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+P& copy(P& p,const P& q){return p=q;}
+P& move(P& p,P& q){return p=std::move(q);}
+int main(){P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3),b(std::string("xyz"),9);if(&copy(a,a)!=&a||a.first.size()!=62||a.second!=3)return 1;if(&move(b,a)!=&b||b.first.size()!=62||b.first[0]!='a'||b.second!=3)return 2;return &copy(b,b)!=&b||b.first.size()!=62;}
+)cpp"},
+      {"pair-double-string-assignment-swap", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,std::string>;
+int main(){P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),std::string("secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),b(std::string("x"),std::string("y"));b=a;a.first[0]='Z';a.second[0]='Q';if(b.first[0]!='a'||b.second[0]!='s'||b.first.size()!=62||b.second.size()!=68)return 1;a.swap(b);if(a.first[0]!='a'||a.second[0]!='s'||b.first[0]!='Z'||b.second[0]!='Q')return 2;std::swap(a,b);return a.first[0]!='Z'||a.second[0]!='Q'||b.first[0]!='a'||b.second[0]!='s';}
+)cpp"},
+      {"pair-array-owner-assignment-swap", R"cpp(#include <memory>
+#include <utility>
+int destroyed;
+struct Item{int value=7;~Item(){++destroyed;}};
+using U=std::unique_ptr<Item[]>;using P=std::pair<U,int>;
+int main(){{P a(U(new Item[3]),3),b(U(new Item[2]),9);Item* raw=a.first.get();P* returned=&(b=std::move(a));if(returned!=&b||a.first.get()!=nullptr||b.first.get()!=raw||b.first[2].value!=7||b.second!=3||destroyed!=2)return 1;P c(U(new Item[1]),11);Item* other=c.first.get();b.swap(c);if(b.first.get()!=other||c.first.get()!=raw||b.second!=11||c.second!=3||destroyed!=2)return 2;std::swap(b,c);if(b.first.get()!=raw||c.first.get()!=other||destroyed!=2)return 3;}return destroyed!=6;}
+)cpp"},
+      {"pair-custom-owner-assignment-swap", R"cpp(#include <memory>
+#include <utility>
+int destroyed,calls;
+struct Item{int value;~Item(){++destroyed;}};
+struct D{void operator()(Item* p)const noexcept{++calls;delete p;}};
+using U=std::unique_ptr<Item,D>;using P=std::pair<int,U>;
+int main(){{P a(3,U(new Item{17})),b(9,U(new Item{29}));Item* raw=a.second.get();P* returned=&(b=std::move(a));if(returned!=&b||a.second.get()!=nullptr||b.second.get()!=raw||b.second->value!=17||b.first!=3||destroyed!=1||calls!=1)return 1;P c(11,U(new Item{31}));Item* other=c.second.get();b.swap(c);if(b.second.get()!=other||c.second.get()!=raw||b.first!=11||c.first!=3||calls!=1)return 2;std::swap(b,c);if(b.second.get()!=raw||c.second.get()!=other||calls!=1)return 3;}return destroyed!=3||calls!=3;}
+)cpp"},
+      {"pair-reference-string-assignment", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string&,int&>;
+int main(){std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",t="xyz";int x=3,y=9;P a(s,x),b(t,y);P* result=&(b=a);s[0]='Z';return result!=&b||&b.first!=&t||&b.second!=&y||t[0]!='a'||t.size()!=62||y!=3||s[0]!='Z';}
+)cpp"},
+      {"pair-reference-string-alias-swap", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string&,std::string&>;
+int main(){std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",t="secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";P a(s,s),b(t,t);a.swap(b);if(s.size()!=62||t.size()!=68||s[0]!='a'||t[0]!='s')return 1;std::swap(a,b);return s.size()!=62||t.size()!=68||&a.first!=&s||&b.second!=&t;}
+)cpp"},
+      {"pair-owner-self-move-assignment", R"cpp(#include <memory>
+#include <utility>
+int destroyed;struct Item{int value;~Item(){++destroyed;}};using U=std::unique_ptr<Item>;using P=std::pair<U,int>;P& move(P& a,P& b){return a=std::move(b);}
+int main(){{P a(U(new Item{17}),3);Item* raw=a.first.get();if(&move(a,a)!=&a||a.first.get()!=raw||a.first->value!=17||a.second!=3||destroyed)return 1;}return destroyed!=1;}
+)cpp"},
+      {"pair-string-converting-assignment", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;using Q=std::pair<std::string,long>;
+int main(){P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3);Q b(std::string("xyz"),9);Q* result=&(b=a);a.first[0]='Z';return result!=&b||b.first.size()!=62||b.first[0]!='a'||b.second!=3||a.first[0]!='Z';}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-operation-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedAssignmentsAndSwapsRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-owner-assignment-selected-source", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>unique_ptr<int>& unique_ptr<int>::operator=(unique_ptr<int>&&)noexcept{return *this;}}}
+using P=std::pair<std::unique_ptr<int>,int>;
+void use(P& a,P& b){a=static_cast<P&&>(b);}int main(){return 0;}
+)cpp"},
+      {"pair-string-swap-selected-source", R"cpp(#include <string>
+#include <utility>
+namespace std{inline namespace __1{template<>void basic_string<char>::swap(basic_string<char>&)noexcept{}}}
+using P=std::pair<std::string,int>;
+void use(P& a,P& b){a.swap(b);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-swap-selected-source", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>void unique_ptr<int>::swap(unique_ptr<int>&)noexcept{}}}
+using P=std::pair<std::unique_ptr<int>,int>;
+void use(P& a,P& b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-assignment-forward-identity", R"cpp(#include <type_traits>
+#define forward forward
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+void use(P& a,P& b){a=static_cast<P&&>(b);}int main(){return 0;}
+)cpp"},
+      {"pair-assignment-conditional-identity", R"cpp(#include <type_traits>
+#define __conditional_t __conditional_t
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+void use(P& a,const P& b){a=b;}int main(){return 0;}
+)cpp"},
+      {"pair-string-move-assignment-selected-source", R"cpp(#include <string>
+#include <utility>
+namespace std{inline namespace __1{template<>basic_string<char>& basic_string<char>::operator=(basic_string<char>&&)noexcept{return *this;}}}
+using P=std::pair<std::string,int>;
+void use(P& a,P& b){a=static_cast<P&&>(b);}int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations) {
   const struct { const char *Name; const char *Source; } Cases[] = {
       {"pair-factory-string-copy-move", R"cpp(#include <string>

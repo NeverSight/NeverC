@@ -1919,6 +1919,9 @@ struct OperationSourceDependencies {
   std::set<const FunctionDecl *> Definitions;
   std::set<const CXXConstructorDecl *> VectorConstructors;
   std::set<const CXXConstructorDecl *> StringConstructors;
+  std::set<const CXXMethodDecl *> StringAssignments;
+  std::set<const CXXMethodDecl *> PairOwnerAssignments;
+  std::set<const CallExpr *> PairSDKSwaps;
   std::set<const CXXConstructorDecl *> UniquePtrConstructors;
   std::set<const CallExpr *> UniquePtrFactories;
   std::set<const CallExpr *> UniquePtrDeletions;
@@ -7710,6 +7713,40 @@ static bool utilityUniquePtrSwapSource(Adapter &A, const CallExpr *Call) {
          utilityUniquePtrFunctionSource(A, Method);
 }
 
+// The enclosing exact pair proof has already selected each child operation.
+static bool utilityPairSelectedSDKSwapSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto Type = Call && Call->getNumArgs() == 2 ? Call->getArg(0)->getType() : QualType();
+  const auto *Record = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+  if (!Function || !Record) return false;
+  if (approvedUtilityStringViewRecord(A.S, A.Sources, Record, A.Context)) {
+    if (!utilitySDKFunctionSource(A, Function, "__utility/swap.h")) return false;
+    std::function<bool(const Stmt *)> Pinned = [&](const Stmt *Statement) {
+      if (!Statement) return true;
+      const CXXMethodDecl *Method = nullptr;
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(Statement))
+        Method = Construction->getConstructor();
+      if (const auto *Assignment = dyn_cast<CXXOperatorCallExpr>(Statement))
+        Method = dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+      if (Method && (!Method->isTrivial() || !Method->isDefaulted() ||
+          Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+          !utilitySDKFunctionSource(A, Method, "string_view", false))) return false;
+      for (const auto *Child : Statement->children()) if (!Pinned(Child)) return false;
+      return true;
+    };
+    return Pinned(Function->getBody());
+  }
+  const bool String = approvedUtilityStringRecord(A.S, A.Sources, Record, A.Context).has_value();
+  const auto Owner = String ? std::nullopt : utilityUniquePtrSource(A, Record);
+  if (!String && !Owner) return false;
+  const llvm::StringRef Path = String ? "string" : "__memory/unique_ptr.h";
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Member = Body && Body->size() == 1 ? dyn_cast<CXXMemberCallExpr>(*Body->body_begin()) : nullptr;
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  return Method && utilitySDKFunctionSource(A, Function, Path) &&
+      utilitySDKFunctionSource(A, Method, Path);
+}
+
 static bool utilityUniquePtrNullComparisonSource(Adapter &A,
                                                  const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -8343,8 +8380,21 @@ class UniqueExchangeSources {
         !reference(Delete->getArg(1), Old) ||
         Method->getParent()->getCanonicalDecl() !=
             Owner.Deleter.Record->getCanonicalDecl() ||
-        !utilityUniquePtrFunctionSource(A, Method))
+        (Owner.CustomDeleter
+             ? (!AllowCustomDeleter || Method->getCanonicalDecl() !=
+                    Owner.CustomDeleter->getCanonicalDecl())
+             : !utilityUniquePtrFunctionSource(A, Method)))
       return false;
+    if (Owner.CustomDeleter) {
+      // This exact source deleter was admitted with the owner. Its ordinary
+      // body and the selected cleanup function remain independent roots.
+      for (const auto *Declaration : Method->redecls()) {
+        A.chargeExpansion(1, Declaration->getLocation());
+        if (!A.S.owns(A.Sources, Declaration->getLocation())) return false;
+      }
+      return Method->getDefinition() &&
+             A.S.owns(A.Sources, Method->getDefinition()->getLocation());
+    }
     // This exact body-selected deletion must be the one already proved for
     // the owner. No separate default-deleter call permission is introduced.
     unsigned Found = 0;
@@ -10847,6 +10897,15 @@ public:
       for (const auto *Constructor : Dependencies->StringConstructors)
         if (!utilityStringElementConstructionSource(A, Constructor))
           return false;
+      for (const auto *Method : Dependencies->StringAssignments)
+        if (!utilitySDKFunctionSource(A, Method, "string", !Method->isCopyAssignmentOperator()))
+          return false;
+      for (const auto *Method : Dependencies->PairOwnerAssignments) {
+        const auto Owner = utilityUniquePtrSource(A, Method->getParent());
+        if (!Owner || !UniqueExchangeSources(A, *Owner, true).assignment(Method, false)) return false;
+      }
+      for (const auto *Call : Dependencies->PairSDKSwaps)
+        if (!utilityPairSelectedSDKSwapSource(A, Call)) return false;
       for (const auto *Constructor : Dependencies->UniquePtrConstructors)
         if (!uniquePtrConstruction(Constructor))
           return false;
@@ -16804,15 +16863,60 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return true;
   }
 
+  bool checkUtilityPairAssignments(const std::vector<UtilityPairElementAssignment> &Selected,
+                                   SourceLocation L) {
+    for (const auto &Element : Selected) {
+      if (!Element.Call || Element.Kind == UtilityPairElementAssignmentKind::SourceOwned) continue;
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Element.Call->getDirectCallee());
+      bool Valid = false;
+      switch (Element.Kind) {
+      case UtilityPairElementAssignmentKind::StringCopy:
+      case UtilityPairElementAssignmentKind::StringMove:
+        Valid = Method && utilitySDKFunctionSource(A, Method, "string", !Method->isCopyAssignmentOperator());
+        if (Valid) for (auto *Dependencies : ActiveOperationSources)
+          Dependencies->StringAssignments.insert(Method);
+        break;
+      case UtilityPairElementAssignmentKind::ViewCopy:
+        Valid = Method && utilitySDKFunctionSource(A, Method, "string_view", false);
+        break;
+      case UtilityPairElementAssignmentKind::OwnerMove: {
+        const auto Owner = Method ? utilityUniquePtrSource(A, Method->getParent()) : std::nullopt;
+        Valid = Owner && UniqueExchangeSources(A, *Owner, true).assignment(Method, false);
+        if (Valid) {
+          A.S.Module["memory_lifetimes"] = true;
+          if (!Owner->CustomDeleter) A.uniquePtrDeleteFunction(*Owner, L);
+          for (auto *Dependencies : ActiveOperationSources) Dependencies->PairOwnerAssignments.insert(Method);
+        }
+        break;
+      }
+      case UtilityPairElementAssignmentKind::SourceOwned: break;
+      }
+      if (!Valid) {
+        A.reject(L, "selected pair assignment source",
+                 "The exact selected child assignment and cleanup source is required.", "TR0203");
+        return false;
+      }
+    }
+    return true;
+  }
+
   bool checkUtilitySwapOperations(const CallExpr *Call,
                                  UtilityOperation Operation) {
+    std::vector<const CallExpr *> PairSDKSwaps;
     const auto Operations = approvedUtilitySwapOperations(
-        A.S, A.Sources, Call, Operation, A.Context);
+        A.S, A.Sources, Call, Operation, A.Context, &PairSDKSwaps);
     const auto L = Call->getExprLoc();
     if (!Operations) {
       A.reject(L, "utility swap construction",
                "The exact selected swap construction graph is required.");
       return true;
+    }
+    for (const auto *Selected : PairSDKSwaps) {
+      if (!utilityPairSelectedSDKSwapSource(A, Selected)) {
+        A.reject(L, "selected pair swap source", "The exact selected SDK child swap source is required.", "TR0203");
+        return false;
+      }
+      for (auto *Dependencies : ActiveOperationSources) Dependencies->PairSDKSwaps.insert(Selected);
     }
     std::set<const CXXConstructExpr *> Seen;
     for (const auto &Selected : *Operations) {
@@ -26677,10 +26781,13 @@ public:
       const bool FunctionalReferenceAssignment =
           A.S.coreV2() && approvedFunctionalReferenceAssignment(
                               A.S, A.Sources, Operator, A.Context);
+      std::vector<UtilityPairElementAssignment> PairAssignments;
       const bool UtilityPairAssignment =
           A.S.coreV2() &&
-          approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context)
+          approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context, &PairAssignments)
               .has_value();
+      if (UtilityPairAssignment && !checkUtilityPairAssignments(PairAssignments, L))
+        return false;
       const bool UtilityTupleAssignment =
           A.S.coreV2() &&
           approvedUtilityTupleAssignment(A.S, A.Sources, Operator, A.Context)

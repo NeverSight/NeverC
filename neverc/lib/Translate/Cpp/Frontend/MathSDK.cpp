@@ -6056,7 +6056,50 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
   return std::nullopt;
 }
 
-static std::optional<std::vector<const CXXOperatorCallExpr *>>
+// This helper is consumed only after the original pair assignment body has
+// bound this exact child call to its selected source and destination fields.
+static std::optional<UtilityPairElementAssignmentKind>
+utilityPairSelectedSDKAssignment(const State &S, const SourceManager &SM,
+                                 const CXXOperatorCallExpr *Call, QualType Type,
+                                 const ASTContext &Context) {
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
+  if (!Method || !Reference || !Prototype || Method->isStatic() || Method->isConst() ||
+      Method->isVolatile() || Method->isVariadic() || Method->isDeleted() || Method->isInvalidDecl() ||
+      Method->isVirtual() || Method->getRefQualifier() != RQ_None || Method->getPrimaryTemplate() ||
+      Method->getNumParams() != 1 || Method->getOverloadedOperator() != OO_Equal ||
+      Call->getNumArgs() != 2 || !Call->isLValue() ||
+      !Context.hasSameUnqualifiedType(Context.getRecordType(Method->getParent()), Type) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, Call->getBeginLoc(), "libcxx", "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, Call->getEndLoc(), "libcxx", "__utility/pair.h")) return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (approvedUtilityStringRecord(S, SM, Method->getParent(), Context)) {
+    if (!cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string")) return std::nullopt;
+    if (Method->isCopyAssignmentOperator() &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Type.withConst())))
+      return UtilityPairElementAssignmentKind::StringCopy;
+    if (Method->isMoveAssignmentOperator() && Method->hasBody() &&
+        Context.hasSameType(Parameter, Context.getRValueReferenceType(Type)))
+      return UtilityPairElementAssignmentKind::StringMove;
+  } else if (approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context)) {
+    if (Method->isCopyAssignmentOperator() && Method->isTrivial() && Method->isDefaulted() &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Type.withConst())))
+      return UtilityPairElementAssignmentKind::ViewCopy;
+  } else if (utilityPairSelectedOwnerValue(S, SM, Context, Type)) {
+    if (Method->isMoveAssignmentOperator() && Method->hasBody() && Prototype->isNothrow() &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "__memory/unique_ptr.h") &&
+        Context.hasSameType(Parameter, Context.getRValueReferenceType(Type)))
+      return UtilityPairElementAssignmentKind::OwnerMove;
+  }
+  return std::nullopt;
+}
+
+static std::optional<std::vector<UtilityPairElementAssignment>>
 approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
                                        const CXXOperatorCallExpr *Assignment,
                                        const UtilityPairRecord &Pair,
@@ -6098,7 +6141,7 @@ approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
 
   const FieldDecl *DestinationFields[] = {Pair.First, Pair.Second};
   const FieldDecl *SourceFields[] = {SourcePair.First, SourcePair.Second};
-  std::vector<const CXXOperatorCallExpr *> SelectedAssignments(2, nullptr);
+  std::vector<UtilityPairElementAssignment> SelectedAssignments(2);
   for (unsigned I = 0; I != 2; ++I) {
     const auto *Expression =
         functionalInvokeStrippedExpression(dyn_cast<Expr>(Fields[I]));
@@ -6134,6 +6177,7 @@ approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
       const auto *Reference =
           dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward));
       if (!Function || !Primary || !Reference || Forward->getNumArgs() != 1 ||
+          !utilityPairForwardingUseSource(S, SM, Forward) ||
           !Function->getIdentifier() || Function->getName() != "forward" ||
           !approvedStandardSDKDeclaration(S, SM, Function) ||
           !approvedStandardSDKDeclaration(S, SM, Primary) ||
@@ -6160,7 +6204,9 @@ approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
       DestinationType = DestinationType->getPointeeType();
     if (utilityPairAssignableValue(S, SM, Context, DestinationType))
       continue;
-    if (!utilityPairSourceOwnedValue(S, SM, Context, DestinationType) || !Call)
+    const bool SourceOwned = utilityPairSourceOwnedValue(S, SM, Context, DestinationType);
+    if ((!SourceOwned && !utilityPairSelectedStringValue(S, SM, Context, DestinationType) &&
+         !utilityPairSelectedOwnerValue(S, SM, Context, DestinationType)) || !Call)
       return std::nullopt;
     const auto *Selected =
         dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
@@ -6175,12 +6221,15 @@ approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
                                  : SourceType;
     const bool SourceLValue = !Parameter->isRValueReferenceType() ||
                               SourceType->isLValueReferenceType();
+    const auto SDKKind = SourceOwned ? std::nullopt
+        : utilityPairSelectedSDKAssignment(S, SM, Call, DestinationType, Context);
     if (!Selected || !SelectedParameter || SelectedType.isNull() ||
-        !SelectedType->isReferenceType() || !supportedAssignment(Selected) ||
-        (!Selected->isTrivial() && !Selected->hasBody()) ||
+        !SelectedType->isReferenceType() ||
+        (SourceOwned ? !supportedAssignment(Selected) ||
+             (!Selected->isTrivial() && !Selected->hasBody()) : !SDKKind) ||
         Selected->getParent()->getCanonicalDecl() !=
             DestinationType->getAsCXXRecordDecl()->getCanonicalDecl() ||
-        !S.owns(SM, Selected->getLocation()) ||
+        (SourceOwned && !S.owns(SM, Selected->getLocation())) ||
         !Context.hasSameUnqualifiedType(Left->getType(), DestinationType) ||
         !Context.hasSameUnqualifiedType(Right->getType(), DestinationType) ||
         !Context.hasSameUnqualifiedType(SourceValue, DestinationType) ||
@@ -6190,15 +6239,52 @@ approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
                                                  Context) ||
         Right->isLValue() != SourceLValue || Right->isXValue() == SourceLValue)
       return std::nullopt;
-    SelectedAssignments[I] = Call;
+    SelectedAssignments[I] = {Call, SourceOwned ? UtilityPairElementAssignmentKind::SourceOwned : *SDKKind};
   }
   return SelectedAssignments;
 }
 
+// Assignment signatures retain their original SDK spelling, including the
+// selected conditional alias and exception traits. Canonical pair types alone
+// cannot expose source identity macros at those uses.
+class UtilityPairAssignmentSpelling
+    : public RecursiveASTVisitor<UtilityPairAssignmentSpelling> {
+  const State &S;
+  const SourceManager &SM;
+  unsigned Nodes = 0;
+  bool location(SourceLocation L) const {
+    return L.isInvalid() || (!L.isMacroID() &&
+        cstddefOrigin(S, SM, L, "libcxx", "__utility/pair.h"));
+  }
+public:
+  UtilityPairAssignmentSpelling(const State &S, const SourceManager &SM)
+      : S(S), SM(SM) {}
+  bool VisitTypeLoc(TypeLoc L) {
+    return ++Nodes <= 4096 && location(L.getBeginLoc()) && location(L.getEndLoc());
+  }
+  bool VisitTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc L) {
+    return location(L.getTemplateNameLoc());
+  }
+  bool VisitStmt(Stmt *Statement) {
+    return ++Nodes <= 4096 && location(Statement->getBeginLoc()) &&
+           location(Statement->getEndLoc());
+  }
+  bool check(const CXXMethodDecl *Method) {
+    if (!Method) return false;
+    for (const auto *Parameter : Method->parameters()) {
+      const auto *Info = Parameter->getTypeSourceInfo();
+      if (!Info || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+    }
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    return Prototype && (!Prototype->getNoexceptExpr() ||
+        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())));
+  }
+};
+
 std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const State &S, const SourceManager &SM,
     const CXXOperatorCallExpr *Assignment, const ASTContext &Context,
-    std::vector<const CXXOperatorCallExpr *> *SelectedAssignments) {
+    std::vector<UtilityPairElementAssignment> *SelectedAssignments) {
   if (!Assignment || Assignment->isTypeDependent() ||
       Assignment->isValueDependent() ||
       Assignment->isInstantiationDependent() ||
@@ -6232,7 +6318,9 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
                !utilityPairAssignableValue(S, SM, Context, SecondType));
   auto Assignable = [&](QualType Type) {
     return utilityPairAssignableValue(S, SM, Context, Type) ||
-           utilityPairSourceOwnedValue(S, SM, Context, Type);
+           utilityPairSourceOwnedValue(S, SM, Context, Type) ||
+           utilityPairSelectedStringValue(S, SM, Context, Type) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, Type);
   };
   if (!Method || !Pair || Method->isStatic() || Method->isVariadic() ||
       Method->getNumParams() != 1 ||
@@ -6243,7 +6331,8 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
       (!ReferencePair && !MixedReferencePair && !OwnedElements &&
        (!utilityPairValue(S, SM, Context, FirstType) ||
         !utilityPairValue(S, SM, Context, SecondType))) ||
-      !Assignable(FirstType) || !Assignable(SecondType))
+      !Assignable(FirstType) || !Assignable(SecondType) ||
+      (OwnedElements && !UtilityPairAssignmentSpelling(S, SM).check(Method)))
     return std::nullopt;
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();
@@ -21855,6 +21944,7 @@ struct UtilitySwapProofContext {
   bool AllowOwnedLeaf = false;
   std::optional<UtilityOwnedSwapOperations> OwnedLeaf;
   std::vector<UtilityOwnedSwapOperations> Operations;
+  std::vector<const CallExpr *> PairSDKSwaps;
 };
 
 static bool approvedUtilityOptionalSwapBody(
@@ -21981,6 +22071,50 @@ approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
                                                     Depth, Proof));
 }
 
+// The pair body supplies the actual field operands. SDK leaves retain their
+// own public swap wrapper and selected member instead of becoming bitwise
+// pair values or source-owned swap functions.
+static bool utilityPairSelectedSDKSwap(const State &S, const SourceManager &SM,
+                                       const CallExpr *Call, QualType Type,
+                                       const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || Call->getNumArgs() != 2 || Type.hasQualifiers() ||
+      Function->getNumParams() != 2 || !Function->getReturnType()->isVoidType() ||
+      !cstddefOrigin(S, SM, Call->getBeginLoc(), "libcxx", "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, Call->getEndLoc(), "libcxx", "__utility/pair.h")) return false;
+  const auto Reference = Context.getLValueReferenceType(Type);
+  for (const auto *Parameter : Function->parameters())
+    if (!Context.hasSameType(Parameter->getType(), Reference)) return false;
+  if (approvedUtilityStringViewRecord(S, SM, Type->getAsCXXRecordDecl(), Context)) {
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    return utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h") &&
+        Function->hasBody() && Arguments && Arguments->size() == 1 &&
+        Arguments->get(0).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
+        utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
+  }
+  const bool String = approvedUtilityStringRecord(S, SM, Type->getAsCXXRecordDecl(), Context).has_value();
+  const bool Owner = utilityPairSelectedOwnerValue(S, SM, Context, Type);
+  const llvm::StringRef Path = String ? "string" : "__memory/unique_ptr.h";
+  if ((!String && !Owner) || !utilitySwapSDKFunction(S, SM, Function, "swap", Path)) return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Member = Body && Body->size() == 1 ? dyn_cast<CXXMemberCallExpr>(*Body->body_begin()) : nullptr;
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  return Member && Method && Prototype && Member->getNumArgs() == 1 &&
+      Method->getIdentifier() && Method->getName() == "swap" &&
+      !Method->isStatic() && !Method->isConst() && !Method->isVolatile() &&
+      !Method->isVariadic() && !Method->isDeleted() && !Method->isInvalidDecl() &&
+      !Method->getPrimaryTemplate() && Method->getNumParams() == 1 && Method->hasBody() &&
+      Method->getReturnType()->isVoidType() && Member->getType()->isVoidType() &&
+      Prototype->isNothrow() && Context.hasSameType(Method->getParamDecl(0)->getType(), Reference) &&
+      Context.hasSameType(Context.getRecordType(Method->getParent()), Type) &&
+      approvedStandardSDKDeclaration(S, SM, Method) &&
+      cstddefOrigin(S, SM, Method->getLocation(), "libcxx", Path) &&
+      functionalInvokeParameterReference(Member->getImplicitObjectArgument(), Function->getParamDecl(0)) &&
+      functionalInvokeParameterReference(Member->getArg(0), Function->getParamDecl(1));
+}
+
 static bool
 approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
                             const CXXMethodDecl *Method,
@@ -22018,7 +22152,9 @@ approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
       Element = Element->getPointeeType();
     if (!Call || Call->getNumArgs() != 2)
       return false;
-    if (utilityPairSourceOwnedValue(S, SM, Context, Element)) {
+    if (utilityPairSelectedSDKSwap(S, SM, Call, Element, Context)) {
+      Proof->PairSDKSwaps.push_back(Call);
+    } else if (utilityPairSourceOwnedValue(S, SM, Context, Element)) {
       const auto Owned = approvedUtilityOwnedSwap(
           S, SM, Call->getDirectCallee(), Element, Context);
       if (!Owned)
@@ -25902,7 +26038,9 @@ approvedUtilityOptionalSwapBody(const State &S, const SourceManager &SM,
 std::optional<std::vector<UtilityOwnedSwapOperations>>
 approvedUtilitySwapOperations(const State &S, const SourceManager &SM,
                               const CallExpr *Call, UtilityOperation Operation,
-                              const ASTContext &Context) {
+                              const ASTContext &Context,
+                              std::vector<const CallExpr *> *SelectedPairSDKSwaps) {
+  if (SelectedPairSDKSwaps) SelectedPairSDKSwaps->clear();
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function)
     return std::nullopt;
@@ -25960,6 +26098,7 @@ approvedUtilitySwapOperations(const State &S, const SourceManager &SM,
   }
   if (!Valid)
     return std::nullopt;
+  if (SelectedPairSDKSwaps) *SelectedPairSDKSwaps = std::move(Proof.PairSDKSwaps);
   return std::move(Proof.Operations);
 }
 
@@ -83650,13 +83789,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         S.owns(SM, Reference->getExprLoc()) &&
         (ReferencePair || MixedReferencePair ||
          ((utilityPairValue(S, SM, Context, FirstType) ||
-           utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+           utilityPairSourceOwnedValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedStringValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, FirstType)) &&
           (utilityPairValue(S, SM, Context, SecondType) ||
-           utilityPairSourceOwnedValue(S, SM, Context, SecondType)))) &&
+           utilityPairSourceOwnedValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedStringValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, SecondType)))) &&
         (utilityPairAssignableValue(S, SM, Context, FirstType) ||
-         utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+         utilityPairSourceOwnedValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedStringValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, FirstType)) &&
         (utilityPairAssignableValue(S, SM, Context, SecondType) ||
-         utilityPairSourceOwnedValue(S, SM, Context, SecondType)) &&
+         utilityPairSourceOwnedValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedStringValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, SecondType)) &&
         Context.hasSameUnqualifiedType(
             MemberCall->getImplicitObjectArgument()->getType(),
             Context.getRecordType(Pair->Record)) &&
@@ -92440,13 +92587,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
         (ReferencePair || MixedReferencePair ||
          ((utilityPairValue(S, SM, Context, FirstType) ||
-           utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+           utilityPairSourceOwnedValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedStringValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, FirstType)) &&
           (utilityPairValue(S, SM, Context, SecondType) ||
-           utilityPairSourceOwnedValue(S, SM, Context, SecondType)))) &&
+           utilityPairSourceOwnedValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedStringValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, SecondType)))) &&
         (utilityPairAssignableValue(S, SM, Context, FirstType) ||
-         utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+         utilityPairSourceOwnedValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedStringValue(S, SM, Context, FirstType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, FirstType)) &&
         (utilityPairAssignableValue(S, SM, Context, SecondType) ||
-         utilityPairSourceOwnedValue(S, SM, Context, SecondType)) &&
+         utilityPairSourceOwnedValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedStringValue(S, SM, Context, SecondType) ||
+           utilityPairSelectedOwnerValue(S, SM, Context, SecondType)) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       if (approvedUtilityPairElementSwap(

@@ -161,6 +161,29 @@ jobs:
           name: macos-arm64-neverc-runtime
           path: macos-arm64-neverc-runtime.zip
 
+      - name: Validate selected C++ pair operations and source boundaries
+        id: cpp_pair_gate
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/cpp-pair-selected"
+          brew install llvm@20
+          cmake --build build --config ${{ env.BUILD_TYPE }} \
+            --target neverc-translate-tests --parallel 2 \
+            2>&1 | tee "$RUNNER_TEMP/cpp-pair-selected/formal-build.log"
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/ci/check-cpp-pair-selected-operations.py \
+            --repo neverc --build build \
+            --clangxx "$(brew --prefix llvm@20)/bin/clang++" \
+            --output "$RUNNER_TEMP/cpp-pair-selected"
+
+      - name: Upload selected pair verification evidence
+        if: ${{ always() && steps.cpp_pair_gate.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-pair-selected-${{ github.sha }}
+          path: ${{ runner.temp }}/cpp-pair-selected
+          if-no-files-found: warn
+
       - name: Verify installed builtin C++ translation without developer files
         run: |
           smoke_root="$(mktemp -d "$RUNNER_TEMP/neverc-cpp-install.XXXXXX")"

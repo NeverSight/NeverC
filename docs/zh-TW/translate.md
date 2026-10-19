@@ -959,3 +959,5 @@ merge 接受同一預設 int/int unordered_map 的左值或右值來源容器。
 `cpp-core-v2`: std::make_pair 透過已驗證的 SDK 工廠及其選取的 pair 建構函式，建立允許範圍內的 string、string_view 與 unique_ptr 元素。每個呼叫都保留字串的獨立複製、移動來源清空、檢視及 ref/cref 的借用綁定、引數副作用與結果清理。預設引數、約束、明確性、noexcept 及選取的包裝器轉換都必須驗證確切原始碼；其他操作繼續遵守各自要求。
 
 `cpp-core-v2`: std::pair 的選定預設建構透過確切的子建構函式初始化已准入的非 const char 字串、字串檢視與唯一擁有者欄位。原始 SDK 約束、隱式預設建構路徑及例外規格原始碼均須驗證；純量零值、空字串、空檢視與擁有者以及遞迴清理保留原有語意。空自訂刪除器沿用既有的平凡建構範圍。
+
+`cpp-core-v2`：選定的 std::pair 賦值及成員/非成員 swap 使用原始選中的 string、string_view 和 unique_ptr 操作。賦值保留目標參考、獨立字串副本、移後來源 owner 清空及舊目標釋放；交換保留借用綁定、欄位順序、owner 位址與清理。約束、例外運算式、轉發及各子操作均保留其精確 SDK 或原始碼要求。

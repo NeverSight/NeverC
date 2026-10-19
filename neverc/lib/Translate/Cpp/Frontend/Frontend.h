@@ -1596,7 +1596,8 @@ std::optional<std::vector<UtilityOwnedSwapOperations>>
 approvedUtilitySwapOperations(const State &S, const clang::SourceManager &SM,
                               const clang::CallExpr *Call,
                               UtilityOperation Operation,
-                              const clang::ASTContext &Context);
+                              const clang::ASTContext &Context,
+                              std::vector<const clang::CallExpr *> *SelectedPairSDKSwaps = nullptr);
 const clang::CXXMethodDecl *
 approvedUtilityOwnedFillN(const State &S, const clang::SourceManager &SM,
                           const clang::FunctionDecl *Function,
@@ -1648,11 +1649,16 @@ approvedUtilityMakePairSelectedCopies(const State &S,
                                       const clang::CallExpr *Call,
                                       const UtilityPairRecord &Pair,
                                       const clang::ASTContext &Context);
+enum class UtilityPairElementAssignmentKind { SourceOwned, StringCopy, StringMove, ViewCopy, OwnerMove };
+struct UtilityPairElementAssignment {
+  const clang::CXXOperatorCallExpr *Call = nullptr;
+  UtilityPairElementAssignmentKind Kind = UtilityPairElementAssignmentKind::SourceOwned;
+};
 std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXOperatorCallExpr *Assignment,
     const clang::ASTContext &Context,
-    std::vector<const clang::CXXOperatorCallExpr *> *SelectedAssignments =
+    std::vector<UtilityPairElementAssignment> *SelectedAssignments =
         nullptr);
 // A logical tuple element may be an ordinary field or an authenticated empty
 // base. Keeping its value type separate from its storage supports projections
