@@ -125,6 +125,41 @@ def main():
                 run([debugger, '-z', dump, '-y', compiler.parent,
                      '-c', '.reload /f; .exr -1; .ecxr; kP 80; ~*kb 40; r; lmvm neverc; q'],
                     'dump-' + str(index))
+        # WER produced no dump in the verified previous run. Catch the same
+        # first-chance access violation before the compiler's handler exits.
+        # The existing native CDB and exact authenticated PDB are used; this
+        # does not disable a production code path or execute the product.
+        assert debugger, "The previous native image included ARM64 CDB"
+        live_dump = output / 'collector-live.dmp'
+        live_script = output / 'collector-live.cdb'
+        live_commands = (
+            '.symopt-0x40; sxd ibp; sxe av; g; '
+            '.exr -1; .ecxr; r; u @pc-0x40 @pc+0x40; kv 60; '
+            '.frame /r 0; dv /t /v; .frame /r 1; dv /t /v; '
+            '.frame /r 2; dv /t /v; .frame /r 0; '
+            'dq @x0 L20; dq @x1 L20; dq @x19 L40; dq @x20 L40; '
+            'dq @x21 L40; dq @x22 L40; lmvm neverc; '
+            '.dump /m /o "' + str(live_dump) + '"; q')
+        live_script.write_text(live_commands + '\n')
+        live_status = run([debugger, '-o', '-G', '-hd', '-lines',
+                           '-netsyms:no', '-y', compiler.parent,
+                           '-cf', live_script, compiler, *common,
+                           '-o', output / 'collector-live.exe',
+                           root / 'examples/network-anticheat-collector/main.c'],
+                          'collector-live-cdb')
+        live_text = (output / 'collector-live-cdb.log').read_text(errors='replace')
+        report['live_debugger'] = {
+            'returncode': live_status, 'script': live_script.name,
+            'script_sha256': sha(live_script),
+            'matching_legalizer_stack': 'ExpandIntRes_ADDSUB' in live_text,
+            'access_violation_observed': 'c0000005' in live_text.lower(),
+            'arm64_pc_observed': 'pc=' in live_text.lower(),
+            'dump_created': live_dump.is_file()}
+        if live_dump.is_file():
+            assert live_dump.read_bytes()[:4] == b'MDMP'
+            report['live_debugger'].update(dump=live_dump.name,
+                dump_sha256=sha(live_dump), dump_size=live_dump.stat().st_size)
+        save()
         report['matching_failure_reproduced'] = any(
             row['name'].startswith('collector-exact-') and row['returncode'] != 0
             and row['matching_legalizer_stack'] for row in report['experiments'])
