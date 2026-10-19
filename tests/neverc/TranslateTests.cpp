@@ -363,6 +363,41 @@ int main() {
            "aarch64-unknown-linux-gnu", "arm64-apple-macosx15.0.0",
            "x86_64-apple-macosx15.0.0", "i686-unknown-linux-gnu"}) {
     SCOPED_TRACE(Target);
+    const auto Request = tmpFile("sdk-host-msvc-version-" + Target + "-request.json");
+    const auto Response = tmpFile("sdk-host-msvc-version-" + Target + "-response.json");
+    const auto CatalogHash = neverc::translate::approvedCppSdkCatalogSHA256();
+    llvm::json::Object SDK{{"distribution_id", neverc::translate::CppMathSDKID},
+                          {"catalog_sha256", CatalogHash}};
+    llvm::json::Object Input{{"protocol", 1}, {"profile", "cpp-core-v2"},
+        {"root", Source.parent_path().string()}, {"source", Source.string()},
+        {"target", Target}, {"arguments", llvm::json::Array{"-std=c++17"}},
+        {"sdk", std::move(SDK)}};
+    std::string Text;
+    llvm::raw_string_ostream Stream(Text);
+    Stream << llvm::json::Value(std::move(Input));
+    writeFile(Request, Text);
+    const auto Frontend = ncc({"__neverc_cpp_frontend", "--request", Request.string(),
+                               "--output", Response.string()});
+    ASSERT_EQ(Frontend.exitCode, 0) << Frontend.out << Frontend.err;
+    auto Parsed = llvm::json::parse(readFile(Response));
+    ASSERT_TRUE(static_cast<bool>(Parsed))
+        << llvm::toString(Parsed.takeError()).str().str();
+    const auto *Module = Parsed->getAsObject();
+    ASSERT_NE(Module, nullptr);
+    const auto *Diagnostics = Module->getArray("diagnostics");
+    ASSERT_NE(Diagnostics, nullptr);
+    EXPECT_TRUE(Diagnostics->empty());
+    EXPECT_TRUE(Module->getString("sdk_catalog_sha256") == CatalogHash);
+    const auto *Layout = Module->getObject("target");
+    ASSERT_NE(Layout, nullptr);
+    EXPECT_TRUE(Layout->getString("triple") == Target);
+    int64_t PointerBits = 0;
+    ASSERT_TRUE(Layout->getInteger("pointer_bits", PointerBits));
+    EXPECT_EQ(PointerBits, Target.rfind("i686-", 0) == 0 ? 32 : 64);
+    // Both i686 ABIs retain their full private frontend checks. NeverC's
+    // independent C23 target model admits only the six 64-bit backends.
+    if (Target.rfind("i686-", 0) == 0)
+      continue;
     const auto Output = tmpFile("sdk-host-msvc-version-" + Target + ".nc");
     const auto Result = translate(Source, {"--profile", "cpp-core-v2",
                                            "--target", Target, "-o",

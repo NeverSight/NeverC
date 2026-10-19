@@ -60,7 +60,7 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     report = {"passed": False, "completed": False, "commands": [],
               "host": platform.platform(), "compiler_sha256": sha(compiler),
-              "sdk_protocols": [], "objects": [], "native_executions": [],
+              "sdk_protocols": [], "nc_translations": [], "objects": [], "native_executions": [],
               "tlv_cases": [], "full_ci_passed": False,
               "frontend_timeout_seconds": 60}
     def save():
@@ -100,11 +100,34 @@ def main():
         input_path.write_text(source)
         report["sdk_source_sha256"] = sha(input_path)
         for target in TARGETS:
+            request = output / (target + ".request.json")
+            response = output / (target + ".response.json")
+            request.write_text(json.dumps({
+                "protocol": 1, "profile": "cpp-core-v2", "root": str(output),
+                "source": str(input_path), "target": target, "arguments": ["-std=c++17"],
+                "sdk": {"distribution_id": catalog["distribution_id"],
+                        "catalog_sha256": sha(sdk / "catalog.json")}}, indent=2) + "\n")
+            run([compiler, "__neverc_cpp_frontend", "--request", request,
+                 "--output", response], "SDK frontend " + target)
+            module = json.loads(response.read_text())
+            assert module["diagnostics"] == [] and module["target"]["triple"] == target
+            assert module["target"]["pointer_bits"] == (32 if target.startswith("i686-") else 64)
+            assert module["sdk_catalog_sha256"] == sha(sdk / "catalog.json")
+            for dependency in module["sdk_dependencies"]:
+                assert dependency in entries
+                assert sha(sdk / dependency["root"] / dependency["path"]) == dependency["sha256"]
+            report["sdk_protocols"].append({"target": target, "request_sha256": sha(request),
+                                            "response_sha256": sha(response)})
+            # i686 has a private source frontend, but no NeverC C23 target.
+            # All eight ABIs above are checked; six admitted backends below
+            # additionally retain complete translation and real object checks.
+            if target.startswith("i686-"):
+                continue
             generated = output / (target + ".nc")
             run([compiler, "translate", "--from", "cpp", "--profile", "cpp-core-v2",
                  "--target", target, input_path, "-o", generated], "SDK " + target)
             assert generated.is_file()
-            report["sdk_protocols"].append({"target": target, "generated_sha256": sha(generated)})
+            report["nc_translations"].append({"target": target, "generated_sha256": sha(generated)})
             if not target.startswith("i686-"):
                 obj = output / (target + ".o")
                 run([compiler, "--target=" + target, "-O0", "-fno-lto",
@@ -121,10 +144,13 @@ def main():
                     assert struct.unpack_from("<I", raw)[0] == 0xFEEDFACF
                     assert struct.unpack_from("<I", raw, 4)[0] == (0x100000C if target.startswith("arm64") else 0x1000007)
                 report["objects"].append({"target": target, "sha256": sha(obj)})
-        native = "arm64-apple-macosx15.0.0" if sys.platform == "darwin" else "x86_64-pc-windows-msvc"
+        native = ("arm64-apple-macosx15.0.0" if sys.platform == "darwin" else
+                  "aarch64-pc-windows-msvc" if platform.machine().lower() in ("arm64", "aarch64") else
+                  "x86_64-pc-windows-msvc")
+        report["native_target"] = native
         for optimization in ["-O0", "-O2"]:
             executable = output / ("sdk-native" + optimization + (".exe" if sys.platform == "win32" else ""))
-            run([compiler, optimization, "-fno-lto", "-fno-builtin-mimalloc",
+            run([compiler, "--target=" + native, optimization, "-fno-lto", "-fno-builtin-mimalloc",
                  "-fno-fast-math", "-ffp-contract=off", output / (native + ".nc"),
                  "-o", executable], "native SDK compile " + optimization)
             run([executable], "native SDK execute " + optimization)
@@ -165,7 +191,8 @@ def main():
                      "-std=c11", "-Wall", "-Wextra", "-Werror", "-O2", "-o", exe,
                      repo / "examples" / example / "main.c"], "network product " + example)
                 assert exe.is_file()
-        assert len(report["sdk_protocols"]) == 8 and len(report["objects"]) == 6
+        assert len(report["sdk_protocols"]) == 8 and len(report["nc_translations"]) == 6
+        assert len(report["objects"]) == 6
         assert len(report["native_executions"]) == 2
         assert len(report["tlv_cases"]) == (4 if sys.platform == "darwin" else 0)
         report.update(passed=True, completed=True)

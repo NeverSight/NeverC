@@ -97,6 +97,7 @@ public:
   // any worker is rethrown here once all workers have finished.
   void run(const std::function<void(unsigned)> &fn) {
     if (n_ == 1) {
+      WorkerOrdinalScope Ordinal(0);
       fn(0);
       return;
     }
@@ -136,6 +137,7 @@ public:
     if (grain == 0)
       grain = std::max<size_t>(1, count / (size_t(n_) * 16));
     if (n_ == 1 || count <= grain) {
+      WorkerOrdinalScope Ordinal(0);
       for (size_t i = 0; i < count; ++i)
         f(i);
       return;
@@ -154,13 +156,26 @@ public:
   }
 
 private:
+  // self() belongs to the currently executing pool, including serial work on
+  // a worker of a different pool. Restore that caller's ordinal on every exit.
+  class WorkerOrdinalScope {
+    unsigned Previous;
+
+  public:
+    explicit WorkerOrdinalScope(unsigned Current) : Previous(tid_) {
+      tid_ = Current;
+    }
+    ~WorkerOrdinalScope() { tid_ = Previous; }
+    WorkerOrdinalScope(const WorkerOrdinalScope &) = delete;
+    WorkerOrdinalScope &operator=(const WorkerOrdinalScope &) = delete;
+  };
+
   static void pause() {
 #if defined(__x86_64__) || defined(__i386__)
     __builtin_ia32_pause();
 #endif
   }
   void loop(unsigned i) {
-    tid_ = i;
     unsigned seen = 0;
     for (;;) {
       // The next phase usually starts within microseconds.
@@ -188,6 +203,7 @@ private:
     }
   }
   void invoke(const std::function<void(unsigned)> &fn, unsigned i) {
+    WorkerOrdinalScope Ordinal(i);
     try {
       fn(i);
     } catch (...) {
