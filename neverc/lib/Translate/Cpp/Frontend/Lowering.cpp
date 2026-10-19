@@ -7010,8 +7010,18 @@ class FunctionLowering {
       return index(decay(std::move(Elements), PointerType, L),
                    std::move(Position), type(ResultType, L), L);
     };
-    using UtilityComparisonLeaves =
-        std::vector<std::pair<Expression, Expression>>;
+    struct UtilityComparisonLeaf {
+      Expression Left, Right;
+      QualType LeftType, RightType;
+    };
+    using UtilityComparisonLeaves = std::vector<UtilityComparisonLeaf>;
+    const bool SelectedPairComparison =
+        Operation == UtilityOperation::PairEqual ||
+        Operation == UtilityOperation::PairNotEqual ||
+        Operation == UtilityOperation::PairLess ||
+        Operation == UtilityOperation::PairGreater ||
+        Operation == UtilityOperation::PairLessEqual ||
+        Operation == UtilityOperation::PairGreaterEqual;
     auto CollectUtilityComparisonLeaves =
         [&](auto &&Collect, const Expression &LeftValue, QualType LeftType,
             const Expression &RightValue, QualType RightType, bool Ordered,
@@ -7035,16 +7045,55 @@ class FunctionLowering {
       if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
                                                           RightType, Ordered)) {
         const auto CommonType = type(*Common, L);
-        Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
-                            cast(json::Object(RightValue), CommonType, L));
+        Leaves.push_back({cast(json::Object(LeftValue), CommonType, L),
+                          cast(json::Object(RightValue), CommonType, L),
+                          *Common, *Common});
         return true;
       }
       if (!Ordered) {
         if (const auto Common =
                 utilityCallbackComparisonType(A.Context, LeftType, RightType)) {
           const auto CommonType = type(*Common, L);
-          Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
-                              cast(json::Object(RightValue), CommonType, L));
+          Leaves.push_back({cast(json::Object(LeftValue), CommonType, L),
+                            cast(json::Object(RightValue), CommonType, L),
+                            *Common, *Common});
+          return true;
+        }
+      }
+
+      if (SelectedPairComparison) {
+        const auto *LeftRecord = LeftType->getAsCXXRecordDecl();
+        const auto *RightRecord = RightType->getAsCXXRecordDecl();
+        const auto LeftString = approvedUtilityStringRecord(
+            A.S, A.Sources, LeftRecord, A.Context);
+        const auto RightString = approvedUtilityStringRecord(
+            A.S, A.Sources, RightRecord, A.Context);
+        const auto LeftView = approvedUtilityStringViewRecord(
+            A.S, A.Sources, LeftRecord, A.Context);
+        const auto RightView = approvedUtilityStringViewRecord(
+            A.S, A.Sources, RightRecord, A.Context);
+        const auto LeftOwner = approvedUtilityUniquePtrLayout(
+            A.S, A.Sources, LeftRecord, A.Context);
+        const auto RightOwner = approvedUtilityUniquePtrLayout(
+            A.S, A.Sources, RightRecord, A.Context);
+        if (LeftString || RightString || LeftView || RightView ||
+            LeftOwner || RightOwner) {
+          const bool String = LeftString && RightString &&
+              LeftString->Record->getCanonicalDecl() ==
+                  RightString->Record->getCanonicalDecl();
+          const bool View = LeftView && RightView &&
+              LeftView->Record->getCanonicalDecl() ==
+                  RightView->Record->getCanonicalDecl();
+          const bool Owner = LeftOwner && RightOwner &&
+              LeftOwner->Deleter.Array == RightOwner->Deleter.Array &&
+              A.Context.hasSameUnqualifiedType(LeftOwner->ElementType,
+                                               RightOwner->ElementType);
+          if (!String && !View && !Owner)
+            return false;
+          // Collection records storage only. Byte reads belong to the
+          // corresponding short-circuit comparison branch below.
+          Leaves.push_back({json::Object(LeftValue), json::Object(RightValue),
+                            LeftType, RightType});
           return true;
         }
       }
@@ -7160,6 +7209,47 @@ class FunctionLowering {
                                           RightType, Ordered, Leaves, 0))
         reject(L, "utility value comparison",
                "The selected values have no approved recursive comparison.");
+      auto CompareLeaf = [&](const UtilityComparisonLeaf &Leaf,
+                             llvm::StringRef Relation,
+                             bool ReverseOrder = false) -> Expression {
+        auto Left = json::Object(ReverseOrder ? Leaf.Right : Leaf.Left);
+        auto Right = json::Object(ReverseOrder ? Leaf.Left : Leaf.Right);
+        const auto LeftType = ReverseOrder ? Leaf.RightType : Leaf.LeftType;
+        const auto RightType = ReverseOrder ? Leaf.LeftType : Leaf.RightType;
+        if (const auto String = approvedUtilityStringRecord(
+                A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
+          auto LeftAddress = snapshot(address(std::move(Left), LeftType, L), L);
+          auto RightAddress = snapshot(address(std::move(Right), RightType, L), L);
+          auto LeftBytes = readStringAt(std::move(LeftAddress), *String, L);
+          auto RightBytes = readStringAt(std::move(RightAddress), *String, L);
+          return comparePairByteRanges(Relation, std::move(LeftBytes.first),
+                                       std::move(LeftBytes.second),
+                                       std::move(RightBytes.first),
+                                       std::move(RightBytes.second), L);
+        }
+        if (const auto View = approvedUtilityStringViewRecord(
+                A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
+          auto LeftData = snapshot(fieldStorage(json::Object(Left), View->Data, L), L);
+          auto LeftSize = snapshot(fieldStorage(std::move(Left), View->Size, L), L);
+          auto RightData = snapshot(fieldStorage(json::Object(Right), View->Data, L), L);
+          auto RightSize = snapshot(fieldStorage(std::move(Right), View->Size, L), L);
+          return comparePairByteRanges(Relation, std::move(LeftData),
+                                       std::move(LeftSize), std::move(RightData),
+                                       std::move(RightSize), L);
+        }
+        if (const auto Owner = approvedUtilityUniquePtrLayout(
+                A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
+          const auto Other = approvedUtilityUniquePtrLayout(
+              A.S, A.Sources, RightType->getAsCXXRecordDecl(), A.Context);
+          const auto Pointer = Owner->ElementType.isConstQualified()
+                                   ? Owner->PointerType : Other->PointerType;
+          Left = snapshot(cast(uniquePtrStoredPointer(std::move(Left), *Owner, L),
+                               type(Pointer, L), L), L);
+          Right = snapshot(cast(uniquePtrStoredPointer(std::move(Right), *Other, L),
+                                type(Pointer, L), L), L);
+        }
+        return binary(Relation, std::move(Left), std::move(Right), "bool", L);
+      };
       auto Equal = [&]() -> Expression {
         if (Leaves.empty())
           return boolean(true, L);
@@ -7171,9 +7261,7 @@ class FunctionLowering {
           Next.push_back(labelName());
         for (std::size_t I = 0; I < Leaves.size(); ++I) {
           const auto Success = I + 1 == Leaves.size() ? True : Next[I];
-          branch(binary("==", json::Object(Leaves[I].first),
-                        json::Object(Leaves[I].second), "bool", L),
-                 Success, False, L);
+          branch(CompareLeaf(Leaves[I], "=="), Success, False, L);
           if (I + 1 != Leaves.size())
             label(Next[I], L);
         }
@@ -7193,15 +7281,9 @@ class FunctionLowering {
         const auto True = labelName(), False = labelName(), End = labelName();
         for (const auto &Leaf : Leaves) {
           const auto Reverse = labelName(), Next = labelName();
-          const auto &First = ReverseOrder ? Leaf.second : Leaf.first;
-          const auto &Second = ReverseOrder ? Leaf.first : Leaf.second;
-          branch(
-              binary("<", json::Object(First), json::Object(Second), "bool", L),
-              True, Reverse, L);
+          branch(CompareLeaf(Leaf, "<", ReverseOrder), True, Reverse, L);
           label(Reverse, L);
-          branch(
-              binary("<", json::Object(Second), json::Object(First), "bool", L),
-              False, Next, L);
+          branch(CompareLeaf(Leaf, "<", !ReverseOrder), False, Next, L);
           label(Next, L);
         }
         jump(False, L);
@@ -30249,6 +30331,38 @@ class FunctionLowering {
                                     SourceLocation L) {
     auto Left = readStringAt(std::move(LeftCurrent), String, L);
     auto Right = readStringAt(std::move(RightCurrent), String, L);
+    return compareByteRanges(std::move(Left.first), std::move(Left.second),
+                             std::move(Right.first), std::move(Right.second), L);
+  }
+
+  Expression comparePairByteRanges(llvm::StringRef Relation,
+                                   Expression LeftData, Expression LeftSize,
+                                   Expression RightData, Expression RightSize,
+                                   SourceLocation L) {
+    if (Relation != "==") {
+      auto Order = compareByteRanges(std::move(LeftData), std::move(LeftSize),
+                                     std::move(RightData), std::move(RightSize), L);
+      return binary(Relation, std::move(Order), quantity(0, "int", L), "bool", L);
+    }
+    auto Result = temporary("bool", L);
+    const auto Bytes = labelName(), Different = labelName(), End = labelName();
+    branch(binary("==", json::Object(LeftSize), json::Object(RightSize), "bool", L),
+           Bytes, Different, L);
+    label(Bytes, L);
+    auto Order = compareByteRanges(std::move(LeftData), std::move(LeftSize),
+                                   std::move(RightData), std::move(RightSize), L);
+    assign(Result, binary("==", std::move(Order), quantity(0, "int", L), "bool", L), L);
+    jump(End, L);
+    label(Different, L);
+    assign(Result, boolean(false, L), L);
+    jump(End, L);
+    label(End, L);
+    return Result;
+  }
+
+  Expression compareByteRanges(Expression LeftData, Expression LeftSize,
+                               Expression RightData, Expression RightSize,
+                               SourceLocation L) {
     const auto SizeType = type(A.Context.getSizeType(), L);
     auto Position = temporary(SizeType, L);
     auto Order = temporary("int", L);
@@ -30261,21 +30375,21 @@ class FunctionLowering {
     const auto Compared = labelName();
     jump(CheckLeftByte, L);
     label(CheckLeftByte, L);
-    branch(binary("<", json::Object(Position), json::Object(Left.second),
+    branch(binary("<", json::Object(Position), json::Object(LeftSize),
                   "bool", L),
            CheckRightByte, CompareSizes, L);
     label(CheckRightByte, L);
-    branch(binary("<", json::Object(Position), json::Object(Right.second),
+    branch(binary("<", json::Object(Position), json::Object(RightSize),
                   "bool", L),
            CompareByte, CompareSizes, L);
     label(CompareByte, L);
     auto LeftByte =
-        snapshot(cast(index(json::Object(Left.first), json::Object(Position),
+        snapshot(cast(index(json::Object(LeftData), json::Object(Position),
                             type(A.Context.CharTy, L), L),
                       "u8", L),
                  L);
     auto RightByte =
-        snapshot(cast(index(json::Object(Right.first), json::Object(Position),
+        snapshot(cast(index(json::Object(RightData), json::Object(Position),
                             type(A.Context.CharTy, L), L),
                       "u8", L),
                  L);
@@ -30292,11 +30406,11 @@ class FunctionLowering {
            L);
     jump(CheckLeftByte, L);
     label(CompareSizes, L);
-    branch(binary("<", json::Object(Left.second), json::Object(Right.second),
+    branch(binary("<", json::Object(LeftSize), json::Object(RightSize),
                   "bool", L),
            Less, CheckGreater, L);
     label(CheckGreater, L);
-    branch(binary(">", json::Object(Left.second), json::Object(Right.second),
+    branch(binary(">", json::Object(LeftSize), json::Object(RightSize),
                   "bool", L),
            Greater, Equal, L);
     label(Less, L);

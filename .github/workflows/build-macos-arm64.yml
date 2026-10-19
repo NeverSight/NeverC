@@ -2,6 +2,7 @@ name: macos-arm64-neverc-build
 
 permissions:
   contents: write
+  actions: read
 
 # Markdown changes are checked by lint-docs without rebuilding LLVM.
 on:
@@ -112,6 +113,42 @@ jobs:
             neverc/llvm
           time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
+      # Run the focused private C++ gate before install builds every unrelated
+      # test executable. Keep all packaging and product gates below intact.
+      - name: Validate selected C++ pair operations and source boundaries
+        id: cpp_pair_gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/cpp-pair-selected"
+          brew install llvm@20
+          cmake --build build --config ${{ env.BUILD_TYPE }} \
+            --target neverc-translate-tests --parallel 2 \
+            2>&1 | tee "$RUNNER_TEMP/cpp-pair-selected/formal-build.log"
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/ci/download-cpp-pair-comparison-baseline.py \
+            --run-id 39244936666 \
+            --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 \
+            --output "$RUNNER_TEMP/cpp-pair-comparison-baseline" \
+            2>&1 | tee "$RUNNER_TEMP/cpp-pair-selected/baseline-download.log"
+          cp "$RUNNER_TEMP/cpp-pair-comparison-baseline/provenance.json" \
+            "$RUNNER_TEMP/cpp-pair-selected/baseline-provenance.json"
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/ci/check-cpp-pair-comparison-operations.py \
+            --repo neverc --build build \
+            --clangxx "$(brew --prefix llvm@20)/bin/clang++" \
+            --baseline-provenance "$RUNNER_TEMP/cpp-pair-comparison-baseline/provenance.json" \
+            --output "$RUNNER_TEMP/cpp-pair-selected"
+
+      - name: Upload selected pair verification evidence
+        if: ${{ always() && steps.cpp_pair_gate.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-pair-selected-${{ github.sha }}
+          path: ${{ runner.temp }}/cpp-pair-selected
+          if-no-files-found: warn
+
       # Package + upload neverc immediately after the compiler links, before the
       # plugin-SDK / test steps below, so the binary is always downloadable as
       # an artifact even when a later step fails.
@@ -160,29 +197,6 @@ jobs:
         with:
           name: macos-arm64-neverc-runtime
           path: macos-arm64-neverc-runtime.zip
-
-      - name: Validate selected C++ pair operations and source boundaries
-        id: cpp_pair_gate
-        run: |
-          set -o pipefail
-          mkdir -p "$RUNNER_TEMP/cpp-pair-selected"
-          brew install llvm@20
-          cmake --build build --config ${{ env.BUILD_TYPE }} \
-            --target neverc-translate-tests --parallel 2 \
-            2>&1 | tee "$RUNNER_TEMP/cpp-pair-selected/formal-build.log"
-          "${{ steps.python.outputs.python-path }}" \
-            neverc/utils/ci/check-cpp-pair-selected-operations.py \
-            --repo neverc --build build \
-            --clangxx "$(brew --prefix llvm@20)/bin/clang++" \
-            --output "$RUNNER_TEMP/cpp-pair-selected"
-
-      - name: Upload selected pair verification evidence
-        if: ${{ always() && steps.cpp_pair_gate.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-pair-selected-${{ github.sha }}
-          path: ${{ runner.temp }}/cpp-pair-selected
-          if-no-files-found: warn
 
       - name: Verify installed builtin C++ translation without developer files
         run: |

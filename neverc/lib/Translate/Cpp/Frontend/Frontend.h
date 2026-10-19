@@ -1660,6 +1660,10 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const clang::ASTContext &Context,
     std::vector<UtilityPairElementAssignment> *SelectedAssignments =
         nullptr);
+std::optional<std::vector<const clang::CXXOperatorCallExpr *>>
+approvedUtilityPairSelectedComparisons(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Call, const clang::ASTContext &Context);
 // A logical tuple element may be an ordinary field or an authenticated empty
 // base. Keeping its value type separate from its storage supports projections
 // without inventing an SDK field for an empty-base subobject.

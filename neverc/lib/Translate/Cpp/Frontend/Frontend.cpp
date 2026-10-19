@@ -1922,6 +1922,7 @@ struct OperationSourceDependencies {
   std::set<const CXXMethodDecl *> StringAssignments;
   std::set<const CXXMethodDecl *> PairOwnerAssignments;
   std::set<const CallExpr *> PairSDKSwaps;
+  std::set<const CallExpr *> PairSDKComparisons;
   std::set<const CXXConstructorDecl *> UniquePtrConstructors;
   std::set<const CallExpr *> UniquePtrFactories;
   std::set<const CallExpr *> UniquePtrDeletions;
@@ -7541,6 +7542,98 @@ static QualType utilityUniquePtrSwapQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Function->getReturnType());
 }
 
+class UtilityPairComparisonSignatureSpelling
+    : public RecursiveASTVisitor<UtilityPairComparisonSignatureSpelling> {
+  Adapter &A;
+  unsigned Nodes = 0;
+  bool location(SourceLocation L) const {
+    const auto Origin = A.S.sdkFile(A.Sources, L);
+    return L.isValid() && !L.isMacroID() && Origin &&
+           Origin->Root == "libcxx" && Origin->Path == "__utility/pair.h";
+  }
+public:
+  explicit UtilityPairComparisonSignatureSpelling(Adapter &A) : A(A) {}
+  bool VisitTypeLoc(TypeLoc Type) {
+    A.chargeExpansion(1, Type.getBeginLoc());
+    return ++Nodes <= 4096 && location(Type.getBeginLoc()) &&
+           location(Type.getEndLoc());
+  }
+  bool check(const FunctionDecl *Function) {
+    const auto *Info = Function ? Function->getTypeSourceInfo() : nullptr;
+    const auto Prototype = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>()
+                                : FunctionProtoTypeLoc();
+    if (!Prototype || !TraverseTypeLoc(Prototype.getReturnLoc()))
+      return false;
+    for (const auto *Parameter : Function->parameters()) {
+      const auto *Source = Parameter->getTypeSourceInfo();
+      if (!Source || !TraverseTypeLoc(Source->getTypeLoc()))
+        return false;
+    }
+    return true;
+  }
+};
+
+static QualType utilityPairComparisonQuerySource(Adapter &A,
+                                                  const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Prototype = Function ?
+      Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Arguments = Function ?
+      Function->getTemplateSpecializationArgs() : nullptr;
+  if (!A.S.coreV2() || !Function || isa<CXXMethodDecl>(Function) ||
+      !Prototype || !Reference || Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !Function->getPrimaryTemplate() || Function->isVariadic() ||
+      !Function->isInlined() || Function->getNumParams() != 2 ||
+      Call->getNumArgs() != 2 || !Call->isPRValue() ||
+      !A.Context.hasSameType(Call->getType(), A.Context.BoolTy) ||
+      !A.Context.hasSameType(Function->getReturnType(), A.Context.BoolTy) ||
+      Prototype->getExceptionSpecType() != EST_None ||
+      Prototype->getNoexceptExpr() ||
+      operationCalleePrototype(Call) != Prototype || !Arguments ||
+      Arguments->size() != 4 ||
+      !utilitySDKFunctionSource(A, Function, "__utility/pair.h", false) ||
+      !UtilityPairComparisonSignatureSpelling(A).check(Function))
+    return {};
+  const auto Kind = Function->getOverloadedOperator();
+  if (Kind != OO_EqualEqual && Kind != OO_ExclaimEqual &&
+      Kind != OO_Less && Kind != OO_Greater &&
+      Kind != OO_LessEqual && Kind != OO_GreaterEqual)
+    return {};
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
+    if (Operator->getOperator() != Kind)
+      return {};
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Actual = Call->getArg(I)->getType();
+    const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Actual->getAsCXXRecordDecl());
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    const auto Storage = approvedUtilityTupleCatQueryLayout(
+        A.S, A.Sources, Actual, A.Context);
+    if (!Record || !approvedUtilityPairMetadata(A.S, A.Sources, Record) ||
+        !Storage || Storage->ArrayElements || Storage->size() != 2 ||
+        Record->getTemplateArgs().size() != 2 ||
+        !A.Context.hasSameType(Parameter, A.Context.getLValueReferenceType(
+            A.Context.getRecordType(Record).withConst())) ||
+        !A.Context.hasSameUnqualifiedType(Actual, A.Context.getRecordType(Record)))
+      return {};
+    for (unsigned J = 0; J != 2; ++J)
+      if (Arguments->get(2 * I + J).getKind() != TemplateArgument::Type ||
+          Record->getTemplateArgs().get(J).getKind() != TemplateArgument::Type ||
+          !A.Context.hasSameType(Arguments->get(2 * I + J).getAsType(),
+                                 Record->getTemplateArgs().get(J).getAsType()) ||
+          !A.Context.hasSameType(Storage->elementType(J),
+                                 Record->getTemplateArgs().get(J).getAsType()))
+        return {};
+    A.checkQueryType(Actual, Call->getExprLoc(), true, true, 0, true);
+  }
+  // The unconstrained C++17 bool signature does not instantiate comparisons,
+  // constructors, pointee deletion or other runtime bodies.
+  return A.Context.BoolTy;
+}
+
 static QualType utilityUniquePtrComparisonQuerySource(Adapter &A,
                                                       const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -10013,6 +10106,169 @@ static bool utilityStringViewDestructionSource(Adapter &A,
   return true;
 }
 
+// Pin each consumed byte-comparison helper and its actual source spelling.
+// Runtime calls require bodies; this proof is never used for signature queries.
+class UtilityPairByteComparisonSources
+    : public RecursiveASTVisitor<UtilityPairByteComparisonSources> {
+  Adapter &A;
+  std::set<const FunctionDecl *> Seen;
+  unsigned Nodes = 0;
+
+  bool location(SourceLocation L) const {
+    if (L.isInvalid())
+      return true;
+    const auto Spelling = A.S.sdkFile(A.Sources, L);
+    const auto Expansion = A.S.sdkFile(A.Sources, A.Sources.getExpansionLoc(L));
+    return Spelling && Spelling->Root == "libcxx" && Expansion &&
+           Expansion->Root == "libcxx";
+  }
+  bool pinned(const FunctionDecl *Function) {
+    if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
+        Function->isVariadic() || !Function->getDefinition() ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return false;
+    }
+    if (const auto *Primary = Function->getPrimaryTemplate())
+      for (const auto *Declaration : Primary->redecls())
+        if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+          return false;
+    const auto *Definition = Function->getDefinition();
+    return approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&
+           location(Definition->getLocation());
+  }
+public:
+  explicit UtilityPairByteComparisonSources(Adapter &A) : A(A) {}
+  bool VisitStmt(Stmt *Statement) {
+    A.chargeExpansion(1, Statement->getBeginLoc());
+    return ++Nodes <= 16384 && location(Statement->getBeginLoc()) &&
+           location(Statement->getEndLoc());
+  }
+  bool VisitTypeLoc(TypeLoc Type) {
+    return ++Nodes <= 16384 && location(Type.getBeginLoc()) &&
+           location(Type.getEndLoc());
+  }
+  bool VisitMemberExpr(MemberExpr *Member) {
+    return location(Member->getMemberLoc()) &&
+           approvedStandardSDKDeclaration(A.S, A.Sources,
+                                            Member->getMemberDecl());
+  }
+  bool VisitDeclRefExpr(DeclRefExpr *Reference) {
+    const auto *Declaration = Reference->getDecl();
+    if (!location(Reference->getLocation()))
+      return false;
+    if (const auto *Variable = dyn_cast<VarDecl>(Declaration))
+      if (Variable->isLocalVarDeclOrParm())
+        return location(Variable->getLocation());
+    return isa<FunctionDecl>(Declaration) ||
+           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+  }
+  bool VisitCXXConstructExpr(CXXConstructExpr *Construction) {
+    const auto *Constructor = Construction->getConstructor();
+    if (Constructor && Constructor->isTrivial() && Constructor->isDefaulted() &&
+        approvedStringHashViewCopyArgument(A.S, A.Sources, Construction, A.Context))
+      return utilitySDKFunctionSource(A, Constructor, "string_view", false);
+    const auto *Record = Constructor ?
+        dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
+    const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+    if (Constructor && Constructor->isImplicit() && Constructor->isTrivial() &&
+        Constructor->isDefaulted() && Constructor->isDefaultConstructor() &&
+        !Construction->getNumArgs() && Record && Primary &&
+        Record->getName() == "__less" && Record->isEmpty() &&
+        Record->isTrivial() && Record->field_empty() && !Record->getNumBases() &&
+        Record->getSpecializationKind() == TSK_ExplicitSpecialization &&
+        Record->getTemplateArgs().size() == 2) {
+      auto Origin = [&](const Decl *Declaration) {
+        const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
+        A.chargeExpansion(1, Declaration->getLocation());
+        return File && File->Root == "libcxx" && File->Path == "__algorithm/comp.h" &&
+               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+      };
+      for (const auto &Argument : Record->getTemplateArgs().asArray())
+        if (Argument.getKind() != TemplateArgument::Type ||
+            !Argument.getAsType()->isVoidType()) return false;
+      for (const auto *Declaration : Record->redecls())
+        if (!Origin(Declaration)) return false;
+      for (const auto *Declaration : Primary->redecls())
+        if (!Origin(Declaration) || !Origin(Declaration->getTemplatedDecl())) return false;
+      for (const auto *Declaration : Constructor->redecls())
+        if (!Origin(Declaration)) return false;
+      return true;
+    }
+    return function(Constructor);
+  }
+  bool VisitCallExpr(CallExpr *Call) {
+    const auto *Function = Call->getDirectCallee();
+    if (!Function)
+      return false;
+    if (Function->getBuiltinID()) {
+      const auto Name = Function->getName();
+      return location(Call->getExprLoc()) &&
+             (Name == "__builtin_memcmp" ||
+              Name == "__builtin_is_constant_evaluated" ||
+              Name == "__builtin_addressof" || Name == "__builtin_assume" ||
+              Name == "__builtin_expect" || Name == "__builtin_launder");
+    }
+    return function(Function);
+  }
+  bool function(const FunctionDecl *Function) {
+    if (!pinned(Function))
+      return false;
+    if (!Seen.insert(Function->getCanonicalDecl()).second)
+      return true;
+    if (Seen.size() > 128)
+      return false;
+    const auto *Definition = Function->getDefinition();
+    if (const auto *Pattern = Function->getTemplateInstantiationPattern(true))
+      if (!pinned(Pattern))
+        return false;
+    for (const auto *Parameter : Definition->parameters()) {
+      const auto *Info = Parameter->getTypeSourceInfo();
+      if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
+        return false;
+    }
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Definition))
+      for (const auto *Initializer : Constructor->inits())
+        if (!Initializer->isMemberInitializer() ||
+            !approvedStandardSDKDeclaration(A.S, A.Sources, Initializer->getMember()) ||
+            !TraverseStmt(const_cast<Expr *>(Initializer->getInit())))
+          return false;
+    const auto *Prototype = Definition->getType()->getAs<FunctionProtoType>();
+    return Prototype && (!Prototype->getNoexceptExpr() ||
+        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&
+        TraverseStmt(const_cast<Stmt *>(Definition->getBody()));
+  }
+};
+
+static bool utilityPairSelectedComparisonSource(Adapter &A,
+                                                const CallExpr *Expression) {
+  const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(Expression);
+  const auto Comparisons = approvedUtilityPairSelectedComparisons(
+      A.S, A.Sources, Call, A.Context);
+  if (!Comparisons)
+    return false;
+  if (Comparisons->empty())
+    return true;
+  if (!utilitySDKFunctionSource(A, Call->getDirectCallee(), "__utility/pair.h"))
+    return false;
+  for (const auto *Child : *Comparisons) {
+    const auto Operation = approvedUtilityOperation(A.S, A.Sources, Child, A.Context);
+    if (!Operation)
+      return false;
+    if (*Operation == UtilityOperation::MemoryUniquePtrEqual ||
+        *Operation == UtilityOperation::MemoryUniquePtrLess) {
+      if (!utilityUniquePtrOwnerComparisonSource(A, Child))
+        return false;
+    } else if (!UtilityPairByteComparisonSources(A).function(Child->getDirectCallee())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool utilityStringDestructionSource(Adapter &A,
                                            const CXXRecordDecl *Record) {
   const auto String =
@@ -10906,6 +11162,8 @@ public:
       }
       for (const auto *Call : Dependencies->PairSDKSwaps)
         if (!utilityPairSelectedSDKSwapSource(A, Call)) return false;
+      for (const auto *Call : Dependencies->PairSDKComparisons)
+        if (!utilityPairSelectedComparisonSource(A, Call)) return false;
       for (const auto *Constructor : Dependencies->UniquePtrConstructors)
         if (!uniquePtrConstruction(Constructor))
           return false;
@@ -17388,6 +17646,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         else if (const auto Result = utilityUniquePtrSwapQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityPairComparisonQuerySource(A, Call);
+                 !Result.isNull()) {
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+          retainTupleCatQueryExpressions(Call);
+        }
         else if (const auto Result =
                      utilityUniquePtrComparisonQuerySource(A, Call);
                  !Result.isNull())
@@ -26949,6 +27212,21 @@ public:
                      "sources are required for every evaluated owner exchange.",
                      "TR0203");
             return true;
+          }
+          if (*Operation == UtilityOperation::PairEqual ||
+              *Operation == UtilityOperation::PairNotEqual ||
+              *Operation == UtilityOperation::PairLess ||
+              *Operation == UtilityOperation::PairGreater ||
+              *Operation == UtilityOperation::PairLessEqual ||
+              *Operation == UtilityOperation::PairGreaterEqual) {
+            if (!utilityPairSelectedComparisonSource(A, C)) {
+              A.reject(L, "selected pair comparison source",
+                       "The exact selected pair and child comparison sources are required.", "TR0203");
+              return false;
+            }
+            for (auto *Dependencies : ActiveOperationSources)
+              if (Dependencies->PairSDKComparisons.insert(C).second)
+                A.chargeExpansion(1, L);
           }
           if (!checkUtilitySwapOperations(C, *Operation))
             return false;

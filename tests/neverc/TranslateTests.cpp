@@ -46928,6 +46928,226 @@ int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairSelectedComparisonsRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-comparison-embedded-zero", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+int check(const P& a,const P& b){return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}
+int main(){P a(std::string("a\0x",3),9),b(std::string("a\0y",3),1);if(check(a,b))return 1;b.first=a.first;b.second=a.second;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}
+)cpp"},
+      {"pair-string-comparison-prefix-and-second", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<int,std::string>;
+int main(){P a(7,std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),b(7,std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789z"));if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;a.first=8;return !(a>b)||a<b||a<=b||!(a>=b);}
+)cpp"},
+      {"pair-view-comparison-live-buffers", R"cpp(#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+int main(){char x[3]={'a',0,'x'},y[3]={'a',0,'y'};P a(std::string_view(x,3),9),b(std::string_view(y,3),1);if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;x[2]='z';return !(a>b)||a<b||a<=b||!(a>=b);}
+)cpp"},
+      {"pair-string-reference-comparison-effects", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string&,int&>;
+int observed;P& observe(P& p){++observed;return p;}
+int main(){std::string s="abc",t="abd";int x=9,y=1;P a(s,x),b(t,y);bool less=observe(a)<observe(b);if(!less||observed!=2||a==b||!(a!=b)||a>b||!(a<=b)||a>=b)return 1;s[2]='z';return !(a>b)||a<b||a<=b||!(a>=b)||&a.first!=&s||&b.second!=&y;}
+)cpp"},
+      {"pair-string-heterogeneous-comparison", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;using Q=std::pair<std::string,long>;
+int main(){P a(std::string("same"),3);Q b(std::string("same"),9);if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;b.second=3;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}
+)cpp"},
+      {"pair-owner-comparison-pointer-order", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+using U=std::unique_ptr<int>;using P=std::pair<U,int>;
+int main(){P a(U(new int(17)),3),b(U(new int(29)),9);std::less<int*> less;bool expected=less(a.first.get(),b.first.get());if(a==b||!(a!=b)||(a<b)!=expected||(a>b)==expected||(a<=b)!=expected||(a>=b)==expected)return 1;a.first.reset();b.first.reset();return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}
+)cpp"},
+      {"pair-view-comparison-empty-high-bit", R"cpp(#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+int main(){P a(std::string_view(),3),b(std::string_view(),9);if(a==b||!(a<b))return 1;char x[2]={static_cast<char>(0x80),0},y[2]={static_cast<char>(0x7f),0};a.first=std::string_view(x,1);b.first=std::string_view(y,1);return !(a>b)||a<b||a<=b||!(a>=b);}
+)cpp"},
+      {"pair-string-comparison-unsigned-bytes", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+int main(){char x[2]={static_cast<char>(0x80),0},y[2]={static_cast<char>(0x7f),0};P a(std::string(x,1),3),b(std::string(y,1),9);if(a==b||!(a!=b)||!(a>b)||a<b||a<=b||!(a>=b))return 1;a.first.clear();b.first.clear();return !(a<b)||a==b;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-comparison-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedComparisonsRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-equality-byte-compare-identity", R"cpp(#define compare compare
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-equality-size-identity", R"cpp(#define size size
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-equality-data-identity", R"cpp(#define data data
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-less-compare-identity", R"cpp(#define compare compare
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-view-less-compare-identity", R"cpp(#define compare compare
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-view-equality-size-identity", R"cpp(#define size size
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-owner-equality-get-identity", R"cpp(#define get get
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-owner-less-comparator-identity", R"cpp(#define less less
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-byte-builtin-identity", R"cpp(#define __builtin_memcmp __builtin_memcmp
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-less-min-comparator-identity", R"cpp(#define __less __less
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairComparisonQueriesRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-comparison-query-effects", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+int calls,defaults;
+const P& source(const P& p,int n=(++defaults,1)) noexcept{++calls;return p;}
+int query(const P& a,const P& b){static_assert(sizeof(source(a)==source(b))==sizeof(bool));static_assert(__is_same(decltype(source(a)==source(b)),bool));static_assert(__is_same(decltype(source(a)!=source(b)),bool));static_assert(__is_same(decltype(source(a)<source(b)),bool));static_assert(__is_same(decltype(source(a)>source(b)),bool));static_assert(!noexcept(source(a)<=source(b)));static_assert(!noexcept(source(a)>=source(b)));return calls||defaults;}
+int main(){return calls||defaults;}
+)cpp"},
+      {"pair-view-comparison-query-runtime-substitution", R"cpp(#define compare compare
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+int query(const P& a,const P& b){static_assert(sizeof(a==b)==sizeof(bool));static_assert(__is_same(decltype(a==b),bool));static_assert(__is_same(decltype(a!=b),bool));static_assert(__is_same(decltype(a<b),bool));static_assert(__is_same(decltype(a>b),bool));static_assert(!noexcept(a<=b));static_assert(!noexcept(a>=b));return 0;}
+int main(){return 0;}
+)cpp"},
+      {"pair-owner-comparison-query-runtime-substitution", R"cpp(#define get get
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+int query(const P& a,const P& b){static_assert(sizeof(a==b)==sizeof(bool));static_assert(__is_same(decltype(a==b),bool));static_assert(__is_same(decltype(a!=b),bool));static_assert(__is_same(decltype(a<b),bool));static_assert(__is_same(decltype(a>b),bool));static_assert(!noexcept(a<=b));static_assert(!noexcept(a>=b));return 0;}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-comparison-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairComparisonQueriesRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-comparison-query-public-specialization", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+namespace std{inline namespace __1{template<>bool operator==<string,int,string,int>(const P&,const P&){return true;}}}
+int query(const P& a,const P& b){static_assert(__is_same(decltype(a==b),bool));return 0;}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations) {
   const struct { const char *Name; const char *Source; } Cases[] = {
       {"pair-string-copy-assignment", R"cpp(#include <string>
