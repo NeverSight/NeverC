@@ -1636,6 +1636,12 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
     const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context,
     std::vector<const clang::CXXConstructExpr *> *SelectedCopies = nullptr);
+const clang::CXXConstructExpr *approvedUtilityMakePairConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+bool approvedUtilityPairFactorySelectionLocation(
+    const State &S, const clang::SourceManager &SM, clang::SourceLocation Location,
+    const clang::FunctionDecl *Function);
 std::optional<std::vector<const clang::CXXConstructExpr *>>
 approvedUtilityMakePairSelectedCopies(const State &S,
                                       const clang::SourceManager &SM,
@@ -1704,6 +1710,13 @@ using UtilityPairFunctionSources = std::map<
     std::vector<const TemplateUseSource *>>;
 using UtilityPairSelectionSources = std::map<
     const clang::Expr *, std::vector<const SelectedTemplateCallSource *>>;
+// Metadata only: a completed pair source graph must bind the exact query.
+// This descriptor authenticates its retained SDK wrapper conversion root.
+bool approvedUtilityPairReferenceQueryCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::TypeTraitExpr *Query, const clang::CallExpr *Call,
+    const clang::ASTContext &Context,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 bool approvedUtilityPairTraitSelectionLocation(
     const State &S, const clang::SourceManager &SM,
     clang::SourceLocation Location, const clang::FunctionDecl *Function);
@@ -1717,7 +1730,8 @@ bool approvedUtilityPairConstructorTemplateSource(
     std::vector<const clang::Type *> &TypeSpellings,
     std::vector<const clang::CXXMethodDecl *> &SourceMembers,
     const UtilityPairFunctionSources &Functions,
-    const UtilityPairSelectionSources &Selections);
+    const UtilityPairSelectionSources &Selections,
+    const clang::CallExpr *Factory = nullptr);
 bool approvedUtilityTupleConstructorQueryTemplateSource(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructorDecl *Constructor, const TemplateUseSource &Source,

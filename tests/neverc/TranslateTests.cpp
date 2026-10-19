@@ -46585,14 +46585,6 @@ int main(){{P value=make();if(value.first.size()!=62||value.second.size()!=68)re
 
 TEST_F(TranslateTest, CoreV2PairSelectedStringAndViewValuesRequireExactSources) {
   const struct { const char *Name; const char *Source; } Cases[] = {
-      {"make-pair-string", R"cpp(#include <string>
-#include <utility>
-int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
-)cpp"},
-      {"make-pair-view", R"cpp(#include <string_view>
-#include <utility>
-int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);auto p=std::make_pair(s,7);return p.first.data()!=a||p.first.size()!=3||p.second!=7;}
-)cpp"},
       {"default-string-pair", R"cpp(#include <string>
 #include <utility>
 int main(){std::pair<std::string,int> p{};return !p.first.empty()||p.second;}
@@ -46741,11 +46733,6 @@ int main(){{U a(new int(67));P p(7,std::forward<U>(a));int* raw=p.second.get();
 
 TEST_F(TranslateTest, CoreV2PairSelectedOwnerMovesRequireExactSources) {
   const struct { const char *Name; const char *Source; } Cases[] = {
-      {"pair-owner-factory", R"cpp(#include <memory>
-#include <utility>
-int main(){std::unique_ptr<int> a(new int(3));
- auto p=std::make_pair(std::move(a),7);return a.get()!=nullptr||*p.first!=3;}
-)cpp"},
       {"pair-owner-const-destination", R"cpp(#include <memory>
 #include <utility>
 int main(){std::unique_ptr<int> a(new int(3));
@@ -46815,6 +46802,222 @@ struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;v
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("pair-selected-owner-reject-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("pair-selected-owner-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-factory-string-copy-move", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+int main(){std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",b=a;auto p=std::make_pair(a,std::move(b));a[0]='X';return p.first[0]!='a'||p.second.size()!=62||!b.empty();}
+)cpp"},
+      {"pair-factory-string-view", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+int main(){char data[4]={'a','b','c',0};std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";std::string_view v(data,3);auto p=std::make_pair(a,v);a[0]='X';data[0]='Y';return p.first[0]!='a'||p.second.data()!=data||p.second[0]!='Y';}
+)cpp"},
+      {"pair-factory-repeat-shared-selection", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+int main(){std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",b="secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";auto p=std::make_pair(a,7);auto q=std::make_pair(b,9);a[0]='X';b[0]='Y';p.first[1]='Z';return p.first[0]!='a'||q.first[0]!='s'||q.first[1]!='e'||p.second!=7||q.second!=9;}
+)cpp"},
+      {"pair-factory-wrapper-view", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+int main(){char data[4]={'a','b','c',0};std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";std::string_view v(data,3);auto p=std::make_pair(std::ref(s),v);p.first[0]='X';data[0]='Y';return &p.first!=&s||s[0]!='X'||p.second.data()!=data||p.second[0]!='Y';}
+)cpp"},
+      {"pair-factory-return-ignore", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+using P=std::pair<std::string,std::string>;P make(){std::string a="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",b="secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";return std::make_pair(std::move(a),std::move(b));}int main(){{P p=make();if(p.first.size()!=62||p.second.size()!=68)return 1;}make();return 0;}
+)cpp"},
+      {"pair-factory-owner-repeat", R"cpp(#include <memory>
+#include <utility>
+
+int main(){using U=std::unique_ptr<int>;U a(new int(31));int* raw=a.get();
+ auto p=std::make_pair(std::move(a),std::move(a));
+ auto q=std::make_pair(std::move(a),std::move(a));
+ return a.get()!=nullptr||p.first.get()!=raw||p.second.get()!=nullptr||
+ q.first.get()!=nullptr||q.second.get()!=nullptr||*p.first!=31;}
+)cpp"},
+      {"pair-factory-owner-array", R"cpp(#include <memory>
+#include <utility>
+
+int destroyed;struct Item{int value;~Item(){++destroyed;}};
+int main(){{using U=std::unique_ptr<Item[]>;U a(new Item[3]);a[2].value=43;
+ Item* raw=a.get();auto p=std::make_pair(std::move(a),7);
+ if(a.get()!=nullptr||p.first.get()!=raw||p.first[2].value!=43||p.second!=7||destroyed)return 1;
+ }return destroyed!=3;}
+)cpp"},
+      {"pair-factory-owner-deleter", R"cpp(#include <memory>
+#include <utility>
+
+int deleted;struct D{void operator()(int* p)const noexcept{++deleted;delete p;}};
+int main(){{using U=std::unique_ptr<int,D>;U a(new int(53));int* raw=a.get();
+ auto p=std::make_pair(std::move(a),4);auto q=std::make_pair(std::move(p.first),9);
+ if(a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=raw||*q.first!=53||deleted)return 1;
+ }return deleted!=1;}
+)cpp"},
+      {"pair-factory-owner-second-slot", R"cpp(#include <memory>
+#include <utility>
+
+const void* expected;int deleted;int wrong;
+struct D{void operator()(int* p)const noexcept{wrong+=this!=expected;++deleted;delete p;}};
+int main(){{using U=std::unique_ptr<int,D>;U a(new int(67));int* raw=a.get();
+ auto p=std::make_pair(5,std::forward<U>(a));expected=&p.second.get_deleter();
+ if(a.get()!=nullptr||p.first!=5||p.second.get()!=raw||*p.second!=67||deleted)return 1;
+ }return deleted!=1||wrong;}
+)cpp"},
+      {"make-pair-string", R"cpp(#include <string>
+#include <utility>
+int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"make-pair-view", R"cpp(#include <string_view>
+#include <utility>
+int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);auto p=std::make_pair(s,7);return p.first.data()!=a||p.first.size()!=3||p.second!=7;}
+)cpp"},
+      {"pair-factory-wrapper-const-string", R"cpp(#include <string>
+#include <functional>
+#include <utility>
+int main(){const std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+ std::string b=s;auto p=std::make_pair(std::cref(s),std::move(b));
+ return &p.first!=&s||p.first.data()!=s.data()||p.second.size()!=62||!b.empty();}
+)cpp"},
+      {"pair-factory-wrapper-owner-view", R"cpp(#include <memory>
+#include <string_view>
+#include <functional>
+#include <utility>
+int deleted;struct D{void operator()(int*p)const noexcept{++deleted;delete p;}};
+int main(){{using U=std::unique_ptr<int,D>;U a(new int(71));char data[3]={'a','b',0};
+ std::string_view v(data,2);{auto p=std::make_pair(std::ref(a),v);
+ if(&p.first!=&a||p.second.data()!=data||deleted)return 1;*p.first=83;data[0]='X';
+ if(*a!=83||p.second[0]!='X')return 2;}if(deleted)return 3;}return deleted!=1;}
+)cpp"},
+      {"pair-owner-factory", R"cpp(#include <memory>
+#include <utility>
+int main(){std::unique_ptr<int> a(new int(3));
+ auto p=std::make_pair(std::move(a),7);return a.get()!=nullptr||*p.first!=3;}
+)cpp"},
+      {"pair-factory-wrapper-view-referent", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+int main(){char b[3]={'a','b',0};std::string_view v(b,2);std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";auto p=std::make_pair(std::ref(v),std::move(s));if(&p.first!=&v||p.first.data()!=b||p.second.size()!=62||!s.empty())return 1;v=std::string_view(b,1);return p.first.size()!=1;}
+)cpp"},
+      {"pair-factory-wrapper-second-string", R"cpp(#include <string>
+#include <functional>
+#include <utility>
+int main(){std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";auto w=std::ref(s);const auto c=w;auto p=std::make_pair(7,c);p.second[0]='X';return &p.second!=&s||s[0]!='X'||p.first!=7;}
+)cpp"},
+      {"pair-factory-wrapper-both-borrowed", R"cpp(#include <memory>
+#include <string>
+#include <functional>
+#include <utility>
+int main(){std::unique_ptr<int> u(new int(31));std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";auto p=std::make_pair(std::ref(u),std::ref(s));*p.first=43;p.second[0]='X';return &p.first!=&u||&p.second!=&s||*u!=43||s[0]!='X';}
+)cpp"},
+      {"pair-factory-wrapper-owner-const", R"cpp(#include <memory>
+#include <string_view>
+#include <functional>
+#include <utility>
+int main(){const std::unique_ptr<int> u(new int(59));auto w=std::cref(u);auto p=std::make_pair(std::string_view("abc"),std::move(w));return &p.second!=&u||*p.second!=59||p.first.size()!=3;}
+)cpp"},
+      {"pair-factory-wrapper-view-const", R"cpp(#include <string_view>
+#include <functional>
+#include <utility>
+int main(){char b[3]={'a','b',0};const std::string_view v(b,2);auto p=std::make_pair(std::cref(v),9);b[0]='X';return &p.first!=&v||p.first.data()!=b||p.first[0]!='X'||p.second!=9;}
+)cpp"},
+      {"pair-factory-wrapper-repeat-binding", R"cpp(#include <string>
+#include <functional>
+#include <utility>
+int main(){std::string a="first",b="second";auto wa=std::ref(a),wb=std::ref(b);auto p=std::make_pair(wa,7);auto q=std::make_pair(wb,9);p.first[0]='X';q.first[0]='Y';return &p.first!=&a||&q.first!=&b||a[0]!='X'||b[0]!='Y'||p.second!=7||q.second!=9;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-factory-selected-values-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-factory-selected-values-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-factory-selected-values-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairFactoriesRequireExactConstructorSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-factory-string-constraint-source", R"cpp(#include <string>
+#include <utility>
+namespace std {template<> template<> constexpr bool pair<string,int>::_CheckArgs::__is_pair_constructible<string&,int>(){return true;}}
+int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"pair-factory-view-constraint-source", R"cpp(#include <string_view>
+#include <utility>
+namespace std {template<> template<> constexpr bool pair<string_view,int>::_CheckArgs::__is_pair_constructible<string_view&,int>(){return true;}}
+int main(){std::string_view s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"pair-factory-forward-identity-macro", R"cpp(#include <type_traits>
+#define forward forward
+#include <string_view>
+#include <utility>
+int main(){char a[4]={'a','b','c',0};std::string_view s(a,3);auto p=std::make_pair(s,7);return p.first.data()!=a||p.second!=7;}
+)cpp"},
+      {"pair-factory-user-specialization", R"cpp(#include <string>
+#include <utility>
+namespace std {template<> inline pair<string,int> make_pair<string&,int>(string& s,int&& n){return pair<string,int>(s,n);}}
+int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"pair-factory-explicitness-source", R"cpp(#include <string>
+#include <utility>
+namespace std {template<> template<> constexpr bool pair<string,int>::_CheckArgs::__is_implicit<string&,int>(){return true;}}
+int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"pair-factory-exception-trait-identity-macro", R"cpp(#include <type_traits>
+#define is_nothrow_constructible is_nothrow_constructible
+#include <string>
+#include <utility>
+int main(){std::string s="abc";auto p=std::make_pair(s,7);return p.first!="abc"||p.second!=7;}
+)cpp"},
+      {"pair-factory-wrapper-user-conversion", R"cpp(#include <string>
+#include <string_view>
+#include <functional>
+#include <utility>
+namespace std {template<> reference_wrapper<string>::operator string&()const noexcept{return *__f_;}}
+int main(){std::string s="abc";std::string_view v="def";auto p=std::make_pair(std::ref(s),v);return &p.first!=&s||p.second!="def";}
+)cpp"},
+      {"pair-factory-wrapper-alias-identity-macro", R"cpp(#include <type_traits>
+#include <string>
+#include <string_view>
+#define type type
+#include <functional>
+#include <utility>
+int main(){std::string s="abc";std::string_view v="def";auto p=std::make_pair(std::ref(s),v);return &p.first!=&s||p.second!="def";}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-factory-selected-values-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-factory-selected-values-reject-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;

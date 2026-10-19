@@ -5125,8 +5125,11 @@ static bool functionalReferenceFactorySource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
-static bool functionalReferenceAccessSource(Adapter &A, const CallExpr *Call) {
-  if (!approvedFunctionalReferenceAccessCall(A.S, A.Sources, Call, A.Context))
+static bool functionalReferenceAccessSource(Adapter &A, const CallExpr *Call,
+                                            const TypeTraitExpr *PairQuery = nullptr) {
+  if (PairQuery ? !approvedUtilityPairReferenceQueryCall(A.S, A.Sources, PairQuery, Call,
+                                                       A.Context, A.OperationTraits)
+                : !approvedFunctionalReferenceAccessCall(A.S, A.Sources, Call, A.Context))
     return false;
   const auto *Method = Call->getDirectCallee();
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
@@ -10789,7 +10792,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const QueryTemplateSelectionSources *TemplateSelections = nullptr,
     const TypeTraitExpr *SDKQuery = nullptr,
     const std::set<const CXXMethodDecl *> *QuerySpecialMembers = nullptr,
-    std::function<bool(const CXXMethodDecl *)> PrepareSpecialMember = {}) {
+    std::function<bool(const CXXMethodDecl *)> PrepareSpecialMember = {},
+    const TypeTraitExpr *PairQuery = nullptr) {
   // A consumed pinned swap trait can select an owned constructor default at
   // its SDK query location. Authenticate the exact retained semantic event;
   // parameter identity, unchanged initializer and completed source still close
@@ -10798,6 +10802,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
                                   : A.OperationTraits.end();
   const bool ExactSDKQuery = SDKSource != A.OperationTraits.end() &&
                              &SDKSource->second == &Source;
+  const bool ExactPairQuery = PairQuery && PairQuery == SDKQuery && ExactSDKQuery;
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
@@ -10952,6 +10957,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     }
     if (const auto *Call = dyn_cast<CXXMemberCallExpr>(E)) {
       const auto *Conversion = dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee());
+      if (ExactPairQuery && functionalReferenceAccessSource(A, Call, PairQuery))
+        return Self(Self, Call->getImplicitObjectArgument(), Depth + 1);
       if (!ordinaryConversion(Conversion) ||
           !TemplateSelectionSource(Call, Conversion) ||
           (!Defined(Conversion) && !QueryCallSource(Call, Conversion)) ||
@@ -16615,6 +16622,23 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "The exact selected pair element constructions are required.");
       return true;
     }
+    if (llvm::any_of(*Copies, [](const auto *Copy) { return Copy != nullptr; })) {
+      const auto *Construction = approvedUtilityMakePairConstruction(A.S, A.Sources, Call, A.Context);
+      const auto Found = SelectedCallSources.find(Construction);
+      if (!Construction || Found == SelectedCallSources.end() || Found->second.empty()) {
+        A.reject(Call->getExprLoc(), "pair factory constructor source",
+                 "The actual SDK factory return needs its retained constructor selection.");
+        return false;
+      }
+      for (const auto *Selection : Found->second)
+        if (!Selection || Selection->Expression != Construction ||
+            Selection->Function != Construction->getConstructor() ||
+            !pairConstructorTemplateSource(*Selection, Call)) {
+          A.reject(Call->getExprLoc(), "pair factory constructor source",
+                   "Each public factory call needs complete selected constructor source.");
+          return false;
+        }
+    }
     for (const auto *Copy : *Copies)
       if (!checkUtilitySelectedConstruction(Copy, Call->getExprLoc()))
         return false;
@@ -21133,19 +21157,24 @@ public:
     auto Found = DirectTemplateCallLocations.find(Reference);
     return Found == DirectTemplateCallLocations.end() ? SourceLocation() : Found->second;
   }
-  std::map<const CXXConstructExpr *,
+  using PairConstructorSourceKey = std::pair<const CXXConstructExpr *, const CallExpr *>;
+  std::map<PairConstructorSourceKey,
            std::map<const TypeTraitExpr *, const SelectedTemplateCallSource *>>
       PairConstructorTraitBindings;
   std::set<const TypeTraitExpr *> PairConstructorQueries, CompletedPairConstructorQueries;
-  std::map<const CXXConstructExpr *, std::set<const Type *>> PairConstructorTypeSpellings;
-  std::map<const CXXConstructExpr *, const SelectedTemplateCallSource *> PairConstructorSelections;
+  std::map<PairConstructorSourceKey, std::set<const Type *>> PairConstructorTypeSpellings;
+  std::map<PairConstructorSourceKey, const SelectedTemplateCallSource *> PairConstructorSelections;
   UtilityPairSelectionSources PairTraitSelections;
-  std::map<const CXXConstructExpr *, std::set<const CXXMethodDecl *>> PairConstructorSourceMembers;
+  std::map<PairConstructorSourceKey, std::set<const CXXMethodDecl *>> PairConstructorSourceMembers;
   std::map<const CXXMethodDecl *, OperationSourceDependencies> PairMemberSourceDependencies;
-  bool pairConstructorTemplateSource(const SelectedTemplateCallSource &Selection) {
+  bool pairConstructorTemplateSource(const SelectedTemplateCallSource &Selection,
+                                     const CallExpr *Factory = nullptr) {
     const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Selection.Expression);
     const auto *Function = Selection.Function;
     const auto Location = Selection.Location;
+    const PairConstructorSourceKey Key{Construction, Factory};
+    if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
+      return false;
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
         Found == FunctionSources.end() || Found->second.empty()) return false;
@@ -21161,7 +21190,7 @@ public:
           Source->Location != Location ||
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
-              Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections))
+              Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
         return false;
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
@@ -21169,9 +21198,9 @@ public:
       First = Source;
     }
     // Whole-graph success precedes publication of exact purpose bindings.
-    PairConstructorSelections.emplace(Construction, &Selection);
-    PairConstructorTypeSpellings[Construction].insert(TypeSpellings.begin(), TypeSpellings.end());
-    PairConstructorSourceMembers[Construction].insert(Members.begin(), Members.end());
+    PairConstructorSelections.emplace(Key, &Selection);
+    PairConstructorTypeSpellings[Key].insert(TypeSpellings.begin(), TypeSpellings.end());
+    PairConstructorSourceMembers[Key].insert(Members.begin(), Members.end());
     for (const auto *Member : Members) {
       auto &Dependencies = PairMemberSourceDependencies[Member];
       ActiveOperationSources.push_back(&Dependencies);
@@ -21187,7 +21216,7 @@ public:
       }
     }
     for (const auto *Query : Queries) {
-      PairConstructorTraitBindings[Construction].emplace(Query, &Selection);
+      PairConstructorTraitBindings[Key].emplace(Query, &Selection);
       const bool NewPurpose = PairConstructorQueries.insert(Query).second;
       if (A.DeferredOperationQueries.insert(Query).second ||
           (NewPurpose && A.VerifiedOperationQueries.count(Query)))
@@ -21202,6 +21231,15 @@ public:
     }
     return A.S.Diagnostics.empty();
   }
+  bool pairConstructorSourceIdentity(
+      PairConstructorSourceKey Key, const SelectedTemplateCallSource *Selection) const {
+    if (!Selection || Selection->Expression != Key.first ||
+        Selection->Function != Key.first->getConstructor()) return false;
+    if (!Key.second) return A.S.owns(A.Sources, Selection->Location);
+    return A.S.owns(A.Sources, Key.second->getExprLoc()) &&
+        approvedUtilityMakePairConstruction(A.S, A.Sources, Key.second, A.Context) == Key.first &&
+        approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Selection->Location, Selection->Function);
+  }
   bool finishPairConstructorSources() {
     std::map<const Type *, std::vector<OperationTypeSourceKey>> WrittenTypes;
     for (const auto &[Key, Source] : CheckedOperationTypes)
@@ -21213,11 +21251,12 @@ public:
         &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
         &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
         &CompletedOperationDefaults);
-    for (const auto &[Construction, Spellings] : PairConstructorTypeSpellings) {
-      const auto *Selection = PairConstructorSelections[Construction];
+    for (const auto &[Key, Spellings] : PairConstructorTypeSpellings) {
+      const auto *Construction = Key.first;
+      const auto *Selection = PairConstructorSelections[Key];
       if (!Selection || Selection->Expression != Construction ||
           Selection->Function != Construction->getConstructor() ||
-          !A.S.owns(A.Sources, Selection->Location)) {
+          !pairConstructorSourceIdentity(Key, Selection)) {
         A.reject(Construction->getExprLoc(), "pair input source identity",
                  "The completed input spelling must belong to this exact selected construction.");
         return false;
@@ -21257,11 +21296,12 @@ public:
         return false;
       }
     }
-    for (const auto &[Construction, Members] : PairConstructorSourceMembers) {
-      const auto *Selection = PairConstructorSelections[Construction];
+    for (const auto &[Key, Members] : PairConstructorSourceMembers) {
+      const auto *Construction = Key.first;
+      const auto *Selection = PairConstructorSelections[Key];
       if (!Selection || Selection->Expression != Construction ||
           Selection->Function != Construction->getConstructor() ||
-          !A.S.owns(A.Sources, Selection->Location)) {
+          !pairConstructorSourceIdentity(Key, Selection)) {
         A.reject(Construction->getExprLoc(), "pair selected child source identity",
                  "The source children must belong to this exact selected construction.");
         return false;
@@ -21282,17 +21322,19 @@ public:
         return false;
       }
     }
-    for (const auto &[Construction, Bindings] : PairConstructorTraitBindings)
+    for (const auto &[Key, Bindings] : PairConstructorTraitBindings) {
+      const auto *Construction = Key.first;
       for (const auto &[Query, Selection] : Bindings)
         if (!Selection || Selection->Expression != Construction ||
             Selection->Function != Construction->getConstructor() ||
-            !A.S.owns(A.Sources, Selection->Location) ||
+            !pairConstructorSourceIdentity(Key, Selection) ||
             !A.VerifiedOperationQueries.count(Query) ||
             !CompletedPairConstructorQueries.count(Query)) {
           A.reject(Construction->getExprLoc(), "pair constructor source completion",
                    "Every exact selected pair trait needs completed ordinary source.");
           return false;
         }
+    }
     return true;
   }
   void indexSelectedTemplateCalls(llvm::ArrayRef<SelectedTemplateCallSource> Sources) {
@@ -21312,7 +21354,8 @@ public:
         Selected = Allocation->getOperatorNew();
       if (Selected == Source.Function &&
           (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
-           approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Selected))) {
+           approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
+           approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected))) {
         // Collection is inert until an exact public factory binds this node.
         SelectedCallSources[Source.Expression].push_back(&Source);
         continue;
@@ -24232,7 +24275,8 @@ public:
                                      (ArraySwapOperationQueries.count(Query) ||
                                       TupleFactoryExceptionQueries.count(Query) ||
                                       PairConstructorQueries.count(Query)) ? Query : nullptr,
-                                     &CompletedSpecialMemberSignatures, PrepareSpecialMember));
+                                     &CompletedSpecialMemberSignatures, PrepareSpecialMember,
+                                     PairConstructorQueries.count(Query) ? Query : nullptr));
         if (!Complete) {
           A.reject(Query->getExprLoc(), "operation trait source",
                    "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
@@ -28081,6 +28125,8 @@ class Consumer : public ASTConsumer {
           (tupleFactorySelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)) ||
            approvedUtilityPairTraitSelectionLocation(S, Sources, Location,
+              dyn_cast_or_null<FunctionDecl>(Declaration)) ||
+           approvedUtilityPairFactorySelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)))))
       return;
     // These are successful Clang callbacks, not input protocol records. Bound
@@ -28396,7 +28442,8 @@ public:
     auto &Sources = Function->getASTContext().getSourceManager();
     if ((!S.owns(Sources, Location) &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
-         !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function)) ||
+         !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
+         !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function)) ||
         !reserveSourceUnits(Sources, Location, 2))
       return;
     // All admitted producer paths capture direct nodes before casts or

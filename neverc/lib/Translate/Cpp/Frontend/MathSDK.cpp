@@ -5197,6 +5197,11 @@ static bool utilityCatCarrier(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type,
                               UtilityCatLayoutProof &Proof, unsigned Depth);
 
+// A pair reference, like a tuple reference, stores only an address. Its
+// selected conversion and every actual operation need independent source.
+static bool utilityTupleReferenceValue(const State &S, const SourceManager &SM,
+                                      const ASTContext &Context, QualType Type);
+
 static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context, bool RequireReferenceElements,
@@ -5242,17 +5247,19 @@ static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
       return std::nullopt;
     for (const auto Type : {FirstType, SecondType}) {
       if (Type->isReferenceType()) {
-        if (!supportedFunctionalReferenceValue(S, SM, Context,
-                                               Type->getPointeeType()))
+        if (!utilityTupleReferenceValue(S, SM, Context,
+                                        Type->getPointeeType()))
           return std::nullopt;
       } else if (!utilityPairValue(S, SM, Context, Type) &&
-                 !utilityPairSourceOwnedValue(S, SM, Context, Type)) {
+                 !utilityPairSourceOwnedValue(S, SM, Context, Type) &&
+                 !utilityPairSelectedStringValue(S, SM, Context, Type) &&
+                 !utilityPairSelectedOwnerValue(S, SM, Context, Type)) {
         return std::nullopt;
       }
     }
   } else if (RequireReferenceElements) {
     auto ReferenceElement = [&](QualType Type) {
-      if (supportedFunctionalReferenceValue(S, SM, Context, Type))
+      if (utilityTupleReferenceValue(S, SM, Context, Type))
         return true;
       if (Type.isNull() || Type.isVolatileQualified() ||
           Type.isRestrictQualified() ||
@@ -5765,6 +5772,53 @@ approvedUtilityPairSelectedConvertingCopies(
   return Copies;
 }
 
+static bool utilityPairReferenceWrapperConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const UtilityPairRecord &Pair, unsigned Index, const ASTContext &Context) {
+  const auto *Constructor = Construction ? dyn_cast_or_null<CXXConstructorDecl>(
+      Construction->getConstructor()->getDefinition()) : nullptr;
+  const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody()) : nullptr;
+  const auto *Field = Index ? Pair.Second : Pair.First;
+  if (!Constructor || !Body || !Body->body_empty() || Index >= 2 ||
+      Constructor->getNumParams() != 2 || Construction->getNumArgs() != 2 ||
+      Constructor->getParent()->getCanonicalDecl() != Pair.Record->getCanonicalDecl() ||
+      !Field->getType()->isLValueReferenceType() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "__utility/pair.h")) return false;
+  const auto *Parameter = Constructor->getParamDecl(Index);
+  const auto ParameterType = Parameter->getType();
+  const auto *Argument = Construction->getArg(Index);
+  const auto Wrapper = approvedFunctionalReferenceRecord(S, SM,
+      Argument->getType()->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || !ParameterType->isReferenceType() ||
+      !Context.hasSameType(ParameterType->getPointeeType(), Argument->getType()) ||
+      !Context.hasSameUnqualifiedType(Field->getType()->getPointeeType(), Wrapper->ReferentType) ||
+      !Field->getType()->getPointeeType().isAtLeastAsQualifiedAs(Wrapper->ReferentType, Context))
+    return false;
+  const Expr *Initializer = nullptr;
+  unsigned Count = 0;
+  for (const auto *Entry : Constructor->inits()) {
+    if (++Count > 2 || !Entry->isMemberInitializer() ||
+        (Entry->getMember() != Pair.First && Entry->getMember() != Pair.Second)) return false;
+    if (Entry->getMember() == Field) {
+      if (Initializer) return false;
+      Initializer = Entry->getInit();
+    }
+  }
+  const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Initializer));
+  const auto Access = Conversion ? approvedFunctionalReferenceAccessCallImpl(
+      S, SM, Conversion, Context, false) : std::nullopt;
+  const auto *Forward = Access ? dyn_cast_or_null<CallExpr>(
+      Access->Object->IgnoreParenImpCasts()) : nullptr;
+  return Count == 2 && Conversion &&
+      isa_and_nonnull<CXXConversionDecl>(Conversion->getDirectCallee()) && Access &&
+      !Access->ObjectIsArrow &&
+      Wrapper->Record->getCanonicalDecl() == Access->Wrapper.Record->getCanonicalDecl() &&
+      approvedFunctionalForwardingCall(S, SM, Access->Object, Parameter) &&
+      utilityPairForwardingUseSource(S, SM, Forward);
+}
+
 std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context,
@@ -5915,6 +5969,8 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
                                           Parameter->getPointeeType()))
         return std::nullopt;
       if (Element->isReferenceType()) {
+        if (utilityPairReferenceWrapperConstruction(S, SM, Construction, *Pair, I, Context))
+          continue;
         if (!Context.hasSameUnqualifiedType(Argument,
                                             Element->getPointeeType()) ||
             !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
@@ -7777,6 +7833,30 @@ class UtilityTupleQueryGraph
              !Definition->getNumBases()))) return false;
     }
     if (!bindPairInputFamily(Definition)) return false;
+    if (Wrapper) {
+      const auto Description = approvedFunctionalReferenceRecord(S, SM, Definition, Context);
+      const TypedefNameDecl *Alias = nullptr;
+      for (const auto *Declaration : Definition->decls())
+        if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
+            Named && Named->getIdentifier() && Named->getName() == "type") {
+          if (Alias) return false;
+          Alias = Named;
+        }
+      const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
+      PairStorageUseSource Source(*this);
+      if (!Description || !Alias || !Info || Alias->getLocation().isMacroID() ||
+          Info->getTypeLoc().getBeginLoc().isMacroID() ||
+          Info->getTypeLoc().getEndLoc().isMacroID() ||
+          Alias->getDeclContext() != Definition ||
+          !Context.hasSameType(Alias->getUnderlyingType(), Description->ReferentType) ||
+          !Context.hasSameType(Info->getType(), Alias->getUnderlyingType()) ||
+          !approvedStandardSDKDeclaration(S, SM, Alias) ||
+          !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h") ||
+          !Source.check(Info)) return false;
+      // Only this bound wrapper's actual referent alias supplies metadata.
+      // Its original type spelling closes before any later alias/cache use.
+      PairInputFamilies.insert(Alias);
+    }
     PairBorrowedStorageRecords.insert(Definition->getCanonicalDecl());
     for (const auto &Base : Definition->bases()) {
       PairStorageUseSource Source(*this);
@@ -7886,7 +7966,8 @@ class UtilityTupleQueryGraph
     PairInputFamilies.insert(Family.begin(), Family.end());
     return true;
   }
-  bool bindPairCallerValueAdapter(const Expr *Argument) {
+  bool bindPairCallerValueAdapter(const Expr *Argument,
+                                  const ParmVarDecl *FactoryParameter = nullptr) {
     const auto *Call = dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(Argument));
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
@@ -7897,10 +7978,33 @@ class UtilityTupleQueryGraph
     if (!Origin || Origin->Root != "libcxx" ||
         Origin->Path != (Function->getName() == "move"
                              ? "__utility/move.h" : "__utility/forward.h")) return true;
-    const auto Operation = approvedUtilityOperation(S, SM, Call, Context);
+    std::optional<UtilityOperation> Operation;
+    if (FactoryParameter) {
+      // The public-call descriptor requires an owned call site. This exact
+      // SDK use instead proves its actual parameter, deduction and result.
+      const auto Parameter = FactoryParameter->getType();
+      const auto *Arguments = Function->getTemplateSpecializationArgs();
+      const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+      if (!Parameter->isReferenceType() || !Arguments || Arguments->size() != 1 ||
+          Arguments->get(0).getKind() != TemplateArgument::Type ||
+          Function->getNumParams() != 1 || !Prototype ||
+          !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
+          !approvedFunctionalForwardingCall(S, SM, Call, FactoryParameter) ||
+          !utilityPairForwardingUseSource(S, SM, Call) ||
+          !Context.hasSameType(Arguments->get(0).getAsType(),
+              Parameter->isLValueReferenceType() ? Parameter : Parameter->getPointeeType()) ||
+          !Context.hasSameType(Function->getReturnType(), Parameter) ||
+          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return false;
+      const bool LValue = Parameter->isLValueReferenceType() || Call->getType()->isFunctionType();
+      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return false;
+      Operation = UtilityOperation::Forward;
+    } else {
+      Operation = approvedUtilityOperation(S, SM, Call, Context);
+      if (!S.owns(SM, Call->getExprLoc())) return false;
+    }
     const auto Path = Operation == UtilityOperation::Move ? "__utility/move.h"
         : Operation == UtilityOperation::Forward ? "__utility/forward.h" : "";
-    if (!*Path || !S.owns(SM, Call->getExprLoc()) ||
+    if (!*Path ||
         !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return false;
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
@@ -9766,6 +9870,53 @@ public:
   bool VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
     return family(E->getAssociatedDecl()) && family(E->getParameter());
   }
+  bool TraverseCXXMemberCallExpr(CXXMemberCallExpr *E) {
+    const auto Found = PairTraitQuery ? OperationTraits.find(PairTraitQuery) : OperationTraits.end();
+    const auto Access = Mode == UtilityTupleQueryMode::PairConstruction && PairTraitQuery
+        ? approvedFunctionalReferenceAccessCallImpl(S, SM, E, Context, false) : std::nullopt;
+    const auto *Method = dyn_cast_or_null<CXXConversionDecl>(E->getDirectCallee());
+    if (!Access || !Method || Found == OperationTraits.end() || !Found->second.Root ||
+        Found->second.Root->IgnoreParenImpCasts() != E)
+      return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseCXXMemberCallExpr(E);
+    const auto &Source = Found->second;
+    const auto *Operand = dyn_cast<OpaqueValueExpr>(Access->Object->IgnoreParenImpCasts());
+    if (!step() || !Source.Attempted || !Source.Complete || !Source.Root ||
+        Source.Operands.size() != 1 || !Operand || Operand->getSourceExpr() ||
+        Source.Operands[0] != Operand || !Operands.count(Operand) || Access->ObjectIsArrow ||
+        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return false;
+    // Only this actual SDK conversion family joins metadata. The SDK access
+    // descriptor proves its pointer dereference; the pending ordinary query
+    // must still finish the selected call and original exception source.
+    std::vector<const CXXMethodDecl *> Pending{Method};
+    std::set<const CXXMethodDecl *> Family;
+    while (!Pending.empty()) {
+      const auto *Current = Pending.back(); Pending.pop_back();
+      if (!Current || !step()) return false;
+      if (!Family.insert(Current).second) continue;
+      const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
+      if (!isa<CXXConversionDecl>(Current) || !Current->isConst() || Current->isStatic() ||
+          Current->isInvalidDecl() || Current->isDeleted() || Current->isVariadic() ||
+          Current->getNumParams() || Current->getPrimaryTemplate() ||
+          !Prototype || !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
+          !approvedStandardSDKDeclaration(S, SM, Current) ||
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+      for (const auto *Redeclaration : Current->redecls())
+        Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
+      if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
+        const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
+        if (!Member) return false;
+        Pending.push_back(Member);
+      }
+      if (const auto *Definition = Current->getDefinition()) {
+        if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
+            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+      }
+    }
+    PairInputFamilies.insert(Family.begin(), Family.end());
+    PairSourceQueries.insert(PairTraitQuery);
+    return family(Method) && TraverseType(Method->getType()) &&
+        TraverseType(E->getType()) && !Failed;
+  }
   bool VisitCallExpr(CallExpr *E) {
     const auto *F = E->getDirectCallee();
     if (!F) return E->isTypeDependent() || E->isValueDependent();
@@ -10063,12 +10214,16 @@ public:
                           std::vector<const Type *> &TypeSpellings,
                           std::vector<const CXXMethodDecl *> &SourceMembers,
                           const UtilityPairFunctionSources &Functions,
-                          const UtilityPairSelectionSources &Selections) {
+                          const UtilityPairSelectionSources &Selections,
+                          const CallExpr *Factory) {
     const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
     if (Mode != UtilityTupleQueryMode::PairConstruction || !Constructor ||
         Constructor->isInvalidDecl() || Constructor->isDeleted() ||
         Constructor->isVariadic() || Constructor->getAccess() != AS_public ||
-        Source.Written || Source.Declaration != Constructor || !S.owns(SM, Source.Location) ||
+        Source.Written || Source.Declaration != Constructor ||
+        (Factory ? approvedUtilityMakePairConstruction(S, SM, Factory, Context) != Construction ||
+                       !approvedUtilityPairFactorySelectionLocation(S, SM, Source.Location, Constructor)
+                 : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
             Context.getRecordType(Constructor->getParent()))) return false;
@@ -10080,12 +10235,42 @@ public:
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
       if (!bindPairInput(Field->getType())) return false;
-    for (const auto *Argument : Construction->arguments())
+    const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
+    for (const auto *Argument : Arguments)
       if (!bindPairInput(Argument->getType())) return false;
-    for (const auto *Argument : Construction->arguments())
+    for (const auto *Argument : Arguments)
       if (!bindPairReferenceFactory(Argument)) return false;
-    for (const auto *Argument : Construction->arguments())
+    for (const auto *Argument : Arguments)
       if (!bindPairCallerValueAdapter(Argument)) return false;
+    if (Factory) {
+      // Only this authenticated factory's substitutions join this fresh graph.
+      // The caller's actual template use and arguments still complete ordinarily.
+      std::vector<const Decl *> Pending{Factory->getDirectCallee()};
+      while (!Pending.empty()) {
+        const auto *Declaration = Pending.back(); Pending.pop_back();
+        if (!Declaration || !step()) return false;
+        if (!PairInputFamilies.insert(Declaration).second) continue;
+        if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+            !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
+          return false;
+        if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
+          for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
+          if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
+          if (const auto *Pattern = Function->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
+        } else if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
+          for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
+          Pending.push_back(Template->getTemplatedDecl());
+          for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+      }
+      // These are the exact two SDK forwarding uses already authenticated by
+      // the public factory descriptor. Bind their substitutions, not their bodies.
+      for (unsigned I = 0; I != 2; ++I)
+        if (!bindPairInput(Construction->getArg(I)->getType()) ||
+            !bindPairCallerValueAdapter(Construction->getArg(I),
+                                       Factory->getDirectCallee()->getParamDecl(I)))
+          return false;
+    }
     if (!templateSource(Source, Constructor) || Failed) return false;
     for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
       // Copy the item: its source can append more work to this same vector.
@@ -10247,6 +10432,67 @@ bool approvedUtilityPairTraitSelectionLocation(
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__utility/pair.h");
 }
 
+bool approvedUtilityPairReferenceQueryCall(
+    const State &S, const SourceManager &SM, const TypeTraitExpr *Query,
+    const CallExpr *Call, const ASTContext &Context,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  const auto Found = Query ? Traits.find(Query) : Traits.end();
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = dyn_cast_or_null<CXXConversionDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto Access = Member ? approvedFunctionalReferenceAccessCallImpl(
+      S, SM, Member, Context, false) : std::nullopt;
+  const auto Origin = Query ? S.sdkFile(SM, Query->getExprLoc()) : std::nullopt;
+  if (!Query || !Member || !Method || !Access || Found == Traits.end() ||
+      !Origin || Origin->Root != "libcxx" ||
+      (Origin->Path != "__type_traits/is_constructible.h" &&
+       Origin->Path != "__type_traits/is_nothrow_constructible.h" &&
+       Origin->Path != "__type_traits/is_convertible.h")) return false;
+  const bool Construction = Query->getTrait() == TT_IsConstructible ||
+      Query->getTrait() == TT_IsNothrowConstructible;
+  const bool Conversion = Query->getTrait() == BTT_IsConvertible ||
+      Query->getTrait() == BTT_IsConvertibleTo;
+  const auto &Source = Found->second;
+  const auto *Operand = dyn_cast<OpaqueValueExpr>(Access->Object->IgnoreParenImpCasts());
+  if ((!Construction && !Conversion) || Query->getNumArgs() != 2 ||
+      !Source.Attempted || !Source.Complete || !Source.Root ||
+      Source.Root->IgnoreParenImpCasts() != Member || Source.Operands.size() != 1 ||
+      Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
+      Source.DestructionExceptionAttempted || !Operand || Operand->getSourceExpr() ||
+      Source.Operands[0] != Operand || Access->ObjectIsArrow) return false;
+  const auto Target = Query->getArg(Construction ? 0 : 1)->getType();
+  auto Input = Query->getArg(Construction ? 1 : 0)->getType();
+  if (Input->isObjectType() || Input->isFunctionType()) Input = Context.getRValueReferenceType(Input);
+  if (!Target->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Target->getPointeeType(), Access->Wrapper.ReferentType) ||
+      !Target->getPointeeType().isAtLeastAsQualifiedAs(Access->Wrapper.ReferentType, Context) ||
+      !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
+      Operand->getValueKind() != Expr::getValueKindForType(Input)) return false;
+  std::vector<const CXXMethodDecl *> Pending{Method};
+  std::set<const CXXMethodDecl *> Family;
+  while (!Pending.empty()) {
+    const auto *Current = Pending.back(); Pending.pop_back();
+    if (!Current || Family.size() >= 64) return false;
+    if (!Family.insert(Current).second) continue;
+    const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
+    if (!isa<CXXConversionDecl>(Current) || Current->isInvalidDecl() || Current->isDeleted() ||
+        Current->isStatic() || Current->isVariadic() || !Current->isConst() ||
+        Current->getNumParams() || Current->getPrimaryTemplate() || !Prototype ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+        !approvedStandardSDKDeclaration(S, SM, Current) ||
+        !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+    for (const auto *Redeclaration : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
+    if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
+      const auto *Selected = dyn_cast<CXXMethodDecl>(Pattern);
+      if (!Selected) return false;
+      Pending.push_back(Selected);
+    }
+    if (const auto *Definition = Current->getDefinition())
+      if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
+          !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+  }
+  return true;
+}
+
 bool approvedUtilityPairConstructorTemplateSource(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const TemplateUseSource &Source,
@@ -10257,11 +10503,12 @@ bool approvedUtilityPairConstructorTemplateSource(
     std::vector<const Type *> &TypeSpellings,
     std::vector<const CXXMethodDecl *> &SourceMembers,
     const UtilityPairFunctionSources &Functions,
-    const UtilityPairSelectionSources &Selections) {
+    const UtilityPairSelectionSources &Selections,
+    const CallExpr *Factory) {
   return UtilityTupleQueryGraph(S, SM, Context, Members, Traits,
                                UtilityTupleQueryMode::PairConstruction)
       .pairTemplateSource(Construction, Source, Queries, TypeSpellings,
-                          SourceMembers, Functions, Selections);
+                          SourceMembers, Functions, Selections, Factory);
 }
 
 static const DeclRefExpr *approvedUtilityReference(
@@ -17334,27 +17581,11 @@ static bool functionalReferenceForwardedParameter(
                              Parameter->getType()->getPointeeType());
 }
 
-std::optional<std::vector<const CXXConstructExpr *>>
-approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
-                                      const CallExpr *Call,
-                                      const UtilityPairRecord &Pair,
-                                      const ASTContext &Context) {
-  if (!Call || Call->getNumArgs() != 2)
-    return std::nullopt;
-  const FieldDecl *Fields[] = {Pair.First, Pair.Second};
-  // The SDK factory return needs its own exact constructor-source binding
-  // before it can use the direct selected String/View extension.
-  for (const auto *Field : Fields)
-    if (utilityPairSelectedStringValue(S, SM, Context, Field->getType()) ||
-        utilityPairSelectedOwnerValue(S, SM, Context, Field->getType()))
-      return std::nullopt;
-  bool Owned = false;
-  for (const auto *Field : Fields)
-    Owned |= !Field->getType()->isReferenceType() &&
-             !utilityPairValue(S, SM, Context, Field->getType());
-  if (!Owned)
-    return std::vector<const CXXConstructExpr *>(2, nullptr);
-
+const CXXConstructExpr *approvedUtilityMakePairConstruction(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != 2 || !S.owns(SM, Call->getExprLoc()))
+    return nullptr;
   const auto *Function = Call->getDirectCallee();
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -17373,13 +17604,13 @@ approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
       Construction ? Construction->getConstructor() : nullptr;
   const auto *ConstructorPrimary =
       Constructor ? Constructor->getPrimaryTemplate() : nullptr;
-  if (!Function || !Primary || !Pattern || !Pattern->hasBody() || !Body ||
+  if (!Function || Function->getNumParams() != 2 || !Primary || !Pattern || !Pattern->hasBody() || !Body ||
       !Return || !Construction || !Constructor || !ConstructorPrimary ||
       !Function->isInlined() || !Function->isConstexpr() ||
       !Constructor->hasBody() || !Origin || Origin->Root != "libcxx" ||
       Origin->Path != "__utility/pair.h" || Construction->getNumArgs() != 2 ||
       !Context.hasSameType(Construction->getType(),
-                           Context.getRecordType(Pair.Record)) ||
+                           Call->getType()) ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !approvedStandardSDKDeclaration(S, SM, Pattern) ||
@@ -17387,11 +17618,62 @@ approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, ConstructorPrimary) ||
       !cstddefOrigin(S, SM, ConstructorPrimary->getLocation(), "libcxx",
                      "__utility/pair.h"))
-    return std::nullopt;
-  for (unsigned I = 0; I != 2; ++I)
+    return nullptr;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Forward = dyn_cast_or_null<CallExpr>(
+        Construction->getArg(I)->IgnoreParenImpCasts());
     if (!approvedFunctionalForwardingCall(S, SM, Construction->getArg(I),
-                                          Function->getParamDecl(I)))
-      return std::nullopt;
+                                          Function->getParamDecl(I)) ||
+        !utilityPairForwardingUseSource(S, SM, Forward))
+      return nullptr;
+  }
+
+  if (!Function->getIdentifier() || Function->getName() != "make_pair" ||
+      !Call->isPRValue() || Function->getReturnType()->isReferenceType() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !approvedUtilityPairConstruction(S, SM, Construction, Context))
+    return nullptr;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        Call->getArg(I)->getType()))
+      return nullptr;
+  }
+  return Construction;
+}
+
+bool approvedUtilityPairFactorySelectionLocation(
+    const State &S, const SourceManager &SM, SourceLocation Location,
+    const FunctionDecl *Function) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+  return Location.isValid() && !Location.isMacroID() && Constructor && Primary &&
+      approvedUtilityPairMetadata(S, SM, Constructor->getParent()) &&
+      approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Location, "libcxx", "__utility/pair.h") &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "__utility/pair.h") &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__utility/pair.h");
+}
+
+std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
+                                      const CallExpr *Call,
+                                      const UtilityPairRecord &Pair,
+                                      const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != 2)
+    return std::nullopt;
+  const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+  bool Owned = false;
+  for (const auto *Field : Fields)
+    Owned |= !Field->getType()->isReferenceType() &&
+             !utilityPairValue(S, SM, Context, Field->getType());
+  if (!Owned)
+    return std::vector<const CXXConstructExpr *>(2, nullptr);
+
+  const auto *Construction = approvedUtilityMakePairConstruction(S, SM, Call, Context);
+  if (!Construction) return std::nullopt;
 
   auto Copies =
       approvedUtilityPairSelectedCopies(S, SM, Construction, Pair, Context);
