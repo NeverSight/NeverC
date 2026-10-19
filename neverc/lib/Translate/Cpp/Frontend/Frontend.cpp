@@ -30310,6 +30310,11 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
                                "-Wc++26-extensions", "-Werror=writable-strings",
                                "-fno-ms-compatibility", "-fno-ms-extensions",
+                               // Disabling extensions does not stop Clang
+                               // from detecting an installed MSVC version.
+                               // Keep the pinned libc++ ABI configuration
+                               // independent of that host installation.
+                               "-fms-compatibility-version=0",
                                "-fno-delayed-template-parsing",
                                "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
                                "-D_NEVERC_CPP_CORE_V2_SDK",

@@ -328,6 +328,38 @@ TEST_F(TranslateTest, HelpDescribesTheBuiltInFrontend) {
   EXPECT_FALSE(Result.contains("--cpp-sdk")) << Result.out;
 }
 
+TEST_F(TranslateTest, CoreV2PinnedSdkDoesNotDetectHostMsvcVersion) {
+  const auto Source = tmpFile("sdk-host-msvc-version.cpp");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <memory>
+#include <tuple>
+#include <utility>
+#ifdef _MSC_VER
+#error the private SDK must not select the installed Visual Studio version
+#endif
+#ifdef _LIBCPP_ABI_VCRUNTIME
+#error the pinned SDK must not require unbundled VCRuntime headers
+#endif
+int main() {
+  std::pair<int, int> pair(3, 4);
+  return pair.first + pair.second == 7 ? 0 : 1;
+}
+)cpp");
+  for (const std::string &Target : {
+           "i686-pc-windows-msvc", "x86_64-pc-windows-msvc",
+           "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu",
+           "aarch64-unknown-linux-gnu", "arm64-apple-macosx15.0.0",
+           "x86_64-apple-macosx15.0.0", "i686-unknown-linux-gnu"}) {
+    SCOPED_TRACE(Target);
+    const auto Output = tmpFile("sdk-host-msvc-version-" + Target + ".nc");
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2",
+                                           "--target", Target, "-o",
+                                           Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, RequiresExplicitLanguageAndKnownProfile) {
   const auto Source = source();
   expectCode(ncc({"translate", Source.string(), "--check"}), "TR0001");
