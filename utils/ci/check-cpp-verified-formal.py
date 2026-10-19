@@ -177,8 +177,8 @@ protected:
         # their real Support owner; do not mix incompatible libraries or stubs.
         config = ['cmake', '-S', root / 'llvm', '-B', support, '-G', 'Ninja',
                   '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=/usr/bin/clang-22',
-                  '-DCMAKE_CXX_COMPILER=' + str(clangxx), '-DLLVM_ENABLE_PROJECTS=',
-                  '-DLLVM_TARGETS_TO_BUILD=', '-DLLVM_INCLUDE_TESTS=OFF',
+                  '-DCMAKE_CXX_COMPILER=' + str(clangxx), '-DLLVM_ENABLE_PROJECTS=neverc',
+                  '-DLLVM_TARGETS_TO_BUILD=X86;AArch64', '-DLLVM_INCLUDE_TESTS=OFF',
                   '-DLLVM_INCLUDE_EXAMPLES=OFF', '-DLLVM_INCLUDE_BENCHMARKS=OFF',
                   '-DLLVM_INCLUDE_UTILS=OFF', '-DLLVM_INCLUDE_TOOLS=ON',
                   '-DLLVM_ENABLE_ASSERTIONS=OFF', '-DLLVM_ENABLE_ZLIB=OFF',
