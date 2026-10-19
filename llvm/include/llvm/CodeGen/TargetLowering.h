@@ -1171,7 +1171,15 @@ public:
     // to provide custom legalization for it.
     if (Op >= std::size(OpActions[0]))
       return Custom;
+#if defined(_MSC_VER) && _MSC_VER == 1951 && defined(_M_ARM64) && !defined(__clang__)
+    // MSVC 19.51 ARM64 can widen this byte load to include EVT padding after
+    // getTypeToExpandTo is inlined. Materialize the actual enum width before
+    // indexing; the type value and all legalization decisions stay unchanged.
+    const volatile MVT::SimpleValueType SimpleTy = VT.getSimpleVT().SimpleTy;
+    return OpActions[static_cast<unsigned>(SimpleTy)][Op];
+#else
     return OpActions[(unsigned)VT.getSimpleVT().SimpleTy][Op];
+#endif
   }
 
   /// Custom method defined by each target to indicate if an operation which
