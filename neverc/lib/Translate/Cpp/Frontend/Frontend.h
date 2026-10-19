@@ -1693,6 +1693,28 @@ struct UtilityTupleRecord {
   // References retain their bindings without owning their referents.
   bool RequiresSelectedElementOperations = false;
 };
+// Draft metadata only. Runtime admission also requires a completed, bounded
+// source proof of both constructors, their signatures and consumed helpers.
+struct UtilityPairPiecewiseElement {
+  const clang::FieldDecl *Field;
+  UtilityTupleRecord Tuple;
+  const clang::Expr *Initializer;
+  std::vector<std::pair<const clang::CallExpr *, unsigned>> Getters;
+  std::vector<const clang::CallExpr *> Forwarders;
+};
+struct UtilityPairPiecewiseConstruction {
+  UtilityPairRecord Pair;
+  const clang::CXXConstructorDecl *PublicConstructor;
+  const clang::CXXConstructorDecl *PrivateConstructor;
+  const clang::CXXConstructExpr *Delegation;
+  std::vector<UtilityPairPiecewiseElement> Elements;
+};
+std::optional<UtilityPairPiecewiseConstruction>
+approvedUtilityPairPiecewiseConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXRecordDecl *Record);
@@ -2516,6 +2538,7 @@ public:
   bool CheckingSource = false;
   std::function<bool(clang::QualType, clang::SourceLocation)> CompleteSDKRecord;
   std::set<const clang::CallExpr *> VerifiedTupleFactories;
+  std::set<const clang::CXXConstructExpr *> VerifiedPairPiecewiseConstructions;
   std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
   std::set<const clang::TypeTraitExpr *> DeferredOperationQueries, VerifiedOperationQueries;
   std::map<const clang::StringLiteral *, std::string> StringObjects;

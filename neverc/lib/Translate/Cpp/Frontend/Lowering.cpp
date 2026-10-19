@@ -32861,6 +32861,63 @@ class FunctionLowering {
       assign(std::move(Place), A.zero(T, L), L);
       return;
     }
+    // Draft insertion at the selected pair construction boundary. A completed
+// frontend certificate is mandatory; the metadata descriptor is insufficient.
+if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
+        A.S, A.Sources, C, A.Context)) {
+  if (!A.VerifiedPairPiecewiseConstructions.count(C) ||
+      Piecewise->Elements.size() != 2)
+    reject(L, "pair piecewise construction",
+           "Both selected SDK constructor layers need completed sources.");
+  CleanupFrame Parameters;
+  std::vector<Expression> Tuples;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Parameter = C->getConstructor()->getParamDecl(I + 1)->getType();
+    // These are real by-value parameters, including each selected caller copy
+    // or move. argument() directly initializes a prvalue in its final parameter.
+    auto Pointer = snapshot(argument(C->getArg(I + 1), Parameter), L);
+    auto Tuple = dereference(std::move(Pointer), L);
+    own(json::Object(Tuple), Parameter, L, Parameters);
+    Tuples.push_back(std::move(Tuple));
+  }
+  auto SavedElements = TupleFactoryElements;
+  auto RestoreElements = llvm::make_scope_exit([&] {
+    TupleFactoryElements = std::move(SavedElements);
+  });
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Element = Piecewise->Elements[I];
+    if (Element.Getters.size() != Element.Tuple.Elements.size() ||
+        Element.Forwarders.size() != Element.Getters.size())
+      reject(L, "pair piecewise arguments",
+             "Each tuple index needs its exact selected get and forward.");
+    for (unsigned J = 0; J < Element.Getters.size(); ++J) {
+      const auto &[Get, Index] = Element.Getters[J];
+      const auto &Stored = Element.Tuple.Elements[Index];
+      if (Stored.EmptyBase)
+        reject(L, "pair piecewise empty tuple element",
+               "An empty base needs a separately proved live projection.");
+      auto Value = fieldStorage(json::Object(Tuples[I]), Stored, L);
+      if (Stored.getType()->isReferenceType())
+        Value = dereference(std::move(Value), L);
+      // Bind storage, so first's construction can mutate a referent subsequently
+      // read by second. Neither get nor forward makes an early value snapshot.
+      TupleFactoryElements.insert_or_assign(Get, json::Object(Value));
+      TupleFactoryElements.insert_or_assign(Element.Forwarders[J], std::move(Value));
+    }
+    beginFullExpression();
+    auto Destination = fieldStorage(json::Object(Place), Element.Field, L);
+    const auto FieldType = Element.Field->getType();
+    if (FieldType->isReferenceType())
+      assign(std::move(Destination), bind(Element.Initializer, FieldType), L);
+    else
+      initialize(std::move(Destination), Element.Initializer, L);
+    // Defaults and their temporary cleanup belong to this one field initializer.
+    endFullExpression();
+  }
+  cleanup(Parameters);
+  return;
+}
+
     std::vector<const CXXConstructExpr *> PairCopies;
     if (auto Kind = approvedUtilityPairConstruction(A.S, A.Sources, C,
                                                     A.Context, &PairCopies)) {

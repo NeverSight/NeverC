@@ -213,6 +213,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
       - name: Install matching Clang and libc++ 20 diagnostic toolchain
         run: |
           curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
@@ -231,6 +233,19 @@ jobs:
             --repo "$GITHUB_WORKSPACE" --clangxx /usr/bin/clang++-20 \
             --output "$RUNNER_TEMP/cpp-pair-piecewise-native" \
             --baseline "$RUNNER_TEMP/cpp-pair-piecewise-prior/provenance.json"
+      - name: Check comparison and inactive piecewise draft syntax
+        if: ${{ !cancelled() }}
+        run: |
+          python3 utils/ci/check-cpp-pair-piecewise-syntax.py \
+            --repo "$GITHUB_WORKSPACE" --clangxx /usr/bin/clang++-20 \
+            --output "$RUNNER_TEMP/cpp-pair-piecewise-syntax"
+      - name: Upload piecewise syntax diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-pair-piecewise-syntax-${{ github.sha }}
+          path: ${{ runner.temp }}/cpp-pair-piecewise-syntax
+          if-no-files-found: warn
       - name: Upload native piecewise diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
