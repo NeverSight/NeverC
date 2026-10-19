@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from cpp_diagnostic_gtest import build_gtest
 import platform
 import re
 import shlex
@@ -72,7 +73,8 @@ def main():
             assert sha(root / name) == value, name
         inputs = [*plan['source_sha256'], 'utils/ci/check-cpp-linker-sdk-replay.py',
                   'utils/ci/cpp-linker-sdk-replay-plan.json',
-                  '.github/workflows/diagnose-cpp-template-source.yml']
+                  '.github/workflows/diagnose-cpp-template-source.yml',
+                  'utils/ci/cpp_diagnostic_gtest.py']
         report['source_sha256'] = {name: sha(root / name) for name in inputs}
         provenance = json.loads(args.baseline.read_text())
         assert provenance['revision'] == '1617f18ead74a8fa719e3d1bd02f9c84a10de551'
@@ -118,33 +120,14 @@ add_test(NAME PluginSDKGenerationConsistency COMMAND "@PYTHON@" "@ROOT@/utils/pl
                        'sdk/compile-' + standard) == 0
             report['sdk_smoke_objects'].append(binary(target))
 
-        support = output / 'llvm-support'
-        config = ['cmake', '-S', root / 'llvm', '-B', support, '-G', 'Ninja',
-                  '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=/usr/bin/clang-22',
-                  '-DCMAKE_CXX_COMPILER=' + str(clangxx), '-DLLVM_ENABLE_PROJECTS=neverc',
-                  '-DLLVM_TARGETS_TO_BUILD=X86;AArch64', '-DLLVM_INCLUDE_TESTS=OFF',
-                  '-DLLVM_INCLUDE_EXAMPLES=OFF', '-DLLVM_INCLUDE_BENCHMARKS=OFF',
-                  '-DLLVM_INCLUDE_UTILS=OFF', '-DLLVM_INCLUDE_TOOLS=ON',
-                  '-DLLVM_ENABLE_ASSERTIONS=OFF', '-DLLVM_ENABLE_ZLIB=OFF',
-                  '-DLLVM_ENABLE_ZSTD=OFF', '-DLLVM_ENABLE_LIBXML2=OFF',
-                  '-DLLVM_ENABLE_CURL=OFF', '-DLLVM_ENABLE_TERMINFO=OFF']
-        assert run(config, 'build/configure-owning-libraries', 180) == 0
-        assert run(['cmake', '--build', support, '--target', 'llvm-config', 'LLVMObject',
-                    '--parallel', '4'], 'build/owning-libraries', 1800) == 0
-        llvm_config = support / 'bin/llvm-config'
-        assert run([llvm_config, '--ldflags', '--libs', 'object', '--system-libs'], 'build/link-flags') == 0
-        flags = shlex.split((output / 'build/link-flags.log').read_text())
-        tests = output / 'linker-sdk-tests'
-        command = [clangxx, '-std=c++17', '-O0', '-g0', '-pthread',
-                   '-I' + str(root / 'neverc/include'), '-I' + str(root / 'llvm/include'),
-                   '-I' + str(support / 'include'), '-DNEVERC_BINARY="' + str(compiler) + '"',
-                   '-DTEST_SOURCE_DIR="' + str(root / 'tests/neverc') + '"',
-                   '-DTEST_C_DIR="' + str(root / 'tests/c') + '"']
-        for name in ['NeverCTestFixture.cpp', 'LinkerTests.cpp', 'PluginSDKGenerationTests.cpp',
-                     'PluginSDKGenerationSingleHeader.cpp']:
-            command.append(root / 'tests/neverc' / name)
-        command.extend(['-lgtest_main', '-lgtest', *flags, '-o', tests])
-        assert run(command, 'build/real-gtest', 240) == 0
+        sources = [root / 'tests/neverc' / name for name in [
+            'NeverCTestFixture.cpp', 'LinkerTests.cpp', 'PluginSDKGenerationTests.cpp',
+            'PluginSDKGenerationSingleHeader.cpp']]
+        tests, owner = build_gtest(
+            root, output, clangxx, compiler, sources,
+            ['LLVMObject', 'LLVMSupport'], 'linker-sdk-tests', run,
+            'build/configure-owning-libraries', 1800)
+        report['cmake_gtest_owner'] = owner
         report['gtest_binary'] = binary(tests)
         assert run([tests, '--gtest_list_tests'], 'gtest/list') == 0
         listed, suite = [], None
