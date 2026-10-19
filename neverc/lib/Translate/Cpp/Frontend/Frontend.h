@@ -1766,6 +1766,42 @@ describeFunctionalNotFnCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context, FunctionalNotFnSourceMode Mode);
 
+// This binds the original retained Sema event to one selected factory. The
+// primary default, substituted spelling and converted spelling are distinct
+// obligations; matching their canonical result does not finish any of them.
+struct FunctionalNotFnFactoryTemplateSource {
+  FunctionalNotFnFactorySource Selected;
+  const SelectedTemplateCallSource *Selection;
+  const TemplateUseSource *Use;
+  const clang::FunctionTemplateDecl *Primary;
+  const clang::TypeSourceInfo *PrimaryDefault, *SubstitutedDefault,
+      *ConvertedDefault;
+};
+std::optional<FunctionalNotFnFactoryTemplateSource>
+describeFunctionalNotFnFactoryTemplateSource(
+    const State &S, const clang::SourceManager &SM,
+    const SelectedTemplateCallSource &Selection, const TemplateUseSource &Use,
+    const clang::ASTContext &Context);
+
+
+struct FunctionalNotFnTupleTagSource {
+  const clang::CXXConstructExpr *Construction;
+  const clang::CXXRecordDecl *Record;
+  const clang::TypeSourceInfo *Written;
+};
+// Retain the four actual tuple dispatch-tag constructions. Their original
+// make_tuple_indices/make_tuple_types aliases still need source completion.
+std::optional<std::vector<FunctionalNotFnTupleTagSource>>
+describeFunctionalNotFnTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalNotFnFactorySource &Factory, const clang::ASTContext &Context);
+
+
+bool shouldRetainFunctionalNotFnSpecialMemberSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
+
+
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXRecordDecl *Record);

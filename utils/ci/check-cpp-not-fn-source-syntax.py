@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check preceding full source and inactive not_fn descriptions against Clang 20 APIs.
+"""Check preceding full source and not_fn source retention and descriptions against Clang 20 APIs.
 
 This is syntax-only evidence. Private bridge linkage, retained Sema callbacks,
 managed behavior, source guards, runtime modes and formal suites remain required.
@@ -34,7 +34,7 @@ def main():
     args=parser.parse_args();root=args.repo.resolve();output=args.output.resolve()
     output.mkdir(parents=True,exist_ok=False)
     report={'passed':False,'completed':False,'syntax_only':True,'private_bridge_linked':False,
-            'runtime_admission_implemented':False,'source_descriptions_only':True,'descriptor_executed':False,'managed_behavior_verified':False,
+            'runtime_admission_implemented':False,'source_descriptions_only':False,'source_retention_only':True,'source_retention_executed':False,'source_completion_implemented':False,'descriptor_executed':False,'managed_behavior_verified':False,
             'goal_complete':False,'commands':[],'phases':[]}
     def save():
         (output/'results.json').write_text(json.dumps(report,indent=2)+'\n')

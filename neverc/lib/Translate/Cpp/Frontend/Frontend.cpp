@@ -29382,6 +29382,8 @@ public:
             Method->getParent()->hasTrivialCopyConstructor() &&
             Method->getParent()->hasTrivialDestructor()));
     }
+    const bool NotFnSignatureMember = shouldRetainFunctionalNotFnSpecialMemberSource(
+        S, Context.getSourceManager(), Method, Context);
     const auto *DefaultConstructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
     const bool PairArrayDefaultMember = DefaultConstructor && !Owned &&
         DefaultConstructor->isImplicit() && DefaultConstructor->isDefaulted() &&
@@ -29400,7 +29402,7 @@ public:
         approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method->getParent());
     if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
         (!Owned && !TupleSignatureMember && !PairSignatureMember && !PairArrayDefaultMember &&
-         !PairOptionalMember) ||
+         !PairOptionalMember && !NotFnSignatureMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
         !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
       return false;
