@@ -112,6 +112,37 @@ def main():
                       root / 'examples/network-anticheat-collector/main.c'], 'collector-ir')
         report['ir'] = {'returncode': status, 'created': ir.is_file(),
                         'sha256': sha(ir) if ir.is_file() else None}
+        # The authenticated first-chance log contains an invalid EVT table
+        # index; all eight wide add/sub IR operations belong to poly1305.
+        # Isolate the integer path using exact small sources and real objects.
+        # These are experiments, not production switches or crash repairs.
+        report['minimal_integer_cases'] = []
+        minimal_sources = [
+            ('u64-add', 'unsigned long long f(unsigned long long a, unsigned long long b) { return a + b; }\n'),
+            ('u128-add', 'typedef unsigned __int128 U; U f(U a, U b) { return a + b; }\n'),
+            ('u128-sub', 'typedef unsigned __int128 U; U f(U a, U b) { return a - b; }\n')]
+        minimum_flags = [f for f in common if not f.startswith('-Wl,')]
+        minimum_flags += ['-fno-lto', '-fno-builtin-mimalloc']
+        for tag, text in minimal_sources:
+            src = output / (tag + '.c')
+            obj = output / (tag + '.o')
+            llvm_ir = output / (tag + '.ll')
+            src.write_text(text)
+            code = run([compiler, *minimum_flags, '-c', src, '-o', obj], tag + '-object')
+            raw = (output / (tag + '-object.log')).read_text(errors='replace')
+            row = {'name': tag, 'source': src.name, 'source_sha256': sha(src),
+                   'object_returncode': code,
+                   'matching_legalizer_stack': 'ExpandIntRes_ADDSUB' in raw,
+                   'object_created': obj.is_file()}
+            if obj.is_file():
+                assert obj.read_bytes()[:2] == b'\x64\xaa'
+                row.update(object=obj.name, object_sha256=sha(obj))
+            ir_code = run([compiler, *minimum_flags, '-S', '-emit-llvm', src, '-o', llvm_ir], tag + '-ir')
+            row.update(ir_returncode=ir_code, ir_created=llvm_ir.is_file())
+            if llvm_ir.is_file():
+                row.update(ir=llvm_ir.name, ir_sha256=sha(llvm_ir))
+            report['minimal_integer_cases'].append(row)
+            save()
         candidates = [Path(base) / 'Windows Kits/10/Debuggers/arm64/cdb.exe'
                       for base in [os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)'),
                                    os.environ.get('ProgramFiles', 'C:/Program Files')]]
@@ -135,6 +166,9 @@ def main():
         live_commands = (
             '.symopt-0x40; sxd ibp; sxe av; g; '
             '.exr -1; .ecxr; r; u @pc-0x40 @pc+0x40; kv 60; '
+            'uf neverc!llvm::DAGTypeLegalizer::ExpandIntRes_ADDSUB; '
+            'uf neverc!llvm::TargetLoweringBase::getTypeConversion; '
+            'dt neverc!llvm::EVT; dt neverc!llvm::MVT; '
             '.frame /r 0; dv /t /v; .frame /r 1; dv /t /v; '
             '.frame /r 2; dv /t /v; .frame /r 0; '
             'dq @x0 L20; dq @x1 L20; dq @x19 L40; dq @x20 L40; '
@@ -160,6 +194,32 @@ def main():
             report['live_debugger'].update(dump=live_dump.name,
                 dump_sha256=sha(live_dump), dump_size=live_dump.stat().st_size)
         save()
+        reduced = next((row for row in report['minimal_integer_cases']
+                        if row['matching_legalizer_stack']), None)
+        report['minimal_legalizer_failure_reproduced'] = bool(reduced)
+        report['minimal_debugger'] = None
+        if reduced:
+            mini_dump = output / 'integer-live.dmp'
+            mini_script = output / 'integer-live.cdb'
+            mini_commands = live_commands.replace(str(live_dump), str(mini_dump))
+            mini_script.write_text(mini_commands + '\n')
+            mini_status = run([debugger, '-o', '-G', '-hd', '-lines',
+                               '-netsyms:no', '-y', compiler.parent,
+                               '-cf', mini_script, compiler, *minimum_flags,
+                               '-c', output / reduced['source'], '-o', output / 'integer-live.o'],
+                              'integer-live-cdb')
+            mini_text = (output / 'integer-live-cdb.log').read_text(errors='replace')
+            report['minimal_debugger'] = {
+                'case': reduced['name'], 'returncode': mini_status,
+                'script': mini_script.name, 'script_sha256': sha(mini_script),
+                'matching_legalizer_stack': 'ExpandIntRes_ADDSUB' in mini_text,
+                'access_violation_observed': 'c0000005' in mini_text.lower(),
+                'dump_created': mini_dump.is_file()}
+            if mini_dump.is_file():
+                assert mini_dump.read_bytes()[:4] == b'MDMP'
+                report['minimal_debugger'].update(dump=mini_dump.name,
+                    dump_sha256=sha(mini_dump), dump_size=mini_dump.stat().st_size)
+            save()
         report['matching_failure_reproduced'] = any(
             row['name'].startswith('collector-exact-') and row['returncode'] != 0
             and row['matching_legalizer_stack'] for row in report['experiments'])
