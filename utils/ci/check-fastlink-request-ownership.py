@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import time
 import traceback
@@ -70,7 +71,8 @@ def main():
             source, str(Path(source).with_name('FastLink.h')),
             str(Path(source).with_name('FastLinkSupport.h')), harness, helper,
             '.github/workflows/diagnose-cpp-template-source.yml']}
-        parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], cwd=root, text=True).strip()
+        parent = '4440fea67bfe10661ec522feeb8128dd8d35193c'
+        subprocess.run(['git', 'merge-base', '--is-ancestor', parent, report['revision']], cwd=root, check=True)
         report['baseline_revision'] = parent
         original = subprocess.check_output(['git', 'show', parent + ':' + source], cwd=root)
         baseline = output / 'original/FastLink.cpp'
@@ -124,13 +126,25 @@ __asm__(".pushsection .rodata.str1.1,\\\"aMS\\\",@progbits,1\\n"
             run(['c++', '-std=c++17', mode, '-g0', '-pthread', '-fno-fast-math', '-ffp-contract=off',
                  '-I' + str(include), fastlink, root / harness, '-o', program], 'build/' + tag)
             binary = elf(program, {2, 3})
+            symbol_text = run(['nm', '-C', '--defined-only', program], 'payload-symbols/' + tag)
+            writable = [match.group(1) for line in symbol_text.splitlines()
+                        if (match := re.match(r'^[0-9a-fA-F]+\s+[bBdD]\s+(.+)$', line))]
+            former_payloads = ['(anonymous namespace)::' + name for name in [
+                'activeOptions', 'ctx', 'needsTlsLd', 'needsGotBase', 'markTime',
+                'relKinds', 'L', 'mergeCandidates', 'mergeGroups', 'mergeTable',
+                'mergeRank', 'mergeOut']]
+            former_payloads += ['(anonymous namespace)::icf::' + name for name in [
+                'targetPlaced', 'targetBase', 'outputFoldable']]
+            payloads = sorted(name for name in writable if name in former_payloads)
+            assert payloads == (sorted(former_payloads) if variant == 'original' else [])
             text = run([program, inputs, output / tag, scope], 'harness/' + tag)
             assert text.splitlines()[-1] == 'ERRORS\t0'
             rows = [line.split('\t') for line in text.splitlines() if line.startswith('RESULT\t')]
             assert len(rows) == (5 if variant == 'original' else 24)
             assert len({row[1] for row in rows}) == len(rows)
             case = {'variant': variant, 'optimization': mode, 'scope': scope,
-                    'binary': binary, 'results': [], 'linked': 0, 'declined': 0}
+                    'binary': binary, 'results': [], 'linked': 0, 'declined': 0,
+                    'actual_writable_former_payload_symbols': payloads}
             report['variants'].append(case)
             for row in sorted(rows, key=lambda entry: entry[1]):
                 assert len(row) == 7 and row[3] == 'pass'
