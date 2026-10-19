@@ -1,5 +1,7 @@
 # C++ core v2: scalar types, declarations and object storage
 
+On Linux, link generated C23 programs that sample floating-point distributions with `-lm`. Compile native comparison programs and generated programs with `-fno-fast-math -ffp-contract=off`.
+
 `cpp-core-v2` is an experimental, explicitly selected extension of the
 single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
 and reference operations, fixed arrays, integer and floating types, size queries and ordinary

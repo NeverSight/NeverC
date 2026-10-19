@@ -4,6 +4,8 @@
 
 # 将 C++ 转译为 NeverC
 
+在 Linux 上，使用浮点分布采样的生成 C23 程序需要用 `-lm` 链接。原生对照程序和生成程序均须使用 `-fno-fast-math -ffp-contract=off` 编译。
+
 Core v2 现可直接降低原始指针或经认证的包装迭代器标量范围上的 `std::shuffle` 和 C++17 `std::sample`。生成器须为源码自有、标准布局、可平凡复制且析构平凡的记录，直接声明最多 64 位的非 bool 无符号 `result_type`、返回相同类型的零参数调用运算符，以及各含一个常量返回语句且满足 `min() < max()` 的静态 constexpr `min()`/`max()`。生成器按引用绑定，保留状态、libc++ 的精确拒绝重抽次数及独立位拼接。Sample 接受最多 64 位的非负内置整数数量，保留输入顺序并返回可写输出的结束指针。空／单元素 shuffle 和零数量／空输入 sample 不调用生成器。所选 SDK 的源码替换仍被拒绝；其他 `<random>` 功能、自定义迭代器及记录元素尚不在此支持范围内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
 Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersenne_twister_engine` 实例，无符号结果类型最多 64 位，包含 `minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64`。默认及标量种子构造、复制、赋值、`seed`、`operator()`、`discard`、`min`/`max` 和相等比较保留固定 SDK 的状态语义与目标布局；这些引擎可直接用于 `shuffle`/`sample`，包括包装迭代器范围。所选 SDK 的源码替换仍被拒绝。其他分布、流序列化及 `random_device` 仍待支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
