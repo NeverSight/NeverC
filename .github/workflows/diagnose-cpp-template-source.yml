@@ -90,7 +90,7 @@ jobs:
         \ fi\n  echo \"runtime-aggregate-array O$optimization upstream result: $result, expected 10\"\n\
         \  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
-      != 'windows-arm-source-repair' }}
+      != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -453,10 +453,10 @@ jobs:
       if: steps.tests.outcome == 'failure'
       shell: bash
       run: "set -x\nNCC=$(cygpath -m \"$PWD/build/bin/neverc.exe\")\nTESTDIR=$(cygpath -m \"$PWD/neverc/tests/neverc\"\
-        )\nWDIAG=$(cygpath -m \"$PWD/diag_out\")\nBDIAG=\"$PWD/diag_out\"\nmkdir -p \"$BDIAG\"\n\n# ──\
-        \ Environment & SDK diagnostics ──\necho \"=== MSVC / SDK environment ===\"\necho \"LIB=$LIB\"\
-        \necho \"INCLUDE=$INCLUDE\"\necho \"VCToolsInstallDir=$VCToolsInstallDir\"\necho \"WindowsSdkDir=$WindowsSdkDir\"\
-        \necho \"WindowsSDKVersion=$WindowsSDKVersion\"\necho \"VSCMD_ARG_TGT_ARCH=$VSCMD_ARG_TGT_ARCH\"\
+        )\nWDIAG=$(cygpath -m \"$PWD/diag_out\")\nBDIAG=\"$PWD/diag_out\"\nmkdir -p \"$BDIAG\"\n\n# \u2500\
+        \u2500 Environment & SDK diagnostics \u2500\u2500\necho \"=== MSVC / SDK environment ===\"\necho\
+        \ \"LIB=$LIB\"\necho \"INCLUDE=$INCLUDE\"\necho \"VCToolsInstallDir=$VCToolsInstallDir\"\necho\
+        \ \"WindowsSdkDir=$WindowsSdkDir\"\necho \"WindowsSDKVersion=$WindowsSDKVersion\"\necho \"VSCMD_ARG_TGT_ARCH=$VSCMD_ARG_TGT_ARCH\"\
         \necho \"PROCESSOR_ARCHITECTURE=$PROCESSOR_ARCHITECTURE\"\n\necho \"=== Check ARM64 CRT & SDK\
         \ libs exist ===\"\nfor lib in libcmt.lib libvcruntime.lib libucrt.lib kernel32.lib bcryptprimitives.lib;\
         \ do\n  found=false\n  IFS=';' read -ra LIBDIRS <<< \"$LIB\"\n  for dir in \"${LIBDIRS[@]}\";\
@@ -547,26 +547,54 @@ jobs:
         \ main(void) { return 0; }' > \"$BDIAG/diag_minimal.c\"\ndiagnose \"minimal\" \\\n  \"$(cygpath\
         \ -m \"$BDIAG/diag_minimal.c\")\" \\\n  \"-std=c11\"\n\ndiagnose \"mc64bit\" \\\n  \"$TESTDIR/codegen/test_mc_64bit_format.c\"\
         \ \\\n  \"-std=gnu11 -O2\"\n\ndiagnose \"arch_cleanup_r2\" \\\n  \"$TESTDIR/codegen/test_arch_cleanup_round2.c\"\
-        \ \\\n  \"-std=gnu11 -O2\"\n\n# ── Frame pointer forced on ──\n# ARM64 longjmp always does stack\
-        \ unwinding.  If -mframe-pointer=none\n# causes missing/wrong .pdata entries the forced-fp build\
-        \ will pass.\necho \"=== frame-pointer=all comparison ===\"\ndiagnose \"c_stdlib_fp\" \\\n  \"\
-        $TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"-std=c11 -mframe-pointer=all\"\n\n# ── Pure\
-        \ MSVC cl.exe baseline (eliminates neverc entirely) ──\necho \"=== MSVC cl.exe full compile+link\
-        \ baseline ===\"\necho \"cl.exe version:\"\ncl.exe 2>&1 | head -1 || true\ncl.exe //nologo //W3\
-        \ //EHsc //TC \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"//Fe$WDIAG/diag_c_stdlib_msvc_cl.exe\"\
-        \ \\\n  //link //MACHINE:ARM64 //SUBSYSTEM:CONSOLE 2>&1 \\\n  && echo \"MSVC_CL_BUILD=OK\" ||\
-        \ echo \"MSVC_CL_BUILD=FAIL\"\nif [ -f \"$BDIAG/diag_c_stdlib_msvc_cl.exe\" ]; then\n  echo \"\
-        --- run pure-MSVC exe ---\"\n  powershell.exe -NoProfile -Command \"\n    try {\n      \\$p =\
-        \ Start-Process -FilePath '$WDIAG/diag_c_stdlib_msvc_cl.exe' \\\n        -NoNewWindow -Wait -PassThru\
-        \ \\\n        -RedirectStandardOutput '$WDIAG/diag_c_stdlib_msvc_cl_stdout.txt' \\\n        -RedirectStandardError\
-        \ '$WDIAG/diag_c_stdlib_msvc_cl_stderr.txt'\n      Write-Host \\\"MSVC_CL_EXIT_CODE=\\$(\\$p.ExitCode)\\\
-        \"\n    } catch {\n      Write-Host \\\"MSVC_CL_EXCEPTION: \\$_\\\"\n    }\n  \" 2>&1 || echo\
-        \ \"MSVC_CL_POWERSHELL_EXIT=$?\"\n  echo \"--- MSVC cl.exe stdout ---\"\n  cat \"$BDIAG/diag_c_stdlib_msvc_cl_stdout.txt\"\
-        \ 2>/dev/null || echo \"(empty)\"\nelse\n  echo \"MSVC cl.exe build failed, skipping run\"\nfi\n"
+        \ \\\n  \"-std=gnu11 -O2\"\n\n# \u2500\u2500 Frame pointer forced on \u2500\u2500\n# ARM64 longjmp\
+        \ always does stack unwinding.  If -mframe-pointer=none\n# causes missing/wrong .pdata entries\
+        \ the forced-fp build will pass.\necho \"=== frame-pointer=all comparison ===\"\ndiagnose \"c_stdlib_fp\"\
+        \ \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"-std=c11 -mframe-pointer=all\"\
+        \n\n# \u2500\u2500 Pure MSVC cl.exe baseline (eliminates neverc entirely) \u2500\u2500\necho \"\
+        === MSVC cl.exe full compile+link baseline ===\"\necho \"cl.exe version:\"\ncl.exe 2>&1 | head\
+        \ -1 || true\ncl.exe //nologo //W3 //EHsc //TC \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\"\
+        \ \\\n  \"//Fe$WDIAG/diag_c_stdlib_msvc_cl.exe\" \\\n  //link //MACHINE:ARM64 //SUBSYSTEM:CONSOLE\
+        \ 2>&1 \\\n  && echo \"MSVC_CL_BUILD=OK\" || echo \"MSVC_CL_BUILD=FAIL\"\nif [ -f \"$BDIAG/diag_c_stdlib_msvc_cl.exe\"\
+        \ ]; then\n  echo \"--- run pure-MSVC exe ---\"\n  powershell.exe -NoProfile -Command \"\n   \
+        \ try {\n      \\$p = Start-Process -FilePath '$WDIAG/diag_c_stdlib_msvc_cl.exe' \\\n        -NoNewWindow\
+        \ -Wait -PassThru \\\n        -RedirectStandardOutput '$WDIAG/diag_c_stdlib_msvc_cl_stdout.txt'\
+        \ \\\n        -RedirectStandardError '$WDIAG/diag_c_stdlib_msvc_cl_stderr.txt'\n      Write-Host\
+        \ \\\"MSVC_CL_EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    } catch {\n      Write-Host \\\"MSVC_CL_EXCEPTION:\
+        \ \\$_\\\"\n    }\n  \" 2>&1 || echo \"MSVC_CL_POWERSHELL_EXIT=$?\"\n  echo \"--- MSVC cl.exe\
+        \ stdout ---\"\n  cat \"$BDIAG/diag_c_stdlib_msvc_cl_stdout.txt\" 2>/dev/null || echo \"(empty)\"\
+        \nelse\n  echo \"MSVC cl.exe build failed, skipping run\"\nfi\n"
     - name: Fail if tests failed
       if: steps.tests.outcome == 'failure'
       shell: bash
       run: exit 1
+  inspect-fastlink-request-ownership:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'fastlink-request-ownership'
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+    - name: Set up CPython 3.12.10
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Build actual FastLink and verify serial nested and concurrent request isolation
+      id: probe
+      shell: bash
+      run: "\"${{ steps.python.outputs.python-path }}\" utils/ci/check-fastlink-request-ownership.py \\\
+        \n  --repo \"$PWD\" --output \"$RUNNER_TEMP/cpp-fastlink-request-ownership\"\n"
+    - name: Upload actual FastLink request isolation evidence
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-fastlink-request-ownership-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-fastlink-request-ownership
+        if-no-files-found: error
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -579,6 +607,7 @@ jobs:
         - template-source
         - ci-recovery
         - windows-arm-source-repair
+        - fastlink-request-ownership
   push:
     branches:
     - dev
