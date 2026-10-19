@@ -81652,7 +81652,8 @@ approvedUtilityPairPiecewiseConstruction(
       const auto *F = Forward ? Forward->getDirectCallee() : nullptr;
       const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
       const auto Stored = Tuple->Elements[J].getType();
-      const auto Forwarded = Context.getRValueReferenceType(Stored);
+      const auto Forwarded = Stored->isLValueReferenceType()
+          ? Stored : Context.getRValueReferenceType(Stored.getNonReferenceType());
       if (!Forward || Forward->getNumArgs() != 1 || !F ||
           !F->getIdentifier() || F->getName() != "forward" ||
           F->getNumParams() != 1 || !A || A->size() != 1 ||
