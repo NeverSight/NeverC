@@ -1751,6 +1751,7 @@ struct FunctionalNotFnCallSource {
   FunctionalNotFnStorage Storage;
   const clang::CXXMethodDecl *Method;
   const clang::Expr *Object;
+  const clang::ImplicitCastExpr *Receiver;
   const clang::CallExpr *BoundGet;
   const clang::CallExpr *BoundMove;
   const clang::CXXOperatorCallExpr *OperationCall;
@@ -1771,8 +1772,10 @@ describeFunctionalNotFnCallSource(
 // obligations; matching their canonical result does not finish any of them.
 struct FunctionalNotFnFactoryTemplateSource {
   FunctionalNotFnFactorySource Selected;
-  const SelectedTemplateCallSource *Selection;
-  const TemplateUseSource *Use;
+  // Own the callback records: completing another SDK type may append to the
+  // Consumer's vectors. Their AST roots already live in ASTContext storage.
+  SelectedTemplateCallSource Selection;
+  TemplateUseSource Use;
   const clang::FunctionTemplateDecl *Primary;
   const clang::TypeSourceInfo *PrimaryDefault, *SubstitutedDefault,
       *ConvertedDefault;

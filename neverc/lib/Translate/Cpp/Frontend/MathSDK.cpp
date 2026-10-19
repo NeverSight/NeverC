@@ -11398,7 +11398,12 @@ describeFunctionalNotFnCallSource(
     return std::nullopt;
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
-  if (!Receiver || Receiver->getCastKind() != CK_DerivedToBase || Receiver->path_size() != 1)
+  // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
+  // roots. Both language-level derived-to-base forms must still identify the
+  // exact single public base below; this does not admit arbitrary base casts.
+  if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
+                    Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Receiver->path_size() != 1)
     return std::nullopt;
   const auto *Object = Receiver->getSubExpr()->IgnoreParens();
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
@@ -11499,7 +11504,7 @@ describeFunctionalNotFnCallSource(
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
     if (!Target) return std::nullopt;
   }
-  return FunctionalNotFnCallSource{*Storage, Method, Object, Get, Move, Operation,
+  return FunctionalNotFnCallSource{*Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
 }
 
@@ -11568,7 +11573,7 @@ describeFunctionalNotFnFactoryTemplateSource(
   // CheckTemplateArgument adds conversions. It is not the primary's dependent
   // default. Keep all three original AST roots for separate source traversal.
   // No query or ordinary special-member completion is inferred from void.
-  return FunctionalNotFnFactoryTemplateSource{*Selected, &Selection, &Use,
+  return FunctionalNotFnFactoryTemplateSource{*Selected, Selection, Use,
       Primary, PrimaryDefault, Substituted, Converted};
 }
 
