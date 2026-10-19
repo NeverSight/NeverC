@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import traceback
@@ -29,6 +30,7 @@ def main():
     parser.add_argument('--repo',type=Path,required=True)
     parser.add_argument('--clangxx',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--headers',type=Path,required=True)
     args=parser.parse_args();root=args.repo.resolve();output=args.output.resolve()
     output.mkdir(parents=True,exist_ok=False)
     report={'passed':False,'completed':False,'syntax_only':True,'private_bridge_linked':False,
@@ -51,6 +53,21 @@ def main():
     try:
         revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
         report.update(revision=revision,baseline_revision=BASE,compiler_sha256=h(args.clangxx))
+        preparation=json.loads((args.headers/'provenance.json').read_text())
+        assert preparation['passed'] and preparation['returncode']==0
+        assert preparation['source_archive_sha256']=='6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d'
+        assert preparation['patcher_sha256']==h(root/(PREFIX+'IsolateSymbols.py'))
+        environment=output/'environment';environment.mkdir()
+        shutil.copy2(args.headers/'provenance.json',environment/'provenance.json')
+        shutil.copy2(args.headers/'prepare-private-headers.log',environment/'prepare-private-headers.log')
+        prefix=Path(preparation['prefix']);assert h(prefix)==preparation['prefix_sha256']
+        shutil.copy2(prefix,environment/'NeverCCppPrivatePrefix.h')
+        upstream=Path(preparation['upstream'])
+        for name,digest in preparation['patched_header_sha256'].items():
+            assert h(upstream/name)==digest
+            target=environment/name;target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(upstream/name,target)
+        report['private_header_preparation']=preparation
         assert run([args.clangxx,'--version'],output/'clang-version.log')==0
         assert 'clang version 20.1.8' in (output/'clang-version.log').read_text()
         cmake=blob(BASE,PREFIX+'CMakeLists.txt').decode()
@@ -86,7 +103,8 @@ def main():
             for name in FILES[:-1]:
                 log=directory/(name+'.syntax.log')
                 code=run([args.clangxx,'-std=c++17','-fsyntax-only','-fexceptions','-fno-rtti','-DNDEBUG',
-                          '-DCLANG_BUILD_STATIC','-I'+str(directory),'-I/usr/lib/llvm-20/include',directory/name],log)
+                          '-DCLANG_BUILD_STATIC','-I'+str(directory),'-I'+str(upstream/'clang/include'),
+                          '-I/usr/lib/llvm-20/include','-include',prefix,directory/name],log)
                 phase['cases'].append({'name':name,'returncode':code,'passed':code==0,
                                        'log':str(log),'log_sha256':h(log)})
                 save();print(('PASS' if code==0 else 'FAIL')+' syntax '+label+' '+name,flush=True)
