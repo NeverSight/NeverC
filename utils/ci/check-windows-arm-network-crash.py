@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import time
 import traceback
@@ -69,7 +70,10 @@ def main():
                  'examples/network-authoritative-server/main.c',
                  'examples/network-anticheat-collector/main.c',
                  'llvm/lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp',
-                 'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp']
+                 'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp',
+                 'llvm/include/llvm/CodeGen/TargetLowering.h',
+                 'llvm/include/llvm/CodeGen/MachineValueType.h',
+                 'llvm/include/llvm/CodeGen/ValueTypes.h']
         report['source_sha256'] = {name: sha(root / name) for name in files}
         report['strict_pcg_environment'] = os.environ.get('NEVERC_PCG_STRICT')
         assert report['strict_pcg_environment'] == '1'
@@ -219,6 +223,44 @@ def main():
                 assert mini_dump.read_bytes()[:4] == b'MDMP'
                 report['minimal_debugger'].update(dump=mini_dump.name,
                     dump_sha256=sha(mini_dump), dump_size=mini_dump.stat().st_size)
+            save()
+        # Isolate the observed 32-bit table-index load from the actual one-byte
+        # MVT enum. These debugger experiments only alter the three padding
+        # bytes adjacent to that enum at one authenticated machine-code site.
+        # They are NOT a compiler-source fix or production compilation mode.
+        report['padding_index_experiments'] = []
+        for mode, padding in [('observe', None), ('clear', '00 00 00'),
+                              ('poison', '01 02 03')]:
+            probe_script = output / ('padding-' + mode + '.cdb')
+            probe_object = output / ('padding-' + mode + '.o')
+            action = '.echo EVT_PADDING_BEFORE; db @sp+0x20 L10; '
+            if padding:
+                action += 'eb @sp+0x21 ' + padding + '; '
+            action += '.echo EVT_PADDING_AFTER; db @sp+0x20 L10; gc'
+            # +0x144 is the exact ldr w8,[sp,#0x20] in the verified 8957
+            # ExpandIntRes_ADDSUB disassembly; no instruction is patched.
+            text = ('.symopt-0x40; sxd ibp; sxe av; '
+                    'bu neverc!llvm::DAGTypeLegalizer::ExpandIntRes_ADDSUB+0x144 "' + action + '"; '
+                    'g; .echo EVT_PADDING_STOP; r; .exr -1; '
+                    'u @pc-0x20 @pc+0x20; kv 12; q')
+            probe_script.write_text(text + '\n')
+            status = run([debugger, '-o', '-G', '-hd', '-lines', '-netsyms:no',
+                          '-y', compiler.parent, '-cf', probe_script, compiler,
+                          *minimum_flags, '-c', output / 'u128-add.c', '-o', probe_object],
+                         'padding-' + mode)
+            raw = (output / ('padding-' + mode + '.log')).read_text(errors='replace')
+            row = {'mode': mode, 'padding_bytes': padding,
+                   'script': probe_script.name, 'script_sha256': sha(probe_script),
+                   'debugger_returncode': status,
+                   'breakpoint_marker_observed': bool(re.search(r'^EVT_PADDING_BEFORE\r?$', raw, re.M)),
+                   'access_violation_observed': 'Access violation - code c0000005' in raw,
+                   'matching_legalizer_stack': 'isOperationLegalOrCustom' in raw,
+                   'object_created': probe_object.is_file(),
+                   'source_repaired': False, 'production_option': False}
+            if probe_object.is_file():
+                assert probe_object.read_bytes()[:2] == b'\x64\xaa'
+                row.update(object=probe_object.name, object_sha256=sha(probe_object))
+            report['padding_index_experiments'].append(row)
             save()
         report['matching_failure_reproduced'] = any(
             row['name'].startswith('collector-exact-') and row['returncode'] != 0
