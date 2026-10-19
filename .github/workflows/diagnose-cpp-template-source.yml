@@ -2,6 +2,12 @@ name: cpp-template-source-diagnostics
 
 on:
   workflow_dispatch:
+    inputs:
+      fixture_group:
+        description: Diagnostic fixture group
+        type: choice
+        options: [template-source, not-fn]
+        default: template-source
   push:
     branches: [dev]
     paths:
@@ -30,6 +36,7 @@ concurrency:
 
 jobs:
   inspect-source-metadata:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'not-fn' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -196,3 +203,38 @@ jobs:
             fi
           done
           exit "$status"
+
+  inspect-not-fn:
+    permissions:
+      contents: read
+      actions: read
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install matching Clang and libc++ 20 diagnostic toolchain
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+          sudo bash "$RUNNER_TEMP/llvm.sh" 20
+          sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev libc++-20-dev libc++abi-20-dev
+      - name: Download exact preceding compiler for bounded refusal baselines
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 utils/ci/download-cpp-not-fn-baseline.py \
+            --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 \
+            --output "$RUNNER_TEMP/cpp-not-fn-prior"
+      - name: Check native not_fn fixtures and selected ASTs
+        run: |
+          python3 utils/ci/check-cpp-not-fn-baseline.py \
+            --repo "$GITHUB_WORKSPACE" --clangxx /usr/bin/clang++-20 \
+            --output "$RUNNER_TEMP/cpp-not-fn-native" \
+            --baseline "$RUNNER_TEMP/cpp-not-fn-prior/provenance.json"
+      - name: Upload native not_fn diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-not-fn-native-${{ github.sha }}
+          path: ${{ runner.temp }}/cpp-not-fn-native
+          if-no-files-found: error
