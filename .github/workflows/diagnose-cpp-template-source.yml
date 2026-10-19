@@ -343,6 +343,10 @@ jobs:
         sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-linker-sdk-bootstrap/dependencies.log"
 
         '
+    - name: Verify nested pool ordinals and exception restoration using actual headers
+      run: 'python3 utils/ci/check-pool-ordinal.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-pool-ordinal"
+
+        '
     - name: Download exact existing compiler without rebuilding
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -363,6 +367,8 @@ jobs:
           ${{ runner.temp }}/cpp-linker-sdk-bootstrap
 
           !${{ runner.temp }}/cpp-linker-sdk/llvm-support/**
+
+          ${{ runner.temp }}/cpp-pool-ordinal
 
           '
         if-no-files-found: error
