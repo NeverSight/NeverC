@@ -10680,6 +10680,15 @@ public:
   bool VisitMemberExpr(MemberExpr *Member) {
     return location(Member->getMemberLoc()) && declaration(Member->getMemberDecl());
   }
+  bool VisitCXXConstructExpr(CXXConstructExpr *Construction) {
+    if (BoundChildren.count(Construction))
+      return true;
+    if (Construction == Piecewise.Delegation)
+      return family(Construction->getConstructor());
+    // WalkUpFromCXXConstructExpr also reaches CXXTemporaryObjectExpr. Its
+    // specialized RAV traversal must retain the same erased-tag/index proof.
+    return erasedConstruction(Construction);
+  }
   bool TraverseCXXConstructExpr(CXXConstructExpr *Construction) {
     if (BoundChildren.count(Construction))
       return true; // The caller separately completes this exact child operation.
@@ -19350,6 +19359,7 @@ private:
     PendingPairPiecewise.insert(Construction);
     return true;
   }
+public:
   bool finishPairPiecewiseConstructions() {
     OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
         &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
@@ -19376,6 +19386,7 @@ private:
         PendingPairPiecewise.begin(), PendingPairPiecewise.end());
     return A.S.Diagnostics.empty();
   }
+private:
 
 // Insert in Check after the existing tuple-factory origin helpers. Their
 // input/use lifetime entry points take const Expr *, preserving call behavior

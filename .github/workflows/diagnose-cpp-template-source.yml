@@ -214,7 +214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 7
+          fetch-depth: 8
       - name: Install matching Clang and libc++ 20 diagnostic toolchain
         run: |
           curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
