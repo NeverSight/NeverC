@@ -1,3 +1,4 @@
+#include <stdio.h>
 typedef unsigned long long U64;
 typedef unsigned __int128 U128;
 __attribute__((noinline)) U128 wide_add(U128 a, U128 b) { return a + b; }
@@ -22,5 +23,6 @@ int main(void) {
     if ((U64)difference != cases[i].subl || (U64)(difference >> 64) != cases[i].subh)
       return 20 + (int)i;
   }
+  puts("test_u128_add_sub: ALL PASSED");
   return 0;
 }

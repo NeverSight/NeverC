@@ -31,6 +31,7 @@ def main():
    assert code==0
    data=binary.read_bytes();offset=int.from_bytes(data[60:64],'little');assert data[:2]==b'MZ' and data[offset:offset+6]==b'PE\0\0\x64\xaa'
    code=run([binary],'native-'+mode[1:]);assert code==0
+   assert 'test_u128_add_sub: ALL PASSED' in (out/('native-'+mode[1:]+'.log')).read_text()
    report['cases'].append({'mode':mode,'binary':binary.name,'binary_sha256':sha(binary),'size':len(data),'arithmetic_cases':6,'operation_checks':12,'native_returncode':code});save()
   report['passed']=report['completed']=True
  except Exception:

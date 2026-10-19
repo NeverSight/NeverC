@@ -222,3 +222,14 @@ TEST_F(HostTest, CrossCompile64Bit) {
     EXPECT_GT(fileSize(obj), 0u) << "cross-compile " << triple << " empty .o";
   }
 }
+
+TEST_F(HostTest, WideIntegerAddSub) {
+  for (const char *Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    compileRunAndCheck(
+        std::string("test_u128_add_sub_") + Optimization,
+        (testDir() / "standards/test_u128_add_sub.c").string(),
+        std::string("-std=c11 ") + Optimization, 0,
+        "test_u128_add_sub: ALL PASSED");
+  }
+}
