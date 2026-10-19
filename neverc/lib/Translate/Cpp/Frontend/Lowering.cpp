@@ -32686,8 +32686,13 @@ class FunctionLowering {
       };
       switch (*Kind) {
       case UtilityPairConstruction::Default:
-        initializeZero(Member(Pair->First), Pair->First->getType(), L);
-        initializeZero(Member(Pair->Second), Pair->Second->getType(), L);
+        for (unsigned I = 0; I != 2; ++I) {
+          const auto *Field = I ? Pair->Second : Pair->First;
+          if (PairCopies.size() == 2 && PairCopies[I])
+            construct(Member(Field), Field->getType(), PairCopies[I], L);
+          else
+            initializeZero(Member(Field), Field->getType(), L);
+        }
         return;
       case UtilityPairConstruction::Elements: {
         std::vector<Expression> Arguments;

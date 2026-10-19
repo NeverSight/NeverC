@@ -5819,6 +5819,58 @@ static bool utilityPairReferenceWrapperConstruction(
       utilityPairForwardingUseSource(S, SM, Forward);
 }
 
+// Preserve the actual SDK member initializers of a selected owning default.
+// Each nontrivial field must use its existing admitted default operation.
+static std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityPairSelectedDefaults(const State &S, const SourceManager &SM,
+                                    const CXXConstructExpr *Construction,
+                                    const UtilityPairRecord &Pair,
+                                    const ASTContext &Context) {
+  const auto *Constructor = Construction
+      ? dyn_cast_or_null<CXXConstructorDecl>(Construction->getConstructor()->getDefinition()) : nullptr;
+  const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody()) : nullptr;
+  if (!Constructor || !Constructor->isDefaultConstructor() || Constructor->getNumParams() ||
+      Construction->getNumArgs() || !Body || !Body->body_empty() ||
+      Constructor->getNumCtorInitializers() != 2 ||
+      Constructor->getParent()->getCanonicalDecl() != Pair.Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "__utility/pair.h"))
+    return std::nullopt;
+  const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+  std::vector<const CXXConstructExpr *> Selected(2, nullptr);
+  bool Seen[] = {false, false};
+  for (const auto *Initializer : Constructor->inits()) {
+    const auto *Field = Initializer->isMemberInitializer() ? Initializer->getMember() : nullptr;
+    if (!Field || (Field != Fields[0] && Field != Fields[1])) return std::nullopt;
+    const unsigned I = Field == Fields[1];
+    const auto Element = Field->getType();
+    const auto *Value = functionalInvokeStrippedExpression(Initializer->getInit());
+    if (Seen[I] || !Value || Element->isReferenceType() ||
+        !Context.hasSameType(Value->getType(), Element) ||
+        !cstddefOrigin(S, SM, Initializer->getMemberLocation(), "libcxx", "__utility/pair.h") ||
+        !cstddefOrigin(S, SM, Initializer->getLParenLoc(), "libcxx", "__utility/pair.h") ||
+        !cstddefOrigin(S, SM, Initializer->getRParenLoc(), "libcxx", "__utility/pair.h")) return std::nullopt;
+    Seen[I] = true;
+    if (utilityPairValue(S, SM, Context, Element)) {
+      if (!isa<ImplicitValueInitExpr>(Value) && !isa<CXXScalarValueInitExpr>(Value))
+        return std::nullopt;
+      continue;
+    }
+    const auto *Child = dyn_cast<CXXConstructExpr>(Value);
+    if (!Child || Child->getNumArgs() ||
+        !cstddefOrigin(S, SM, Child->getBeginLoc(), "libcxx", "__utility/pair.h") ||
+        !cstddefOrigin(S, SM, Child->getEndLoc(), "libcxx", "__utility/pair.h") ||
+        !(utilityPairSelectedStringValue(S, SM, Context, Element) &&
+          (approvedUtilityStringConstruction(S, SM, Child, Context) == UtilityStringConstruction::Default ||
+           approvedUtilityStringViewConstruction(S, SM, Child, Context) == UtilityStringViewConstruction::Default) ||
+          utilityPairSelectedOwnerValue(S, SM, Context, Element) &&
+          approvedUtilityUniquePtrConstruction(S, SM, Child, Context) == UtilityUniquePtrConstruction::Default))
+      return std::nullopt;
+    Selected[I] = Child;
+  }
+  return Seen[0] && Seen[1] ? std::optional(std::move(Selected)) : std::nullopt;
+}
+
 std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context,
@@ -5859,13 +5911,20 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
       (!ReferencePair && !MixedReferencePair && !OwnedElements &&
        (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
         !utilityPairValue(S, SM, Context, Pair->Second->getType()))) ||
-      (OwnedElements && Construction->getNumArgs() != 1 &&
-       Construction->getNumArgs() != 2))
+      (OwnedElements && Construction->getNumArgs() != 0 &&
+       Construction->getNumArgs() != 1 && Construction->getNumArgs() != 2))
     return std::nullopt;
   if (!OwnedElements && !Construction->getNumArgs() &&
       Constructor->isDefaultConstructor() && !ReferencePair &&
       !MixedReferencePair)
     return UtilityPairConstruction::Default;
+  if (OwnedElements && !Construction->getNumArgs() &&
+      Constructor->isDefaultConstructor() && !ReferencePair && !MixedReferencePair) {
+    auto Defaults = approvedUtilityPairSelectedDefaults(S, SM, Construction, *Pair, Context);
+    if (!Defaults) return std::nullopt;
+    if (SelectedCopies) *SelectedCopies = std::move(*Defaults);
+    return UtilityPairConstruction::Default;
+  }
   if (!OwnedElements && Construction->getNumArgs() == 1 &&
       Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
       Constructor->isTrivial())
@@ -7465,6 +7524,8 @@ class UtilityTupleQueryGraph
   const UtilityPairSelectionSources *PairSelections = nullptr;
   const TypeTraitExpr *PairTraitQuery = nullptr;
   const CXXConstructExpr *PairTraitConstruction = nullptr;
+  const CXXConstructExpr *PairDefaultStringSignature = nullptr;
+  const CXXConstructExpr *PairDefaultOwnerSignature = nullptr;
   struct PairOwnerMemberUse {
     const CXXMethodDecl *Method;
     const TypeTraitExpr *Query;
@@ -7641,6 +7702,9 @@ class UtilityTupleQueryGraph
         for (const auto *Redeclaration : R->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Described = R->getDescribedClassTemplate())
           Pending.push_back(Described);
+        if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(R))
+          for (const auto *Parameter : *Partial->getTemplateParameters())
+            Pending.push_back(Parameter);
         if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
           Pending.push_back(Instance->getSpecializedTemplate());
           if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
@@ -9993,6 +10057,27 @@ public:
       // retained source below before it publishes any query/type dependency.
       return !Failed;
     }
+    if (Mode == UtilityTupleQueryMode::PairConstruction && E == PairTraitConstruction &&
+        PairTraitQuery && Constructor &&
+        (PairTraitQuery->getTrait() == TT_IsConstructible ||
+         PairTraitQuery->getTrait() == TT_IsNothrowConstructible) &&
+        PairTraitQuery->getNumArgs() == 1 &&
+        Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
+        PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) &&
+        E->isPRValue() && !E->getNumArgs() &&
+        E->getConstructionKind() == CXXConstructionKind::Complete &&
+        approvedUtilityStringViewRecord(S, SM, Constructor->getParent(), Context)) {
+      // Only the exact retained default-query root gains this body-free
+      // signature proof. Runtime initialization checks its actual SDK body.
+      const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+      return Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
+          !Constructor->isDeleted() && !Constructor->isVariadic() &&
+          !Constructor->getPrimaryTemplate() && Prototype &&
+          Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+          !Prototype->getNoexceptExpr() &&
+          cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string_view") &&
+          function(Constructor) && !Failed;
+    }
     const auto SavedOwnerUse = PairOwnerUse;
     if (Mode == UtilityTupleQueryMode::PairConstruction && E == PairTraitConstruction &&
         Constructor && utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))
@@ -10026,6 +10111,282 @@ public:
   bool VisitCXXNewExpr(CXXNewExpr *) { return false; }
   bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return false; }
   bool VisitLambdaExpr(LambdaExpr *) { return false; }
+  bool pairDefaultFunctionFamily(const CXXConstructorDecl *Constructor,
+                                  llvm::StringRef Path) {
+    const auto *Record = Constructor ? Constructor->getParent() : nullptr;
+    const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+    const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+    const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
+    if (!Record || !Primary) return false;
+    std::vector<const Decl *> Pending{Constructor};
+    std::set<const Decl *> Family;
+    while (!Pending.empty()) {
+      const auto *Declaration = Pending.back(); Pending.pop_back();
+      if (!Declaration || !step()) return false;
+      if (!Family.insert(Declaration).second) continue;
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return false;
+      if (const auto *Member = dyn_cast<CXXConstructorDecl>(Declaration)) {
+        const auto *Owner = Member->getParent();
+        if (!Member->isDefaultConstructor() || Member->getNumParams() ||
+            Member->isDeleted() || Member->isVariadic() ||
+            (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
+             Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl() &&
+             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return false;
+        for (const auto *Redeclaration : Member->redecls()) Pending.push_back(Redeclaration);
+        if (const auto *Template = Member->getPrimaryTemplate()) Pending.push_back(Template);
+        if (const auto *Original = Member->getTemplateInstantiationPattern()) Pending.push_back(Original);
+      } else if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
+        for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
+        Pending.push_back(Template->getTemplatedDecl());
+        if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
+        for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
+      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
+    }
+    // One exact retained default query supplies these signature identities.
+    // No runtime constructor body or generic zero-operand use is registered.
+    PairInputFamilies.insert(Family.begin(), Family.end());
+    return family(Constructor);
+  }
+  bool pairDefaultOwnerAlias(const CXXConstructorDecl *Constructor) {
+    const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *Arguments = Constructor ? Constructor->getTemplateSpecializationArgs() : nullptr;
+    if (!Parameters || Parameters->size() != 2 || !Arguments || Arguments->size() != 2 ||
+        Arguments->get(0).getKind() != TemplateArgument::Integral ||
+        !Context.hasSameType(Arguments->get(0).getIntegralType(), Context.BoolTy) ||
+        !Arguments->get(0).getAsIntegral().getBoolValue() ||
+        Arguments->get(1).getKind() != TemplateArgument::Type ||
+        !Arguments->get(1).getAsType()->isVoidType()) return false;
+    const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
+    const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
+    const auto *Info = Default && Default->hasDefaultArgument()
+        ? Default->getDefaultArgument().getTypeSourceInfo() : nullptr;
+    const auto *Written = Info ? Info->getType().getTypePtr() : nullptr;
+    if (const auto *Elaborated = dyn_cast_or_null<ElaboratedType>(Written))
+      Written = Elaborated->getNamedType().getTypePtr();
+    const auto *Use = dyn_cast_or_null<TemplateSpecializationType>(Written);
+    const auto *Alias = Use ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        Use->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Dummy || Dummy->isParameterPack() || !Context.hasSameType(Dummy->getType(), Context.BoolTy) ||
+        !Dummy->hasDefaultArgument() || !Default || Default->isParameterPack() ||
+        !Use || !Alias || !Alias->getIdentifier() ||
+        Alias->getName() != "_EnableIfDeleterDefaultConstructible" ||
+        Alias->getDeclContext() != Primary->getDeclContext() ||
+        Use->template_arguments().size() != 1 ||
+        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
+    const auto *Reference = dyn_cast<DeclRefExpr>(Use->template_arguments()[0].getAsExpr()->IgnoreParenImpCasts());
+    const auto *True = dyn_cast<CXXBoolLiteralExpr>(Dummy->getDefaultArgument().getArgument().getAsExpr());
+    if (!Reference || Reference->getDecl() != Dummy || !True || !True->getValue() ||
+        True->getBeginLoc().isMacroID() || True->getEndLoc().isMacroID() ||
+        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return false;
+    std::vector<const Decl *> Pending{Alias};
+    std::set<const Decl *> Family;
+    while (!Pending.empty()) {
+      const auto *Declaration = Pending.back(); Pending.pop_back();
+      if (!Declaration || !step()) return false;
+      if (!Family.insert(Declaration).second) continue;
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
+      if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Declaration)) {
+        if (Template->getTemplateParameters()->size() != 2) return false;
+        for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
+        if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
+        Pending.push_back(Template->getTemplatedDecl());
+        for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
+      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
+    }
+    PairInputFamilies.insert(Family.begin(), Family.end());
+    const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()->getDefinition());
+    const TypedefNameDecl *Deleter = nullptr;
+    if (!Owner || Owner->getTemplateArgs().size() != 2 ||
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return false;
+    for (const auto *Declaration : Owner->decls())
+      if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
+          Named && Named->getIdentifier() && Named->getName() == "deleter_type") {
+        if (Deleter) return false;
+        Deleter = Named;
+      }
+    const auto *DeleterInfo = Deleter ? Deleter->getTypeSourceInfo() : nullptr;
+    if (!Deleter || !DeleterInfo || Deleter->getDeclContext() != Owner ||
+        !Context.hasSameType(Deleter->getUnderlyingType(), Owner->getTemplateArgs()[1].getAsType()) ||
+        !Context.hasSameType(DeleterInfo->getType(), Deleter->getUnderlyingType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Deleter) ||
+        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
+    // This actual owner default uses its own deleter alias. Authenticate the
+    // declaration, substitution and original spelling before its first use.
+    PairInputFamilies.insert(Deleter);
+    PairStorageUseSource Source(*this);
+    if (!Source.check(DeleterInfo)) return false;
+    for (const auto *Parameter : *Alias->getTemplateParameters())
+      if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return false;
+    return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
+  }
+  bool pairDefaultOwnerTypeSource(const TemplateTypeParmDecl *Parameter,
+      const TemplateArgumentLoc &Written, const TemplateArgumentLoc &Converted) {
+    const auto *Constructor = PairDefaultOwnerSignature
+        ? PairDefaultOwnerSignature->getConstructor() : nullptr;
+    const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    if (!Parameters || Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
+        !Parameter->hasDefaultArgument() ||
+        Written.getArgument().getKind() != TemplateArgument::Type ||
+        Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+    const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
+    const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
+    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return false;
+    auto Use = [](QualType Type) {
+      const auto *Value = Type.getTypePtr();
+      if (const auto *Elaborated = dyn_cast<ElaboratedType>(Value)) Value = Elaborated->getNamedType().getTypePtr();
+      return dyn_cast<TemplateSpecializationType>(Value);
+    };
+    const auto *Pattern = Use(Original->getType());
+    const auto *Alias = Pattern ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        Pattern->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Alias || !Pattern->isTypeAlias()) return false;
+    for (const auto *Info : {Written.getTypeSourceInfo(), Converted.getTypeSourceInfo()}) {
+      const auto *Actual = Use(Info->getType());
+      const auto *ActualAlias = Actual ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+          Actual->getTemplateName().getAsTemplateDecl()) : nullptr;
+      if (!Actual || !Actual->isTypeAlias() || !ActualAlias ||
+          ActualAlias->getCanonicalDecl() != Alias->getCanonicalDecl() ||
+          Actual->template_arguments().size() != 1 ||
+          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
+      const auto *Value = Actual->template_arguments()[0].getAsExpr();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Value)) Value = Constant->getSubExpr();
+      const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Value);
+      const auto *True = Substitution ? dyn_cast<CXXBoolLiteralExpr>(
+          Substitution->getReplacement()->IgnoreParenImpCasts()) : nullptr;
+      if (!Substitution || Substitution->getParameter() != Dummy ||
+          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return false;
+    }
+    PairStorageUseSource Spelling(*this);
+    // Sema retains the substituted written/default type here. Its exact
+    // parameter replacement, original spelling and converted graph all close.
+    return Spelling.check(Original) && Spelling.check(Written.getTypeSourceInfo()) &&
+        Spelling.check(Converted.getTypeSourceInfo()) &&
+        TraverseTemplateArgument(Converted.getArgument()) && !Failed;
+  }
+
+  bool pairDefaultAllocator(const CXXConstructExpr *Construction) {
+    const auto *String = PairDefaultStringSignature
+        ? dyn_cast<ClassTemplateSpecializationDecl>(PairDefaultStringSignature->getConstructor()->getParent()) : nullptr;
+    const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
+        Construction->getConstructor()->getParent(), Context);
+    const auto *Constructor = Construction->getConstructor();
+    const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(Constructor->getDefinition());
+    const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+    const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+    if (!String || String->getTemplateArgs().size() != 3 || !Allocator ||
+        String->getTemplateArgs()[2].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(String->getTemplateArgs()[2].getAsType(), Construction->getType()) ||
+        !Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
+        !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+        !Definition || !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
+        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return false;
+    const auto *Initializer = *Definition->init_begin();
+    const auto *Child = Initializer->isBaseInitializer()
+        ? dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit()) : nullptr;
+    const auto *Selected = Child ? Child->getConstructor() : nullptr;
+    const auto *ChildDefinition = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
+    const auto *ChildBody = ChildDefinition ? dyn_cast_or_null<CompoundStmt>(ChildDefinition->getBody()) : nullptr;
+    const auto *ChildType = Selected ? Selected->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!Child || Child->getNumArgs() || !Selected || !Selected->isDefaultConstructor() ||
+        Selected->getNumParams() || Selected->getPrimaryTemplate() ||
+        !ChildDefinition || !ChildBody || !ChildBody->body_empty() ||
+        ChildDefinition->getNumCtorInitializers() || !ChildType ||
+        ChildType->getExceptionSpecType() != EST_BasicNoexcept || ChildType->getNoexceptExpr() ||
+        Allocator->Record->getNumBases() != 1 ||
+        !Context.hasSameType(Allocator->Record->bases_begin()->getType(), Child->getType()) ||
+        !Context.hasSameType(QualType(Initializer->getBaseClass(), 0), Child->getType()) ||
+        !pairDefaultFunctionFamily(Selected, "__memory/allocator.h") ||
+        !bindPairInput(Child->getType())) return false;
+    const auto *Info = Allocator->Record->bases_begin()->getTypeSourceInfo();
+    return Info && TraverseTypeLoc(Info->getTypeLoc()) && !Failed;
+  }
+  std::optional<bool> pairSelectedDefaultQuery(
+      const TypeTraitExpr *Query, const OperationTraitSource &Source) {
+    if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
+        Query->getNumArgs() != 1) return std::nullopt;
+    const auto *Original = Source.Root->IgnoreParenImpCasts();
+    const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Original);
+    const auto *Root = Temporary ? Temporary->getSubExpr()->IgnoreParenImpCasts() : Original;
+    const auto *Construction = dyn_cast<CXXConstructExpr>(Root);
+    const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+    const auto Target = Query->getArg(0)->getType();
+    const auto *Record = Target->getAsCXXRecordDecl();
+    if (!Record || !PairInputRecords.count(Record->getCanonicalDecl())) return std::nullopt;
+    const bool String = approvedUtilityStringRecord(S, SM, Record, Context).has_value();
+    const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false);
+    const bool Allocator = PairDefaultStringSignature &&
+        approvedUtilityAllocatorRecord(S, SM, Record, Context).has_value();
+    const auto ParentOwner = PairDefaultOwnerSignature ? utilityUniquePtrRecord(S, SM,
+        PairDefaultOwnerSignature->getConstructor()->getParent(), Context, false, false) : std::nullopt;
+    const bool Deleter = ParentOwner && !ParentOwner->CustomDeleter &&
+        ParentOwner->Deleter.Record->getCanonicalDecl() == Record->getCanonicalDecl();
+    if (!String && !Owner && !Allocator && !Deleter) return std::nullopt;
+    if (!Construction || !Constructor || !Construction->isPRValue() ||
+        Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+        Construction->getNumArgs() || !Constructor->isDefaultConstructor() || Constructor->getNumParams() ||
+        !Source.Operands.empty() || !Context.hasSameType(Construction->getType(), Target) ||
+        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+    const auto *SavedQuery = PairTraitQuery;
+    const auto *SavedConstruction = PairTraitConstruction;
+    const auto SavedOwnerUse = PairOwnerUse;
+    PairTraitQuery = Query; PairTraitConstruction = Construction;
+    auto Restore = llvm::make_scope_exit([&] {
+      PairTraitQuery = SavedQuery; PairTraitConstruction = SavedConstruction; PairOwnerUse = SavedOwnerUse;
+    });
+    bool Complete = false;
+    if (String) {
+      const auto *Saved = PairDefaultStringSignature;
+      PairDefaultStringSignature = Construction;
+      auto RestoreString = llvm::make_scope_exit([&] { PairDefaultStringSignature = Saved; });
+      Complete = !Constructor->getPrimaryTemplate() &&
+          pairDefaultFunctionFamily(Constructor, "string") && function(Constructor);
+    } else if (Owner) {
+      const auto *Saved = PairDefaultOwnerSignature;
+      PairDefaultOwnerSignature = Construction;
+      auto RestoreOwner = llvm::make_scope_exit([&] { PairDefaultOwnerSignature = Saved; });
+      if (!PairFunctions || !PairSelections ||
+          !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h") ||
+          !pairDefaultOwnerAlias(Constructor)) return false;
+      const auto Events = PairSelections->find(Construction);
+      if (Events == PairSelections->end() || Events->second.empty()) return false;
+      for (const auto *Event : Events->second) {
+        if (!Event || Event->Expression != Construction || Event->Function != Constructor ||
+            Event->Location != Query->getExprLoc() ||
+            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return false;
+        const auto Uses = PairFunctions->find({Constructor, Event->Location.getRawEncoding()});
+        if (Uses == PairFunctions->end() || Uses->second.empty()) return false;
+        for (const auto *Use : Uses->second)
+          if (!Use || Use->Location != Event->Location || Use->Written ||
+              !templateSource(*Use, Constructor, true) || Failed) return false;
+      }
+      Complete = true;
+    } else if (Allocator) {
+      Complete = !Temporary && pairDefaultAllocator(Construction);
+    } else {
+      const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+      Complete = !Temporary && Constructor->isDefaulted() && Constructor->isTrivial() &&
+          !Constructor->getPrimaryTemplate() && Prototype &&
+          Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
+          pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h");
+    }
+    if (!Complete || Failed) return false;
+    if (Temporary) {
+      const auto *Destructor = Temporary->getTemporary() ? Temporary->getTemporary()->getDestructor() : nullptr;
+      if (!Destructor || !Record->getDestructor() ||
+          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return false;
+      if (Owner) PairOwnerUse = PairOwnerMemberUse{Destructor, Query, Construction, nullptr, nullptr, Temporary};
+      if (!specialMember(Destructor) || Failed) return false;
+    } else if (!Record->hasTrivialDestructor()) return false;
+    // The exact retained zero-operand root and optional cleanup are now closed
+    // independently of expression/method caches. Runtime checks stay separate.
+    return !Failed;
+  }
+
   bool VisitTypeTraitExpr(TypeTraitExpr *E) {
     for (const auto *Argument : E->getArgs())
       if (!TraverseType(Argument->getType())) return false;
@@ -10061,6 +10422,8 @@ public:
         Source.Operands.size() != Count || Source.Destructor ||
         Source.DestructionPrototype || Source.DestructionLookupAttempted ||
         Source.DestructionExceptionAttempted) return false;
+    if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && !Count)
+      if (const auto Default = pairSelectedDefaultQuery(E, Source)) return *Default;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction &&
         !Count && isa<ImplicitValueInitExpr>(Source.Root)) {
       const auto Target = E->getArg(0)->getType();
@@ -10134,7 +10497,12 @@ public:
     return !Failed;
   }
   bool templateSource(const TemplateUseSource &Source,
-                      const CXXConstructorDecl *Constructor) {
+                      const CXXConstructorDecl *Constructor,
+                      bool OwnerDefault = false) {
+    if (OwnerDefault &&
+        (Mode != UtilityTupleQueryMode::PairConstruction || !PairDefaultOwnerSignature ||
+         PairDefaultOwnerSignature->getConstructor() != Constructor ||
+         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return false;
     const auto *Primary = Constructor->getPrimaryTemplate();
     if (!Primary || Source.Kind != TemplateSourceKind::Function ||
         Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
@@ -10157,6 +10525,21 @@ public:
     std::set<unsigned> Defaults, Parameters;
     const auto *Owners = Primary->getTemplateParameters();
     for (const auto &Default : Source.Defaults) {
+      if (const auto *Parameter = dyn_cast_or_null<TemplateTypeParmDecl>(Default.Parameter)) {
+        const auto *Original = Parameter->hasDefaultArgument()
+            ? Parameter->getDefaultArgument().getTypeSourceInfo() : nullptr;
+        const auto *Written = Default.Written.getArgument().getKind() == TemplateArgument::Type
+            ? Default.Written.getTypeSourceInfo() : nullptr;
+        const auto &Converted = Default.Converted.getArgument();
+        if (!OwnerDefault || !family(Parameter) || Parameter->isParameterPack() ||
+            Parameter->getIndex() != 1 || Owners->size() != 2 || Owners->getParam(1) != Parameter ||
+            !Defaults.insert(1).second || !Original || !Written ||
+            Converted.getKind() != TemplateArgument::Type ||
+            Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return false;
+        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return false;
+        continue;
+      }
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
       if (!Parameter || !family(Parameter) || Parameter->isParameterPack() ||
           Parameter->getIndex() >= Owners->size() ||
@@ -10204,7 +10587,9 @@ public:
             !Context.hasSameTemplateName(Argument.getAsTemplate(),
                 Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
             !TraverseTemplateName(Argument.getAsTemplate())) return false;
-      } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+      } else if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Declaration)) {
+        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return false;
+      } else return false;
     }
     return function(Constructor);
   }
@@ -10420,16 +10805,31 @@ bool approvedUtilityPairTraitSelectionLocation(
   const auto Origin = S.sdkFile(SM, Location);
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
   const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
-  return Origin && Origin->Root == "libcxx" &&
-      (Origin->Path == "__type_traits/is_constructible.h" ||
-       Origin->Path == "__type_traits/is_nothrow_constructible.h" ||
-       Origin->Path == "__type_traits/is_convertible.h") &&
-      Constructor && Primary && !Constructor->isInvalidDecl() &&
-      !Constructor->isDeleted() && approvedUtilityPairMetadata(S, SM, Constructor->getParent()) &&
-      approvedStandardSDKDeclaration(S, SM, Constructor) &&
-      approvedStandardSDKDeclaration(S, SM, Primary) &&
+  if (!Origin || Origin->Root != "libcxx" || !Constructor || !Primary ||
+      Constructor->isInvalidDecl() || Constructor->isDeleted() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary)) return false;
+  const bool Query = Origin->Path == "__type_traits/is_constructible.h" ||
+      Origin->Path == "__type_traits/is_nothrow_constructible.h" ||
+      Origin->Path == "__type_traits/is_convertible.h";
+  if (Query && approvedUtilityPairMetadata(S, SM, Constructor->getParent()) &&
       cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "__utility/pair.h") &&
-      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__utility/pair.h");
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__utility/pair.h")) return true;
+  // Retain these SDK element defaults inertly. Only an independently bound
+  // pair query may consume its exact constructor, deduction and default source.
+  const auto *Arguments = Constructor->getTemplateSpecializationArgs();
+  const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+  return (Query || Origin->Path == "__utility/pair.h") &&
+      Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
+      !Constructor->isVariadic() && Arguments && Arguments->size() == 2 &&
+      Arguments->get(0).getKind() == TemplateArgument::Integral &&
+      Arguments->get(0).getIntegralType()->isBooleanType() &&
+      Arguments->get(0).getAsIntegral().getBoolValue() &&
+      Arguments->get(1).getKind() == TemplateArgument::Type && Arguments->get(1).getAsType()->isVoidType() &&
+      Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
+      approvedMemoryTemplateMetadata(S, SM, Constructor->getParent()) == MemoryTemplateMetadata::UniquePtr &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "__memory/unique_ptr.h") &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__memory/unique_ptr.h");
 }
 
 bool approvedUtilityPairReferenceQueryCall(

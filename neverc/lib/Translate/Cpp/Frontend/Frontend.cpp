@@ -9777,6 +9777,150 @@ utilityStringElementConstructionSource(Adapter &A,
                                 A.Context.getRValueReferenceType(StringType)));
 }
 
+static bool utilityPairStringPaddingDefaultSource(
+    Adapter &A, const CXXConstructExpr *Construction, QualType Type,
+    QualType Padded, const CXXConstructorDecl *StringConstructor) {
+  const auto *Method = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Type->getAsCXXRecordDecl() ? Type->getAsCXXRecordDecl()->getDefinition() : nullptr);
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Construction || !Method || !Record || Construction->getNumArgs() ||
+      !A.Context.hasSameType(Construction->getType(), Type) ||
+      Construction->getBeginLoc() != StringConstructor->getLocation() ||
+      Construction->getEndLoc() != StringConstructor->getLocation() ||
+      Record->getName() != "__compressed_pair_padding" ||
+      Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Record->field_empty() || Record->getNumBases() || !Record->isEmpty() ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
+      !Record->hasTrivialDestructor() || A.Context.getTypeSize(Type) != A.Context.getCharWidth() ||
+      Record->getTemplateArgs().size() != 2 ||
+      Record->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !A.Context.hasSameType(Record->getTemplateArgs()[0].getAsType(), Padded) ||
+      Record->getTemplateArgs()[1].getKind() != TemplateArgument::Integral ||
+      Record->getTemplateArgs()[1].getAsIntegral() != 1 ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Method->isDefaultConstructor() || !Method->isImplicit() || !Method->isDefaulted() ||
+      !Method->isTrivial() || Method->isDeleted() || Method->isInvalidDecl() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() || Method->isVariadic() ||
+      Method->getAccess() != AS_public || !Prototype || !Prototype->isNothrow()) return false;
+  auto Pinned = [&](const Decl *Declaration) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+    return Origin && Origin->Root == "libcxx" && Origin->Path == "__memory/compressed_pair.h" &&
+        approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+  };
+  for (const auto *Declaration : Record->redecls()) if (!Pinned(Declaration)) return false;
+  for (const auto *Declaration : Record->getSpecializedTemplate()->redecls())
+    if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl())) return false;
+  const auto *Partial = Record->getSpecializedTemplateOrPartial()
+      .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+  if (!Partial) return false;
+  for (const auto *Declaration : Partial->redecls()) if (!Pinned(Declaration)) return false;
+  for (const auto *Declaration : Method->redecls()) if (!Pinned(Declaration)) return false;
+  return true;
+}
+
+// Runtime defaults retain their actual initialized fields and annotation
+// call. Signature-only construction queries do not consume this body proof.
+static bool utilityPairDefaultStringConstructionSource(
+    Adapter &A, const CXXConstructorDecl *Constructor) {
+  const auto *Definition = Constructor ? dyn_cast_or_null<CXXConstructorDecl>(
+      Constructor->getDefinition()) : nullptr;
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Definition || !Constructor->isDefaultConstructor() ||
+      Constructor->getNumParams() || Constructor->getPrimaryTemplate() ||
+      !Body || Body->size() != 1 || !utilityStringOperationSource(A, Constructor)) return false;
+  std::vector<const FieldDecl *> RecordFields;
+  for (const auto *Field : Constructor->getParent()->fields()) RecordFields.push_back(Field);
+  if (RecordFields.size() != 4) return false;
+  std::set<const FieldDecl *> Fields;
+  for (const auto *Initializer : Definition->inits()) {
+    const auto *Field = Initializer->isMemberInitializer() ? Initializer->getMember() : nullptr;
+    const auto *Child = dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit());
+    const auto *Selected = Child ? Child->getConstructor() : nullptr;
+    const unsigned Padding = Field == RecordFields[1] ? 1 : Field == RecordFields[3] ? 3 : 0;
+    if (!Field || !Fields.insert(Field).second || !Child || Child->getNumArgs() ||
+        !Selected || !Selected->isDefaultConstructor() || !Selected->isDefaulted() ||
+        Selected->getNumParams() || Selected->getPrimaryTemplate() ||
+        !A.Context.hasSameType(Child->getType(), Field->getType()) ||
+        (!Padding && !approvedStandardSDKDeclaration(A.S, A.Sources, Field)) ||
+        !approvedStandardSDKDeclaration(A.S, A.Sources, Selected) ||
+        (Padding && !utilityPairStringPaddingDefaultSource(A, Child, Field->getType(),
+             RecordFields[Padding - 1]->getType(), Constructor))) return false;
+  }
+  for (const auto *Field : Constructor->getParent()->fields())
+    if (!Fields.erase(Field)) return false;
+  if (!Fields.empty()) return false;
+  const auto *Call = dyn_cast<CXXMemberCallExpr>(*Body->body_begin());
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  const auto *Object = Call ? Call->getImplicitObjectArgument() : nullptr;
+  const auto *This = Object ? dyn_cast<CXXThisExpr>(Object->IgnoreParenImpCasts()) : nullptr;
+  const auto *Zero = Call && Call->getNumArgs() == 1
+      ? dyn_cast<IntegerLiteral>(Call->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Call || !Method || !This || !Zero || !Zero->getValue().isZero() ||
+      !Method->getIdentifier() || Method->getName() != "__annotate_new" ||
+      Method->isStatic() || !Method->isConst() || Method->getNumParams() != 1 ||
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
+      Method->getPrimaryTemplate() || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+      Method->getParent()->getCanonicalDecl() != Constructor->getParent()->getCanonicalDecl() ||
+      !A.Context.hasSameUnqualifiedType(This->getType()->getPointeeType(),
+          A.Context.getRecordType(Constructor->getParent())) ||
+      !A.Context.hasSameType(Call->getArg(0)->getType(), Method->getParamDecl(0)->getType())) return false;
+  for (const auto Location : {Call->getBeginLoc(), Call->getEndLoc(), Zero->getBeginLoc(), Zero->getEndLoc()}) {
+    const auto Origin = A.S.sdkFile(A.Sources, Location);
+    if (Location.isMacroID() || !Origin || Origin->Root != "libcxx" || Origin->Path != "string")
+      return false;
+  }
+  const CXXMethodDecl *Members[] = {Method, dyn_cast_or_null<CXXMethodDecl>(
+      Method->getTemplateInstantiationPattern(/*ForDefinition=*/true))};
+  for (const auto *Member : Members) {
+    if (!Member) return false;
+    for (const auto *Declaration : Member->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)) return false;
+    }
+  }
+  return true;
+}
+
+static bool utilityPairDefaultViewConstructionSource(
+    Adapter &A, const CXXConstructExpr *Construction) {
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto View = Constructor ? approvedUtilityStringViewRecord(
+      A.S, A.Sources, Constructor->getParent(), A.Context) : std::nullopt;
+  const auto *Definition = Constructor ? dyn_cast_or_null<CXXConstructorDecl>(
+      Constructor->getDefinition()) : nullptr;
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!View || !Definition || !Constructor->isDefaultConstructor() ||
+      Construction->getNumArgs() || Constructor->getNumParams() ||
+      Constructor->getPrimaryTemplate() || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+      !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 2 ||
+      !utilitySDKFunctionSource(A, Constructor, "string_view")) return false;
+  bool Data = false, Size = false;
+  for (const auto *Initializer : Definition->inits()) {
+    const auto *Field = Initializer->isMemberInitializer() ? Initializer->getMember() : nullptr;
+    const auto *Value = Initializer->getInit();
+    if (!Field || !Value || Value->getBeginLoc().isMacroID() || Value->getEndLoc().isMacroID())
+      return false;
+    const auto Begin = A.S.sdkFile(A.Sources, Value->getBeginLoc());
+    const auto End = A.S.sdkFile(A.Sources, Value->getEndLoc());
+    if (!Begin || !End || Begin->Root != "libcxx" || End->Root != "libcxx" ||
+        Begin->Path != "string_view" || End->Path != "string_view") return false;
+    Value = Value->IgnoreParenImpCasts();
+    if (Field == View->Data && !Data && isa<CXXNullPtrLiteralExpr>(Value)) Data = true;
+    else if (Field == View->Size && !Size) {
+      const auto *Zero = dyn_cast<IntegerLiteral>(Value);
+      if (!Zero || !Zero->getValue().isZero()) return false;
+      Size = true;
+    } else return false;
+  }
+  return Data && Size;
+}
+
 static bool utilityStringViewDestructionSource(Adapter &A,
                                                const CXXRecordDecl *Record) {
   const auto View =
@@ -16552,16 +16696,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!Construction)
       return true;
     A.chargeExpansion(1, L);
-    if (approvedUtilityUniquePtrConstruction(
-            A.S, A.Sources, Construction, A.Context) ==
-        UtilityUniquePtrConstruction::Move) {
+    const auto OwnerKind = approvedUtilityUniquePtrConstruction(
+        A.S, A.Sources, Construction, A.Context);
+    if (OwnerKind == UtilityUniquePtrConstruction::Default ||
+        OwnerKind == UtilityUniquePtrConstruction::Move) {
       const auto *Constructor = Construction->getConstructor();
       const auto Owner = utilityUniquePtrSource(A, Constructor->getParent());
-      if (!Owner || !UniqueExchangeSources(A, *Owner, true)
-                         .moveConstructor(Constructor)) {
-        A.reject(L, "tuple owner move source",
-                 "The exact selected owner move and pointer transfer sources "
-                 "are required.", "TR0203");
+      if (!Owner ||
+          (OwnerKind == UtilityUniquePtrConstruction::Default
+               ? !utilityUniquePtrElementConstructionSource(A, Constructor)
+               : !UniqueExchangeSources(A, *Owner, true).moveConstructor(Constructor))) {
+        A.reject(L, "selected owner construction source",
+                 "The exact selected owner default or move source is required.", "TR0203");
         return false;
       }
       for (auto *Dependencies : ActiveOperationSources)
@@ -16570,22 +16716,35 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (Owner->CustomDeleter) {
         const auto *Deleter =
             utilityUniquePtrDeleterConstructor(A, Constructor, *Owner);
-        if (!Deleter || !defaultedCopyOrMoveConstructor(Deleter)) {
-          A.reject(L, "tuple owner deleter move source",
-                   "The selected trivial source deleter move is required.");
+        if (!Deleter ||
+            (OwnerKind == UtilityUniquePtrConstruction::Default
+                 ? !defaultedLifecycle(Deleter)
+                 : !defaultedCopyOrMoveConstructor(Deleter))) {
+          A.reject(L, "selected owner deleter construction source",
+                   "The selected trivial source deleter default or move is required.");
           return false;
         }
         queueGenerated(Deleter, L);
       }
     }
+    if (approvedUtilityStringViewConstruction(A.S, A.Sources, Construction, A.Context) ==
+            UtilityStringViewConstruction::Default &&
+        !utilityPairDefaultViewConstructionSource(A, Construction)) {
+      A.reject(L, "pair view default source",
+               "The selected SDK view default initializer requires exact null and zero member sources.", "TR0203");
+      return false;
+    }
     const auto String = approvedUtilityStringConstruction(
         A.S, A.Sources, Construction, A.Context);
-    if (String == UtilityStringConstruction::Copy ||
+    if (String == UtilityStringConstruction::Default ||
+        String == UtilityStringConstruction::Copy ||
         String == UtilityStringConstruction::Move) {
       const auto *Constructor = Construction->getConstructor();
-      if (!utilityStringElementConstructionSource(A, Constructor)) {
+      if (!utilityStringElementConstructionSource(A, Constructor) ||
+          (String == UtilityStringConstruction::Default &&
+           !utilityPairDefaultStringConstructionSource(A, Constructor))) {
         A.reject(L, "tuple string construction source",
-                 "The exact selected string copy or move source is required.", "TR0203");
+                 "The exact selected string default, copy or move source is required.", "TR0203");
         return false;
       }
       for (auto *Dependencies : ActiveOperationSources)

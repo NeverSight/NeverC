@@ -46585,9 +46585,9 @@ int main(){{P value=make();if(value.first.size()!=62||value.second.size()!=68)re
 
 TEST_F(TranslateTest, CoreV2PairSelectedStringAndViewValuesRequireExactSources) {
   const struct { const char *Name; const char *Source; } Cases[] = {
-      {"default-string-pair", R"cpp(#include <string>
+      {"const-default-string-pair", R"cpp(#include <string>
 #include <utility>
-int main(){std::pair<std::string,int> p{};return !p.first.empty()||p.second;}
+int main(){std::pair<const std::string,int> p{};return !p.first.empty()||p.second;}
 )cpp"},
       {"const-string-destination", R"cpp(#include <string>
 #include <utility>
@@ -46802,6 +46802,121 @@ struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;v
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("pair-selected-owner-reject-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("pair-selected-owner-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos) << Result.out << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedDefaultsRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-default-string", R"cpp(#include <string>
+#include <utility>
+int main(){std::pair<std::string,int> p;if(!p.first.empty()||p.second)return 1;p.first="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";return p.first.size()!=62;}
+)cpp"},
+      {"pair-default-view", R"cpp(#include <string_view>
+#include <utility>
+int main(){std::pair<int,std::string_view> p;return p.first||p.second.data()!=nullptr||!p.second.empty();}
+)cpp"},
+      {"pair-default-owner", R"cpp(#include <memory>
+#include <utility>
+int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||p.second;}
+)cpp"},
+      {"pair-default-string-owner", R"cpp(#include <memory>
+#include <string>
+#include <utility>
+int main(){std::pair<std::string,std::unique_ptr<int>> p;return !p.first.empty()||p.second.get()!=nullptr;}
+)cpp"},
+      {"pair-default-array-deleter", R"cpp(#include <memory>
+#include <utility>
+int deleted;struct Item{~Item(){++deleted;}};struct D{void operator()(Item*p)const noexcept{delete[] p;}};
+int main(){{std::pair<int,std::unique_ptr<Item[],D>> p;if(p.first||p.second.get()!=nullptr)return 1;}return deleted;}
+)cpp"},
+      {"pair-default-double-string", R"cpp(#include <string>
+#include <utility>
+int main(){std::pair<std::string,std::string> p{};if(!p.first.empty()||!p.second.empty())return 1;p.first="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";p.second=p.first;p.first[0]='Z';return p.second.size()!=62||p.second[0]!='a'||p.first[0]!='Z';}
+)cpp"},
+      {"pair-default-string-view", R"cpp(#include <string>
+#include <string_view>
+#include <utility>
+int main(){std::pair<std::string_view,std::string> p;if(p.first.data()!=nullptr||!p.first.empty()||!p.second.empty())return 1;p.second="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";p.first=std::string_view(p.second.data(),p.second.size());return p.first.size()!=62||p.first[20]!='u'||p.first.data()!=p.second.data();}
+)cpp"},
+      {"pair-default-double-owner", R"cpp(#include <memory>
+#include <utility>
+int deleted;struct Item{int value;Item(int x):value(x){}~Item(){++deleted;}};
+int main(){{std::pair<std::unique_ptr<Item>,std::unique_ptr<Item>> p{};if(p.first.get()!=nullptr||p.second.get()!=nullptr)return 1;p.first.reset(new Item(17));p.second.reset(new Item(29));if(p.first->value!=17||p.second->value!=29||p.first.get()==p.second.get())return 2;}return deleted!=2;}
+)cpp"},
+      {"pair-default-array-reset", R"cpp(#include <memory>
+#include <utility>
+int deleted;int calls;struct Item{int value=7;~Item(){++deleted;}};struct D{void operator()(Item*p)const noexcept{++calls;delete[] p;}};
+int main(){{std::pair<std::unique_ptr<Item[],D>,int> p;if(p.first.get()!=nullptr||p.second)return 1;p.first.reset(new Item[3]);if(p.first[2].value!=7)return 2;p.first.reset();if(deleted!=3||calls!=1)return 3;}return deleted!=3||calls!=1;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-default-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-default-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-default-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedDefaultsRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-default-view-null-macro", R"cpp(#define nullptr nullptr
+#include <string_view>
+#include <utility>
+int main(){std::pair<std::string_view,int> p;return p.first.data()!=nullptr||p.second;}
+)cpp"},
+      {"pair-default-owner-alias-macro", R"cpp(#define _EnableIfDeleterDefaultConstructible _EnableIfDeleterDefaultConstructible
+#include <memory>
+#include <utility>
+int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||p.second;}
+)cpp"},
+      {"pair-default-string-noexcept-macro", R"cpp(#define is_nothrow_default_constructible is_nothrow_default_constructible
+#include <string>
+#include <utility>
+int main(){std::pair<std::string,int> p;return !p.first.empty()||p.second;}
+)cpp"},
+      {"pair-default-implicit-helper-macro", R"cpp(#define __test_implicit_default_constructible __test_implicit_default_constructible
+#include <string_view>
+#include <utility>
+int main(){std::pair<int,std::string_view> p;return p.first||!p.second.empty();}
+)cpp"},
+      {"pair-default-owner-user-default", R"cpp(#include <memory>
+#include <utility>
+int constructed;struct D{D() noexcept{++constructed;}void operator()(int*p)const noexcept{delete p;}};
+int main(){{std::pair<int,std::unique_ptr<int,D>> p;if(p.first||p.second.get()!=nullptr||constructed!=1)return 1;}return constructed!=1;}
+)cpp"},
+      {"pair-default-string-annotation-macro", R"cpp(#define __annotate_new __annotate_new
+#include <string>
+#include <utility>
+int main(){std::pair<std::string,int> p;return !p.first.empty()||p.second;}
+)cpp"},
+      {"pair-default-owner-deleter-alias-macro", R"cpp(#define deleter_type deleter_type
+#include <memory>
+#include <utility>
+int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||p.second;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-default-source-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-default-source-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
