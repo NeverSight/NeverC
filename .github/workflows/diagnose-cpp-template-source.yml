@@ -2,6 +2,12 @@ name: cpp-template-source-diagnostics
 
 on:
   workflow_dispatch:
+    inputs:
+      fixture_group:
+        description: Diagnostic fixture group
+        type: choice
+        options: [template-source, pair-piecewise]
+        default: template-source
   push:
     branches: [dev]
     paths:
@@ -30,6 +36,7 @@ concurrency:
 
 jobs:
   inspect-source-metadata:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'pair-piecewise' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -196,3 +203,27 @@ jobs:
             fi
           done
           exit "$status"
+
+  inspect-pair-piecewise:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'pair-piecewise' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install matching Clang and libc++ 20 diagnostic toolchain
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+          sudo bash "$RUNNER_TEMP/llvm.sh" 20
+          sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev libc++-20-dev libc++abi-20-dev
+      - name: Check native piecewise fixtures and retain selected ASTs
+        run: |
+          python3 utils/ci/check-cpp-pair-piecewise-baseline.py \
+            --repo "$GITHUB_WORKSPACE" --clangxx /usr/bin/clang++-20 \
+            --output "$RUNNER_TEMP/cpp-pair-piecewise-native"
+      - name: Upload native piecewise diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-pair-piecewise-native-${{ github.sha }}
+          path: ${{ runner.temp }}/cpp-pair-piecewise-native
+          if-no-files-found: error
