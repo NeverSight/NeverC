@@ -256857,6 +256857,7 @@ TEST_F(
       {"stored-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_and;}}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
@@ -257143,12 +257144,14 @@ auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::n
       {"stored-negate", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct negate;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
 )cpp"},
       {"stored-plus", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct plus;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
 )cpp"},
@@ -257194,6 +257197,79 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-object-bool-accumulator.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-object-bool-accumulator.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4,a,nullptr)!=false;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-object-bool-accumulator" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-negate.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-negate.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4)!=-1;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-negate" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-plus.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-plus.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4)!=-1;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-plus" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -258248,6 +258324,7 @@ TEST_F(
       {"stored-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_and;}}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
@@ -258534,12 +258611,14 @@ auto selected(W*a,W*b,int*out){return std::transform_exclusive_scan(a,a+1,out,0,
       {"stored-negate", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct negate;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}
 )cpp"},
       {"stored-plus", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct plus;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}
 )cpp"},
@@ -258585,6 +258664,79 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-object-bool-accumulator.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-object-bool-accumulator.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,0,0};if(selected(a,a+4,a,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-object-bool-accumulator" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-negate.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-negate.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,-3,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-negate" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-plus.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-plus.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,-3,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-plus" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -259266,6 +259418,7 @@ TEST_F(
       {"stored-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_and;}}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}
@@ -259552,12 +259705,14 @@ auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,st
       {"stored-negate", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct negate;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}
 )cpp"},
       {"stored-plus", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct plus;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}
 )cpp"},
@@ -259603,6 +259758,79 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-object-bool-accumulator.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-object-bool-accumulator.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,0,0};if(selected(a,a+4,a,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-object-bool-accumulator" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-negate.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-negate.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,-3,-1,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-negate" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-plus.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-plus.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,-3,-1,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-plus" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -289982,6 +290210,7 @@ auto selected(W*a,W*b,W*out){return std::copy_if(a,a+1,out,std::logical_not<>{})
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}
 )cpp"},
@@ -290033,6 +290262,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::copy_if
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperCopyIfRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperCopyIfRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};if(selected(a,a+4,out)!=out+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&out[2].get()!=&sentinel)return 1;v[0]=42;return out[0].get()!=42;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperCopyIfRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -290885,6 +291138,7 @@ auto selected(W*a,W*b,W*out){return std::remove_copy_if(a,a+1,out,std::logical_n
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}
 )cpp"},
@@ -290936,6 +291190,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::remove_
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperRemoveCopyIfRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperRemoveCopyIfRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};if(selected(a,a+4,out)!=out+2||&out[0].get()!=&v[1]||&out[1].get()!=&v[2]||&out[2].get()!=&sentinel)return 1;v[1]=42;return out[0].get()!=42;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperRemoveCopyIfRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -293681,6 +293959,7 @@ auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logic
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}
 )cpp"},
@@ -293744,6 +294023,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::partiti
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperPartitionCopyRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperPartitionCopyRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,W*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};W other[]={sentinel,sentinel,sentinel};auto result=selected(a,a+4,out,other);return result.first!=out+2||result.second!=other+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&other[0].get()!=&v[1]||&other[1].get()!=&v[2]||&out[2].get()!=&sentinel||&other[2].get()!=&sentinel;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperPartitionCopyRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -294624,6 +294927,7 @@ auto selected(W*a,W*b,W*out,int*other){return std::partition_copy(a,a+1,out,othe
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}
 )cpp"},
@@ -294687,6 +294991,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::partiti
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperPartitionCopyMixedOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperPartitionCopyMixedOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};int other[]={91,92,93};auto result=selected(a,a+4,out,other);return result.first!=out+2||result.second!=other+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&out[2].get()!=&sentinel||other[0]!=3||other[1]!=-2||other[2]!=93;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperPartitionCopyMixedOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -295566,6 +295894,7 @@ auto selected(W*a,W*b,W*out){return std::replace_copy_if(a,a+1,out,std::logical_
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}
 )cpp"},
@@ -295629,6 +295958,30 @@ long double value=7;auto selected(P a,P b,int*out){return std::replace_copy_if(a
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};return selected(a,a+4,out)!=out+4||&out[0].get()!=&v[0]||&out[1].get()!=&v[1]||&out[2].get()!=&v[2]||&out[3].get()!=&v[0]||&out[4].get()!=&sentinel;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -296536,6 +296889,7 @@ auto selected(W*a,W*b,int*out){return std::replace_copy_if(a,a+1,out,std::logica
 int value=7;
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}
 )cpp"},
@@ -296602,6 +296956,31 @@ long double value=7;auto selected(P a,P b,int*out){return std::replace_copy_if(a
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfWrappedValue-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfWrappedValue-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+int value=7;
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};return selected(a,a+4,out)!=out+4||out[0]!=7||out[1]!=3||out[2]!=-2||out[3]!=7||out[4]!=95||value!=7;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfWrappedValue-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
