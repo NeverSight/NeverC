@@ -26,6 +26,7 @@ class ArrayInitLoopExpr;
 class ArrayInitIndexExpr;
 class CastExpr;
 class CXXConstructExpr;
+class CXXInheritedCtorInitExpr;
 class CXXStdInitializerListExpr;
 class CXXNewExpr;
 class CXXDefaultArgExpr;
@@ -1714,6 +1715,56 @@ approvedUtilityPairPiecewiseConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+
+// These descriptions retain the selected library path. They provide neither
+// runtime permission nor a completed ordinary source/trait certificate.
+struct FunctionalNotFnStorage {
+  const clang::CXXRecordDecl *Record, *Forwarder, *Operation;
+  const clang::FieldDecl *BoundArguments;
+  const clang::CXXRecordDecl *Tuple;
+  const clang::FieldDecl *TupleBase;
+  const clang::CXXRecordDecl *TupleImplementation, *TupleLeaf;
+  UtilityTupleElement Callable;
+  clang::QualType CallableType;
+};
+std::optional<FunctionalNotFnStorage>
+describeFunctionalNotFnStorage(const State &S, const clang::SourceManager &SM,
+                              const clang::CXXRecordDecl *Record,
+                              const clang::ASTContext &Context);
+struct FunctionalNotFnFactorySource {
+  FunctionalNotFnStorage Storage;
+  const clang::FunctionDecl *Factory;
+  const clang::CXXConstructExpr *Construction;
+  const clang::CXXInheritedCtorInitExpr *InheritedInitialization;
+  // These are original AST nodes, rather than reconstructed initializers.
+  std::vector<const clang::CXXConstructExpr *> SelectedConstructions;
+  std::vector<const clang::CallExpr *> ForwardingCalls;
+  const clang::Expr *CallableInitializer;
+  const clang::CXXConstructExpr *CallableConstruction;
+};
+std::optional<FunctionalNotFnFactorySource>
+describeFunctionalNotFnFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+enum class FunctionalNotFnSourceMode { Runtime, Signature };
+struct FunctionalNotFnCallSource {
+  FunctionalNotFnStorage Storage;
+  const clang::CXXMethodDecl *Method;
+  const clang::Expr *Object;
+  const clang::CallExpr *BoundGet;
+  const clang::CallExpr *BoundMove;
+  const clang::CXXOperatorCallExpr *OperationCall;
+  const clang::Expr *Negation;
+  const clang::CallExpr *InvokeCall;
+  const clang::CallExpr *DispatchCall;
+  const clang::CallExpr *TargetCall;
+  std::vector<const clang::CallExpr *> ForwardingCalls;
+  FunctionalNotFnSourceMode Mode;
+};
+std::optional<FunctionalNotFnCallSource>
+describeFunctionalNotFnCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context, FunctionalNotFnSourceMode Mode);
 
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
