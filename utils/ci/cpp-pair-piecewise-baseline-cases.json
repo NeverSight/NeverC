@@ -52,16 +52,16 @@
     },
     {
       "name": "pair-piecewise-value-tuple-isolation",
-      "source": "#include <tuple>\n#include <utility>\nstruct X{int value;explicit X(int& n):value(n){n=7;}};\nint main(){std::tuple<int> input(3);std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));return p.first.value!=3||p.second!=9||std::get<0>(input)!=3;}\n",
-      "source_sha256": "205b569d233831f4dd348863bf8b6e9bf7f262a817a085984ddc11812e75338a",
+      "source": "#include <tuple>\n#include <utility>\nstruct X{int value;explicit X(int&& n):value(n){n=7;}};\nint main(){std::tuple<int> input(3);std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));return p.first.value!=3||p.second!=9||std::get<0>(input)!=3;}\n",
+      "source_sha256": "7cf05ce7dfa879c1db872318313cb803a7ee5770c8d628af72d801c90ffffd96",
       "native_validity_verified": false,
       "managed_behavior_verified": false,
       "category": "runtime"
     },
     {
       "name": "pair-piecewise-value-tuple-cleanup",
-      "source": "#include <tuple>\n#include <utility>\nint live,copies,destroyed;struct Token{int value;explicit Token(int n):value(n){++live;}Token(const Token& t):value(t.value){++live;++copies;}~Token(){--live;++destroyed;}};\nstruct X{int value;explicit X(Token& t):value(t.value){if(live!=2)value=-1;t.value=7;}};\nint main(){std::tuple<Token> input(3);if(live!=1)return 1;{std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));if(p.first.value!=3||p.second!=9||std::get<0>(input).value!=3||copies!=1||live!=1||destroyed!=1)return 2;}return live!=1||destroyed!=1;}\n",
-      "source_sha256": "609dcbc308984a48dfd924eca242713df9bcd4acffcaba9a5d192f48bfe7fad6",
+      "source": "#include <tuple>\n#include <utility>\nint live,copies,destroyed;struct Token{int value;explicit Token(int n):value(n){++live;}Token(const Token& t):value(t.value){++live;++copies;}~Token(){--live;++destroyed;}};\nstruct X{int value;explicit X(Token&& t):value(t.value){if(live!=2)value=-1;t.value=7;}};\nint main(){auto input=std::make_tuple(Token(3));if(live!=1)return 1;copies=0;destroyed=0;{std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));if(p.first.value!=3||p.second!=9||std::get<0>(input).value!=3||copies!=1||live!=1||destroyed!=1)return 2;}return live!=1||destroyed!=1;}\n",
+      "source_sha256": "1cab6c3eaaddee21ad79c0cb13e1691de193ee721870140fab8396743949c7d5",
       "native_validity_verified": false,
       "managed_behavior_verified": false,
       "category": "runtime"
@@ -188,8 +188,8 @@
     },
     {
       "name": "pair-piecewise-reference-to-value-parameter",
-      "source": "#include <tuple>\n#include <utility>\nvoid use(){std::pair<int&,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}\nint main(){use();return 0;}\n",
-      "source_sha256": "befea37ed205df3eabdae3a4740b7e7fc99a153922d120f1654666e5818422c3",
+      "source": "#include <tuple>\n#include <utility>\nvoid use(){std::pair<int&&,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}\nint main(){use();return 0;}\n",
+      "source_sha256": "6c025eda7bb57b96c6889a43e40d59765f3ecf211c7487d72c0fa4caeac9f162",
       "native_validity_verified": false,
       "managed_behavior_verified": false,
       "category": "guards"

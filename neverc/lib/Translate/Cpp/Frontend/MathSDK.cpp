@@ -10701,9 +10701,13 @@ public:
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
             Context.getRecordType(Constructor->getParent()))) return false;
-    // This descriptor proves the already-admitted actual initializer/argument
-    // path; metadata input bindings never widen runtime construction support.
-    if (!approvedUtilityPairConstruction(S, SM, Construction, Context)) return false;
+    // A piecewise use binds its exact public/private constructor descriptor.
+    // This still grants signature source only; runtime admission requires the
+    // separate outer-source, child-operation, lifetime and deferred checks.
+    if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
+        (Factory || !approvedUtilityPairPiecewiseConstruction(
+                         S, SM, Construction, Context)))
+      return false;
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;

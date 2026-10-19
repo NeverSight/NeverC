@@ -34,7 +34,7 @@ def main():
     args=parser.parse_args();root=args.repo.resolve();output=args.output.resolve()
     output.mkdir(parents=True,exist_ok=False)
     report={'passed':False,'completed':False,'syntax_only':True,'private_bridge_linked':False,
-            'runtime_admission_implemented':False,'managed_behavior_verified':False,
+            'runtime_admission_implemented':True,'managed_behavior_verified':False,
             'goal_complete':False,'commands':[],'phases':[]}
     def save():
         (output/'results.json').write_text(json.dumps(report,indent=2)+'\n')

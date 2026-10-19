@@ -58,6 +58,8 @@ public:
           OS << "member-name: " << Member->getNameAsString() << "\n";
         Init->getInit()->dump(OS, Context);
       }
+      if (D->isDelegatingConstructor())
+        constructor(D->getTargetConstructor());
     }
   }
   bool VisitCXXConstructExpr(CXXConstructExpr *E) {
