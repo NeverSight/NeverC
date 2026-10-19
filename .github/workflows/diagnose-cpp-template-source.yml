@@ -326,6 +326,18 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare retained diagnostic bootstrap logs
+        run: |
+          mkdir -p "$RUNNER_TEMP/cpp-stored-wrapper-controls-bootstrap"
+          git rev-parse HEAD > "$RUNNER_TEMP/cpp-stored-wrapper-controls-bootstrap/revision.txt"
+          python3 --version > "$RUNNER_TEMP/cpp-stored-wrapper-controls-bootstrap/runner-python.log"
+      - name: Set up matching Python 3.12.10 for diagnostic artifact checks
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.10'
+      - name: Verify the pinned diagnostic Python APIs
+        run: |
+          python3 -c 'import hashlib, sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)' | tee "$RUNNER_TEMP/cpp-stored-wrapper-controls-bootstrap/pinned-python.log"
       - name: Install matching native Clang and libc++ 20 oracle
         run: |
           curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
@@ -337,7 +349,7 @@ jobs:
         run: |
           python3 utils/ci/download-cpp-stored-wrapper-controls.py \
             --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 \
-            --output "$RUNNER_TEMP/cpp-boundary-prior"
+            --output "$RUNNER_TEMP/cpp-boundary-prior" 2>&1 | tee "$RUNNER_TEMP/cpp-stored-wrapper-controls-bootstrap/download-compiler.log"
       - name: Verify native-valid guards and preserved default-heap behavior
         run: |
           python3 utils/ci/check-cpp-stored-wrapper-controls.py \
@@ -349,7 +361,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cpp-stored-wrapper-controls-${{ github.sha }}
-          path: ${{ runner.temp }}/cpp-stored-wrapper-controls
+          path: |
+            ${{ runner.temp }}/cpp-stored-wrapper-controls
+            ${{ runner.temp }}/cpp-stored-wrapper-controls-bootstrap
           if-no-files-found: error
 'on':
   workflow_dispatch:
