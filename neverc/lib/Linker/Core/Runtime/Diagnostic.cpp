@@ -154,9 +154,9 @@ std::string linker::ErrorHandler::getLocation(const Twine &msg) {
   if (!vsDiagnostics)
     return std::string(logName);
   const std::string text = msg.str();
-  static const std::regex withLine(
+  const std::regex withLine(
       R"(\n>>> (?:referenced by|defined at) (?:.+\()?([^\s()]+):(\d+)\)?)");
-  static const std::regex fileOnly(
+  const std::regex fileOnly(
       R"(^(?:undefined (?:\S+ )?symbol|duplicate symbol):.*\n>>> )"
       R"((?:referenced by|defined in) ([^\s:]+))");
   std::smatch m;
@@ -218,7 +218,7 @@ void linker::ErrorHandler::error(const Twine &msg) {
   // Visual Studio reports one location per diagnostic, so a duplicate symbol
   // defined at two locations becomes two errors.
   if (vsDiagnostics) {
-    static const std::regex twoDefinitions(
+    const std::regex twoDefinitions(
         R"(^(duplicate symbol: [^\n]*)(\n>>> defined at \S+:\d+[^\n]*\n>>>[^\n]*))"
         R"((\n>>> defined at \S+:\d+[^\n]*\n>>>[^\n]*)$)");
     const std::string text = msg.str();
