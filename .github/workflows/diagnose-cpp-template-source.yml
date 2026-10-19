@@ -1,209 +1,86 @@
 name: cpp-template-source-diagnostics
-
-on:
-  workflow_dispatch:
-    inputs:
-      fixture_group:
-        description: Diagnostic fixture group
-        type: choice
-        options: [template-source, not-fn]
-        default: template-source
-  push:
-    branches: [dev]
-    paths:
-      - .github/workflows/diagnose-cpp-template-source.yml
-      - utils/translate-frontends/cpp/diagnostics/template-source.cpp
-      - tests/neverc/Inputs/translate/cpp/nullptr-template-values.cpp
-      - tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp
-      - tests/neverc/Inputs/translate/cpp/array-allocation.cpp
-      - tests/neverc/Inputs/translate/cpp/builtin-type-classification.cpp
-      - tests/neverc/Inputs/translate/cpp/scalar-operation-traits.cpp
-      - tests/neverc/Inputs/translate/cpp/trivial-record-operation-traits.cpp
-      - tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
-      - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
-      - tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
-      - tests/neverc/Inputs/translate/cpp/bare-function-metadata.cpp
-      - tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp
-
 permissions:
   contents: read
-
-# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
-# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
-
 jobs:
   inspect-source-metadata:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'not-fn' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'not-fn' && inputs.fixture_group != 'not-fn-boundaries'
+      }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Clang 20 development libraries for the diagnostic probe
-        run: |
-          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-          sudo bash "$RUNNER_TEMP/llvm.sh" 20
-          sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev
-          clang++-20 --version
-      - name: Build the upstream diagnostic probe
-        id: build_probe
-        run: |
-          clang++-20 -std=c++17 \
-            -I/usr/lib/llvm-20/include \
-            utils/translate-frontends/cpp/diagnostics/template-source.cpp \
-            -L/usr/lib/llvm-20/lib -lclang-cpp -lLLVM-20 \
-            -o "$RUNNER_TEMP/template-source"
-      - name: Inspect template qualifiers, friend bodies and callback initializers
-        run: |
-          status=0
-          # Separate processes retain evidence for every fixture after a crash.
-          for fixture in nested-method nested-static nested-pack \
-            own-member-friend-function own-member-friend-type \
-            visible-copied-friend visible-copied-friend-context \
-            callback-array-field qualified-friend-class \
-            static-temporary-values static-reference-fillers \
-            static-reference-single-filler automatic-reference-fillers \
-            aggregate-member-cleanup static-forward-reference-copy \
-            static-prior-reference-copy static-constexpr-reference-copy \
-            runtime-array-initializers native-heap-declarations \
-            native-heap-definitions global-allocation-attributes; do
-            if "$RUNNER_TEMP/template-source" "$fixture"; then
-              result=0
-            else
-              result=$?
-            fi
-            expected=0
-            case "$fixture" in
-              own-member-friend-function|own-member-friend-type) expected=139 ;;
-              visible-copied-friend) expected=1 ;;
-            esac
-            echo "$fixture: result $result, expected $expected"
-            if [ "$result" -ne "$expected" ]; then
-              status=1
-            fi
-          done
-          exit "$status"
-      - name: Inspect operation query and materialized specialization identities
-        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
-        run: |
-          "$RUNNER_TEMP/template-source" --source-file \
-            tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
-      - name: Inspect unary transform input and substituted source identities
-        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
-        run: |
-          "$RUNNER_TEMP/template-source" --source-file \
-            tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
-      - name: Record upstream array-filler runtime identity and cleanup
-        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
-        run: |
-          for fixture in static-reference-fillers static-reference-single-filler \
-            automatic-reference-fillers aggregate-member-cleanup; do
-            "$RUNNER_TEMP/template-source" "$fixture" --source-only > "$RUNNER_TEMP/$fixture.cpp"
-            for optimization in 0 2; do
-              clang++-20 -std=c++17 -O"$optimization" "$RUNNER_TEMP/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"
-              if "$RUNNER_TEMP/$fixture"; then
-                result=0
-              else
-                result=$?
-              fi
-              echo "$fixture O$optimization upstream result: $result"
-              # This is a diagnostic baseline, not the translated-program oracle.
-              # 1 means shared/missing/early-destroyed temporaries; 2 means a
-              # wrong owner address or temporaries surviving the full-expression.
-              if [ "$fixture" = static-reference-single-filler ] && \
-                 [ "$optimization" -eq 2 ]; then
-                if [ "$result" -ne 139 ]; then
-                  exit 1
-                fi
-              elif [ "$result" -gt 2 ]; then
-                exit 1
-              fi
-            done
-          done
-      - name: Check upstream constant array allocation and cleanup baseline
-        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
-        run: |
-          clang-20 -std=c17 -c tests/neverc/Inputs/translate/cpp/array-allocation-harness.c -o "$RUNNER_TEMP/array-client.o"
-          status=0
-          for optimization in 0 2; do
-            clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
-              tests/neverc/Inputs/translate/cpp/array-allocation.cpp \
-              "$RUNNER_TEMP/array-client.o" -o "$RUNNER_TEMP/array-allocation"
-            if "$RUNNER_TEMP/array-allocation"; then
-              result=0
-            else
-              result=$?
-            fi
-            if [ "$optimization" -eq 0 ]; then expected=22; else expected=5; fi
-            echo "array-allocation O$optimization upstream result: $result, expected $expected"
-            if [ "$result" -ne "$expected" ]; then
-              status=1
-            fi
-          done
-          exit "$status"
-      - name: Check upstream source fixtures with matching runtime behavior
-        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
-        run: |
-          status=0
-          for fixture in nullptr-template-values builtin-type-classification \
-            scalar-operation-traits trivial-record-operation-traits \
-            defined-operation-traits unary-type-transforms \
-            bare-function-metadata empty-base-chains; do
-            for optimization in 0 2; do
-              if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
-                "tests/neverc/Inputs/translate/cpp/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"; then
-                if "$RUNNER_TEMP/$fixture"; then
-                  result=0
-                else
-                  result=$?
-                fi
-                echo "$fixture O$optimization upstream result: $result"
-                if [ "$result" -ne 0 ]; then
-                  status=1
-                fi
-              else
-                status=1
-              fi
-            done
-          done
-          exit "$status"
-      - name: Check known upstream array-query and aggregate divergences
-        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
-        run: |
-          status=0
-          for optimization in 0 2; do
-            log="$RUNNER_TEMP/array-type-queries-O$optimization.log"
-            if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
-              tests/neverc/Inputs/translate/cpp/array-type-queries.cpp \
-              -o "$RUNNER_TEMP/array-type-queries" >"$log" 2>&1; then
-              echo "array-type-queries O$optimization unexpectedly compiled"
-              status=1
-            else
-              result=$?
-              cat "$log"
-              echo "array-type-queries O$optimization upstream compile result: $result"
-              if ! grep -q "dimension expression does not evaluate to a constant unsigned int" "$log"; then
-                status=1
-              fi
-            fi
+    - uses: actions/checkout@v4
+    - name: Install Clang 20 development libraries for the diagnostic probe
+      run: 'curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
-            clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
-              tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp \
-              -o "$RUNNER_TEMP/runtime-aggregate-array"
-            if "$RUNNER_TEMP/runtime-aggregate-array"; then
-              result=0
-            else
-              result=$?
-            fi
-            echo "runtime-aggregate-array O$optimization upstream result: $result, expected 10"
-            if [ "$result" -ne 10 ]; then
-              status=1
-            fi
-          done
-          exit "$status"
+        sudo bash "$RUNNER_TEMP/llvm.sh" 20
 
+        sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev
+
+        clang++-20 --version
+
+        '
+    - name: Build the upstream diagnostic probe
+      id: build_probe
+      run: "clang++-20 -std=c++17 \\\n  -I/usr/lib/llvm-20/include \\\n  utils/translate-frontends/cpp/diagnostics/template-source.cpp\
+        \ \\\n  -L/usr/lib/llvm-20/lib -lclang-cpp -lLLVM-20 \\\n  -o \"$RUNNER_TEMP/template-source\"\n"
+    - name: Inspect template qualifiers, friend bodies and callback initializers
+      run: "status=0\n# Separate processes retain evidence for every fixture after a crash.\nfor fixture in nested-method\
+        \ nested-static nested-pack \\\n  own-member-friend-function own-member-friend-type \\\n  visible-copied-friend visible-copied-friend-context\
+        \ \\\n  callback-array-field qualified-friend-class \\\n  static-temporary-values static-reference-fillers \\\n  static-reference-single-filler\
+        \ automatic-reference-fillers \\\n  aggregate-member-cleanup static-forward-reference-copy \\\n  static-prior-reference-copy\
+        \ static-constexpr-reference-copy \\\n  runtime-array-initializers native-heap-declarations \\\n  native-heap-definitions\
+        \ global-allocation-attributes; do\n  if \"$RUNNER_TEMP/template-source\" \"$fixture\"; then\n    result=0\n  else\n\
+        \    result=$?\n  fi\n  expected=0\n  case \"$fixture\" in\n    own-member-friend-function|own-member-friend-type)\
+        \ expected=139 ;;\n    visible-copied-friend) expected=1 ;;\n  esac\n  echo \"$fixture: result $result, expected $expected\"\
+        \n  if [ \"$result\" -ne \"$expected\" ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
+    - name: Inspect operation query and materialized specialization identities
+      if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+      run: "\"$RUNNER_TEMP/template-source\" --source-file \\\n  tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp\n"
+    - name: Inspect unary transform input and substituted source identities
+      if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+      run: "\"$RUNNER_TEMP/template-source\" --source-file \\\n  tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp\n"
+    - name: Record upstream array-filler runtime identity and cleanup
+      if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+      run: "for fixture in static-reference-fillers static-reference-single-filler \\\n  automatic-reference-fillers aggregate-member-cleanup;\
+        \ do\n  \"$RUNNER_TEMP/template-source\" \"$fixture\" --source-only > \"$RUNNER_TEMP/$fixture.cpp\"\n  for optimization\
+        \ in 0 2; do\n    clang++-20 -std=c++17 -O\"$optimization\" \"$RUNNER_TEMP/$fixture.cpp\" -o \"$RUNNER_TEMP/$fixture\"\
+        \n    if \"$RUNNER_TEMP/$fixture\"; then\n      result=0\n    else\n      result=$?\n    fi\n    echo \"$fixture O$optimization\
+        \ upstream result: $result\"\n    # This is a diagnostic baseline, not the translated-program oracle.\n    # 1 means\
+        \ shared/missing/early-destroyed temporaries; 2 means a\n    # wrong owner address or temporaries surviving the full-expression.\n\
+        \    if [ \"$fixture\" = static-reference-single-filler ] && \\\n       [ \"$optimization\" -eq 2 ]; then\n      if\
+        \ [ \"$result\" -ne 139 ]; then\n        exit 1\n      fi\n    elif [ \"$result\" -gt 2 ]; then\n      exit 1\n  \
+        \  fi\n  done\ndone\n"
+    - name: Check upstream constant array allocation and cleanup baseline
+      if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+      run: "clang-20 -std=c17 -c tests/neverc/Inputs/translate/cpp/array-allocation-harness.c -o \"$RUNNER_TEMP/array-client.o\"\
+        \nstatus=0\nfor optimization in 0 2; do\n  clang++-20 -std=c++17 -O\"$optimization\" -fstrict-aliasing \\\n    tests/neverc/Inputs/translate/cpp/array-allocation.cpp\
+        \ \\\n    \"$RUNNER_TEMP/array-client.o\" -o \"$RUNNER_TEMP/array-allocation\"\n  if \"$RUNNER_TEMP/array-allocation\"\
+        ; then\n    result=0\n  else\n    result=$?\n  fi\n  if [ \"$optimization\" -eq 0 ]; then expected=22; else expected=5;\
+        \ fi\n  echo \"array-allocation O$optimization upstream result: $result, expected $expected\"\n  if [ \"$result\"\
+        \ -ne \"$expected\" ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
+    - name: Check upstream source fixtures with matching runtime behavior
+      if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+      run: "status=0\nfor fixture in nullptr-template-values builtin-type-classification \\\n  scalar-operation-traits trivial-record-operation-traits\
+        \ \\\n  defined-operation-traits unary-type-transforms \\\n  bare-function-metadata empty-base-chains; do\n  for optimization\
+        \ in 0 2; do\n    if clang++-20 -std=c++17 -O\"$optimization\" -fstrict-aliasing \\\n      \"tests/neverc/Inputs/translate/cpp/$fixture.cpp\"\
+        \ -o \"$RUNNER_TEMP/$fixture\"; then\n      if \"$RUNNER_TEMP/$fixture\"; then\n        result=0\n      else\n   \
+        \     result=$?\n      fi\n      echo \"$fixture O$optimization upstream result: $result\"\n      if [ \"$result\"\
+        \ -ne 0 ]; then\n        status=1\n      fi\n    else\n      status=1\n    fi\n  done\ndone\nexit \"$status\"\n"
+    - name: Check known upstream array-query and aggregate divergences
+      if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+      run: "status=0\nfor optimization in 0 2; do\n  log=\"$RUNNER_TEMP/array-type-queries-O$optimization.log\"\n  if clang++-20\
+        \ -std=c++17 -O\"$optimization\" -fstrict-aliasing \\\n    tests/neverc/Inputs/translate/cpp/array-type-queries.cpp\
+        \ \\\n    -o \"$RUNNER_TEMP/array-type-queries\" >\"$log\" 2>&1; then\n    echo \"array-type-queries O$optimization\
+        \ unexpectedly compiled\"\n    status=1\n  else\n    result=$?\n    cat \"$log\"\n    echo \"array-type-queries O$optimization\
+        \ upstream compile result: $result\"\n    if ! grep -q \"dimension expression does not evaluate to a constant unsigned\
+        \ int\" \"$log\"; then\n      status=1\n    fi\n  fi\n\n  clang++-20 -std=c++17 -O\"$optimization\" -fstrict-aliasing\
+        \ \\\n    tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp \\\n    -o \"$RUNNER_TEMP/runtime-aggregate-array\"\
+        \n  if \"$RUNNER_TEMP/runtime-aggregate-array\"; then\n    result=0\n  else\n    result=$?\n  fi\n  echo \"runtime-aggregate-array\
+        \ O$optimization upstream result: $result, expected 10\"\n  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\n\
+        done\nexit \"$status\"\n"
   inspect-not-fn:
     permissions:
       contents: read
@@ -212,29 +89,106 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - name: Install matching Clang and libc++ 20 diagnostic toolchain
-        run: |
-          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-          sudo bash "$RUNNER_TEMP/llvm.sh" 20
-          sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev libc++-20-dev libc++abi-20-dev
-      - name: Download exact preceding compiler for bounded refusal baselines
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 utils/ci/download-cpp-not-fn-baseline.py \
-            --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 \
-            --output "$RUNNER_TEMP/cpp-not-fn-prior"
-      - name: Check native not_fn fixtures and selected ASTs
-        run: |
-          python3 utils/ci/check-cpp-not-fn-baseline.py \
-            --repo "$GITHUB_WORKSPACE" --clangxx /usr/bin/clang++-20 \
-            --output "$RUNNER_TEMP/cpp-not-fn-native" \
-            --baseline "$RUNNER_TEMP/cpp-not-fn-prior/provenance.json"
-      - name: Upload native not_fn diagnostics
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-not-fn-native-${{ github.sha }}
-          path: ${{ runner.temp }}/cpp-not-fn-native
-          if-no-files-found: error
+    - uses: actions/checkout@v4
+    - name: Install matching Clang and libc++ 20 diagnostic toolchain
+      run: 'curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 20
+
+        sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev libc++-20-dev libc++abi-20-dev
+
+        '
+    - name: Download exact preceding compiler for bounded refusal baselines
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: "python3 utils/ci/download-cpp-not-fn-baseline.py \\\n  --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-prior\"\n"
+    - name: Check native not_fn fixtures and selected ASTs
+      run: "python3 utils/ci/check-cpp-not-fn-baseline.py \\\n  --repo \"$GITHUB_WORKSPACE\" --clangxx /usr/bin/clang++-20\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-native\" \\\n  --baseline \"$RUNNER_TEMP/cpp-not-fn-prior/provenance.json\"\
+        \n"
+    - name: Upload native not_fn diagnostics
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-native-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-not-fn-native
+        if-no-files-found: error
+  inspect-not-fn-boundaries:
+    permissions:
+      contents: read
+      actions: read
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-boundaries' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up pinned Python for diagnostic hashing
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Verify and retain diagnostic bootstrap
+      run: "python3 - <<'PYBOOT'\nimport hashlib,json,os,platform,subprocess,sys\nfrom pathlib import Path\nassert sys.version_info[:2]\
+        \ == (3,12) and hasattr(hashlib, 'file_digest')\nout=Path(os.environ['RUNNER_TEMP'])/'cpp-not-fn-boundary-bootstrap'\n\
+        out.mkdir()\nfiles=['utils/ci/check-cpp-not-fn-boundaries.py','utils/ci/download-cpp-not-fn-baseline.py',\n      \
+        \ 'utils/ci/cpp-not-fn-boundary-cases.json','utils/translate-frontends/cpp/diagnostics/not-fn.cpp',\n       '.github/workflows/diagnose-cpp-template-source.yml']\n\
+        def h(name):\n with open(name,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()\ndata={'revision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),\n\
+        \      'python':sys.version,'python_executable':sys.executable,'platform':platform.platform(),\n      'source_sha256':{name:h(name)\
+        \ for name in files}}\n(out/'bootstrap.json').write_text(json.dumps(data,indent=2)+'\\n')\nprint(json.dumps(data,indent=2))\n\
+        PYBOOT\n"
+    - name: Install matching Clang and libc++ 20 diagnostic toolchain
+      run: 'curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 20
+
+        sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev libc++-20-dev libc++abi-20-dev
+
+        '
+    - name: Download exact preceding compiler for bounded refusal baselines
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: "set -o pipefail\npython3 utils/ci/download-cpp-not-fn-baseline.py \\\n  --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-prior\" 2>&1 | tee \"$RUNNER_TEMP/cpp-not-fn-boundary-bootstrap/download.log\"\
+        \n"
+    - name: Check native not_fn source boundaries fixtures and selected ASTs
+      run: "python3 utils/ci/check-cpp-not-fn-boundaries.py \\\n  --repo \"$GITHUB_WORKSPACE\" --clangxx /usr/bin/clang++-20\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-boundary-native\" \\\n  --baseline \"$RUNNER_TEMP/cpp-not-fn-prior/provenance.json\"\
+        \n"
+    - name: Upload native not_fn source boundaries diagnostics
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-boundary-native-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-not-fn-boundary-native
+
+          ${{ runner.temp }}/cpp-not-fn-boundary-bootstrap'
+        if-no-files-found: error
+        retention-days: 14
+'on':
+  workflow_dispatch:
+    inputs:
+      fixture_group:
+        description: Diagnostic fixture group
+        type: choice
+        options:
+        - template-source
+        - not-fn
+        - not-fn-boundaries
+        default: template-source
+  push:
+    branches:
+    - dev
+    paths:
+    - .github/workflows/diagnose-cpp-template-source.yml
+    - utils/translate-frontends/cpp/diagnostics/template-source.cpp
+    - tests/neverc/Inputs/translate/cpp/nullptr-template-values.cpp
+    - tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp
+    - tests/neverc/Inputs/translate/cpp/array-allocation.cpp
+    - tests/neverc/Inputs/translate/cpp/builtin-type-classification.cpp
+    - tests/neverc/Inputs/translate/cpp/scalar-operation-traits.cpp
+    - tests/neverc/Inputs/translate/cpp/trivial-record-operation-traits.cpp
+    - tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
+    - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
+    - tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
+    - tests/neverc/Inputs/translate/cpp/bare-function-metadata.cpp
+    - tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp

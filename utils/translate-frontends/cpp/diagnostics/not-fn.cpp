@@ -19,7 +19,8 @@ class NotFnVisitor : public RecursiveASTVisitor<NotFnVisitor> {
   ASTContext &Context;
   std::set<const FunctionDecl *> Functions;
   std::set<const CXXRecordDecl *> Records;
-  unsigned Factories = 0, Calls = 0;
+  unsigned Factories = 0, Calls = 0, RootConstructions = 0;
+  std::set<const FunctionTemplateDecl *> PrimarySources;
   unsigned ActiveClosure = 0;
   bool Overflow = false;
 
@@ -108,12 +109,38 @@ public:
       }
     // Header declarations contain unrelated nondependent calls. Only an
     // actual adapter root and its selected body closure belong in this probe.
+    if (Root) {
+      auto &OS = llvm::outs();
+      OS << "NOT-FN-ROOT-CALL\n";
+      Call->dump(OS, Context);
+      OS << "NOT-FN-SIGNATURE-RETURN " << F->getReturnType().getAsString()
+         << " class=" << F->getReturnType()->getTypeClassName() << "\n";
+      if (const auto *Result = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr())) {
+        OS << "NOT-FN-RETURN-DECLTYPE-EXPRESSION\n";
+        Result->getUnderlyingExpr()->dump(OS, Context);
+      }
+      if (const auto *Prototype = F->getType()->getAs<FunctionProtoType>())
+        if (const auto *Exception = Prototype->getNoexceptExpr()) {
+          OS << "NOT-FN-NOEXCEPT-EXPRESSION\n";
+          Exception->dump(OS, Context);
+        }
+      if (const auto *Primary = F->getPrimaryTemplate())
+        if (PrimarySources.insert(Primary).second) {
+          OS << "NOT-FN-PRIMARY\n";
+          Primary->dump(OS);
+        }
+    }
     if (Root || ActiveClosure)
       function(F);
     return true;
   }
   bool VisitCXXConstructExpr(CXXConstructExpr *C) {
     const auto *R = C->getType()->getAsCXXRecordDecl();
+    if (R && R->getIdentifier() && R->getName() == "__not_fn_t") {
+      ++RootConstructions;
+      llvm::outs() << "NOT-FN-ROOT-CONSTRUCTION\n";
+      C->dump(llvm::outs(), Context);
+    }
     if (ActiveClosure || (R && R->getIdentifier() && R->getName() == "__not_fn_t"))
       function(C->getConstructor());
     return true;
@@ -127,7 +154,7 @@ public:
   }
   void finish() {
     llvm::outs() << "NOT-FN-COUNTS factories=" << Factories << " calls=" << Calls
-                 << " functions=" << Functions.size() << " records=" << Records.size()
+                 << " constructions=" << RootConstructions << " functions=" << Functions.size() << " records=" << Records.size()
                  << " overflow=" << Overflow << "\n";
   }
 };
