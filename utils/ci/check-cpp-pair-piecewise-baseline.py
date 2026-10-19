@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--repo', type=Path, required=True)
     parser.add_argument('--clangxx', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--baseline', type=Path, required=True)
     args = parser.parse_args()
     root = args.repo.resolve()
     output = args.output.resolve()
@@ -59,6 +60,7 @@ def main():
         assert 'clang version 20.1.8' in (output / 'clang-version.log').read_text()
         report['compiler_sha256'] = digest(clangxx)
         inputs = ['utils/ci/check-cpp-pair-piecewise-baseline.py',
+                  'utils/ci/download-cpp-pair-piecewise-baseline.py',
                   'utils/ci/cpp-pair-piecewise-baseline-cases.json',
                   'utils/translate-frontends/cpp/diagnostics/pair-piecewise.cpp',
                   '.github/workflows/diagnose-cpp-template-source.yml']
@@ -109,15 +111,42 @@ def main():
                 asts.append({'name': case['name'], 'returncode': code, 'log': str(log),
                              'log_sha256': digest(log), 'passed': passed})
         report['asts'] = asts
+        provenance = json.loads(args.baseline.read_text())
+        assert provenance['revision'] == '1617f18ead74a8fa719e3d1bd02f9c84a10de551'
+        assert provenance['run_id'] == 39244936536 and provenance['artifact_id'] == 12195306550
+        assert provenance['artifact_sha256'] == '9332fad0d0226257f109ae74c1655a4e35510783d1029dd2bc8bdc15bfaf5206'
+        prior = Path(provenance['compiler'])
+        assert digest(prior) == provenance['compiler_sha256']
+        (output / 'baseline-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+        baseline_cases = []
+        for case in report['cases']:
+            if case['category'] != 'runtime':
+                continue
+            source = Path(case['source'])
+            generated = source.with_suffix('.baseline.nc')
+            log = source.with_suffix('.baseline.log')
+            code = run([prior, 'translate', '--from', 'cpp', source, '--profile', 'cpp-core-v2',
+                        '--target', 'x86_64-unknown-linux-gnu', '-o', generated, '--', '-std=c++17'], log)
+            text = log.read_text()
+            artifacts = list(source.parent.glob(generated.name + '*'))
+            refused = code != 0 and ('TR0201' in text or 'TR0203' in text) and \
+                      'TR0101' not in text and 'TR0102' not in text and not artifacts
+            baseline_cases.append({'name': case['name'], 'source_sha256': case['source_sha256'],
+                                   'returncode': code, 'log': str(log), 'log_sha256': digest(log),
+                                   'prior_managed_rejected': refused, 'passed': refused})
+            print(('PASS' if refused else 'FAIL') + ' preceding compiler refusal ' + case['name'], flush=True)
+        report['baseline'] = {'provenance': provenance, 'cases': baseline_cases,
+                              'passed': len(baseline_cases) == 14 and all(c['passed'] for c in baseline_cases)}
+        assert digest(prior) == provenance['compiler_sha256']
         report['native_executions'] = sum(m['passed'] for c in report['cases'] for m in c['modes'])
         report['completed'] = True
         report['passed'] = (all(c['passed'] for c in report['cases']) and len(asts) == 14 and
-                            all(a['passed'] for a in asts))
+                            all(a['passed'] for a in asts) and report['baseline']['passed'])
         assert all(digest(root / name) == value for name, value in report['source_sha256'].items())
         assert digest(clangxx) == report['compiler_sha256']
         save()
         assert report['passed'], 'Native fixture or AST diagnostic failed; inspect retained logs.'
-        print('PASS native-only pair piecewise baseline: 24 fixtures/48 runs, 14 selected ASTs; managed support unverified.', flush=True)
+        print('PASS native-only pair piecewise baseline: 24 fixtures/48 runs, 14 selected ASTs and 14 preceding-compiler refusals; new managed support unverified.', flush=True)
     except BaseException:
         report['failure'] = traceback.format_exc()
         save()
