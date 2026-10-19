@@ -29959,6 +29959,15 @@ class Action : public ASTFrontendAction {
 
 public:
   explicit Action(State &S) : S(S) {}
+  bool BeginInvocation(CompilerInstance &CI) override {
+    if (S.coreV2()) {
+      // The MSVC driver treats a zero compatibility version as unspecified and
+      // may discover cl.exe. Own the actual language option before predefined
+      // macros or headers are created, retaining the requested target ABI.
+      CI.getLangOpts().MSCompatibilityVersion = 0;
+    }
+    return ASTFrontendAction::BeginInvocation(CI);
+  }
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                  llvm::StringRef) override {
     auto Policy = std::make_unique<PreprocessorPolicy>(S, CI.getPreprocessor());
@@ -30317,11 +30326,11 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
                                "-Wc++26-extensions", "-Werror=writable-strings",
                                "-fno-ms-compatibility", "-fno-ms-extensions",
-                               // Disabling extensions does not stop Clang
-                               // from detecting an installed MSVC version.
-                               // Keep the pinned libc++ ABI configuration
-                               // independent of that host installation.
-                               "-fms-compatibility-version=0",
+                               // Microsoft ABI selection independently opts
+                               // into external VCRuntime headers. Use libc++'s
+                               // existing configuration without changing SDK
+                               // files or enabling a host header search path.
+                               "-D_LIBCPP_NO_VCRUNTIME",
                                "-fno-delayed-template-parsing",
                                "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
                                "-D_NEVERC_CPP_CORE_V2_SDK",
