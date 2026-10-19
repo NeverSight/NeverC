@@ -173,7 +173,7 @@ jobs:
           fi
         done
         exit "$status"
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group != 'boundary-controls' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -317,6 +317,40 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery' }}
+  inspect-boundary-controls:
+    permissions:
+      contents: read
+      actions: read
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'boundary-controls' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install matching native Clang and libc++ 20 oracle
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+          sudo bash "$RUNNER_TEMP/llvm.sh" 20
+          sudo apt-get install -y libc++-20-dev libc++abi-20-dev
+      - name: Download authenticated existing compiler without rebuilding
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 utils/ci/download-cpp-boundary-controls.py \
+            --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 \
+            --output "$RUNNER_TEMP/cpp-boundary-prior"
+      - name: Verify native-valid guards and preserved default-heap behavior
+        run: |
+          python3 utils/ci/check-cpp-boundary-controls.py \
+            --repo "$GITHUB_WORKSPACE" --clangxx /usr/bin/clang++-20 \
+            --output "$RUNNER_TEMP/cpp-boundary-controls" \
+            --baseline "$RUNNER_TEMP/cpp-boundary-prior/provenance.json"
+      - name: Upload all native and translated boundary evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-boundary-controls-${{ github.sha }}
+          path: ${{ runner.temp }}/cpp-boundary-controls
+          if-no-files-found: error
 'on':
   workflow_dispatch:
     inputs:
@@ -328,6 +362,7 @@ jobs:
         options:
         - template-source
         - ci-recovery
+        - boundary-controls
   push:
     branches:
     - dev
