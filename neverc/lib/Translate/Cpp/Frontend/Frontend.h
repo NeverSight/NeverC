@@ -1660,6 +1660,10 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const clang::ASTContext &Context,
     std::vector<UtilityPairElementAssignment> *SelectedAssignments =
         nullptr);
+std::optional<UtilityOperation>
+approvedUtilityPairComparisonChildOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Call, const clang::ASTContext &Context);
 std::optional<std::vector<const clang::CXXOperatorCallExpr *>>
 approvedUtilityPairSelectedComparisons(
     const State &S, const clang::SourceManager &SM,
