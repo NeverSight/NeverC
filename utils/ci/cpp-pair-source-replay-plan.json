@@ -57,30 +57,157 @@
   "trace_preserves_false_return_values": true,
   "feature_admission_or_guard_relaxed": false,
   "all_binaries_remote_only": true,
-  "piecewise_descriptor_trace": true,
-  "piecewise_descriptor_nullopt_sites_instrumented": 27,
-  "piecewise_descriptor_false_sites_instrumented": 4,
-  "piecewise_descriptor_original_source_sha256": "02410da484e278e207c194983f914f8b20bc281e9c1ac142724ab0186e7f9ec3",
-  "piecewise_descriptor_inverse_restores_original_source": true,
-  "actual_parent_trace_evidence": {
-    "commit": "29cfcfcdc9e414548b3900da4ebaa68be6634631",
-    "run_id": 39367437921,
-    "artifact_id": 12239884747,
-    "archive_sha256": "cf3ee8b65722ae736aeea91b9a6391a1c543ee079eeef0cfc10d3b45b2ee59e4",
-    "report_sha256": "ff4aaa19505ac380cbcd1c02d3225dba156eea6136c337c66d25a90a37117d4f",
-    "bridge_units_recompiled": 5,
-    "source_trace": [
+  "outer_source_trace": true,
+  "trace_source_basis": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
+  "outer_source_original_sha256": "554cd75569a4e69b0ea1ef89fd5decbe8c7c5f4365ca0f9ad925c017563b237c",
+  "outer_source_observed_sha256": "97a775fe4651bea65fbfd81410e271ce610873ae97f4207e4994e1357f4b7dd5",
+  "outer_source_boolean_returns_observed": 53,
+  "outer_source_inverse_restores_original": true,
+  "actual_parent_request_evidence": {
+    "commit": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
+    "run_id": 39371411233,
+    "artifact_id": 12241678552,
+    "archive_sha256": "a274c264b66d32185037c7995fd45dc6247e5460a6cc72a74cbaa7b072bea786",
+    "report_sha256": "3fbb14ebbeefeed9063424905c697d525549b5d95e58564e95d144f2874f6018",
+    "actual_requests": 104,
+    "accepted_positive_requests": 16,
+    "original_source_guard_rejections": 80,
+    "failed_expectations": [
       {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
-        "line": 10718,
-        "source": "      return recordPairSourceFailure(__LINE__);"
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
       },
       {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 22300,
-        "source": "            ? (llvm::errs() << \"PAIR_SOURCE_FALSE Frontend.cpp:\" << __LINE__ << \"\\n\", false)"
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
       }
     ]
   }

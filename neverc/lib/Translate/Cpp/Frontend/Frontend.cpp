@@ -10492,26 +10492,32 @@ class UtilityPairPiecewiseOuterSources
   unsigned Nodes = 0;
   bool Failed = false;
 
+  bool observed(bool Accepted, unsigned Line) const {
+    if (!Accepted && std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE"))
+      llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << Line << "\n";
+    return Accepted;
+  }
+
   bool step(SourceLocation Location) {
     A.chargeExpansion(1, Location);
     if (Failed || ++Nodes > 32768) {
       Failed = true;
-      return false;
+      return observed((false), __LINE__);
     }
-    return true;
+    return observed((true), __LINE__);
   }
   bool location(SourceLocation L) const {
     if (L.isInvalid())
-      return false;
+      return observed((false), __LINE__);
     const auto Spelling = A.S.sdkFile(A.Sources, A.Sources.getSpellingLoc(L));
     const auto Expansion = A.S.sdkFile(A.Sources, A.Sources.getExpansionLoc(L));
-    return Spelling && Spelling->Root == "libcxx" &&
-           Expansion && Expansion->Root == "libcxx";
+    return observed((Spelling && Spelling->Root == "libcxx" &&
+           Expansion && Expansion->Root == "libcxx"), __LINE__);
   }
   bool declaration(const Decl *D) {
-    return D && step(D->getLocation()) && !D->isInvalidDecl() &&
+    return observed((D && step(D->getLocation()) && !D->isInvalidDecl() &&
            approvedStandardSDKDeclaration(A.S, A.Sources, D) &&
-           location(D->getLocation());
+           location(D->getLocation())), __LINE__);
   }
   bool erasedConstruction(const CXXConstructExpr *C) {
     const auto *Constructor = C ? C->getConstructor() : nullptr;
@@ -10520,30 +10526,40 @@ class UtilityPairPiecewiseOuterSources
         !Constructor->isDefaulted() || Constructor->isDeleted() ||
         Constructor->isInvalidDecl() || Constructor->isVariadic() ||
         Constructor->getPrimaryTemplate())
-      return false;
+      return observed((false), __LINE__);
     bool Bound = approvedUtilityPiecewiseConstructType(
         A.S, A.Sources, C->getType(), A.Context);
     for (unsigned I = 3; I != 5; ++I)
       Bound |= A.Context.hasSameType(C->getType(),
           Piecewise.PrivateConstructor->getParamDecl(I)->getType());
     if (!Bound || !declaration(Record))
-      return false;
+      return observed((false), __LINE__);
     for (const auto *D : Constructor->redecls())
       if (!declaration(D))
-        return false;
+        return observed((false), __LINE__);
     ErasedConstructors.insert(Constructor->getCanonicalDecl());
-    return true;
+    return observed((true), __LINE__);
   }
   bool family(const FunctionDecl *Function) {
+    if (Function && Function->getIdentifier() && Function->getName() == "forward" &&
+        std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+      llvm::errs() << "PAIR_OUTER_FORWARD_BEGIN\n";
+      Function->dump(llvm::errs());
+      if (const auto *Pattern = Function->getTemplateInstantiationPattern()) {
+        llvm::errs() << "PAIR_OUTER_FORWARD_PATTERN\n";
+        Pattern->dump(llvm::errs());
+      }
+      llvm::errs() << "PAIR_OUTER_FORWARD_END\n";
+    }
     if (!Function || !step(Function->getLocation()) ||
         Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() ||
         Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
-      return false;
+      return observed((false), __LINE__);
     if (Functions.count(Function))
-      return !Failed;
+      return observed((!Failed), __LINE__);
     if (!ActiveFunctions.insert(Function).second)
-      return false;
+      return observed((false), __LINE__);
     bool Complete = false;
     auto Finish = llvm::make_scope_exit([&] {
       ActiveFunctions.erase(Function);
@@ -10551,50 +10567,50 @@ class UtilityPairPiecewiseOuterSources
         Failed = true;
     });
     if (Functions.size() + ActiveFunctions.size() > 128)
-      return false;
+      return observed((false), __LINE__);
     for (const auto *D : Function->redecls())
       if (!declaration(D) || !signature(D))
-        return false;
+        return observed((false), __LINE__);
     if (const auto *Primary = Function->getPrimaryTemplate())
       for (const auto *D : Primary->redecls()) {
         const auto *Templated = dyn_cast<FunctionDecl>(D->getTemplatedDecl());
         if (!declaration(D) || !Templated || !declaration(Templated) ||
             !signature(Templated))
-          return false;
+          return observed((false), __LINE__);
       }
     const auto *Pattern = Function->getTemplateInstantiationPattern();
     if (Pattern && (!declaration(Pattern) || !signature(Pattern)))
-      return false;
+      return observed((false), __LINE__);
     const auto *Definition = Function->getDefinition();
     if (!Definition || !declaration(Definition) || !signature(Definition))
-      return false;
+      return observed((false), __LINE__);
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Definition)) {
       if (Constructor->getCanonicalDecl() != Piecewise.PublicConstructor->getCanonicalDecl() &&
           Constructor->getCanonicalDecl() != Piecewise.PrivateConstructor->getCanonicalDecl())
-        return false;
+        return observed((false), __LINE__);
       for (const auto *Initializer : Constructor->inits())
         if (!TraverseStmt(const_cast<Expr *>(Initializer->getInit())))
-          return false;
+          return observed((false), __LINE__);
     }
     Complete = TraverseStmt(const_cast<Stmt *>(Definition->getBody())) && !Failed;
     if (Complete)
       Functions.insert(Function);
-    return Complete;
+    return observed((Complete), __LINE__);
   }
   bool signature(const FunctionDecl *Function) {
     const auto *Info = Function->getTypeSourceInfo();
     if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
-      return false;
+      return observed((false), __LINE__);
     for (const auto *Parameter : Function->parameters()) {
       const auto *Written = Parameter->getTypeSourceInfo();
       if (!declaration(Parameter) || !Written ||
           !A.Context.hasSameType(Written->getType(), Parameter->getType()) ||
           !TraverseTypeLoc(Written->getTypeLoc()))
-        return false;
+        return observed((false), __LINE__);
     }
     const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
-    return Prototype && (!Prototype->getNoexceptExpr() ||
-        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())));
+    return observed((Prototype && (!Prototype->getNoexceptExpr() ||
+        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())))), __LINE__);
   }
 public:
   UtilityPairPiecewiseOuterSources(Adapter &A,
@@ -10603,7 +10619,7 @@ public:
     for (const auto &Element : Piecewise.Elements)
       BoundChildren.insert(Element.Initializer);
   }
-  bool shouldWalkTypesOfTypeLocs() const { return false; }
+  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }
   bool deduction(const TemplateUseSource &Source, const CXXConstructorDecl *Function) {
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
@@ -10620,13 +10636,13 @@ public:
         Source.Canonical->size() != Parameters->size() ||
         Source.Sugared->size() != Parameters->size() ||
         Arguments->size() != Parameters->size())
-      return false;
+      return observed((false), __LINE__);
     for (unsigned I = 0; I < Arguments->size(); ++I) {
       if (!Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
               A.Context.getCanonicalTemplateArgument(Source.Sugared->get(I))) ||
           Arguments->get(I).getKind() != TemplateArgument::Pack)
-        return false;
+        return observed((false), __LINE__);
     }
     std::set<std::pair<unsigned, unsigned>> Written;
     for (const auto &Type : Source.ParameterTypes) {
@@ -10638,18 +10654,18 @@ public:
           !A.Context.hasSameType(Type.Type->getType(), A.Context.getSizeType()) ||
           !TraverseTypeLoc(Type.Type->getTypeLoc()) ||
           !Written.emplace(I, Type.PackIndex).second)
-        return false;
+        return observed((false), __LINE__);
       const auto &Pack = Arguments->get(I);
       if (Pack.pack_size()) {
         if (Type.PackIndex >= Pack.pack_size())
-          return false;
+          return observed((false), __LINE__);
         const auto &Value = Pack.pack_elements()[Type.PackIndex];
         if (Value.getKind() != TemplateArgument::Integral ||
             !A.Context.hasSameType(Value.getIntegralType(), Type.Type->getType()) ||
             Value.getAsIntegral().getLimitedValue() != Type.PackIndex)
-          return false;
+          return observed((false), __LINE__);
       } else if (Type.PackIndex != ~0u) {
-        return false;
+        return observed((false), __LINE__);
       }
     }
     if (!Public)
@@ -10657,63 +10673,63 @@ public:
         const auto Size = Arguments->get(I).pack_size();
         if (!Size) {
           if (!Written.count({I, ~0u}))
-            return false;
+            return observed((false), __LINE__);
         } else {
           for (unsigned J = 0; J < Size; ++J)
             if (!Written.count({I, J}))
-              return false;
+              return observed((false), __LINE__);
         }
       }
-    return !Failed;
+    return observed((!Failed), __LINE__);
   }
   bool VisitStmt(Stmt *Statement) {
-    return step(Statement->getBeginLoc()) &&
-           location(Statement->getBeginLoc()) && location(Statement->getEndLoc());
+    return observed((step(Statement->getBeginLoc()) &&
+           location(Statement->getBeginLoc()) && location(Statement->getEndLoc())), __LINE__);
   }
   bool VisitTypeLoc(TypeLoc Type) {
-    return step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
-           location(Type.getEndLoc());
+    return observed((step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
+           location(Type.getEndLoc())), __LINE__);
   }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!location(Reference->getLocation()))
-      return false;
+      return observed((false), __LINE__);
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl()))
-      return declaration(Function);
-    return declaration(Reference->getDecl());
+      return observed((declaration(Function)), __LINE__);
+    return observed((declaration(Reference->getDecl())), __LINE__);
   }
   bool VisitMemberExpr(MemberExpr *Member) {
-    return location(Member->getMemberLoc()) && declaration(Member->getMemberDecl());
+    return observed((location(Member->getMemberLoc()) && declaration(Member->getMemberDecl())), __LINE__);
   }
   bool VisitCXXConstructExpr(CXXConstructExpr *Construction) {
     if (BoundChildren.count(Construction))
-      return true;
+      return observed((true), __LINE__);
     if (Construction == Piecewise.Delegation)
-      return family(Construction->getConstructor());
+      return observed((family(Construction->getConstructor())), __LINE__);
     // WalkUpFromCXXConstructExpr also reaches CXXTemporaryObjectExpr. Its
     // specialized RAV traversal must retain the same erased-tag/index proof.
-    return erasedConstruction(Construction);
+    return observed((erasedConstruction(Construction)), __LINE__);
   }
   bool TraverseCXXConstructExpr(CXXConstructExpr *Construction) {
     if (BoundChildren.count(Construction))
-      return true; // The caller separately completes this exact child operation.
+      return observed((true), __LINE__); // The caller separately completes this exact child operation.
     if (Construction == Piecewise.Delegation)
-      return family(Construction->getConstructor());
-    return erasedConstruction(Construction) &&
-        RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseCXXConstructExpr(Construction);
+      return observed((family(Construction->getConstructor())), __LINE__);
+    return observed((erasedConstruction(Construction) &&
+        RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseCXXConstructExpr(Construction)), __LINE__);
   }
   bool TraverseStmt(Stmt *Statement) {
     if (!Statement)
-      return false;
+      return observed((false), __LINE__);
     if (const auto *Expression = dyn_cast<Expr>(Statement))
       if (BoundChildren.count(Expression))
-        return true;
-    return RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseStmt(Statement);
+        return observed((true), __LINE__);
+    return observed((RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseStmt(Statement)), __LINE__);
   }
   bool VisitCallExpr(CallExpr *Call) {
     const auto *Function = Call->getDirectCallee();
     if (!Function || !location(Call->getExprLoc()))
-      return false;
-    return family(Function);
+      return observed((false), __LINE__);
+    return observed((family(Function)), __LINE__);
   }
   bool check() {
     bool Complete = false;
@@ -10724,7 +10740,7 @@ public:
     if (Failed || Piecewise.Elements.size() != 2 ||
         !family(Piecewise.PublicConstructor) ||
         !family(Piecewise.PrivateConstructor))
-      return false;
+      return observed((false), __LINE__);
     // Field initializers are deliberately separate from the outer proof. Each
     // selected get/forward retains its actual source use and complete family.
     for (const auto &Element : Piecewise.Elements)
@@ -10733,10 +10749,10 @@ public:
         const auto *Forward = Element.Forwarders[I];
         if (!location(Get->getExprLoc()) || !location(Forward->getExprLoc()) ||
             !family(Get->getDirectCallee()) || !family(Forward->getDirectCallee()))
-          return false;
+          return observed((false), __LINE__);
       }
     Complete = !Failed;
-    return Complete;
+    return observed((Complete), __LINE__);
   }
 };
 
@@ -22275,14 +22291,10 @@ public:
     const auto Location = Selection.Location;
     const PairConstructorSourceKey Key{Construction, Factory};
     if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
-      return std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
-            ? (llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
-            : false;
+      return false;
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
-        Found == FunctionSources.end() || Found->second.empty()) return std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
-            ? (llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
-            : false;
+        Found == FunctionSources.end() || Found->second.empty()) return false;
     const TemplateUseSource *First = nullptr;
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
@@ -22296,9 +22308,7 @@ public:
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
               Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
-        return std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
-            ? (llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
-            : false;
+        return false;
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
       Members.insert(LocalMembers.begin(), LocalMembers.end());
