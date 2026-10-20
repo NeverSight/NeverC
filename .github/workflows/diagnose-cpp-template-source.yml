@@ -84,7 +84,7 @@ jobs:
       && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group != 'session-cache-ownership' && inputs.fixture_group
       != 'macho-data-const' && inputs.fixture_group != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest'
       && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' && inputs.fixture_group
-      != 'arm-current-component' }}
+      != 'arm-current-component' && inputs.fixture_group != 'arm-component-pid-replay' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -903,6 +903,47 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
         compression-level: 0
+  inspect-arm-component-pid-replay:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'arm-component-pid-replay' }}
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Set up actual native Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+        architecture: arm64
+    - name: Set up production native MSVC ARM64 runtime
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
+    - name: Authenticate preserved production archives and replay original protocol with unique diagnostic records
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: 'python utils/ci/check-arm-component-pid-replay.py --repo "$env:GITHUB_WORKSPACE" --plan utils/ci/cpp-arm-component-pid-replay-plan.json
+        --output "$env:RUNNER_TEMP/cpp-arm-component-pid-replay" --build "$env:RUNNER_TEMP/cpp-arm-component-pid-build"
+
+        '
+    - name: Upload only small original requests responses and faithful logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-arm-component-pid-replay-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-arm-component-pid-replay
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain both actual C-entry callers remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-arm-component-pid-callers-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-arm-component-pid-build/retained
+        if-no-files-found: warn
+        retention-days: 7
 'on':
   workflow_dispatch:
     inputs:
@@ -923,6 +964,7 @@ jobs:
         - algorithm-sdk-abi-manifest
         - algorithm-manifest-formal
         - arm-current-component
+        - arm-component-pid-replay
   push:
     branches:
     - dev

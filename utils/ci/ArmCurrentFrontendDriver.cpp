@@ -25,8 +25,15 @@ int main(int Argc, char **Argv) {
     const char *Directory = std::getenv("NEVERC_CPP_PROTOCOL_EXECUTION_DIR");
     if (!Directory)
       return 65;
-    Record = fs::path(Directory) / std::to_string(::_getpid());
-    fs::create_directories(Record);
+    fs::create_directories(fs::path(Directory));
+    for (unsigned Sequence = 0;; ++Sequence) {
+      if (Sequence >= 200000)
+        return 68;
+      Record = fs::path(Directory) /
+          (std::to_string(::_getpid()) + "-" + std::to_string(Sequence));
+      if (fs::create_directory(Record))
+        break;
+    }
     fs::copy_file(Argv[3], Record / "request.json");
     std::ofstream Command(Record / "argv.txt");
     for (int I = 0; I != Argc; ++I)
