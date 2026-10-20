@@ -81480,6 +81480,47 @@ approvedUtilityPairPiecewiseConstruction(
         return false;
     return true;
   };
+  // Clang can retain std::forward as an implicit builtin without an
+  // instantiated body. Only that exact pinned cast may use its primary body;
+  // the constructors above still require their actual instantiated definitions.
+  auto ForwardFamily = [&](const CallExpr *Forward) {
+    const auto *F = Forward ? Forward->getDirectCallee() : nullptr;
+    if (F && F->getDefinition())
+      return Family(F, "__utility/forward.h");
+    const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    const auto *Definition = Pattern ? Pattern->getDefinition() : nullptr;
+    const auto *Builtin = F ? F->getAttr<BuiltinAttr>() : nullptr;
+    const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *Cast = Forward ? dyn_cast<ImplicitCastExpr>(Forward->getCallee()) : nullptr;
+    const auto *Pointer = Cast ? Cast->getType()->getAs<PointerType>() : nullptr;
+    if (!F || !Primary || !Definition || !Pinned(Definition, "__utility/forward.h") ||
+        F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+        F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !F->getIdentifier() || F->getName() != "forward" ||
+        F->getNumParams() != 1 || Forward->getNumArgs() != 1 ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIforward ||
+        F->getBuiltinID() != Builtin::BIforward || !Prototype ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Pointer ||
+        Pointer->getPointeeType()->getAs<FunctionProtoType>() != Prototype ||
+        !F->getParamDecl(0)->getType()->isLValueReferenceType() ||
+        !Forward->getArg(0)->isLValue() ||
+        !Context.hasSameType(F->getParamDecl(0)->getType()->getPointeeType(),
+                             Forward->getArg(0)->getType()))
+      return false;
+    for (const auto *D : F->redecls())
+      if (++FamilyDeclarations > 512 || !Pinned(D, "__utility/forward.h"))
+        return false;
+    for (const auto *D : Primary->redecls())
+      if (++FamilyDeclarations > 512 || !Pinned(D, "__utility/forward.h") ||
+          !Pinned(D->getTemplatedDecl(), "__utility/forward.h"))
+        return false;
+    for (const auto *D : Pattern->redecls())
+      if (++FamilyDeclarations > 512 || !Pinned(D, "__utility/forward.h"))
+        return false;
+    return true;
+  };
   if (!Public || !Pair || !Definition || !Body || !Body->body_empty() ||
       Public->getAccess() != AS_public || Public->getNumParams() != 3 ||
       !Public->isDelegatingConstructor() ||
@@ -81662,7 +81703,7 @@ approvedUtilityPairPiecewiseConstruction(
           !Context.hasSameType(F->getReturnType(), Forwarded) ||
           Forward->getValueKind() != Expr::getValueKindForType(Forwarded) ||
           !utilityPairForwardingUseSource(S, SM, Forward) ||
-          !Family(F, "__utility/forward.h"))
+          !ForwardFamily(Forward))
         return std::nullopt;
       const auto *Get = dyn_cast_or_null<CallExpr>(
           functionalInvokeStrippedExpression(Forward->getArg(0)));
