@@ -10557,7 +10557,12 @@ public:
         PairDefaultOwnerSignature->getConstructor()->getParent(), Context, false, false) : std::nullopt;
     const bool Deleter = ParentOwner && !ParentOwner->CustomDeleter &&
         ParentOwner->Deleter.Record->getCanonicalDecl() == Record->getCanonicalDecl();
-    if (OwnerPointer && !Owner) return std::nullopt;
+    // This signature root is only the selected pointer constructor. A move
+    // constructor has a reference parameter and must retain the ordinary
+    // special-member source path instead of entering the pointer-only query.
+    if (OwnerPointer && (!Owner || !Constructor || Constructor->getNumParams() != 1 ||
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType)))
+      return std::nullopt;
     if (!String && !Owner && !Allocator && !Deleter) return std::nullopt;
     if (!Construction || !Constructor || !Construction->isPRValue() ||
         Construction->getConstructionKind() != CXXConstructionKind::Complete ||
@@ -16900,16 +16905,36 @@ approvedUtilityPairComparisonChildOperation(
       (Call->getOperator() != OO_EqualEqual && Call->getOperator() != OO_Less) ||
       Function->getOverloadedOperator() != Call->getOperator())
     return std::nullopt;
+  const auto LeftView = approvedUtilityStringViewRecord(
+      S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto RightView = approvedUtilityStringViewRecord(
+      S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  const bool View = bool(LeftView) || bool(RightView);
+  if (View && (!LeftView || !RightView || !Function->isConstexpr() ||
+      LeftView->Record->getCanonicalDecl() != RightView->Record->getCanonicalDecl()))
+    return std::nullopt;
+  const llvm::StringRef Path = View ? "string_view" : "string";
   for (const auto *Declaration : Function->redecls())
     if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "string"))
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path))
       return std::nullopt;
   for (const auto *Declaration : Primary->redecls())
     if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
         !approvedStandardSDKDeclaration(S, SM, Declaration->getTemplatedDecl()) ||
-        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "string") ||
-        !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", "string"))
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path) ||
+        !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", Path))
       return std::nullopt;
+  if (View) {
+    const auto Type = Context.getRecordType(LeftView->Record);
+    for (unsigned I = 0; I != 2; ++I)
+      if (!Context.hasSameType(Function->getParamDecl(I)->getType(), Type) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(), Type))
+        return std::nullopt;
+    // A selected by-value view comparison still closes its original SDK
+    // function body and every copied operand at the caller's pair boundary.
+    return Call->getOperator() == OO_EqualEqual ? UtilityOperation::StringViewEqual
+                                               : UtilityOperation::StringViewLess;
+  }
   const auto Left = approvedUtilityStringRecord(
       S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
   const auto Right = approvedUtilityStringRecord(
