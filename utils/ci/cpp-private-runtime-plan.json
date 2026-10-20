@@ -69,5 +69,15 @@
   "scope": "Current private C entry and current Translate with authenticated existing C23 backend; not a fresh full compiler/platform matrix",
   "full_ci_passed": false,
   "published_to_dev": false,
-  "goal_complete": false
+  "goal_complete": false,
+  "actual_previous_bootstrap_failure": {
+    "revision": "d4ede4b4cb759c5675674fcbdadc60901efa0343",
+    "run_id": 39385924733,
+    "job_id": 118505632994,
+    "full_log_sha256": "5567e69f030935bc866a1ac5b263efa56ca015cda8979b7c71118369ca5bcf04",
+    "artifact_id": 12247469012,
+    "actual_formal_xml": 0,
+    "actual_component_download_attempts": 0,
+    "failure": "A bootstrap directory created by the workflow must be reused for authenticated evidence."
+  }
 }

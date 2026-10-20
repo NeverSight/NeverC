@@ -61,7 +61,7 @@ def main():
     assert os.environ.get('GITHUB_ACTIONS') == 'true'
     root, out = args.repo.resolve(), args.output.resolve()
     out.mkdir(parents=True)
-    args.evidence.mkdir(parents=True)
+    args.evidence.mkdir(parents=True, exist_ok=True)
     plan = json.loads(args.plan.read_text())
     run = api('actions/runs/' + str(plan['component_run_id']))
     assert run['head_sha'] == plan['component_commit']
