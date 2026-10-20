@@ -2747,7 +2747,11 @@ void runIcf() {
   }
   mark("icf sort");
   ctx.pool->forEach(groups.size(), [&](size_t g) {
-    segregate(groups[g].first, groups[g].second, equalsConstant, 0);
+    segregate(groups[g].first, groups[g].second,
+              [this](const Candidate &a, const Candidate &b) {
+                return equalsConstant(a, b);
+              },
+              0);
   }, 16);
   mark("icf constant");
   // Relocation targets of the members of the groups that remain.
