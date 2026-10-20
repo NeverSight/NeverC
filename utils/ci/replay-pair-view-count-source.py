@@ -352,9 +352,9 @@ def main():
                 own = int(value.get('kind') == 'address' and value['type'].startswith('ptr:') and const_root(value['args'][0]))
                 return own + sum(mutable_const_addresses(item) for item in value.values())
             return sum(mutable_const_addresses(item) for item in value) if isinstance(value, list) else 0
-        comparison = out / 'requests/x86_64-unknown-linux-gnu/pair-string-comparison-embedded-zero/response.json'
-        response = json.loads(comparison.read_text())
-        report['const_comparison_mutable_addresses_rooted_in_const'] = mutable_const_addresses(response)
+        report['const_comparison_mutable_addresses_rooted_in_const'] = sum(
+            mutable_const_addresses(json.loads(path.read_text()))
+            for path in sorted((out / 'requests').rglob('response.json')))
         assert report['const_comparison_mutable_addresses_rooted_in_const'] == 0
         report['diagnostic_request_contract_satisfied'] = all(row['expectation_satisfied'] for row in report['requests'])
         passed = False

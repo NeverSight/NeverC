@@ -9840,7 +9840,12 @@ class UtilityTupleQueryGraph
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
     if (Instance && Instance->getIdentifier() && Instance->getName() == "__make_tuple_types" &&
         !fullSliceDefaults(Instance)) return pairFormalTraceFalse(__LINE__);
-    if (!Instance) return pairFormalTraceFalse(__LINE__);
+    if (!Instance) {
+      llvm::errs() << "PAIR_VIEW_REJECTED_RECORD_BEGIN\n";
+      R->dump(llvm::errs());
+      llvm::errs() << "PAIR_VIEW_REJECTED_RECORD_END\n";
+      return pairFormalTraceFalse(__LINE__);
+    }
     for (const auto &Argument : Instance->getTemplateArgs().asArray())
       if (!TraverseTemplateArgument(Argument)) return pairFormalTraceFalse(__LINE__);
     const auto *Definition = R->getDefinition();
@@ -10020,7 +10025,12 @@ public:
     const auto *Declaration = T->getDecl();
     if (!family(Declaration)) return pairFormalTraceFalse(__LINE__);
     if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext()))
-      if (!record(Owner)) return pairFormalTraceFalse(__LINE__);
+      if (!record(Owner)) {
+        llvm::errs() << "PAIR_VIEW_REJECTED_ALIAS_BEGIN\n";
+        Declaration->dump(llvm::errs());
+        llvm::errs() << "PAIR_VIEW_REJECTED_ALIAS_END\n";
+        return pairFormalTraceFalse(__LINE__);
+      }
     return Declaration->getTypeSourceInfo() &&
            TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
   }

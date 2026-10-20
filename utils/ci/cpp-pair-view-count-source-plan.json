@@ -255,7 +255,17 @@
       ],
       "false": "return pairFormalTraceFalse(__LINE__);",
       "empty": "return pairFormalTraceEmpty(__LINE__);",
-      "original_sha256": "5ca9a5f702dec8229b5478dd5d4864a570c1fe72e1502b17a73cd356b2f8f31c"
+      "original_sha256": "5ca9a5f702dec8229b5478dd5d4864a570c1fe72e1502b17a73cd356b2f8f31c",
+      "observed_replacements": [
+        {
+          "before": "    if (!Instance) return pairFormalTraceFalse(__LINE__);",
+          "after": "    if (!Instance) {\n      llvm::errs() << \"PAIR_VIEW_REJECTED_RECORD_BEGIN\\n\";\n      R->dump(llvm::errs());\n      llvm::errs() << \"PAIR_VIEW_REJECTED_RECORD_END\\n\";\n      return pairFormalTraceFalse(__LINE__);\n    }"
+        },
+        {
+          "before": "      if (!record(Owner)) return pairFormalTraceFalse(__LINE__);",
+          "after": "      if (!record(Owner)) {\n        llvm::errs() << \"PAIR_VIEW_REJECTED_ALIAS_BEGIN\\n\";\n        Declaration->dump(llvm::errs());\n        llvm::errs() << \"PAIR_VIEW_REJECTED_ALIAS_END\\n\";\n        return pairFormalTraceFalse(__LINE__);\n      }"
+        }
+      ]
     },
     "Frontend.cpp": {
       "false": "{ llvm::errs() << \"PAIR_FORMAL_FALSE Frontend.cpp:\" << __LINE__ << \"\\n\"; return false; }",
@@ -283,5 +293,13 @@
     "pair-factory-owner-repeat"
   ],
   "unexplored_original_positive_cases_may_reject": true,
-  "original_formal_positive_cases": 2
+  "original_formal_positive_cases": 2,
+  "actual_previous_four_request_postprocessing_failure": {
+    "commit": "d8e455c61594ed676096a1865a75d32731f5d42a",
+    "run_id": 39473090056,
+    "artifact_id": 12288711414,
+    "report_sha256": "9bce0f5db9f4c7256e08631c1203fb92e977f8041a7a741dd07b09e9339f5e31",
+    "actual_requests": 4,
+    "completed": false
+  }
 }
