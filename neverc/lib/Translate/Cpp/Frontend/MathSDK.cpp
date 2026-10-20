@@ -1,3 +1,4 @@
+#include "llvm/Support/raw_ostream.h"
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
