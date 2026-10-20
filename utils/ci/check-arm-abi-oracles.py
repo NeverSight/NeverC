@@ -143,10 +143,13 @@ def main():
                     if case.get('c_harness'):
                         code = run([native_compiler, '/nologo', '/std:c++17', '/EHsc', '/MT', native_flag,
                             '/c', source, '/Fo' + str(obj)], 'native/' + stem + '-compile')
+                        harness_obj = build / (stem + '-harness.obj')
                         if code == 0:
-                            code = run([native_compiler, '/nologo', '/MT', native_flag, harness, obj,
-                                '/Fo' + str(build / (stem + '-harness.obj')), '/Fe' + str(native)],
-                                'native/' + stem + '-link')
+                            code = run([native_compiler, '/nologo', '/MT', native_flag, '/c', harness,
+                                '/Fo' + str(harness_obj)], 'native/' + stem + '-harness-compile')
+                        if code == 0:
+                            code = run([native_compiler, '/nologo', obj, harness_obj,
+                                '/Fe' + str(native)], 'native/' + stem + '-link')
                     else:
                         code = run([native_compiler, '/nologo', '/std:c++17', '/EHsc', '/MT', native_flag,
                             source, '/Fo' + str(obj), '/Fe' + str(native)], 'native/' + stem + '-compile')

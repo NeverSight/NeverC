@@ -185,5 +185,71 @@
     "-fno-lto",
     "-fno-builtin-mimalloc"
   ],
-  "production_compiler_or_defaults_modified": false
+  "production_compiler_or_defaults_modified": false,
+  "actual_native_harness_link_failure": [
+    {
+      "log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245334268/unpacked/native/DefaultSizedDeletePointersAndCookies-original-O0-link.log",
+      "sha256": "63a138ec7e62abeeebf1ecfdfc9fdde2f0a6df3268cbffc2fe1db1c164023198",
+      "command": [
+        "C:\\Program Files\\LLVM\\bin\\clang-cl.exe",
+        "/nologo",
+        "/MT",
+        "/Od",
+        "C:\\a\\_temp\\cpp-arm-abi-oracles\\sources\\DefaultSizedDeletePointersAndCookies\\original\\harness.c",
+        "C:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-original-O0-native.obj",
+        "/FoC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-original-O0-harness.obj",
+        "/FeC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-original-O0-native.exe"
+      ]
+    },
+    {
+      "log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245334268/unpacked/native/DefaultSizedDeletePointersAndCookies-original-O2-link.log",
+      "sha256": "de94787757b00935bf44db0f6934d45c695441fed73f44e98a1148e4ff6c884b",
+      "command": [
+        "C:\\Program Files\\LLVM\\bin\\clang-cl.exe",
+        "/nologo",
+        "/MT",
+        "/O2",
+        "C:\\a\\_temp\\cpp-arm-abi-oracles\\sources\\DefaultSizedDeletePointersAndCookies\\original\\harness.c",
+        "C:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-original-O2-native.obj",
+        "/FoC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-original-O2-harness.obj",
+        "/FeC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-original-O2-native.exe"
+      ]
+    },
+    {
+      "log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245334268/unpacked/native/DefaultSizedDeletePointersAndCookies-proposed-O0-link.log",
+      "sha256": "4b2cbfe991e55f0d2081ecf355da55302245d4aa01aa706671a96a1a895f28fd",
+      "command": [
+        "C:\\Program Files\\LLVM\\bin\\clang-cl.exe",
+        "/nologo",
+        "/MT",
+        "/Od",
+        "C:\\a\\_temp\\cpp-arm-abi-oracles\\sources\\DefaultSizedDeletePointersAndCookies\\proposed\\harness.c",
+        "C:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-proposed-O0-native.obj",
+        "/FoC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-proposed-O0-harness.obj",
+        "/FeC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-proposed-O0-native.exe"
+      ]
+    },
+    {
+      "log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245334268/unpacked/native/DefaultSizedDeletePointersAndCookies-proposed-O2-link.log",
+      "sha256": "11184bc7ed90ec89694d379150c035ba796a8bf8f1dad996ee5648155f5764ca",
+      "command": [
+        "C:\\Program Files\\LLVM\\bin\\clang-cl.exe",
+        "/nologo",
+        "/MT",
+        "/O2",
+        "C:\\a\\_temp\\cpp-arm-abi-oracles\\sources\\DefaultSizedDeletePointersAndCookies\\proposed\\harness.c",
+        "C:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-proposed-O2-native.obj",
+        "/FoC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-proposed-O2-harness.obj",
+        "/FeC:\\a\\_temp\\cpp-arm-abi-programs\\DefaultSizedDeletePointersAndCookies-proposed-O2-native.exe"
+      ]
+    }
+  ],
+  "original_oracle_cases_preserved": true,
+  "separate_native_c_harness_compilation": true,
+  "previous_completed_observation": {
+    "receipt": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-artifact-validation.json",
+    "sha256": "239638db45b9dc468e1b09c59ac18c2f07d9e089a6c565caa2b342c44f49f185",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245334268/unpacked/results.json",
+    "report_sha256": "0c571b4fde2d470341f0c3c8649402c066b91806013255987366017f067cbce1"
+  }
 }
