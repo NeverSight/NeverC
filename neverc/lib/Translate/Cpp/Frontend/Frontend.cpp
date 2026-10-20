@@ -22621,7 +22621,7 @@ public:
       return;
     IndexingSourceEvents = true;
     auto Restore = llvm::make_scope_exit([&] { IndexingSourceEvents = false; });
-    while (A.S.Diagnostics.empty()) {
+    for (;;) {
       auto Pending = A.SnapshotTemplateSourceEvents(TemplateUseCursor, SelectedCallCursor);
       if (!Pending) {
         A.reject({}, "template source event cursor",
@@ -22641,6 +22641,11 @@ public:
       SelectedCallCursor += Pending->Calls.size();
       LateTemplateSourceEvents.push_back(std::move(*Pending));
       const auto &Batch = LateTemplateSourceEvents.back();
+      // An unsuccessful Sema completion can emit callbacks before its error.
+      // Retain that exact batch and advance both cursors, but never index or
+      // grant permissions from evidence produced by a failed completion.
+      if (!A.S.Diagnostics.empty())
+        return;
       for (const auto &Source : Batch.Uses) {
         if (!freshLateTemplateSource(Source)) {
           A.reject(Source.Location, "repeated late template source",
