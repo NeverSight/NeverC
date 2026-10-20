@@ -392,7 +392,6 @@ jobs:
     timeout-minutes: 45
     env:
       NEVERC_PCG_STRICT: '1'
-      NEVERC_LINKER_REPLAY_EVIDENCE_DIR: ${{ runner.temp }}/cpp-linker-sdk
     steps:
     - uses: actions/checkout@v4
     - name: Prepare retained formal replay bootstrap evidence
@@ -441,6 +440,8 @@ jobs:
         \ /usr/bin/clang++-22 \\\n  --baseline \"$RUNNER_TEMP/cpp-linker-sdk-prior/provenance.json\" \\\
         \n  --output \"$RUNNER_TEMP/cpp-linker-sdk\"\n"
       id: replay
+      env:
+        NEVERC_LINKER_REPLAY_EVIDENCE_DIR: ${{ runner.temp }}/cpp-linker-sdk
     - name: Diagnose recorded real linker crashes and packed relocations
       if: ${{ !cancelled() }}
       run: "python3 utils/ci/diagnose-linker-residual-failures.py \\\n  --evidence \"$RUNNER_TEMP/cpp-linker-sdk\"\
