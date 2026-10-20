@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -10030,7 +10031,18 @@ public:
         }
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
       const auto Origin = S.sdkFile(SM, L);
-      if (!Origin || Origin->Root != "libcxx") return false;
+      if (!Origin || Origin->Root != "libcxx") {
+        std::fprintf(stderr, "NOT_FN_TYPELOC_REJECT_BEGIN kind=%u type=%s\n",
+            static_cast<unsigned>(Location.getTypeLocClass()), Location.getType().getAsString().c_str());
+        std::fprintf(stderr, "NOT_FN_TYPELOC_POINT point=%s begin=%s end=%s spelling=%s expansion=%s macro=%u\n",
+            L.printToString(SM).c_str(), Location.getBeginLoc().printToString(SM).c_str(),
+            Location.getEndLoc().printToString(SM).c_str(),
+            SM.getSpellingLoc(L).printToString(SM).c_str(), SM.getExpansionLoc(L).printToString(SM).c_str(),
+            static_cast<unsigned>(L.isMacroID()));
+        Location.getType().dump();
+        std::fprintf(stderr, "NOT_FN_TYPELOC_REJECT_END\n");
+        return false;
+      }
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -12363,6 +12375,15 @@ public:
           !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) return false;
     }
     // Traverse the actual dependent primary, then each concrete retained role.
+    const TypeSourceInfo *DefaultRoles[] = {Factory.PrimaryDefault,
+        Factory.SubstitutedDefault, Factory.ConvertedDefault};
+    for (unsigned Role = 0; Role != 3; ++Role) {
+      const auto *Info = DefaultRoles[Role];
+      std::fprintf(stderr, "NOT_FN_PRIMARY_DEFAULT role=%u begin=%s end=%s\n", Role,
+          Info->getTypeLoc().getBeginLoc().printToString(SM).c_str(),
+          Info->getTypeLoc().getEndLoc().printToString(SM).c_str());
+      Info->getType().dump();
+    }
     if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) return false;
     for (const auto *Info : {Factory.SubstitutedDefault, Factory.ConvertedDefault}) {
       if (!constraintType(Info)) return false;
@@ -12444,6 +12465,24 @@ public:
       if (Selection && Selection->FunctionalNotFnConstraint &&
           Selection->Function == Method && Selection->Location == Use.Location &&
           isa_and_nonnull<CallExpr>(Selection->Expression)) Selected = true;
+    unsigned MethodSelections = 0;
+    for (const auto *Selection : Selections)
+      if (Selection && Selection->Function == Method) ++MethodSelections;
+    std::fprintf(stderr, "NOT_FN_CALL_BOUNDARY selected=%u primary=%u arguments=%u template_matches=%u declaration_matches=%u function_kind=%u retained_flag=%u selections=%zu method_selections=%u defaults=%zu parameter_types=%zu canonical=%u sugared=%u overflow=%u instantiation=%u origin=%u storage=%u selection=%u\n",
+        static_cast<unsigned>(Selected), static_cast<unsigned>(Primary != nullptr),
+        static_cast<unsigned>(Arguments != nullptr), static_cast<unsigned>(Use.Template == Primary),
+        static_cast<unsigned>(Use.Declaration == Method), static_cast<unsigned>(Use.Kind == TemplateSourceKind::Function),
+        static_cast<unsigned>(Use.FunctionalNotFnConstraint), Selections.size(), MethodSelections,
+        Use.Defaults.size(), Use.ParameterTypes.size(), static_cast<unsigned>(Use.Canonical != nullptr),
+        static_cast<unsigned>(Use.Sugared != nullptr), static_cast<unsigned>(Use.DefaultsOverflow),
+        static_cast<unsigned>(Use.Instantiation), static_cast<unsigned>(Use.Origin != nullptr),
+        static_cast<unsigned>(Use.WrittenStorageClass), static_cast<unsigned>(Use.Selection != nullptr));
+    std::fprintf(stderr, "NOT_FN_CALL_POINT use=%s object=%s\n",
+        Use.Location.printToString(SM).c_str(),
+        Call.Object ? Call.Object->getExprLoc().printToString(SM).c_str() : "null");
+    std::fprintf(stderr, "NOT_FN_CALL_METHOD_AST\n");
+    if (Method) Method->dump();
+    std::fprintf(stderr, "NOT_FN_CALL_BOUNDARY_END\n");
     if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
