@@ -1759,7 +1759,7 @@ std::optional<FunctionalNotFnFactorySource>
 describeFunctionalNotFnFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-enum class FunctionalNotFnSourceMode { Runtime, Signature };
+enum class FunctionalNotFnSourceMode { Runtime, Signature, Exception };
 struct FunctionalNotFnCallSource {
   FunctionalNotFnStorage Storage;
   const clang::CXXMethodDecl *Method;
@@ -1807,6 +1807,25 @@ bool retainFunctionalNotFnConstraintRoot(
     const clang::NamedDecl *Template, const clang::Decl *Declaration,
     const clang::Type *Type, const clang::TypeSourceInfo *Underlying,
     clang::SourceLocation Location);
+
+// A storage descriptor grants no selected call permission. The allowlist
+// records certificates only after the exact retained source graph completes.
+std::optional<FunctionalNotFnStorage>
+approvedFunctionalNotFnPointerStorage(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedFunctionalNotFnPointerFactorySource(const State &S,
+    const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
+    const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
 struct FunctionalNotFnTupleTagSource {
   const clang::CXXConstructExpr *Construction;
@@ -2694,6 +2713,9 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalObjects;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
+  std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
+  std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
+  std::map<const clang::CallExpr *, FunctionalNotFnCallSource> VerifiedNotFnCalls;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::map<const clang::VarDecl *, LocalDecomposition> Decompositions;
