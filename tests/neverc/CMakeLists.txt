@@ -2102,6 +2102,7 @@ add_executable(neverc-plugin-link-tests
   PluginELFContextIsolationTests.cpp
   PluginLinkABICompileTests.cpp
   PluginLinkContextTests.cpp
+  SessionCacheOwnershipTests.cpp
   PluginLinkGraphTests.cpp
   PluginLinkGCICFTests.cpp
   PluginLinkInputTests.cpp

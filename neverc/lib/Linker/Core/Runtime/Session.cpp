@@ -130,35 +130,23 @@ LLVM_THREAD_LOCAL unsigned linker::session_detail::CurrentWorkerSlot = 0;
 using linker::session_detail::ActiveLinkerContext;
 using linker::session_detail::CurrentWorkerSlot;
 
-namespace {
+namespace linker::session_detail {
 
-// Every context construction and finalization advances this epoch, so a
-// per-thread cache filled for one context can never be observed by a later
-// context that happens to reuse the same address.
-std::atomic<uint64_t> WorkerCacheEpoch{1};
-
-// Per-thread memo of the worker slot and per-type arenas for one context.
-// makeThreadLocal<T>() runs on every section and symbol a worker creates, so
-// resolving the arena under the context mutex serialized the parallel phases.
-// The cache is filled under that mutex once per (thread, context, type) and
-// then read without locking.
+// The context owns one stable record per physical thread. The memo remains
+// here when a pool thread becomes idle; TLS only borrows it while bound.
 struct WorkerAllocCache {
   static constexpr unsigned NumEntries = 64;
-  const CommonLinkerContext *Context = nullptr;
-  uint64_t Epoch = 0;
-  unsigned Slot = 0;
-  const void *Tags[NumEntries];
-  SpecificAllocBase *Instances[NumEntries];
+  CommonLinkerContext *Context;
+  unsigned Slot;
+  const void *Tags[NumEntries]{};
+  SpecificAllocBase *Instances[NumEntries]{};
 
-  bool matches(const CommonLinkerContext *C) const {
-    return Context == C &&
-           Epoch == WorkerCacheEpoch.load(std::memory_order_acquire);
-  }
-  void reset(const CommonLinkerContext *C, unsigned S) {
-    Context = C;
-    Epoch = WorkerCacheEpoch.load(std::memory_order_acquire);
-    Slot = S;
-    std::memset(Tags, 0, sizeof(Tags));
+  WorkerAllocCache(CommonLinkerContext &Owner, unsigned WorkerSlot)
+      : Context(&Owner), Slot(WorkerSlot) {}
+
+  void clear() {
+    std::fill_n(Tags, NumEntries, nullptr);
+    std::fill_n(Instances, NumEntries, nullptr);
   }
   static unsigned bucket(const void *Tag) {
     return static_cast<unsigned>(reinterpret_cast<uintptr_t>(Tag) >> 3) %
@@ -185,8 +173,14 @@ struct WorkerAllocCache {
     }
   }
 };
-thread_local WorkerAllocCache WorkerCache;
-} // namespace
+
+// A non-owning dynamic binding, installed and restored together with the
+// context and logical worker slot. It never owns or retains a memo between
+// task scopes, and requires no process-wide cache invalidation epoch.
+LLVM_THREAD_LOCAL WorkerAllocCache *ActiveWorkerCache = nullptr;
+} // namespace linker::session_detail
+using linker::session_detail::ActiveWorkerCache;
+using linker::session_detail::WorkerAllocCache;
 
 unsigned linker::selectAdaptiveLinkThreadCount(unsigned RequestedThreads,
                                                unsigned AvailableThreads,
@@ -212,12 +206,15 @@ unsigned linker::selectAdaptiveLinkThreadCount(unsigned RequestedThreads,
 }
 
 CommonLinkerContext::CommonLinkerContext()
-    : PreviousContext(ActiveLinkerContext),
+    : PreviousWorkerCache(ActiveWorkerCache),
       PreviousWorkerSlot(CurrentWorkerSlot) {
+  // Complete the potentially throwing allocation before changing any TLS.
+  auto Main = std::make_unique<WorkerAllocCache>(*this, 0);
+  WorkerAllocCache *MainCache = Main.get();
+  WorkerSlots.emplace(std::this_thread::get_id(), std::move(Main));
+  ActiveWorkerCache = MainCache;
   ActiveLinkerContext = this;
   CurrentWorkerSlot = 0;
-  WorkerSlots.emplace(std::this_thread::get_id(), 0);
-  WorkerCacheEpoch.fetch_add(1, std::memory_order_acq_rel);
 }
 
 CommonLinkerContext::CommonLinkerContext(
@@ -238,22 +235,26 @@ CommonLinkerContext::~CommonLinkerContext() {
   assert(ActiveLinkerContext == this &&
          "linker context destroyed outside its active scope");
   finalizeOwnedState();
-  ActiveLinkerContext = PreviousContext;
+  ActiveWorkerCache = PreviousWorkerCache;
+  ActiveLinkerContext = PreviousWorkerCache ? PreviousWorkerCache->Context : nullptr;
   CurrentWorkerSlot = PreviousWorkerSlot;
 }
 
 void CommonLinkerContext::finalizeOwnedState() noexcept {
   if ((StateFlags & FinalizedFlag) != 0)
     return;
-  StateFlags |= FinalizedFlag;
-  if (MainThreadPinned) {
+  if (MainThreadPinned)
     unpinThread(PinnedThreadHandle, SavedAffinity);
-    MainThreadPinned = false;
-  }
   if (ParallelPool)
     ParallelPool->wait();
-  WorkerCacheEpoch.fetch_add(1, std::memory_order_acq_rel);
+  // Worker guards still read these fields until the last task returns.
+  MainThreadPinned = false;
+  StateFlags |= FinalizedFlag;
   e.runCleanup();
+  // Cleanup may still allocate. Invalidate the owned memos after it finishes
+  // and after all workers join, before destroying any referenced arena.
+  for (auto &Entry : WorkerSlots)
+    Entry.second->clear();
   // Worker arenas hold objects that tasks created; their destructors only
   // release memory those objects own. Destroy them concurrently while the
   // pool still exists, since a large link spends a noticeable time here.
@@ -279,19 +280,20 @@ void CommonLinkerContext::finalizeOwnedState() noexcept {
   instanceOrder.clear();
   instanceSequence.clear();
   WorkerInstanceOrder.clear();
+  for (auto &Entry : WorkerSlots)
+    Entry.second->clear();
 }
 
 void CommonLinkerContext::abandon() noexcept {
   assert(ActiveLinkerContext == this &&
          "linker context abandoned outside its active scope");
-  StateFlags |= FinalizedFlag;
-  if (MainThreadPinned) {
+  if (MainThreadPinned)
     unpinThread(PinnedThreadHandle, SavedAffinity);
-    MainThreadPinned = false;
-  }
   ParallelPool.reset();
-  WorkerCacheEpoch.fetch_add(1, std::memory_order_acq_rel);
-  ActiveLinkerContext = PreviousContext;
+  MainThreadPinned = false;
+  StateFlags |= FinalizedFlag;
+  ActiveWorkerCache = PreviousWorkerCache;
+  ActiveLinkerContext = PreviousWorkerCache ? PreviousWorkerCache->Context : nullptr;
   CurrentWorkerSlot = PreviousWorkerSlot;
 }
 
@@ -333,31 +335,33 @@ unsigned CommonLinkerContext::configureParallelForInputWorkload(
   return SelectedThreads;
 }
 
-unsigned CommonLinkerContext::workerSlotForCurrentThread() {
-  if (WorkerCache.matches(this))
-    return WorkerCache.Slot;
-  // Pool threads start lazily from the pinned thread and inherit its mask;
-  // give them back the original one before their first task.
+WorkerAllocCache &CommonLinkerContext::workerCacheForCurrentThread() {
+  if (ActiveLinkerContext == this && ActiveWorkerCache)
+    return *ActiveWorkerCache;
+  // Pool threads inherit the configuring thread's pinned mask. A guard
+  // resolves the record once; allocation hot paths then use the scoped borrow.
   if (MainThreadPinned)
     restoreWorkerAffinity(PinnedThreadHandle, SavedAffinity);
-  unsigned Slot;
-  {
-    std::lock_guard<std::mutex> Lock(WorkerMutex);
-    auto [It, Inserted] =
-        WorkerSlots.try_emplace(std::this_thread::get_id(), NextWorkerSlot);
-    if (Inserted)
-      ++NextWorkerSlot;
-    Slot = It->second;
-  }
-  WorkerCache.reset(this, Slot);
-  return Slot;
+  std::lock_guard<std::mutex> Lock(WorkerMutex);
+  auto It = WorkerSlots.find(std::this_thread::get_id());
+  if (It != WorkerSlots.end())
+    return *It->second;
+  auto Cache = std::make_unique<WorkerAllocCache>(*this, NextWorkerSlot);
+  auto Inserted = WorkerSlots.emplace(std::this_thread::get_id(), std::move(Cache));
+  ++NextWorkerSlot;
+  return *Inserted.first->second;
+}
+
+unsigned CommonLinkerContext::workerSlotForCurrentThread() {
+  return workerCacheForCurrentThread().Slot;
 }
 
 SpecificAllocBase *CommonLinkerContext::getOrCreateWorkerAllocator(
     const void *Tag, size_t Size, size_t Alignment,
     SpecificAllocBase *(&Creator)(void *)) {
-  const unsigned Slot = workerSlotForCurrentThread();
-  if (SpecificAllocBase *Cached = WorkerCache.find(Tag))
+  WorkerAllocCache &Cache = workerCacheForCurrentThread();
+  const unsigned Slot = Cache.Slot;
+  if (SpecificAllocBase *Cached = Cache.find(Tag))
     return Cached;
   SpecificAllocBase *Result;
   {
@@ -371,19 +375,23 @@ SpecificAllocBase *CommonLinkerContext::getOrCreateWorkerAllocator(
     }
     Result = Instance;
   }
-  WorkerCache.insert(Tag, Result);
+  Cache.insert(Tag, Result);
   return Result;
 }
 
 LinkerContextGuard::LinkerContextGuard(CommonLinkerContext &Context,
                                        unsigned WorkerSlot)
-    : Previous(ActiveLinkerContext), PreviousWorkerSlot(CurrentWorkerSlot) {
+    : PreviousWorkerCache(ActiveWorkerCache),
+      PreviousWorkerSlot(CurrentWorkerSlot) {
   (void)Context.resourceSession();
+  WorkerAllocCache &Cache = Context.workerCacheForCurrentThread();
+  ActiveWorkerCache = &Cache;
   ActiveLinkerContext = &Context;
   CurrentWorkerSlot = WorkerSlot;
 }
 
 LinkerContextGuard::~LinkerContextGuard() {
-  ActiveLinkerContext = Previous;
+  ActiveWorkerCache = PreviousWorkerCache;
+  ActiveLinkerContext = PreviousWorkerCache ? PreviousWorkerCache->Context : nullptr;
   CurrentWorkerSlot = PreviousWorkerSlot;
 }

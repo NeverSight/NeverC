@@ -90,7 +90,8 @@ jobs:
         \ fi\n  echo \"runtime-aggregate-array O$optimization upstream result: $result, expected 10\"\n\
         \  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
-      != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' }}
+      != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group
+      != 'session-cache-ownership' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -576,7 +577,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 5
+        fetch-depth: 6
     - name: Set up CPython 3.12.10
       id: python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -595,6 +596,59 @@ jobs:
         path: ${{ runner.temp }}/cpp-fastlink-request-ownership
         if-no-files-found: error
         retention-days: 14
+  inspect-session-cache-ownership:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'session-cache-ownership'
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+    - name: Prepare Session cache ownership bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-session-cache-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-session-cache-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-session-cache-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest);
+        print(sys.version)'' | tee "$RUNNER_TEMP/cpp-session-cache-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-session-cache-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-session-cache-bootstrap/dependencies.log"
+
+        '
+    - name: Build real Session owners and verify scoped cache lifetime with actual GTest XML
+      run: 'python3 utils/ci/check-session-cache-ownership.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-session-cache-ownership"
+        --clangxx /usr/bin/clang++-22
+
+        '
+    - name: Upload actual Session programs XML source identities and raw logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-session-cache-ownership-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-session-cache-ownership
+
+          ${{ runner.temp }}/cpp-session-cache-bootstrap
+
+          !${{ runner.temp }}/cpp-session-cache-ownership/cmake-build/**
+
+          '
+        if-no-files-found: error
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -608,6 +662,7 @@ jobs:
         - ci-recovery
         - windows-arm-source-repair
         - fastlink-request-ownership
+        - session-cache-ownership
   push:
     branches:
     - dev
