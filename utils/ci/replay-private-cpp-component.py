@@ -245,7 +245,7 @@ def main():
             entry = next(row for row in prior['actual_private_bridge_compile_commands'] if Path(row['file']).name == name)
             argv = shlex.split(entry['command'])
             output = private / entry['output']
-            output.parent.mkdir(parents=True)
+            output.parent.mkdir(parents=True, exist_ok=True)
             assert argv[0] == '/usr/bin/clang++-22' and argv[-2:] == ['-c', str(root / PREFIX / name)]
             assert argv[argv.index('-o') + 1] == entry['output'] and not output.exists()
             # Relative producer outputs are resolved in its original working
