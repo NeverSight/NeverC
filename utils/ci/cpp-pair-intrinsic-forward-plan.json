@@ -50,7 +50,7 @@
     "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
     "neverc/lib/Translate/Cpp/Frontend/Frontend.h"
   ],
-  "source_repair_commit": "02dcef975c55b96cc469de510d29f559f10ba06e",
+  "source_repair_commit": "571a5e0dafdc025a10a2cc09d2cb573715f7e7c7",
   "target_abis": [
     "x86_64-apple-macosx15.0.0",
     "arm64-apple-macosx15.0.0",
@@ -262,7 +262,7 @@
   "full_feature_completion_proved_by_this_job": false,
   "all_five_internal_adapter_consumers_rebuilt": true,
   "original_public_c_entry_abi_unchanged": true,
-  "exact_source_revision": "02dcef975c55b96cc469de510d29f559f10ba06e",
+  "exact_source_revision": "571a5e0dafdc025a10a2cc09d2cb573715f7e7c7",
   "outer_source_trace_evidence": {
     "passed": false,
     "actual_source_trace_authenticated": true,
@@ -3040,5 +3040,18 @@
     "goal_complete": false
   },
   "exact_bound_intrinsic_forward_primary_closure": true,
-  "ordinary_constructor_and_function_body_checks_retained": true
+  "ordinary_constructor_and_function_body_checks_retained": true,
+  "actual_previous_source_compilation_failure": {
+    "commit": "d5dafbc9171bc2d73915821d40d42bbfada9de8b",
+    "run_id": 39380075551,
+    "artifact_id": 12245028201,
+    "archive_sha256": "8002815b14407daf8380ab86ea2f7601921693008cb7fd954300e41dda5e46b0",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245028201/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "2c6914ee0da8f0dd455b79aa508d99655333351c66ad7a85bb990060b9bb4cea",
+    "failed_compile_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245028201/unpacked/cpp-pair-intrinsic-forward/compile/Frontend.cpp.log",
+    "failed_compile_log_sha256": "271db645e224dfd58cbc2fa10075ba81ebeb02a66d63ab413bf9b0699195614c",
+    "actual_requests": 0,
+    "source_compile_failed": true,
+    "compiler_runtime_verified": false
+  }
 }
