@@ -1,5 +1,5 @@
 {
-  "source_basis": "0fcc0e82ff3d4e6b2749b4de0811a14ec80a9b9a",
+  "source_basis": "17986df9c997d8a1e4108b7be8423e084e4e26cf",
   "original_probe_commit": "94c37826c14cb8e027f61c7ca5caa8d4ff3c71d5",
   "cases": [
     {
@@ -205,5 +205,44 @@
       ],
       "original_sha256": "ae6673abadbcc3c0c1fda96cb1dacdd4eab3c9c3c5b71d58ff06025c90d21b3f"
     }
+  },
+  "actual_previous_pinned_header_failure": {
+    "actual_failed_revision": "b157465c652b1bc0a7e9ac179c1c8d8d7220e7a5",
+    "actual_run_id": 39464708362,
+    "actual_artifact_id": 12284541269,
+    "report_sha256": "3eb4677b5ae810931cf34ebd3de5ca7a8b5e246688b8a0b73cfdd1135cca3576",
+    "actual_build_log_sha256": "00ba1ce9114fdf42a14990e3da2314a3c7123c61f63c3afde18aa5f7f89244aa",
+    "failure_before_compilation": true,
+    "actual_protocol_requests": 0,
+    "upstream_source_url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-20.1.8/clang/lib/Sema/SemaExpr.cpp",
+    "upstream_source_sha256": "1f3ba9d4dbeb2cc3a4aeb0c98fe8314ca1ade07396b4f4d67f1458dbd4e1c278",
+    "old_pristine_counts": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "new_pristine_counts": [
+      [
+        1,
+        0
+      ]
+    ],
+    "new_patched_counts": [
+      [
+        0,
+        1
+      ]
+    ],
+    "header_exactly_once_preserved": true,
+    "exact_pristine_inverse_verified": true,
+    "local_checks_are_python_string_transforms_only": true,
+    "compiler_executed_locally": false,
+    "ordinary_call_runtime_verified": false,
+    "private_not_fn_support_complete": false
   }
 }
