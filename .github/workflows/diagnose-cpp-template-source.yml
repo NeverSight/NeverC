@@ -904,14 +904,6 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: arm64
-    - name: Authenticate existing repaired compiler on Actions only
-      shell: pwsh
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: 'python utils/ci/download-repaired-windows-arm.py --run-id 39341054945 --revision 43c7c0c55874c8b3ebfd4c1c39096189741f9616
-        --output "$env:RUNNER_TEMP/cpp-arm-abi-compiler" --evidence "$env:RUNNER_TEMP/cpp-arm-abi-oracles/download-provenance.json"
-
-        '
     - name: Authenticate exact installed ARM compiler remotely
       shell: pwsh
       env:
