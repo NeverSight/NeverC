@@ -11069,6 +11069,693 @@ static const DeclRefExpr *approvedUtilityReference(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const FunctionDecl *Function);
 
+// Selected not_fn storage/construction descriptions, with no admission side
+// effects. Retained defaults, partial deductions, aliases, operation queries,
+// user special members and lifetimes must finish independently before use.
+namespace {
+class NotFnSelectedSource {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  std::set<const Decl *> Families;
+
+public:
+  NotFnSelectedSource(const State &S, const SourceManager &SM,
+                      const ASTContext &Context)
+      : S(S), SM(SM), Context(Context) {}
+
+  bool location(SourceLocation L, llvm::ArrayRef<llvm::StringRef> Paths) const {
+    if (L.isInvalid()) return false;
+    const auto Spell = S.sdkFile(SM, SM.getSpellingLoc(L));
+    const auto Expansion = S.sdkFile(SM, SM.getExpansionLoc(L));
+    return Spell && Expansion && Spell->Root == "libcxx" &&
+           Expansion->Root == "libcxx" &&
+           llvm::is_contained(Paths, Spell->Path) &&
+           llvm::is_contained(Paths, Expansion->Path);
+  }
+  bool family(const Decl *Root, llvm::ArrayRef<llvm::StringRef> Paths) {
+    std::vector<const Decl *> Work{Root};
+    while (!Work.empty()) {
+      const auto *D = Work.back(); Work.pop_back();
+      if (!D || D->isInvalidDecl() || !location(D->getLocation(), Paths) ||
+          !approvedStandardSDKDeclaration(S, SM, D)) return false;
+      if (!Families.insert(D).second) continue;
+      if (Families.size() > 512) return false;
+      if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
+        for (const auto *Redeclaration : R->redecls()) Work.push_back(Redeclaration);
+        if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+          Work.push_back(Instance->getSpecializedTemplate());
+          if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
+                  .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+            Work.push_back(Partial);
+          if (const auto *Pattern = Instance->getTemplateInstantiationPattern())
+            Work.push_back(Pattern);
+        }
+      } else if (const auto *F = dyn_cast<FunctionDecl>(D)) {
+        for (const auto *Redeclaration : F->redecls()) Work.push_back(Redeclaration);
+        if (const auto *Primary = F->getPrimaryTemplate()) Work.push_back(Primary);
+        if (const auto *Pattern = F->getTemplateInstantiationPattern()) Work.push_back(Pattern);
+        if (const auto *Definition = F->getDefinition()) Work.push_back(Definition);
+      } else if (const auto *T = dyn_cast<RedeclarableTemplateDecl>(D)) {
+        for (const auto *Redeclaration : T->redecls()) {
+          Work.push_back(Redeclaration);
+          Work.push_back(Redeclaration->getTemplatedDecl());
+        }
+      }
+    }
+    return true;
+  }
+  const ClassTemplateSpecializationDecl *record(
+      QualType T, llvm::StringRef Name,
+      llvm::ArrayRef<llvm::StringRef> Paths) {
+    const auto *R = T.isNull() ? nullptr : T->getAsCXXRecordDecl();
+    const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        R ? R->getDefinition() : nullptr);
+    return Instance && Instance->getIdentifier() && Instance->getName() == Name &&
+                   !Instance->isUnion() && !Instance->isDependentContext() &&
+                   !Instance->isDynamicClass() && !Instance->getNumVBases() &&
+                   Instance->getSpecializationKind() == TSK_ImplicitInstantiation &&
+                   family(Instance, Paths)
+               ? Instance : nullptr;
+  }
+  bool oneTypePack(const TemplateArgument &A, QualType Type) const {
+    return A.getKind() == TemplateArgument::Pack && A.pack_size() == 1 &&
+           A.pack_elements()[0].getKind() == TemplateArgument::Type &&
+           Context.hasSameType(A.pack_elements()[0].getAsType(), Type);
+  }
+  bool zeroIndices(const CXXRecordDecl *R) {
+    const auto *I = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
+    if (!I || !I->getIdentifier() || I->getName() != "integer_sequence" ||
+        I->getNumBases() || !I->field_empty() ||
+        !family(I, {"__utility/integer_sequence.h"})) return false;
+    const auto &Args = I->getTemplateArgs();
+    if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Args[0].getAsType(), Context.getSizeType()) ||
+        Args[1].getKind() != TemplateArgument::Pack || Args[1].pack_size() != 1)
+      return false;
+    const auto &Index = Args[1].pack_elements()[0];
+    return Index.getKind() == TemplateArgument::Integral &&
+           Index.getAsIntegral().isZero() &&
+           Context.hasSameType(Index.getIntegralType(), Context.getSizeType());
+  }
+  const Expr *stripped(const Expr *E) const {
+    for (unsigned I = 0; E && I < 64; ++I) {
+      if (const auto *P = dyn_cast<ParenExpr>(E)) { E = P->getSubExpr(); continue; }
+      if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E)) {
+        if (Cast->getCastKind() != CK_NoOp && Cast->getCastKind() != CK_LValueToRValue)
+          return E;
+        E = Cast->getSubExpr(); continue;
+      }
+      return E;
+    }
+    return nullptr;
+  }
+  const Expr *returned(const FunctionDecl *F) const {
+    const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
+    const auto *Return = Body && Body->size() == 1
+        ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+    return Return ? Return->getRetValue() : nullptr;
+  }
+  // Strip only for locating an original AST node. Callers retain the actual
+  // function/type root, including every temporary and cleanup expression.
+  const Expr *core(const Expr *E) const {
+    for (unsigned I = 0; E && I < 64; ++I) {
+      E = stripped(E);
+      if (const auto *Temporary = dyn_cast_or_null<MaterializeTemporaryExpr>(E)) {
+        E = Temporary->getSubExpr(); continue;
+      }
+      if (const auto *Bound = dyn_cast_or_null<CXXBindTemporaryExpr>(E)) {
+        E = Bound->getSubExpr(); continue;
+      }
+      if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(E)) {
+        E = Cleanup->getSubExpr(); continue;
+      }
+      return E;
+    }
+    return nullptr;
+  }
+  const Expr *resultSource(const FunctionDecl *F, FunctionalNotFnSourceMode Mode) const {
+    if (!F) return nullptr;
+    if (Mode == FunctionalNotFnSourceMode::Runtime) return returned(F);
+    const auto *Result = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
+    return Result ? Result->getUnderlyingExpr() : nullptr;
+  }
+  const CXXConstructExpr *construction(const Expr *E) const {
+    for (unsigned I = 0; E && I < 64; ++I) {
+      E = stripped(E);
+      if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(E)) {
+        if (Cast->getCastKind() != CK_ConstructorConversion) return nullptr;
+        E = Cast->getSubExpr(); continue;
+      }
+      if (const auto *Temporary = dyn_cast_or_null<CXXBindTemporaryExpr>(E)) {
+        E = Temporary->getSubExpr(); continue;
+      }
+      if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(E)) {
+        if (Cleanup->getNumObjects()) return nullptr;
+        E = Cleanup->getSubExpr(); continue;
+      }
+      return dyn_cast_or_null<CXXConstructExpr>(E);
+    }
+    return nullptr;
+  }
+  bool forwarding(const Expr *E, const ParmVarDecl *Parameter,
+                  llvm::StringRef OwnerPath, const CallExpr *&Result) {
+    const auto *Call = dyn_cast_or_null<CallExpr>(stripped(E));
+    const auto *F = Call ? Call->getDirectCallee() : nullptr;
+    const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
+    const auto *Reference = Call && Call->getNumArgs() == 1
+        ? dyn_cast_or_null<DeclRefExpr>(stripped(Call->getArg(0))) : nullptr;
+    const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!Call || !F || !F->getIdentifier() || F->getName() != "forward" ||
+        !Parameter || !Reference || Reference->getDecl() != Parameter ||
+        !Parameter->getType()->isReferenceType() || !Args || Args->size() != 1 ||
+        Args->get(0).getKind() != TemplateArgument::Type || F->getNumParams() != 1 ||
+        !Prototype || !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
+        !location(Call->getExprLoc(), {OwnerPath}) ||
+        !family(F, {"__utility/forward.h"}) ||
+        !approvedFunctionalForwardingCall(S, SM, Call, Parameter) ||
+        !Context.hasSameType(F->getReturnType(), Parameter->getType()) ||
+        !Context.hasSameType(Args->get(0).getAsType(),
+            Parameter->getType()->isLValueReferenceType() ? Parameter->getType()
+                : Parameter->getType()->getPointeeType())) return false;
+    Result = Call;
+    return true;
+  }
+};
+} // namespace
+
+std::optional<FunctionalNotFnStorage>
+describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
+                              const CXXRecordDecl *Record,
+                              const ASTContext &Context) {
+  if (!S.coreV2() || !Record) return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Outer = Check.record(Context.getRecordType(Record), "__not_fn_t",
+                                  {"__functional/not_fn.h"});
+  if (!Outer || !Outer->isStandardLayout() || !Outer->field_empty() ||
+      Outer->getNumBases() != 1 || Outer->getTemplateArgs().size() != 1 ||
+      Outer->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Callable = Outer->getTemplateArgs()[0].getAsType();
+  if (Callable.isNull() || Callable.hasQualifiers() || Callable->isReferenceType() ||
+      Callable->isIncompleteType() || Callable->isDependentType()) return std::nullopt;
+  const auto &OuterBase = *Outer->bases_begin();
+  const auto *Forwarder = Check.record(OuterBase.getType(), "__perfect_forward_impl",
+                                      {"__functional/perfect_forward.h"});
+  if (!Forwarder || OuterBase.isVirtual() || OuterBase.getAccessSpecifier() != AS_public ||
+      Forwarder->getNumBases() || !Forwarder->isStandardLayout() ||
+      std::distance(Forwarder->field_begin(), Forwarder->field_end()) != 1)
+    return std::nullopt;
+  const auto &FArgs = Forwarder->getTemplateArgs();
+  if (FArgs.size() != 3 || FArgs[0].getKind() != TemplateArgument::Type ||
+      FArgs[1].getKind() != TemplateArgument::Type || !Check.oneTypePack(FArgs[2], Callable) ||
+      !Check.zeroIndices(FArgs[1].getAsType()->getAsCXXRecordDecl())) return std::nullopt;
+  const auto *Operation = FArgs[0].getAsType()->getAsCXXRecordDecl();
+  Operation = Operation ? Operation->getDefinition() : nullptr;
+  if (!Operation || !Operation->getIdentifier() || Operation->getName() != "__not_fn_op" ||
+      !Operation->isEmpty() || Operation->getNumBases() || !Operation->field_empty() ||
+      !Operation->hasTrivialDefaultConstructor() || !Operation->hasTrivialDestructor() ||
+      !Check.family(Operation, {"__functional/not_fn.h"})) return std::nullopt;
+  const auto *Bound = *Forwarder->field_begin();
+  const auto *Tuple = Check.record(Bound->getType(), "tuple", {"tuple", "__fwd/tuple.h"});
+  if (!Bound->getIdentifier() || Bound->getName() != "__bound_args_" ||
+      Bound->getAccess() != AS_private || Bound->isBitField() || Bound->isMutable() ||
+      Bound->hasAttrs() || !Check.family(Bound, {"__functional/perfect_forward.h"}) ||
+      !Tuple || Tuple->getNumBases() ||
+      Tuple->getTemplateArgs().size() != 1 || !Check.oneTypePack(Tuple->getTemplateArgs()[0], Callable) ||
+      std::distance(Tuple->field_begin(), Tuple->field_end()) != 1)
+    return std::nullopt;
+  const auto *TupleBase = *Tuple->field_begin();
+  const auto *Impl = Check.record(TupleBase->getType(), "__tuple_impl", {"tuple"});
+  if (!TupleBase->getIdentifier() || TupleBase->getName() != "__base_" ||
+      TupleBase->getAccess() != AS_private || TupleBase->isBitField() ||
+      TupleBase->isMutable() || TupleBase->hasAttrs() || !Check.family(TupleBase, {"tuple"}) || !Impl ||
+      !Impl->field_empty() || Impl->getNumBases() != 1 ||
+      Impl->getTemplateArgs().size() != 2 || Impl->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Check.oneTypePack(Impl->getTemplateArgs()[1], Callable)) return std::nullopt;
+  const auto *TupleIndices = Check.record(Impl->getTemplateArgs()[0].getAsType(),
+      "__tuple_indices", {"__tuple/tuple_indices.h"});
+  if (!TupleIndices || TupleIndices->getNumBases() || !TupleIndices->field_empty() ||
+      TupleIndices->getTemplateArgs().size() != 1 ||
+      TupleIndices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
+      TupleIndices->getTemplateArgs()[0].pack_size() != 1) return std::nullopt;
+  const auto &TupleIndex = TupleIndices->getTemplateArgs()[0].pack_elements()[0];
+  if (TupleIndex.getKind() != TemplateArgument::Integral || !TupleIndex.getAsIntegral().isZero() ||
+      !Context.hasSameType(TupleIndex.getIntegralType(), Context.getSizeType())) return std::nullopt;
+  const auto &LeafBase = *Impl->bases_begin();
+  const auto *Leaf = Check.record(LeafBase.getType(), "__tuple_leaf", {"tuple"});
+  if (!Leaf || LeafBase.isVirtual() || LeafBase.getAccessSpecifier() != AS_public)
+    return std::nullopt;
+  const auto &LArgs = Leaf->getTemplateArgs();
+  if (LArgs.size() != 3 || LArgs[0].getKind() != TemplateArgument::Integral ||
+      !LArgs[0].getAsIntegral().isZero() || LArgs[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(LArgs[1].getAsType(), Callable) ||
+      LArgs[2].getKind() != TemplateArgument::Integral ||
+      !LArgs[2].getIntegralType()->isBooleanType()) return std::nullopt;
+  const auto &OL = Context.getASTRecordLayout(Outer);
+  const auto &FL = Context.getASTRecordLayout(Forwarder);
+  const auto &TL = Context.getASTRecordLayout(Tuple);
+  const auto &IL = Context.getASTRecordLayout(Impl);
+  const auto &LL = Context.getASTRecordLayout(Leaf);
+  if (OL.getBaseClassOffset(Forwarder).getQuantity() || FL.getFieldOffset(0) ||
+      TL.getFieldOffset(0) || IL.getBaseClassOffset(Leaf).getQuantity()) return std::nullopt;
+  for (const auto *Layout : {&OL, &FL, &TL, &IL, &LL})
+    if (Layout->getSize() != Context.getTypeSizeInChars(Callable) ||
+        Layout->getAlignment() != Context.getTypeAlignInChars(Callable)) return std::nullopt;
+  if (!LArgs[2].getAsIntegral().isZero()) {
+    const auto *C = Callable->getAsCXXRecordDecl();
+    C = C ? C->getDefinition() : nullptr;
+    if (!C || !C->isEmpty() || Leaf->getNumBases() != 1 || !Leaf->field_empty())
+      return std::nullopt;
+    const auto &Base = *Leaf->bases_begin();
+    const auto *B = Base.getType()->getAsCXXRecordDecl();
+    if (Base.isVirtual() || Base.getAccessSpecifier() != AS_private || !B ||
+        B->getCanonicalDecl() != C->getCanonicalDecl() || LL.getBaseClassOffset(C).getQuantity())
+      return std::nullopt;
+    return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
+        Impl, Leaf, UtilityTupleElement(C, Callable, 0), Callable};
+  }
+  if (Leaf->getNumBases() || std::distance(Leaf->field_begin(), Leaf->field_end()) != 1)
+    return std::nullopt;
+  const auto *Value = *Leaf->field_begin();
+  if (!Value->getIdentifier() || Value->getName() != "__value_" ||
+      Value->getAccess() != AS_private || Value->isBitField() || Value->isMutable() ||
+      Value->hasAttrs() || !Context.hasSameType(Value->getType(), Callable) ||
+      LL.getFieldOffset(0) || !Check.family(Value, {"tuple"})) return std::nullopt;
+  return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
+      Impl, Leaf, UtilityTupleElement(Value, 0), Callable};
+}
+
+std::optional<FunctionalNotFnFactorySource>
+describeFunctionalNotFnFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto Storage = describeFunctionalNotFnStorage(
+      S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  if (!Storage || !F || !F->getIdentifier() || F->getName() != "not_fn" ||
+      !S.owns(SM, Call->getExprLoc()) || Call->getNumArgs() != 1 ||
+      F->getNumParams() != 1 || F->isVariadic() || !Call->isPRValue() ||
+      !Context.hasSameType(Call->getType(), F->getReturnType())) return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Args = F->getTemplateSpecializationArgs();
+  if (!Primary || !Args || Args->size() != 2 ||
+      Args->get(0).getKind() != TemplateArgument::Type ||
+      Args->get(1).getKind() != TemplateArgument::Type || !Args->get(1).getAsType()->isVoidType() ||
+      Primary->getTemplateParameters()->size() != 2 ||
+      !Check.family(F, {"__functional/not_fn.h"})) return std::nullopt;
+  const auto *Parameter = F->getParamDecl(0);
+  const auto Input = Args->get(0).getAsType();
+  const auto Expected = Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input);
+  if (!Context.hasSameType(Parameter->getType(), Expected) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Expected->getPointeeType()))
+    return std::nullopt;
+  const auto *Construct = Check.construction(Check.returned(F));
+  const auto *Constructor = Construct ? Construct->getConstructor() : nullptr;
+  if (!Construct || !Constructor || !Constructor->isInheritingConstructor() ||
+      Constructor->isDeleted() || Constructor->getNumParams() != 1 || Construct->getNumArgs() != 1 ||
+      Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
+      !Check.family(Constructor, {"__functional/not_fn.h"})) return std::nullopt;
+  const CallExpr *Forward = nullptr;
+  if (!Check.forwarding(Construct->getArg(0), Parameter, "__functional/not_fn.h", Forward))
+    return std::nullopt;
+  const auto Inherited = Constructor->getInheritedConstructor();
+  const auto *BaseConstructor = Inherited ? Inherited.getConstructor() : nullptr;
+  if (!BaseConstructor || !Check.family(Inherited.getShadowDecl(), {"__functional/not_fn.h"}) ||
+      BaseConstructor->getParent()->getCanonicalDecl() != Storage->Forwarder->getCanonicalDecl() ||
+      !Check.family(BaseConstructor, {"__functional/perfect_forward.h"}) ||
+      Constructor->getNumCtorInitializers() != 1 || BaseConstructor->getNumCtorInitializers() != 1 ||
+      BaseConstructor->getNumParams() != 1) return std::nullopt;
+  const auto *BaseInit = *Constructor->init_begin();
+  const auto *InheritedInit = dyn_cast<CXXInheritedCtorInitExpr>(BaseInit->getInit());
+  if (!BaseInit->isBaseInitializer() || BaseInit->isBaseVirtual() || !InheritedInit ||
+      InheritedInit->getConstructor() != BaseConstructor || InheritedInit->constructsVBase() ||
+      InheritedInit->inheritedFromVBase()) return std::nullopt;
+  const auto *BoundInit = *BaseConstructor->init_begin();
+  const auto *TupleConstruction = Check.construction(BoundInit->getInit());
+  if (!BoundInit->isMemberInitializer() || BoundInit->getMember() != Storage->BoundArguments ||
+      !TupleConstruction || TupleConstruction->getNumArgs() != 1 ||
+      TupleConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Tuple->getCanonicalDecl())
+    return std::nullopt;
+  std::vector<const CXXConstructExpr *> Constructions{Construct, TupleConstruction};
+  std::vector<const CallExpr *> Forwards{Forward};
+  if (!Check.forwarding(TupleConstruction->getArg(0), BaseConstructor->getParamDecl(0),
+                        "__functional/perfect_forward.h", Forward)) return std::nullopt;
+  Forwards.push_back(Forward);
+  const auto *TupleConstructor = TupleConstruction->getConstructor();
+  if (!Check.family(TupleConstructor, {"tuple"}) || TupleConstructor->getNumCtorInitializers() != 1 ||
+      TupleConstructor->getNumParams() != 1) return std::nullopt;
+  const auto *TupleInit = *TupleConstructor->init_begin();
+  const auto *ImplConstruction = Check.construction(TupleInit->getInit());
+  if (!TupleInit->isMemberInitializer() || TupleInit->getMember() != Storage->TupleBase ||
+      !ImplConstruction || ImplConstruction->getNumArgs() != 5 ||
+      ImplConstruction->getConstructor()->getParent()->getCanonicalDecl() !=
+          Storage->TupleImplementation->getCanonicalDecl() ||
+      !Check.forwarding(ImplConstruction->getArg(4), TupleConstructor->getParamDecl(0), "tuple", Forward))
+    return std::nullopt;
+  Constructions.push_back(ImplConstruction); Forwards.push_back(Forward);
+  const auto *ImplConstructor = ImplConstruction->getConstructor();
+  if (!Check.family(ImplConstructor, {"tuple"}) || ImplConstructor->getNumCtorInitializers() != 1 ||
+      ImplConstructor->getNumParams() != 5) return std::nullopt;
+  const auto *ImplInit = *ImplConstructor->init_begin();
+  const auto *LeafConstruction = Check.construction(ImplInit->getInit());
+  if (!ImplInit->isBaseInitializer() || ImplInit->isBaseVirtual() || !LeafConstruction ||
+      LeafConstruction->getNumArgs() != 1 ||
+      LeafConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->TupleLeaf->getCanonicalDecl() ||
+      !Check.forwarding(LeafConstruction->getArg(0), ImplConstructor->getParamDecl(4), "tuple", Forward))
+    return std::nullopt;
+  Constructions.push_back(LeafConstruction); Forwards.push_back(Forward);
+  const auto *LeafConstructor = LeafConstruction->getConstructor();
+  if (!Check.family(LeafConstructor, {"tuple"}) || LeafConstructor->getNumCtorInitializers() != 1 ||
+      LeafConstructor->getNumParams() != 1) return std::nullopt;
+  const auto *ValueInit = *LeafConstructor->init_begin();
+  if (Storage->Callable.Field ? (!ValueInit->isMemberInitializer() ||
+                                 ValueInit->getMember() != Storage->Callable.Field)
+                              : !ValueInit->isBaseInitializer()) return std::nullopt;
+  const auto *CallableConstruction = Check.construction(ValueInit->getInit());
+  const Expr *Forwarded = CallableConstruction && CallableConstruction->getNumArgs() == 1
+      ? CallableConstruction->getArg(0) : ValueInit->getInit();
+  if (!Check.forwarding(Forwarded, LeafConstructor->getParamDecl(0), "tuple", Forward))
+    return std::nullopt;
+  Forwards.push_back(Forward);
+  if (CallableConstruction && !Context.hasSameUnqualifiedType(
+          CallableConstruction->getType(), Storage->CallableType)) return std::nullopt;
+  return FunctionalNotFnFactorySource{*Storage, F, Construct, InheritedInit,
+      std::move(Constructions), std::move(Forwards), ValueInit->getInit(), CallableConstruction};
+}
+
+std::optional<FunctionalNotFnCallSource>
+describeFunctionalNotFnCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, FunctionalNotFnSourceMode Mode) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Operator || Operator->getOperator() != OO_Call || !Method ||
+      !Call->getNumArgs() || Method->getNumParams() + 1 != Call->getNumArgs() ||
+      Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
+      Method->getAccess() != AS_public || Method->isVolatile() ||
+      Method->getRefQualifier() == RQ_None || !S.owns(SM, Call->getExprLoc()))
+    return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
+  // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
+  // roots. Both language-level derived-to-base forms must still identify the
+  // exact single public base below; this does not admit arbitrary base casts.
+  if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
+                    Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Receiver->path_size() != 1)
+    return std::nullopt;
+  const auto *Object = Receiver->getSubExpr()->IgnoreParens();
+  const auto Storage = describeFunctionalNotFnStorage(S, SM,
+      Object->getType()->getAsCXXRecordDecl(), Context);
+  if (!Storage || *Receiver->path_begin() != &*Storage->Record->bases_begin() ||
+      Method->getParent()->getCanonicalDecl() != Storage->Forwarder->getCanonicalDecl() ||
+      Method->isConst() != Object->getType().isConstQualified() ||
+      !Check.family(Method, {"__functional/perfect_forward.h"}) ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
+      Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
+    return std::nullopt;
+  const bool RValue = Method->getRefQualifier() == RQ_RValue;
+  if (Object->isLValue() == RValue) return std::nullopt;
+  const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
+      Check.core(Check.resultSource(Method, Mode)));
+  const auto *OperationMethod = Operation
+      ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee()) : nullptr;
+  if (!Operation || Operation->getOperator() != OO_Call || !OperationMethod ||
+      Operation->getNumArgs() != Call->getNumArgs() + 1 ||
+      OperationMethod->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl() ||
+      OperationMethod->getNumParams() != Call->getNumArgs() ||
+      !OperationMethod->isConst() || OperationMethod->isVolatile() ||
+      OperationMethod->isStatic() || OperationMethod->isVariadic() ||
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return std::nullopt;
+  const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
+  if (!OpConstruction || OpConstruction->getNumArgs() ||
+      OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
+    return std::nullopt;
+  const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
+  const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
+  const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
+  if (!Get || Get->getNumArgs() != 1 || !GetFunction || !GetFunction->getIdentifier() ||
+      GetFunction->getName() != "get" || !GetArguments || GetArguments->size() != 2 ||
+      GetArguments->get(0).getKind() != TemplateArgument::Integral ||
+      !GetArguments->get(0).getAsIntegral().isZero() ||
+      !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
+      !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
+      !Check.family(GetFunction, {"tuple"})) return std::nullopt;
+  const Expr *Bound = Check.stripped(Get->getArg(0));
+  const CallExpr *Move = nullptr;
+  if (RValue) {
+    Move = dyn_cast_or_null<CallExpr>(Bound);
+    const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
+    if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
+        Move->getNumArgs() != 1 || !Move->isXValue() ||
+        !Check.family(MoveFunction, {"__utility/move.h"}) ||
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return std::nullopt;
+    Bound = Check.stripped(Move->getArg(0));
+  }
+  const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
+  const auto *This = Member ? dyn_cast<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()) : nullptr;
+  const auto Callable = Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
+  const auto ExpectedGet = RValue ? Context.getRValueReferenceType(Callable)
+                                 : Context.getLValueReferenceType(Callable);
+  if (!Member || !Member->isArrow() || Member->getMemberDecl() != Storage->BoundArguments ||
+      !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
+      !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
+      !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
+    return std::nullopt;
+  std::vector<const CallExpr *> Forwards;
+  const CallExpr *Forward = nullptr;
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
+                          "__functional/perfect_forward.h", Forward)) return std::nullopt;
+    Forwards.push_back(Forward);
+  }
+  const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
+  const Expr *InvokeExpression = nullptr;
+  if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
+    if (Unary->getOpcode() != UO_LNot) return std::nullopt;
+    InvokeExpression = Unary->getSubExpr();
+  } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
+    if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
+      return std::nullopt;
+    InvokeExpression = NegateCall->getArg(0);
+  } else return std::nullopt;
+  const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
+  const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
+  if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
+      Invoke->getNumArgs() != OperationMethod->getNumParams() ||
+      !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return std::nullopt;
+  for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
+    if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
+                          "__functional/not_fn.h", Forward)) return std::nullopt;
+    Forwards.push_back(Forward);
+  }
+  // A signature-only description never materializes or relies on an invoke
+  // runtime body. Its target remains a separate pending signature obligation.
+  const CallExpr *Dispatch = nullptr;
+  const CallExpr *Target = nullptr;
+  if (Mode == FunctionalNotFnSourceMode::Runtime) {
+    Dispatch = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
+    const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+    if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
+        !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+    Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
+    if (!Target) return std::nullopt;
+  }
+  return FunctionalNotFnCallSource{*Storage, Method, Object, Receiver, Get, Move, Operation,
+      Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
+}
+
+std::optional<FunctionalNotFnFactoryTemplateSource>
+describeFunctionalNotFnFactoryTemplateSource(
+    const State &S, const SourceManager &SM,
+    const SelectedTemplateCallSource &Selection, const TemplateUseSource &Use,
+    const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CallExpr>(Selection.Expression);
+  const auto Selected = describeFunctionalNotFnFactorySource(S, SM, Call, Context);
+  const auto *Function = Selected ? Selected->Factory : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  if (!Selected || !Primary || Selection.Function != Function ||
+      Selection.Location != Use.Location || !S.owns(SM, Selection.Location) ||
+      Use.Kind != TemplateSourceKind::Function || Use.Template != Primary ||
+      Use.Declaration != Function || Use.Type || Use.Underlying || Use.Written || Use.Selection ||
+      Use.Instantiation || Use.Origin || Use.WrittenStorageClass || Use.DefaultsOverflow ||
+      !Use.Canonical || !Use.Sugared || Use.Canonical->size() != 2 ||
+      Use.Sugared->size() != 2 || Use.Defaults.size() != 1 ||
+      !Use.ParameterTypes.empty()) return std::nullopt;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Parameters = Primary->getTemplateParameters();
+  const auto *Input = Parameters && Parameters->size() == 2
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Default = Parameters && Parameters->size() == 2
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Arguments || Arguments->size() != 2 || !Input || !Default ||
+      Input->isParameterPack() || Input->hasDefaultArgument() ||
+      Default->isParameterPack() || !Default->hasDefaultArgument() ||
+      Input->getIndex() != 0 || Default->getIndex() != 1 ||
+      !Check.family(Primary, {"__functional/not_fn.h"}) ||
+      !Check.family(Input, {"__functional/not_fn.h"}) ||
+      !Check.family(Default, {"__functional/not_fn.h"})) return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Canonical = Use.Canonical->get(I);
+    const auto &Sugared = Use.Sugared->get(I);
+    if (Canonical.getKind() != TemplateArgument::Type ||
+        Sugared.getKind() != TemplateArgument::Type ||
+        Canonical.getAsType().isNull() || Sugared.getAsType().isNull() ||
+        Canonical.isInstantiationDependent() || Sugared.isInstantiationDependent() ||
+        !Arguments->get(I).structurallyEquals(Canonical) ||
+        !Canonical.structurallyEquals(Context.getCanonicalTemplateArgument(Sugared)))
+      return std::nullopt;
+  }
+  const auto &DefaultUse = Use.Defaults.front();
+  if (DefaultUse.Parameter != Default ||
+      DefaultUse.Written.getArgument().getKind() != TemplateArgument::Type ||
+      DefaultUse.Converted.getArgument().getKind() != TemplateArgument::Type ||
+      !Use.Canonical->get(1).getAsType()->isVoidType() ||
+      !Context.hasSameType(DefaultUse.Written.getArgument().getAsType(),
+                           Use.Sugared->get(1).getAsType()) ||
+      !Context.hasSameType(DefaultUse.Converted.getArgument().getAsType(),
+                           Use.Canonical->get(1).getAsType())) return std::nullopt;
+  const auto *PrimaryDefault = Default->getDefaultArgument().getTypeSourceInfo();
+  const auto *Substituted = DefaultUse.Written.getTypeSourceInfo();
+  const auto *Converted = DefaultUse.Converted.getTypeSourceInfo();
+  if (!PrimaryDefault || !Substituted || !Converted) return std::nullopt;
+  for (const auto *Info : {PrimaryDefault, Substituted, Converted}) {
+    const auto Location = Info->getTypeLoc();
+    if (Location.isNull() ||
+        !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"}) ||
+        !Check.location(Location.getEndLoc(), {"__functional/not_fn.h"})) return std::nullopt;
+  }
+  // Sema records Written after SubstDefaultTemplateArgumentIfAvailable, before
+  // CheckTemplateArgument adds conversions. It is not the primary's dependent
+  // default. Keep all three original AST roots for separate source traversal.
+  // No query or ordinary special-member completion is inferred from void.
+  return FunctionalNotFnFactoryTemplateSource{*Selected, Selection, Use,
+      Primary, PrimaryDefault, Substituted, Converted};
+}
+
+
+std::optional<std::vector<FunctionalNotFnTupleTagSource>>
+describeFunctionalNotFnTupleTagSources(
+    const State &S, const SourceManager &SM,
+    const FunctionalNotFnFactorySource &Factory, const ASTContext &Context) {
+  if (Factory.SelectedConstructions.size() != 4) return std::nullopt;
+  const auto *Implementation = Factory.SelectedConstructions[2];
+  if (!Implementation || Implementation->getNumArgs() != 5 ||
+      Implementation->getConstructor()->getParent()->getCanonicalDecl() !=
+          Factory.Storage.TupleImplementation->getCanonicalDecl()) return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  std::vector<FunctionalNotFnTupleTagSource> Result;
+  for (unsigned I = 0; I != 4; ++I) {
+    const auto *Construction = dyn_cast_or_null<CXXTemporaryObjectExpr>(
+        Check.construction(Implementation->getArg(I)));
+    const bool Indices = I % 2 == 0;
+    const auto Name = Indices ? "__tuple_indices" : "__tuple_types";
+    const auto Path = Indices ? "__tuple/tuple_indices.h" : "__tuple/tuple_types.h";
+    const auto *Record = Construction
+        ? Check.record(Construction->getType(), Name, {Path}) : nullptr;
+    const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+    const auto *Written = Construction ? Construction->getTypeSourceInfo() : nullptr;
+    if (!Record || !Constructor || !Written || Construction->getNumArgs() ||
+        !Record->field_empty() || Record->getNumBases() ||
+        !Record->hasTrivialDefaultConstructor() || !Record->hasTrivialDestructor() ||
+        !Constructor->isDefaultConstructor() || !Constructor->isImplicit() ||
+        !Constructor->isDefaulted() || !Constructor->isTrivial() || Constructor->isDeleted() ||
+        Constructor->getNumParams() || Constructor->getNumCtorInitializers() ||
+        Constructor->getTypeSourceInfo() ||
+        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+        !Context.hasSameType(Written->getType(), Construction->getType()) ||
+        !Check.family(Constructor, {Path}) ||
+        !Check.location(Construction->getExprLoc(), {"tuple"}) ||
+        !Check.location(Written->getTypeLoc().getBeginLoc(), {"tuple"}) ||
+        !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"})) return std::nullopt;
+    const auto &Arguments = Record->getTemplateArgs();
+    if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Pack ||
+        Arguments[0].pack_size() != (I < 2 ? 1u : 0u)) return std::nullopt;
+    if (I == 0) {
+      const auto &Index = Arguments[0].pack_elements()[0];
+      if (Index.getKind() != TemplateArgument::Integral || !Index.getAsIntegral().isZero() ||
+          !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) return std::nullopt;
+    } else if (I == 1 && !Check.oneTypePack(Arguments[0], Factory.Storage.CallableType))
+      return std::nullopt;
+    Result.push_back({Construction, Record, Written});
+  }
+  // Empty tag layout or a canonical pack is never an alias-source certificate.
+  // The owning checker must finish every original Written TypeLoc, selected
+  // template use/default and constructor signature before emitting any call.
+  return Result;
+}
+
+
+// This callback-side filter deliberately grants no type/runtime permission.
+// It must not request a class layout, definition or source traversal while Sema
+// is still computing implicit special-member deletion and exception properties.
+bool shouldRetainFunctionalNotFnSpecialMemberSource(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const ASTContext &Context) {
+  if (!S.coreV2() || !Method || S.owns(SM, Method->getLocation())) return false;
+  bool NotFnSignatureMember = false;
+  const auto *NotFnConstructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+  if ((Method->isImplicit() || Method->isDefaulted()) &&
+      (isa<CXXDestructorDecl>(Method) ||
+       (NotFnConstructor && NotFnConstructor->isCopyOrMoveConstructor()))) {
+    const auto Origin = S.sdkFile(SM, Method->getLocation());
+    const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+    if (Origin && Origin->Root == "libcxx" && Instance && Instance->getIdentifier() &&
+        Instance->getSpecializationKind() == TSK_ImplicitInstantiation &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        approvedStandardSDKDeclaration(S, SM, Instance)) {
+      const auto &Arguments = Instance->getTemplateArgs();
+      if (Origin->Path == "__functional/not_fn.h" &&
+          Instance->getName() == "__not_fn_t" && Arguments.size() == 1 &&
+          Arguments[0].getKind() == TemplateArgument::Type &&
+          !Arguments[0].getAsType().isNull() &&
+          !Arguments[0].getAsType()->isDependentType()) {
+        NotFnSignatureMember = true;
+      } else if (Origin->Path == "__functional/perfect_forward.h" &&
+                 Instance->getName() == "__perfect_forward_impl" && Arguments.size() == 3 &&
+                 Arguments[0].getKind() == TemplateArgument::Type &&
+                 !Arguments[0].getAsType().isNull() &&
+                 Arguments[1].getKind() == TemplateArgument::Type &&
+                 !Arguments[1].getAsType().isNull() &&
+                 Arguments[2].getKind() == TemplateArgument::Pack &&
+                 Arguments[2].pack_size() == 1 &&
+                 Arguments[2].pack_elements()[0].getKind() == TemplateArgument::Type) {
+        const auto *Operation = Arguments[0].getAsType()->getAsCXXRecordDecl();
+        const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+            Arguments[1].getAsType()->getAsCXXRecordDecl());
+        const auto OpOrigin = Operation ? S.sdkFile(SM, Operation->getLocation()) : std::nullopt;
+        const auto IndexOrigin = Indices ? S.sdkFile(SM, Indices->getLocation()) : std::nullopt;
+        if (Operation && Operation->getIdentifier() && Operation->getName() == "__not_fn_op" &&
+            OpOrigin && OpOrigin->Root == "libcxx" && OpOrigin->Path == "__functional/not_fn.h" &&
+            approvedStandardSDKDeclaration(S, SM, Operation) &&
+            Indices && Indices->getIdentifier() && Indices->getName() == "integer_sequence" &&
+            IndexOrigin && IndexOrigin->Root == "libcxx" &&
+            IndexOrigin->Path == "__utility/integer_sequence.h" &&
+            approvedStandardSDKDeclaration(S, SM, Indices)) {
+          const auto &IndexArguments = Indices->getTemplateArgs();
+          if (IndexArguments.size() == 2 &&
+              IndexArguments[0].getKind() == TemplateArgument::Type &&
+              Context.hasSameType(IndexArguments[0].getAsType(), Context.getSizeType()) &&
+              IndexArguments[1].getKind() == TemplateArgument::Pack &&
+              IndexArguments[1].pack_size() == 1) {
+            const auto &Index = IndexArguments[1].pack_elements()[0];
+            NotFnSignatureMember = Index.getKind() == TemplateArgument::Integral &&
+                Index.getAsIntegral().isZero() &&
+                Context.hasSameType(Index.getIntegralType(), Context.getSizeType());
+          }
+        }
+      }
+    }
+  }
+  return NotFnSignatureMember;
+}
+
+
 bool approvedUtilityTupleCatSignatureQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context,

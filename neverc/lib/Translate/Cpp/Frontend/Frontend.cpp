@@ -28582,18 +28582,34 @@ static void orderCoreV2Records(Adapter &A) {
   A.Records = std::move(Ordered);
 }
 
-void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives,
-                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives,
-                  llvm::ArrayRef<TemplateUseSource> TemplateUses,
-                  llvm::ArrayRef<FunctionSpecializationSource> Specializations,
-                  llvm::ArrayRef<VariableTypeSource> VariableTypes,
-                  llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls,
-                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> MemberClassDirectives,
-                  llvm::ArrayRef<FriendFunctionSource> FriendFunctions,
-                  llvm::ArrayRef<FriendDeclarationSource> FriendDeclarations,
-                  llvm::ArrayRef<FriendFunctionTemplateSource> FriendTemplates,
-                  llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies,
-                  llvm::ArrayRef<FriendClassTemplateSource> FriendClasses) {
+void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirectives,
+                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> InputStaticDirectives,
+                  llvm::ArrayRef<TemplateUseSource> InputTemplateUses,
+                  llvm::ArrayRef<FunctionSpecializationSource> InputSpecializations,
+                  llvm::ArrayRef<VariableTypeSource> InputVariableTypes,
+                  llvm::ArrayRef<SelectedTemplateCallSource> InputSelectedCalls,
+                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> InputMemberClassDirectives,
+                  llvm::ArrayRef<FriendFunctionSource> InputFriendFunctions,
+                  llvm::ArrayRef<FriendDeclarationSource> InputFriendDeclarations,
+                  llvm::ArrayRef<FriendFunctionTemplateSource> InputFriendTemplates,
+                  llvm::ArrayRef<FunctionTemplateBodySource> InputTemplateBodies,
+                  llvm::ArrayRef<FriendClassTemplateSource> InputFriendClasses) {
+  // Index immutable owned snapshots. RequireCompleteType may re-enter the
+  // Consumer and grow its source vectors while this run still uses record
+  // addresses; those later callback records keep their original Consumer owner.
+  // Capturing a snapshot supplies no missing late source or runtime permission.
+  const auto Directives = InputDirectives.vec();
+  const auto StaticDirectives = InputStaticDirectives.vec();
+  const auto TemplateUses = InputTemplateUses.vec();
+  const auto Specializations = InputSpecializations.vec();
+  const auto VariableTypes = InputVariableTypes.vec();
+  const auto SelectedCalls = InputSelectedCalls.vec();
+  const auto MemberClassDirectives = InputMemberClassDirectives.vec();
+  const auto FriendFunctions = InputFriendFunctions.vec();
+  const auto FriendDeclarations = InputFriendDeclarations.vec();
+  const auto FriendTemplates = InputFriendTemplates.vec();
+  const auto TemplateBodies = InputTemplateBodies.vec();
+  const auto FriendClasses = InputFriendClasses.vec();
   CheckingSource = true;
   auto FinishSource = llvm::make_scope_exit([&] { CheckingSource = false; });
   // Reuse successful roots only within this AST and run. Every later Sema
@@ -29514,6 +29530,8 @@ public:
             Method->getParent()->hasTrivialCopyConstructor() &&
             Method->getParent()->hasTrivialDestructor()));
     }
+    const bool NotFnSignatureMember = shouldRetainFunctionalNotFnSpecialMemberSource(
+        S, Context.getSourceManager(), Method, Context);
     const auto *DefaultConstructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
     const bool PairArrayDefaultMember = DefaultConstructor && !Owned &&
         DefaultConstructor->isImplicit() && DefaultConstructor->isDefaulted() &&
@@ -29532,7 +29550,7 @@ public:
         approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method->getParent());
     if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
         (!Owned && !TupleSignatureMember && !PairSignatureMember && !PairArrayDefaultMember &&
-         !PairOptionalMember) ||
+         !PairOptionalMember && !NotFnSignatureMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
         !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
       return false;

@@ -26,6 +26,7 @@ class ArrayInitLoopExpr;
 class ArrayInitIndexExpr;
 class CastExpr;
 class CXXConstructExpr;
+class CXXInheritedCtorInitExpr;
 class CXXStdInitializerListExpr;
 class CXXNewExpr;
 class CXXDefaultArgExpr;
@@ -1718,6 +1719,95 @@ approvedUtilityPairPiecewiseConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+
+// These descriptions retain the selected library path. They provide neither
+// runtime permission nor a completed ordinary source/trait certificate.
+struct FunctionalNotFnStorage {
+  const clang::CXXRecordDecl *Record, *Forwarder, *Operation;
+  const clang::FieldDecl *BoundArguments;
+  const clang::CXXRecordDecl *Tuple;
+  const clang::FieldDecl *TupleBase;
+  const clang::CXXRecordDecl *TupleImplementation, *TupleLeaf;
+  UtilityTupleElement Callable;
+  clang::QualType CallableType;
+};
+std::optional<FunctionalNotFnStorage>
+describeFunctionalNotFnStorage(const State &S, const clang::SourceManager &SM,
+                              const clang::CXXRecordDecl *Record,
+                              const clang::ASTContext &Context);
+struct FunctionalNotFnFactorySource {
+  FunctionalNotFnStorage Storage;
+  const clang::FunctionDecl *Factory;
+  const clang::CXXConstructExpr *Construction;
+  const clang::CXXInheritedCtorInitExpr *InheritedInitialization;
+  // These are original AST nodes, rather than reconstructed initializers.
+  std::vector<const clang::CXXConstructExpr *> SelectedConstructions;
+  std::vector<const clang::CallExpr *> ForwardingCalls;
+  const clang::Expr *CallableInitializer;
+  const clang::CXXConstructExpr *CallableConstruction;
+};
+std::optional<FunctionalNotFnFactorySource>
+describeFunctionalNotFnFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+enum class FunctionalNotFnSourceMode { Runtime, Signature };
+struct FunctionalNotFnCallSource {
+  FunctionalNotFnStorage Storage;
+  const clang::CXXMethodDecl *Method;
+  const clang::Expr *Object;
+  const clang::ImplicitCastExpr *Receiver;
+  const clang::CallExpr *BoundGet;
+  const clang::CallExpr *BoundMove;
+  const clang::CXXOperatorCallExpr *OperationCall;
+  const clang::Expr *Negation;
+  const clang::CallExpr *InvokeCall;
+  const clang::CallExpr *DispatchCall;
+  const clang::CallExpr *TargetCall;
+  std::vector<const clang::CallExpr *> ForwardingCalls;
+  FunctionalNotFnSourceMode Mode;
+};
+std::optional<FunctionalNotFnCallSource>
+describeFunctionalNotFnCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context, FunctionalNotFnSourceMode Mode);
+
+// This binds the original retained Sema event to one selected factory. The
+// primary default, substituted spelling and converted spelling are distinct
+// obligations; matching their canonical result does not finish any of them.
+struct FunctionalNotFnFactoryTemplateSource {
+  FunctionalNotFnFactorySource Selected;
+  // Own the callback records: completing another SDK type may append to the
+  // Consumer's vectors. Their AST roots already live in ASTContext storage.
+  SelectedTemplateCallSource Selection;
+  TemplateUseSource Use;
+  const clang::FunctionTemplateDecl *Primary;
+  const clang::TypeSourceInfo *PrimaryDefault, *SubstitutedDefault,
+      *ConvertedDefault;
+};
+std::optional<FunctionalNotFnFactoryTemplateSource>
+describeFunctionalNotFnFactoryTemplateSource(
+    const State &S, const clang::SourceManager &SM,
+    const SelectedTemplateCallSource &Selection, const TemplateUseSource &Use,
+    const clang::ASTContext &Context);
+
+
+struct FunctionalNotFnTupleTagSource {
+  const clang::CXXConstructExpr *Construction;
+  const clang::CXXRecordDecl *Record;
+  const clang::TypeSourceInfo *Written;
+};
+// Retain the four actual tuple dispatch-tag constructions. Their original
+// make_tuple_indices/make_tuple_types aliases still need source completion.
+std::optional<std::vector<FunctionalNotFnTupleTagSource>>
+describeFunctionalNotFnTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalNotFnFactorySource &Factory, const clang::ASTContext &Context);
+
+
+bool shouldRetainFunctionalNotFnSpecialMemberSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
+
 
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
