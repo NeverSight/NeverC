@@ -919,6 +919,7 @@ jobs:
       run: "python3 utils/ci/replay-cpp-pair-intrinsic-forward.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-pair-intrinsic-forward-plan.json\
         \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-intrinsic-forward\" \\\n  --build \"$RUNNER_TEMP/cpp-pair-intrinsic-forward-rebuild\"\
         \n"
+      id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -940,6 +941,16 @@ jobs:
         if-no-files-found: warn
         compression-level: 0
         retention-days: 7
+    - name: Retain audited current private archive remotely for real runtime replay
+      if: ${{ !cancelled() && steps.verify_pair_requests.outcome == 'success' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-current-private-archive-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 7
+
 'on':
   workflow_dispatch:
     inputs:

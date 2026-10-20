@@ -10489,6 +10489,7 @@ class UtilityPairPiecewiseOuterSources
   std::set<const CXXConstructorDecl *> ErasedConstructors;
   unsigned Nodes = 0;
   bool Failed = false;
+  TypeLoc UnwrittenConstructorReturn;
 
   bool step(SourceLocation Location) {
     A.chargeExpansion(1, Location);
@@ -10581,7 +10582,25 @@ class UtilityPairPiecewiseOuterSources
   }
   bool signature(const FunctionDecl *Function) {
     const auto *Info = Function->getTypeSourceInfo();
-    if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
+    if (!Info)
+      return false;
+    const auto SavedReturn = UnwrittenConstructorReturn;
+    UnwrittenConstructorReturn = TypeLoc();
+    auto RestoreReturn = llvm::make_scope_exit([&] {
+      UnwrittenConstructorReturn = SavedReturn;
+    });
+    if (isa<CXXConstructorDecl>(Function)) {
+      const auto Prototype = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+      if (!Prototype || !Prototype.getReturnLoc().getType()->isVoidType())
+        return false;
+      // A constructor has no written return type. Clang retains a semantic
+      // void node with invalid locations; bind that exact node for this one
+      // signature, keeping every real parameter and exception source checked.
+      const auto Return = Prototype.getReturnLoc();
+      if (Return.getBeginLoc().isInvalid() && Return.getEndLoc().isInvalid())
+        UnwrittenConstructorReturn = Return;
+    }
+    if (!TraverseTypeLoc(Info->getTypeLoc()))
       return false;
     for (const auto *Parameter : Function->parameters()) {
       const auto *Written = Parameter->getTypeSourceInfo();
@@ -10667,6 +10686,15 @@ public:
   bool VisitStmt(Stmt *Statement) {
     return step(Statement->getBeginLoc()) &&
            location(Statement->getBeginLoc()) && location(Statement->getEndLoc());
+  }
+  bool TraverseTypeLoc(TypeLoc Type) {
+    if (UnwrittenConstructorReturn &&
+        Type.getOpaqueData() == UnwrittenConstructorReturn.getOpaqueData() &&
+        Type.getType() == UnwrittenConstructorReturn.getType() &&
+        Type.getType()->isVoidType() && Type.getBeginLoc().isInvalid() &&
+        Type.getEndLoc().isInvalid())
+      return true;
+    return RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseTypeLoc(Type);
   }
   bool VisitTypeLoc(TypeLoc Type) {
     return step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
@@ -29843,7 +29871,7 @@ public:
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
-    // Layout preparation precedes moving or indexing any retained Sema
+    // Layout preparation precedes indexing retained Sema
     // events. Completing a layout can produce further substitutions; all of
     // them must reach the same ordinary source checks as the original parse.
     if (S.coreV2()) {
@@ -29936,13 +29964,11 @@ public:
           return;
       }
     }
-    Adapter A(S, C);
+    Adapter A(S, C, OperationTraits, SpecialMembers);
     A.CompleteSDKRecord = [&](QualType Type, SourceLocation Location) {
       return completeSDKType(Type, Location);
     };
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
-    A.OperationTraits = std::move(OperationTraits);
-    A.SpecialMembers = std::move(SpecialMembers);
     try {
       A.run(Directives, StaticDirectives, TemplateUses, Specializations,
             VariableTypes, SelectedCalls, MemberClassDirectives,
