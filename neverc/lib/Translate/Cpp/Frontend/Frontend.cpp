@@ -22722,7 +22722,7 @@ public:
       const FunctionDecl *Selected = nullptr;
       if (const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression))
         Selected = Construction->getConstructor();
-      else if (const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Source.Expression))
+      else if (const auto *Call = dyn_cast_or_null<CallExpr>(Source.Expression))
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
@@ -22793,9 +22793,7 @@ public:
           UtilityCall &&
           approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context);
       if (!Selected || Selected != Source.Function ||
-          !(isa<CXXNewExpr>(Source.Expression)
-                ? concreteFunctionTemplate(Selected)
-                : concreteMemberFunctionTemplate(Selected)) ||
+          !concreteFunctionTemplate(Selected) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
