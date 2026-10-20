@@ -11509,7 +11509,7 @@ describeFunctionalNotFnCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple"})) return std::nullopt;
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -11663,8 +11663,11 @@ describeFunctionalNotFnTupleTagSources(
     const bool Indices = I % 2 == 0;
     const auto Name = Indices ? "__tuple_indices" : "__tuple_types";
     const auto Path = Indices ? "__tuple/tuple_indices.h" : "__tuple/tuple_types.h";
+    // The selected empty tag and its definition retain the original identity;
+    // its exact primary also has a declaration in integer_sequence.h.
+    const llvm::StringRef DeclarationPath = Indices ? "__utility/integer_sequence.h" : Path;
     const auto *Record = Construction
-        ? Check.record(Construction->getType(), Name, {Path}) : nullptr;
+        ? Check.record(Construction->getType(), Name, {Path, DeclarationPath}) : nullptr;
     const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
     const auto *Written = Construction ? Construction->getTypeSourceInfo() : nullptr;
     if (!Record || !Constructor || !Written || Construction->getNumArgs() ||
@@ -11676,7 +11679,7 @@ describeFunctionalNotFnTupleTagSources(
         Constructor->getTypeSourceInfo() ||
         Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         !Context.hasSameType(Written->getType(), Construction->getType()) ||
-        !Check.family(Constructor, {Path}) ||
+        !Check.family(Constructor, {Path, DeclarationPath}) ||
         !Check.location(Construction->getExprLoc(), {"tuple"}) ||
         !Check.location(Written->getTypeLoc().getBeginLoc(), {"tuple"}) ||
         !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"})) return std::nullopt;
