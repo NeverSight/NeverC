@@ -28582,6 +28582,64 @@ static void orderCoreV2Records(Adapter &A) {
   A.Records = std::move(Ordered);
 }
 
+// Diagnostic only: observe descriptors without granting any operation.
+class NotFnSelectedSourceObservation
+    : public RecursiveASTVisitor<NotFnSelectedSourceObservation> {
+  Adapter &A;
+  llvm::ArrayRef<TemplateUseSource> Uses;
+  llvm::ArrayRef<SelectedTemplateCallSource> Calls;
+public:
+  NotFnSelectedSourceObservation(Adapter &A, llvm::ArrayRef<TemplateUseSource> Uses,
+      llvm::ArrayRef<SelectedTemplateCallSource> Calls) : A(A), Uses(Uses), Calls(Calls) {}
+  bool VisitCallExpr(CallExpr *Call) {
+    if (!A.S.owns(A.Sources, Call->getExprLoc())) return true;
+    const auto *Function = Call->getDirectCallee();
+    if (!Function) return true;
+    if (Function->getIdentifier() && Function->getName() == "not_fn") {
+      const auto Storage = describeFunctionalNotFnStorage(A.S, A.Sources,
+          Call->getType()->getAsCXXRecordDecl(), A.Context);
+      const auto Factory = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);
+      unsigned Selected = 0, RetainedUses = 0, Bound = 0;
+      for (const auto &Selection : Calls) {
+        if (Selection.Expression != Call || Selection.Function != Function) continue;
+        ++Selected;
+        for (const auto &Use : Uses) {
+          if (Use.Kind != TemplateSourceKind::Function || Use.Declaration != Function) continue;
+          ++RetainedUses;
+          const auto Template = describeFunctionalNotFnFactoryTemplateSource(
+              A.S, A.Sources, Selection, Use, A.Context);
+          Bound += Template.has_value();
+          llvm::errs() << "NOT_FN_DEFAULTS count=" << Use.Defaults.size();
+          for (const auto &Default : Use.Defaults)
+            llvm::errs() << " written=" << bool(Default.Written.getTypeSourceInfo())
+                         << " converted=" << bool(Default.Converted.getTypeSourceInfo());
+          llvm::errs() << "\n";
+        }
+      }
+      const auto Tags = Factory ? describeFunctionalNotFnTupleTagSources(
+          A.S, A.Sources, *Factory, A.Context) : std::nullopt;
+      llvm::errs() << "NOT_FN_FACTORY storage=" << bool(Storage)
+          << " factory=" << bool(Factory) << " selected=" << Selected
+          << " uses=" << RetainedUses << " bound=" << Bound
+          << " tags=" << (Tags ? Tags->size() : 0) << "\n";
+      Function->dump(llvm::errs());
+    }
+    const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+    const auto Origin = A.S.sdkFile(A.Sources, Function->getLocation());
+    if (Method && Method->isOverloadedOperator() &&
+        Method->getOverloadedOperator() == OO_Call && Origin &&
+        Origin->Root == "libcxx" && Origin->Path == "__functional/perfect_forward.h") {
+      const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+          A.Context, FunctionalNotFnSourceMode::Runtime);
+      const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+          A.Context, FunctionalNotFnSourceMode::Signature);
+      llvm::errs() << "NOT_FN_CALL runtime=" << bool(Runtime)
+                   << " signature=" << bool(Signature) << "\n";
+    }
+    return true;
+  }
+};
+
 void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirectives,
                   llvm::ArrayRef<ExplicitStaticDataInstantiationSource> InputStaticDirectives,
                   llvm::ArrayRef<TemplateUseSource> InputTemplateUses,
@@ -28620,6 +28678,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     S.CompletedStringHashSourceRoots.clear();
     S.StringHashSourceContext = nullptr;
   });
+  NotFnSelectedSourceObservation NotFnProbe(*this, TemplateUses, SelectedCalls);
+  llvm::errs() << "NOT_FN_SNAPSHOT uses=" << TemplateUses.size()
+               << " calls=" << SelectedCalls.size() << "\n";
+  for (auto *Declaration : Context.getTranslationUnitDecl()->decls())
+    if (S.owns(Sources, Declaration->getLocation()))
+      NotFnProbe.TraverseDecl(Declaration);
   Allowlist Check(*this);
   Check.indexFriendSources(FriendFunctions, FriendDeclarations, FriendTemplates, TemplateBodies, FriendClasses);
   Check.indexTemplates();
@@ -29465,9 +29529,17 @@ class Consumer : public ASTConsumer {
     for (unsigned I = 0; I < TypeCount; ++I)
       Source.ParameterTypes.push_back({TypeParameters[I], ParameterTypes[I], PackIndices[I]});
     TemplateUses.push_back(std::move(Source));
+    llvm::errs() << "NOT_FN_RETAIN template=" << TemplateUses.size()
+                 << " kind=" << unsigned(Kind) << " location=" << Location.getRawEncoding() << "\n";
   }
 
   bool completeSDKType(QualType Type, SourceLocation Location) {
+    const auto NotFnUsesBefore = TemplateUses.size(), NotFnCallsBefore = SelectedCalls.size();
+    auto NotFnCompletionObservation = llvm::make_scope_exit([&] {
+      llvm::errs() << "NOT_FN_COMPLETION uses_before=" << NotFnUsesBefore
+          << " uses_after=" << TemplateUses.size() << " calls_before=" << NotFnCallsBefore
+          << " calls_after=" << SelectedCalls.size() << "\n";
+    });
     // Completion may instantiate declarations and source dependencies even
     // when it fails. Suspend reuse and invalidate both sides of this Sema
     // boundary, including any recursively entered completion callbacks.
@@ -29724,6 +29796,9 @@ public:
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
     SelectedCalls.push_back({Expression, Function, Location});
+    llvm::errs() << "NOT_FN_RETAIN selected=" << SelectedCalls.size()
+                 << " function=" << Function->getQualifiedNameAsString()
+                 << " location=" << Location.getRawEncoding() << "\n";
   }
   void HandleNeverCFunctionTemplateSource(
       FunctionDecl *Function,

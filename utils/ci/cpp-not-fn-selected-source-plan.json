@@ -1,0 +1,372 @@
+{
+  "producer_commit": "a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+  "producer_run_id": 39360350577,
+  "producer_small_artifact": {
+    "id": 12238915359,
+    "name": "cpp-private-frontend-protocol-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:d1ab9fa3c119dc297baa81e778bc0a856a4d339d7620a85eba375aeb824fe55a"
+  },
+  "producer_components_artifact": {
+    "id": 12238805525,
+    "name": "cpp-private-frontend-components-remote-only-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:0076a18844250551abd4d3cb883100da1a7187c9dca13f1d426bbea391e5ef5f"
+  },
+  "producer_report_sha256": "2bb186c6fcff3223e0daf78eff00c67e5cf3482d0949526ca01298b5ec66ff0c",
+  "producer_manifest_sha256": "d76283cabbc5883381c942f42099d896626e4ca885274c15826c064e178f25e9",
+  "producer_private_input_sha256": {
+    "Frontend.cpp": "c610559df4f52b54a7e96fa3ad20d8f7baa34d7e38e1e40c70d26c1ff07a630e",
+    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "0506507ca68446475c1f4da4339735a50c1d083d5386ded146d73aab90f7eae1",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "8b77eb365687ea35fc554079c02a187a804b0b9a1d932355a48671f455b2deea",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "allowed_bridge_source_changes": [
+    "Frontend.cpp",
+    "Frontend.h",
+    "Lowering.cpp",
+    "MathSDK.cpp"
+  ],
+  "candidate_source_paths": [
+    "utils/ci/replay-cpp-not-fn-selected-source.py",
+    "utils/ci/cpp-not-fn-selected-source-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "utils/ci/FrontendProtocolDriver.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp"
+  ],
+  "source_repair_commit": "82a78ee18d85ba4e120a264dc3d160de99fa4c1a",
+  "target_abis": [
+    "x86_64-unknown-linux-gnu"
+  ],
+  "cases": [
+    {
+      "name": "cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "expected": "accept"
+    },
+    {
+      "name": "tuple-get",
+      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
+      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
+      "expected": "accept"
+    },
+    {
+      "name": "not-fn-function-pointer",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || f(7) || calls != 3;\n}\n",
+      "source_sha256": "ce1ac4c7924c372992ca2c0a78575abf2961643a1324838d0558cdb8eadf71a3",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-copied-state",
+      "category": "runtime",
+      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { ++calls; state += x; return state > 5; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
+      "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-four-cvref-calls",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <utility>\nint path;\nstruct P {\n  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }\n  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }\n  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }\n  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }\n};\nint main() {\n  auto a = std::not_fn(P{});\n  const auto b = std::not_fn(P{});\n  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;\n  return path != 1234;\n}\n",
+      "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-reference-wrapper",
+      "category": "runtime",
+      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x) { value += x; return value > 4; }\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
+      "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-custom-negation-result",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
+      "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-reference-arguments",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nbool update(int &x, const int &y) { ++calls; x += y; return x != 0; }\nint main() {\n  auto f = std::not_fn(&update);\n  int x = -3, y = 3;\n  if (!f(x,y) || x != 0 || calls != 1) return 1;\n  if (f(x,y) || x != 3 || calls != 2) return 2;\n  return 0;\n}\n",
+      "source_sha256": "1d5fed7302c89abf23b882a064afce68f4c65bf7cf92118313f28b4499260dbc",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-move-only-cleanup",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <utility>\nint moves, live, destroyed;\nstruct P {\n  int value;\n  P(int x) : value(x) { ++live; }\n  P(const P &) = delete;\n  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }\n  ~P() { --live; ++destroyed; }\n  bool operator()(int x) { return value == x; }\n};\nint main() {\n  {\n    P source(5);\n    auto f = std::not_fn(std::move(source));\n    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;\n  }\n  return live != 0 || destroyed != 2;\n}\n",
+      "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-nested-adapters",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nint value(int x) { ++calls; return x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(&value));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
+      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-factory-effects",
+      "category": "runtime",
+      "source": "#include <functional>\nint builds, calls, destroyed;\nstruct P {\n  int value;\n  bool operator()(int x) { ++calls; return x == value; }\n  ~P() { ++destroyed; }\n};\nP make(int &n) { ++n; ++builds; return P{n}; }\nint main() {\n  int n = 3;\n  {\n    auto f = std::not_fn(make(n));\n    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;\n    if (destroyed != 1) return 2;\n  }\n  return destroyed != 2;\n}\n",
+      "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-signature-queries",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nbool value(int x) noexcept { return x > 0; }\nint main() {\n  auto f = std::not_fn(&value);\n  using F = decltype(f);\n  static_assert(std::is_same<decltype(f(1)), bool>::value, \"negation result\");\n  static_assert(std::is_nothrow_invocable<F &,int>::value, \"mutable lvalue\");\n  static_assert(std::is_nothrow_invocable<const F &,int>::value, \"const lvalue\");\n  static_assert(std::is_nothrow_invocable<F &&,int>::value, \"mutable rvalue\");\n  static_assert(std::is_nothrow_invocable<const F &&,int>::value, \"const rvalue\");\n  static_assert(!noexcept(std::not_fn(&value)), \"factory exception signature\");\n  if (f(1) || !f(0)) return 1;\n  return 0;\n}\n",
+      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-factory-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class Enable> auto not_fn(F&&);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "d4980d6869d0881646c06ea6ea8cf5155ee0c77bc51d7f2abc11ef96c60c7de6",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-carrier-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F> struct __not_fn_t;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "dacfeb6dc00f1224b5d0a92dccc727d528239d0be826f191fdd166fa46062a4a",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-forwarder-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class Op, class Indices, class... Bound> struct __perfect_forward_impl;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "ef47d33af1be1f2eb373fb832b74954b886732579ac66f3fa7e9fde7e51ef5ff",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-operation-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct __not_fn_op;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "0c361602607eaf4ef1e0ac164ffa00f65fdcc8d22611e9886a00bdf21b96f708",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-tuple-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class... T> class tuple;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "875434ee3e6fe376ff75bcb1837dd23b02284b14b4e2660ee0ff17ad7cd85212",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-tuple-leaf-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class T, bool Empty> class __tuple_leaf;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "7e8f593431b392e3a8ba089d543426a3bc355db4039cf3ebd518856edbd8463b",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-forward-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr T&& forward(__libcpp_remove_reference_t<T>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "e365699a77c6f9f464a0bd8fa83c53307da7eb9c2da2e2391644cbbb046c41f6",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-move-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr __libcpp_remove_reference_t<T>&& move(T&&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return std::move(f)(3) || !std::move(f)(4) || calls != 2;\n}\n",
+      "source_sha256": "c6f713bbf8e2fd75b9ea4b5d44e6f2b26992c868cc933b30d4f2091c967f3210",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-get-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class... T> constexpr typename tuple_element<I, tuple<T...>>::type& get(tuple<T...>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "92724d22d5ee6d91147511efe4c808379777a6031e0b5e5ad4f38a7709eb831e",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    },
+    {
+      "name": "not-fn-not-fn-invoke-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class... A> invoke_result_t<F,A...> invoke(F&&,A&&...) noexcept(is_nothrow_invocable_v<F,A...>);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "963411ddb31c1a2bd86e25f6569990d93b0fa2a08604c71ca5b0ba065f30bf88",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject"
+    }
+  ],
+  "required_requests": 23,
+  "required_acceptances": 3,
+  "required_guard_rejections": 20,
+  "original_guards_modified": false,
+  "frontend_execution_timeout_seconds": 60,
+  "source_trace_included": true,
+  "all_binaries_remote_only": true,
+  "full_feature_completion_proved_by_this_job": false,
+  "all_five_internal_adapter_consumers_rebuilt": true,
+  "original_public_c_entry_abi_unchanged": true,
+  "exact_source_revision": "82a78ee18d85ba4e120a264dc3d160de99fa4c1a",
+  "consumer_record_ownership_source": {
+    "commit": "4239be93f596895b8d895290ffc4027c7fe93ad3",
+    "parent": "41e83ee4375c6e6f037225099cef25f85845e40e",
+    "branch": "codex/cpp-stl-consumer-record-ownership",
+    "changed_files": [
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.h"
+    ],
+    "source_sha256": {
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp": "0efecbc8f39a52b621d36cd81f2ea06460bb24b0dbdfd71c400686f5de301b37",
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.h": "95dcf9e55ab7102099db154beed75a5dfc00d807ae2d50aee8dee82a72784bff"
+    },
+    "port_of_ownership_only_diff": "8f4ba90d..0cafc88a",
+    "not_fn_metadata_or_permission_added": false,
+    "source_record_owner": "Consumer",
+    "adapter_borrows_live_maps": true,
+    "template_event_vector_stability_implemented": false,
+    "incremental_source_event_indexing_implemented": false,
+    "current_sources_compiled_or_executed": false,
+    "late_sema_callback_runtime_regression_verified": false,
+    "work_branch_pushed": true,
+    "published_to_dev": false,
+    "full_ci_passed": false,
+    "goal_complete": false,
+    "push_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/consumer-record-ownership-push-1792473131654838000.log"
+  },
+  "actual_previous_104_request_evidence": {
+    "receipt": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-artifact-validation.json",
+    "receipt_sha256": "a2a230e5b0f20b6c66805e7be336b7c5d24910fbe8625435de62fcce6b4ff138",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245594924/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "3c070df74452a575ff1f41ff1fe14ce69b5e6aff65fa517a622b2efc478d901a",
+    "commit": "4412035d04ad9b57173e74b55f3f57c0e3843dec",
+    "run_id": 39381381628,
+    "artifact_id": 12245594924,
+    "actual_requests": 104,
+    "accepted_positive_requests": 24,
+    "original_source_guard_rejections": 72,
+    "failed_expectations": [
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      }
+    ]
+  },
+  "exact_bound_intrinsic_forward_primary_closure": true,
+  "ordinary_constructor_and_function_body_checks_retained": true,
+  "actual_previous_source_compilation_failure": {
+    "commit": "d5dafbc9171bc2d73915821d40d42bbfada9de8b",
+    "run_id": 39380075551,
+    "artifact_id": 12245028201,
+    "archive_sha256": "8002815b14407daf8380ab86ea2f7601921693008cb7fd954300e41dda5e46b0",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245028201/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "2c6914ee0da8f0dd455b79aa508d99655333351c66ad7a85bb990060b9bb4cea",
+    "failed_compile_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245028201/unpacked/cpp-pair-intrinsic-forward/compile/Frontend.cpp.log",
+    "failed_compile_log_sha256": "271db645e224dfd58cbc2fa10075ba81ebeb02a66d63ab413bf9b0699195614c",
+    "actual_requests": 0,
+    "source_compile_failed": true,
+    "compiler_runtime_verified": false
+  },
+  "delegation_arguments_source_completion": true,
+  "original_constructor_body_and_signature_checks_retained": true,
+  "newly_required_cases": [
+    "pair-piecewise-string-fill",
+    "pair-string-comparison-embedded-zero"
+  ],
+  "private_not_fn_admission_implemented": false,
+  "native_boundary_proof": {
+    "commit": "6d8cb6763c6f4885b3cc32c0d1d99b0ddb88da1d",
+    "report_sha256": "1768aaf77d3f1eb4a8a4e7bcd32dad6e9fd8658d366dd3a9522212c0a16b0b48",
+    "run_id": 39323246996,
+    "artifact_id": 12223883066
+  },
+  "original_source_sha256": {
+    "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
+    "MathSDK.cpp": "7268a11e319cf7c836bbb12e713bea645595804c55130f974de71346087dc084"
+  },
+  "inverse_source_sha256": {
+    "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
+    "MathSDK.cpp": "7268a11e319cf7c836bbb12e713bea645595804c55130f974de71346087dc084"
+  },
+  "observation_only": true
+}
