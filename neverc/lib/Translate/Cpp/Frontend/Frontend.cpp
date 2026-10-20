@@ -29647,6 +29647,17 @@ class Consumer : public ASTConsumer {
     Source.ParameterTypes.reserve(TypeCount);
     for (unsigned I = 0; I < TypeCount; ++I)
       Source.ParameterTypes.push_back({TypeParameters[I], ParameterTypes[I], PackIndices[I]});
+
+    // Observe collection itself, including callbacks from later completion.
+    if (Source.FunctionalNotFnConstraint) {
+        const auto File = S.sdkFile(Sources, Source.Location);
+        std::fprintf(stderr, "NOT_FN_CONSTRAINT_PACKET name=%s kind=%u sdk_not_fn=%u owned=%u canonical=%u defaults=%zu types=%zu\n",
+            Source.Template->getNameAsString().c_str(), static_cast<unsigned>(Source.Kind),
+            static_cast<unsigned>(File && File->Root == "libcxx" && File->Path == "__functional/not_fn.h"),
+            static_cast<unsigned>(S.owns(Sources, Source.Location)),
+            Source.Canonical ? Source.Canonical->size() : 0,
+            Source.Defaults.size(), Source.ParameterTypes.size());
+    }
     TemplateUses.push_back(std::move(Source));
   }
 
@@ -30267,22 +30278,6 @@ public:
         }
         if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
           return;
-      }
-    }
-
-    // Diagnostic-only read of the actual retained root packets, not permissions.
-    {
-      const auto Snapshot = TemplateUses;
-      for (const auto &Use : Snapshot) {
-        if (!Use.FunctionalNotFnConstraint) continue;
-        auto &SM = CI.getSourceManager();
-        const auto File = S.sdkFile(SM, Use.Location);
-        std::fprintf(stderr, "NOT_FN_CONSTRAINT_PACKET name=%s kind=%u sdk_not_fn=%u owned=%u canonical=%u defaults=%zu types=%zu\n",
-            Use.Template->getNameAsString().c_str(), static_cast<unsigned>(Use.Kind),
-            static_cast<unsigned>(File && File->Root == "libcxx" && File->Path == "__functional/not_fn.h"),
-            static_cast<unsigned>(S.owns(SM, Use.Location)),
-            Use.Canonical ? Use.Canonical->size() : 0,
-            Use.Defaults.size(), Use.ParameterTypes.size());
       }
     }
 
