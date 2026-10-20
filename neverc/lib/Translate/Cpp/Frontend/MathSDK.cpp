@@ -11145,12 +11145,16 @@ public:
   }
   bool zeroIndices(const CXXRecordDecl *R) {
     const auto *I = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
-    // This tag may be named without instantiating its class definition.
-    // Layout/source descriptions cannot read DefinitionData until it exists.
-    const auto *Definition = I ? I->getDefinition() : nullptr;
+    // This is an index tag identity, not a storage layout. Its specialization
+    // can remain lazy; authenticate the exact primary's source definition and
+    // the concrete zero-index arguments without requesting Sema completion.
+    const auto *Primary = I ? I->getSpecializedTemplate() : nullptr;
+    const auto *Definition = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
     if (!I || !I->getIdentifier() || I->getName() != "integer_sequence" ||
+        !I->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
         !Definition || Definition->getNumBases() || !Definition->field_empty() ||
-        !family(I, {"__utility/integer_sequence.h"})) return false;
+        !family(I, {"__utility/integer_sequence.h"}) ||
+        !family(Definition, {"__utility/integer_sequence.h"})) return false;
     const auto &Args = I->getTemplateArgs();
     if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Args[0].getAsType(), Context.getSizeType()) ||
