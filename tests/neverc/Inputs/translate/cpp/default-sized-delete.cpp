@@ -18,7 +18,7 @@ void operator delete(void *pointer) noexcept {
 void operator delete[](void *pointer) noexcept {
   ++arrayFrees; freedRaw = pointer; releasedAfter = eventCount;
 }
-extern "C" void default_sized_delete_observe(void *pointer);
+extern "C" { void *default_sized_delete_observed[2]{}; }
 struct R;
 R **reseat = nullptr;
 struct R {
@@ -91,13 +91,13 @@ extern "C" int default_sized_delete_check() {
   release_array(empty);
   if (freedRaw != raw || arrayFrees != 3 || eventCount != 3 || operandCalls != 5) return 11;
   int *plain = new int(9);
-  default_sized_delete_observe(plain);
+  default_sized_delete_observed[0] = plain;
   raw = allocatedRaw;
   if (*plain != 9) return 12;
   delete plain;
   if (freedRaw != raw || scalarFrees != 2 || eventCount != 3) return 13;
   int *values = new int[2]{8,9};
-  default_sized_delete_observe(values);
+  default_sized_delete_observed[1] = values;
   raw = allocatedRaw;
   if (values[1] != 9 || allocatedSize != 2 * sizeof(int)) return 14;
   delete[] values;
