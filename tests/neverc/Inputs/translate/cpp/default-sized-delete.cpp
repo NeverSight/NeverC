@@ -19,6 +19,9 @@ void operator delete[](void *pointer) noexcept {
   ++arrayFrees; freedRaw = pointer; releasedAfter = eventCount;
 }
 extern "C" { void *default_sized_delete_observed[2]{}; }
+extern "C" void *default_sized_delete_observed_at(int index) {
+  return default_sized_delete_observed[index];
+}
 struct R;
 R **reseat = nullptr;
 struct R {

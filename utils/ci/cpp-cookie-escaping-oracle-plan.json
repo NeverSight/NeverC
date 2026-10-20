@@ -12,8 +12,8 @@
   "source_basis": "76955e4dc9b421f9fa078955eb120609a6d2de32",
   "fixture": "tests/neverc/Inputs/translate/cpp/default-sized-delete.cpp",
   "harness": "tests/neverc/Inputs/translate/cpp/default-sized-delete-harness.c",
-  "fixture_sha256": "2e2fb0bd74706672abb72cb0d5b8b1c65e0167660e28dce34ca38543d30fa975",
-  "harness_sha256": "f59e902a7200d09f95f94909e49691d8893a5b1664aa93a5ee817c31a9bc3dc9",
+  "fixture_sha256": "4ef2b2f7d07168b6063a6f352c5d2cd13b876bce8591f09adb56095dd1a31bd7",
+  "harness_sha256": "44ea4a0e5900234bdb3c75fb51bf76088977c3584978359b2f56fcecdeb1e693",
   "prior_actual_native_oracle": {
     "commit": "6aee1f1ef4deb597cab3f715c22c9a855573d533",
     "run_id": 39407271094,
@@ -60,7 +60,7 @@
     "formal_xml": 0,
     "failure": "Downloader CLI requires --evidence; workflow omitted it before any compiler download or fixture execution."
   },
-  "escape_mode": "published-object-addresses",
+  "escape_mode": "published-address-accessor",
   "previous_foreign_declaration_rejection": {
     "commit": "113d99b69e3df1980c59f4eec9921b3035939e2e",
     "run_id": 39413680801,
@@ -69,5 +69,15 @@
     "actual_native_runs": 2,
     "actual_translated_runs": 0
   },
-  "previous_native_runs_passed": true
+  "previous_native_runs_passed": true,
+  "previous_c_global_link_rejection": {
+    "commit": "daf3bb2fd61cf7eb838fb4f2841ec235659812f2",
+    "run_id": 39416581466,
+    "artifact_id": 12263093231,
+    "report_sha256": "af747a1d23b96d7d12f569cb4f85ebc62695878ea48ef3029a099dba7beb7b57",
+    "actual_native_runs": 2,
+    "actual_translated_runs": 0
+  },
+  "previous_translation_succeeded": true,
+  "defined_c_accessor_only": true
 }
