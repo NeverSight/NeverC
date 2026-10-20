@@ -11145,8 +11145,11 @@ public:
   }
   bool zeroIndices(const CXXRecordDecl *R) {
     const auto *I = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
+    // This tag may be named without instantiating its class definition.
+    // Layout/source descriptions cannot read DefinitionData until it exists.
+    const auto *Definition = I ? I->getDefinition() : nullptr;
     if (!I || !I->getIdentifier() || I->getName() != "integer_sequence" ||
-        I->getNumBases() || !I->field_empty() ||
+        !Definition || Definition->getNumBases() || !Definition->field_empty() ||
         !family(I, {"__utility/integer_sequence.h"})) return false;
     const auto &Args = I->getTemplateArgs();
     if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
