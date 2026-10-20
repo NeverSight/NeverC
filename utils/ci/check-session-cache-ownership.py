@@ -198,8 +198,9 @@ def main():
                 row['legacy_mutable_payload_observed'] = True
             else:
                 assert old_cache not in text and 'WorkerCacheEpoch' not in text
-                tls = [line.split(maxsplit=7) for line in table.read_text().splitlines() if
-                       line.endswith('linker::session_detail::ActiveWorkerCache')]
+                symbols = [line.split(maxsplit=7) for line in table.read_text().splitlines()]
+                tls = [row for row in symbols if len(row) == 8 and row[3] == 'TLS'
+                       and row[7] == 'linker::session_detail::ActiveWorkerCache']
                 assert len(tls) == 1 and tls[0][3] == 'TLS' and int(tls[0][2]) == 8, tls
                 row['actual_nonowning_tls_binding_size'] = 8
                 row['legacy_epoch_and_tls_payload_absent'] = True
