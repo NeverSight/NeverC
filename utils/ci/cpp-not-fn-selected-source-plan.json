@@ -51,7 +51,7 @@
     "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
     "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp"
   ],
-  "source_repair_commit": "d8b2abf5969189eedd63e490a6480f898ed0fd42",
+  "source_repair_commit": "c07b084f394a4557b2d4420892185ae93a9515c6",
   "target_abis": [
     "x86_64-unknown-linux-gnu"
   ],
@@ -235,7 +235,7 @@
   "full_feature_completion_proved_by_this_job": false,
   "all_five_internal_adapter_consumers_rebuilt": true,
   "original_public_c_entry_abi_unchanged": true,
-  "exact_source_revision": "d8b2abf5969189eedd63e490a6480f898ed0fd42",
+  "exact_source_revision": "c07b084f394a4557b2d4420892185ae93a9515c6",
   "consumer_record_ownership_source": {
     "commit": "4239be93f596895b8d895290ffc4027c7fe93ad3",
     "parent": "41e83ee4375c6e6f037225099cef25f85845e40e",
@@ -362,11 +362,11 @@
   },
   "original_source_sha256": {
     "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
-    "MathSDK.cpp": "e9e55587bf67f8248f6ab9b1310ef892007aed11f2a1d50ed4f5b8f73e2ca8ac"
+    "MathSDK.cpp": "2f50f7c3460811701a5a8b2e64e16cb663576dd16b24a655a7b63f9936064a8d"
   },
   "inverse_source_sha256": {
     "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
-    "MathSDK.cpp": "e9e55587bf67f8248f6ab9b1310ef892007aed11f2a1d50ed4f5b8f73e2ca8ac"
+    "MathSDK.cpp": "2f50f7c3460811701a5a8b2e64e16cb663576dd16b24a655a7b63f9936064a8d"
   },
   "observation_only": true,
   "inverse_source_edits": {
@@ -701,5 +701,12 @@
     "report_sha256": "5c6b489afe93ba04f4ec9cc0449be905e13ed07bca84f3596acba15af1b1581e",
     "actual_requests": 23
   },
-  "observe_rejected_declaration_only_no_family_permission": true
+  "observe_rejected_declaration_only_no_family_permission": true,
+  "tuple_index_forward_declaration_proof": {
+    "commit": "5263b6087a4d68a1c3f450b0086fa8fc0dabf06d",
+    "run_id": 39442703005,
+    "artifact_id": 12273499658,
+    "report_sha256": "7c648fbb94f304ee7766d5f840f95891fd233f13aa780fe248552fa04ae55d11"
+  },
+  "tuple_index_sdk_header_sha256": "bc441b89e44e2c7cb50d06d62e73d22214bdff113c2b71dd69d2f001b21cdd2c"
 }

@@ -11312,7 +11312,7 @@ describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
       Impl->getTemplateArgs().size() != 2 || Impl->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       !Check.oneTypePack(Impl->getTemplateArgs()[1], Callable)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11302\n"; return std::nullopt; }
   const auto *TupleIndices = Check.record(Impl->getTemplateArgs()[0].getAsType(),
-      "__tuple_indices", {"__tuple/tuple_indices.h"});
+      "__tuple_indices", {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"});
   if (!TupleIndices || TupleIndices->getNumBases() || !TupleIndices->field_empty() ||
       TupleIndices->getTemplateArgs().size() != 1 ||
       TupleIndices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
