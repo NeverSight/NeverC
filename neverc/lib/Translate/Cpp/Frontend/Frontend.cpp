@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include "llvm/Support/raw_ostream.h"
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -22273,10 +22275,14 @@ public:
     const auto Location = Selection.Location;
     const PairConstructorSourceKey Key{Construction, Factory};
     if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
-      return false;
+      return std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
+            ? (llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
+            : false;
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
-        Found == FunctionSources.end() || Found->second.empty()) return false;
+        Found == FunctionSources.end() || Found->second.empty()) return std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
+            ? (llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
+            : false;
     const TemplateUseSource *First = nullptr;
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
@@ -22290,7 +22296,9 @@ public:
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
               Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
-        return false;
+        return std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
+            ? (llvm::errs() << "PAIR_SOURCE_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
+            : false;
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
       Members.insert(LocalMembers.begin(), LocalMembers.end());
