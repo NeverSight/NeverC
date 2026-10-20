@@ -187,5 +187,14 @@
   "native_product_execution_in_this_job": false,
   "formal_xml_in_this_job": 0,
   "all_binaries_remote_only": true,
-  "full_feature_completion_proved_by_this_job": false
+  "full_feature_completion_proved_by_this_job": false,
+  "production_runtime_contract": {
+    "path": "neverc/cmake/caches/NeverC.cmake",
+    "sha256": "7ba23cef496157ed77c20599757e34c8d3af8f9f415a66313111b4de537c966f",
+    "source_line": "set(CMAKE_MSVC_RUNTIME_LIBRARY \"MultiThreaded$<$<CONFIG:Debug>:Debug>\" CACHE STRING \"\" FORCE)",
+    "release_runtime": "MultiThreaded",
+    "compiler_option": "/MT",
+    "same_as_original_official_arm_build": true,
+    "previous_diagnostic_was_not_a_production_runtime_match": true
+  }
 }

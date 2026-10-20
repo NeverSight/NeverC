@@ -168,7 +168,7 @@ def main():
             shutil.copyfile(generated[0].parent / name, destination / name)
         shutil.copyfile(private / 'NeverCCppPrivatePrefix.h', destination / 'NeverCCppPrivatePrefix.h')
         caller = destination / 'actual-private-frontend.exe'
-        run(['cl', '/nologo', '/std:c++17', '/EHsc', '/MD', '/O2',
+        run(['cl', '/nologo', '/std:c++17', '/EHsc', '/MT', '/O2',
              '/I' + str(frontend), root / 'utils/ci/ArmCurrentFrontendDriver.cpp',
              '/Fo' + str(destination / 'caller.obj'), '/Fe' + str(caller), archive,
              '/link', 'psapi.lib', 'shell32.lib', 'ole32.lib', 'uuid.lib',
@@ -234,6 +234,10 @@ def main():
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         report['source_sha256'] = {name: sha(root / name) for name in plan['source_paths']}
         assert input_hashes() == plan['current_private_input_sha256']
+        contract = plan['production_runtime_contract']
+        assert sha(root / contract['path']) == contract['sha256']
+        assert contract['source_line'] in (root / contract['path']).read_text()
+        report['production_msvc_runtime'] = 'MultiThreaded (/MT)'
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256']
         catalog = json.loads((sdk / 'catalog.json').read_text())
@@ -251,6 +255,7 @@ def main():
         run(['cmake', '-S', root / 'llvm', '-B', build / 'owner', '-G', 'Ninja',
              '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=cl', '-DCMAKE_CXX_COMPILER=cl',
              '-DCMAKE_SYSTEM_PROCESSOR=ARM64', '-DLLVM_ENABLE_PROJECTS=neverc',
+             '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
              '-DLLVM_ENABLE_ASSERTIONS=OFF', '-DLLVM_TARGETS_TO_BUILD=X86;AArch64',
              '-DPython3_EXECUTABLE=' + sys.executable, '-DNEVERC_CPP_BUILD_JOBS=4',
              '-DNEVERC_INCLUDE_TESTS=OFF', '-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF',
