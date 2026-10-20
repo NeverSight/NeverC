@@ -12116,6 +12116,8 @@ class NotFnPointerSourceProof {
   const SourceManager &SM;
   const ASTContext &Context;
   NotFnSelectedSource Check;
+  const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
+  const std::map<const TypeTraitExpr *, OperationTraitSource> &OperationTraits;
   UtilityTupleQueryGraph Graph;
   llvm::ArrayRef<const TemplateUseSource *> Sources;
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
@@ -12282,6 +12284,7 @@ public:
       const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
       const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits)
       : S(S), SM(SM), Context(Context), Check(S, SM, Context),
+        SpecialMembers(Members), OperationTraits(Traits),
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature),
         Sources(Sources), Selections(Selections) {}
 
@@ -12331,7 +12334,7 @@ public:
     }
     const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
     if (!Tags || Tags->size() != 4) return false;
-    UtilityTupleQueryGraph Tuple(S, SM, Context, EmptyMembers, EmptyTraits,
+    UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
                                 UtilityTupleQueryMode::CatSignature);
     for (const auto &Tag : *Tags)
       if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
@@ -12341,7 +12344,22 @@ public:
     for (const auto *Construction : Factory.Selected.SelectedConstructions) {
       const auto *Constructor = Construction->getConstructor();
       const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
-      if (!PrimaryTemplate) continue;
+      if (!PrimaryTemplate) {
+        // The selected inherited constructor has no independent written
+        // parameter tokens. Its actual base constructor supplies that source.
+        if (!Constructor->isInheritingConstructor()) return false;
+        const auto *Base = Constructor->getInheritedConstructor().getConstructor();
+        if (!Base || !Graph.function(Base)) return false;
+        continue;
+      }
+      if (Constructor->getParent()->getCanonicalDecl() == Pointer->Forwarder->getCanonicalDecl()) {
+        if (!Graph.function(Constructor)) return false;
+      } else if (!Tuple.function(Constructor)) return false;
+      if (const auto *Written = Constructor->getTypeSourceInfo()) {
+        auto &Signatures = Constructor->getParent()->getCanonicalDecl() == Pointer->Forwarder->getCanonicalDecl()
+            ? Graph : Tuple;
+        if (!Signatures.TraverseTypeLoc(Written->getTypeLoc())) return false;
+      }
       bool Found = false;
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
@@ -12398,11 +12416,7 @@ public:
         !parameterTypes(Use)) return false;
     return true;
   }
-  static const std::map<const CXXMethodDecl *, SpecialMemberSource> EmptyMembers;
-  static const std::map<const TypeTraitExpr *, OperationTraitSource> EmptyTraits;
 };
-const std::map<const CXXMethodDecl *, SpecialMemberSource> NotFnPointerSourceProof::EmptyMembers;
-const std::map<const TypeTraitExpr *, OperationTraitSource> NotFnPointerSourceProof::EmptyTraits;
 } // namespace
 
 std::optional<FunctionalNotFnStorage>
@@ -12413,7 +12427,8 @@ approvedFunctionalNotFnPointerStorage(const State &S, const SourceManager &SM,
       !Storage->Record->hasTrivialCopyConstructor() ||
       !Storage->Record->hasTrivialMoveConstructor() ||
       !Storage->Record->hasTrivialDestructor() ||
-      !ordinaryCallbackPrototype(Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()))
+      !ordinaryCallbackPrototype(Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()) ||
+      !Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType()->isArithmeticType())
     return std::nullopt;
   return Storage;
 }
