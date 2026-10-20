@@ -51,7 +51,7 @@
     "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
     "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp"
   ],
-  "source_repair_commit": "c07b084f394a4557b2d4420892185ae93a9515c6",
+  "source_repair_commit": "41dd086d0dd91d2c76cba9c1a823d960f1ae3e6b",
   "target_abis": [
     "x86_64-unknown-linux-gnu"
   ],
@@ -223,11 +223,25 @@
       "source_sha256": "963411ddb31c1a2bd86e25f6569990d93b0fa2a08604c71ca5b0ba065f30bf88",
       "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
       "expected": "reject"
+    },
+    {
+      "name": "live-source-ready",
+      "source": "#include <cstddef>\ntemplate<class T> struct NotFnLateLeaf { T value; };\ntemplate<class T> struct NotFnLateInner { NotFnLateLeaf<T> *value; };\ntemplate<class T> struct NotFnLateReady { NotFnLateInner<T> *value; };\nusing NotFnLateProbe = NotFnLateReady<int>;\nint main() { return 0; }\n",
+      "source_sha256": "26b1d82bb2be574a9cb1496ee2ad1a1d8b92290be3c08972d2169e4c867f9c40",
+      "expected": "accept",
+      "category": "actual-late-source-diagnostic"
+    },
+    {
+      "name": "live-source-failed",
+      "source": "#include <cstddef>\nstruct NotFnLateNoMember {};\ntemplate<class T> struct NotFnLateInner { T *value; };\ntemplate<class T> struct NotFnLateFail {\n  NotFnLateInner<T> *value;\n  typename T::missing invalid;\n};\nusing NotFnLateProbe = NotFnLateFail<NotFnLateNoMember>;\nint main() { return 0; }\n",
+      "source_sha256": "61dd70991b9a085d674b68b4c993f509b713a1a37c020f640ba8a1c8597f0253",
+      "expected": "reject",
+      "category": "actual-late-source-diagnostic"
     }
   ],
-  "required_requests": 23,
-  "required_acceptances": 3,
-  "required_guard_rejections": 20,
+  "required_requests": 25,
+  "required_acceptances": 4,
+  "required_guard_rejections": 21,
   "original_guards_modified": false,
   "frontend_execution_timeout_seconds": 60,
   "source_trace_included": true,
@@ -235,7 +249,7 @@
   "full_feature_completion_proved_by_this_job": false,
   "all_five_internal_adapter_consumers_rebuilt": true,
   "original_public_c_entry_abi_unchanged": true,
-  "exact_source_revision": "c07b084f394a4557b2d4420892185ae93a9515c6",
+  "exact_source_revision": "41dd086d0dd91d2c76cba9c1a823d960f1ae3e6b",
   "consumer_record_ownership_source": {
     "commit": "4239be93f596895b8d895290ffc4027c7fe93ad3",
     "parent": "41e83ee4375c6e6f037225099cef25f85845e40e",
@@ -361,11 +375,11 @@
     "artifact_id": 12223883066
   },
   "original_source_sha256": {
-    "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
+    "Frontend.cpp": "57a261d571e9bc0adb9b58b3fe0446033237022d14b7571cfb45fe57dd2ab97c",
     "MathSDK.cpp": "2f50f7c3460811701a5a8b2e64e16cb663576dd16b24a655a7b63f9936064a8d"
   },
   "inverse_source_sha256": {
-    "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
+    "Frontend.cpp": "57a261d571e9bc0adb9b58b3fe0446033237022d14b7571cfb45fe57dd2ab97c",
     "MathSDK.cpp": "2f50f7c3460811701a5a8b2e64e16cb663576dd16b24a655a7b63f9936064a8d"
   },
   "observation_only": true,
@@ -654,6 +668,22 @@
     ],
     "Frontend.cpp": [
       {
+        "original": "  bool SourceEventsReady = false, SourceEventsSealed = false,\n       IndexingSourceEvents = false;",
+        "inserted": "  bool SourceEventsReady = false, SourceEventsSealed = false,\n       IndexingSourceEvents = false;\n  std::set<const Type *> LiveSourceObservedTypes;\n  void observeLiveSourceCompletion(const TemplateUseSource &Source, bool Nested) {\n    if (Source.Kind != TemplateSourceKind::Type || !Source.Template || !Source.Type ||\n        !Source.Template->getIdentifier()) return;\n    const auto Name = Source.Template->getName();\n    if ((!Nested && Name != \"NotFnLateReady\" && Name != \"NotFnLateFail\") ||\n        (Nested && Name != \"NotFnLateInner\") ||\n        !LiveSourceObservedTypes.insert(Source.Type).second) return;\n    const auto *Record = QualType(Source.Type, 0)->getAsCXXRecordDecl();\n    if (!Record || !A.S.owns(A.Sources, Source.Location)) return;\n    // Only the two added diagnostic requests have these source-owned names.\n    // The failed request preserves its already retained events; its nested\n    // completion is observed only in the successful int specialization.\n    if (Nested) {\n      const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);\n      if (!Instance || Instance->getTemplateArgs().size() != 1 ||\n          Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||\n          !Instance->getTemplateArgs()[0].getAsType()->isSpecificBuiltinType(BuiltinType::Int)) return;\n    }\n    llvm::errs() << \"LIVE_SOURCE_COMPLETE_BEGIN name=\" << Name\n        << \" nested=\" << Nested << \" indexing=\" << IndexingSourceEvents\n        << \" ready=\" << SourceEventsReady\n        << \" definition=\" << bool(Record->getDefinition())\n        << \" uses=\" << TemplateUseCursor << \" calls=\" << SelectedCallCursor << \"\\n\";\n    bool Complete = false;\n    auto Finish = llvm::make_scope_exit([&] {\n      llvm::errs() << \"LIVE_SOURCE_COMPLETE_END name=\" << Name\n          << \" nested=\" << Nested << \" result=\" << Complete\n          << \" uses=\" << TemplateUseCursor << \" calls=\" << SelectedCallCursor << \"\\n\";\n    });\n    Complete = A.CompleteSDKRecord && A.CompleteSDKRecord(QualType(Source.Type, 0), Source.Location);\n    if (!Complete)\n      A.reject(Source.Location, \"diagnostic failed source completion\",\n               \"The actual diagnostic Sema completion failed; retained events grant no permission.\");\n  }"
+      },
+      {
+        "original": "    const auto L = Source.Location;\n    A.chargeExpansion(1, L);\n    if (approvedStandardSDKDeclaration(A.S, A.Sources, Source.Template)) {",
+        "inserted": "    const auto L = Source.Location;\n    observeLiveSourceCompletion(Source, false);\n    A.chargeExpansion(1, L);\n    if (approvedStandardSDKDeclaration(A.S, A.Sources, Source.Template)) {"
+      },
+      {
+        "original": "    for (const auto &Source : Sources) {\n      A.chargeExpansion(1, Source.Location);\n      switch (Source.Kind) {",
+        "inserted": "    for (const auto &Source : Sources) {\n      A.chargeExpansion(1, Source.Location);\n      if (IndexingSourceEvents) observeLiveSourceCompletion(Source, true);\n      switch (Source.Kind) {"
+      },
+      {
+        "original": "      TemplateUseCursor += Pending->Uses.size();\n      SelectedCallCursor += Pending->Calls.size();",
+        "inserted": "      llvm::errs() << \"LIVE_SOURCE_BATCH uses_before=\" << TemplateUseCursor\n          << \" calls_before=\" << SelectedCallCursor << \" uses_added=\" << Pending->Uses.size()\n          << \" calls_added=\" << Pending->Calls.size() << \" indexing=\" << IndexingSourceEvents << \"\\n\";\n      TemplateUseCursor += Pending->Uses.size();\n      SelectedCallCursor += Pending->Calls.size();"
+      },
+      {
         "inserted": "// Diagnostic only: observe descriptors without granting any operation.\nclass NotFnSelectedSourceObservation\n    : public RecursiveASTVisitor<NotFnSelectedSourceObservation> {\n  Adapter &A;\n  llvm::ArrayRef<TemplateUseSource> Uses;\n  llvm::ArrayRef<SelectedTemplateCallSource> Calls;\npublic:\n  NotFnSelectedSourceObservation(Adapter &A, llvm::ArrayRef<TemplateUseSource> Uses,\n      llvm::ArrayRef<SelectedTemplateCallSource> Calls) : A(A), Uses(Uses), Calls(Calls) {}\n  bool VisitCallExpr(CallExpr *Call) {\n    if (!A.S.owns(A.Sources, Call->getExprLoc())) return true;\n    const auto *Function = Call->getDirectCallee();\n    if (!Function) return true;\n    if (Function->getIdentifier() && Function->getName() == \"not_fn\") {\n      const auto Storage = describeFunctionalNotFnStorage(A.S, A.Sources,\n          Call->getType()->getAsCXXRecordDecl(), A.Context);\n      const auto Factory = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);\n      unsigned Selected = 0, RetainedUses = 0, Bound = 0;\n      for (const auto &Selection : Calls) {\n        if (Selection.Expression != Call || Selection.Function != Function) continue;\n        ++Selected;\n        for (const auto &Use : Uses) {\n          if (Use.Kind != TemplateSourceKind::Function || Use.Declaration != Function) continue;\n          ++RetainedUses;\n          const auto Template = describeFunctionalNotFnFactoryTemplateSource(\n              A.S, A.Sources, Selection, Use, A.Context);\n          Bound += Template.has_value();\n          llvm::errs() << \"NOT_FN_DEFAULTS count=\" << Use.Defaults.size();\n          for (const auto &Default : Use.Defaults)\n            llvm::errs() << \" written=\" << bool(Default.Written.getTypeSourceInfo())\n                         << \" converted=\" << bool(Default.Converted.getTypeSourceInfo());\n          llvm::errs() << \"\\n\";\n        }\n      }\n      const auto Tags = Factory ? describeFunctionalNotFnTupleTagSources(\n          A.S, A.Sources, *Factory, A.Context) : std::nullopt;\n      llvm::errs() << \"NOT_FN_FACTORY storage=\" << bool(Storage)\n          << \" factory=\" << bool(Factory) << \" selected=\" << Selected\n          << \" uses=\" << RetainedUses << \" bound=\" << Bound\n          << \" tags=\" << (Tags ? Tags->size() : 0) << \"\\n\";\n      Function->dump(llvm::errs());\n    }\n    const auto *Method = dyn_cast<CXXMethodDecl>(Function);\n    const auto Origin = A.S.sdkFile(A.Sources, Function->getLocation());\n    if (Method && Method->isOverloadedOperator() &&\n        Method->getOverloadedOperator() == OO_Call && Origin &&\n        Origin->Root == \"libcxx\" && Origin->Path == \"__functional/perfect_forward.h\") {\n      const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,\n          A.Context, FunctionalNotFnSourceMode::Runtime);\n      const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,\n          A.Context, FunctionalNotFnSourceMode::Signature);\n      llvm::errs() << \"NOT_FN_CALL runtime=\" << bool(Runtime)\n                   << \" signature=\" << bool(Signature) << \"\\n\";\n    }\n    return true;\n  }\n};\n\n",
         "original": ""
       },
@@ -708,5 +738,10 @@
     "artifact_id": 12273499658,
     "report_sha256": "7c648fbb94f304ee7766d5f840f95891fd233f13aa780fe248552fa04ae55d11"
   },
-  "tuple_index_sdk_header_sha256": "bc441b89e44e2c7cb50d06d62e73d22214bdff113c2b71dd69d2f001b21cdd2c"
+  "tuple_index_sdk_header_sha256": "bc441b89e44e2c7cb50d06d62e73d22214bdff113c2b71dd69d2f001b21cdd2c",
+  "required_original_guard_rejections": 20,
+  "original_23_requests_unchanged": true,
+  "live_source_forced_diagnostic_not_natural_not_fn_path": true,
+  "live_source_exact_syntax_commit": "c7655f5441a1674abe2f173af3b310a93565b217",
+  "live_source_exact_syntax_report_sha256": "f800949777633ab7a599072d5a8dd7fc5eb10bb334bf160923c81912296f53dd"
 }

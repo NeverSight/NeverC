@@ -342,7 +342,7 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 23 and len(report['invocation_inventory']) == 115
+        assert len(report['requests']) == 25 and len(report['invocation_inventory']) == 125
         passed = all(row['expectation_satisfied'] for row in report['requests'])
         report.update(completed=True, evidence_authenticated=True, passed=False,
                       diagnostic_request_contract_satisfied=passed,
