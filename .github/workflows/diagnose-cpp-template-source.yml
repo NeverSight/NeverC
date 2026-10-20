@@ -973,8 +973,8 @@ jobs:
         \ log.open('w') as stream:\n        result=subprocess.run(['python3','utils/plugin-api/check-docs-'+name+'.py'],stdout=stream,stderr=subprocess.STDOUT)\n\
         \    print(log.read_text())\n    checks.append({'name':name,'returncode':result.returncode,'log':log.name,'log_sha256':hashlib.sha256(log.read_bytes()).hexdigest()})\n\
         receipt={'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'passed':all(v['returncode']==0\
-        \ for v in checks),'checks':checks,'compiler_executed':False}\n(p/'documentation-checks.json').write_text(json.dumps(receipt,indent=2)+'\n\
-        ')\nraise SystemExit(0 if receipt['passed'] else 1)\nPY\n"
+        \ for v in checks),'checks':checks,'compiler_executed':False}\n(p/'documentation-checks.json').write_text(json.dumps(receipt,indent=2)+'\\\
+        n')\nraise SystemExit(0 if receipt['passed'] else 1)\nPY\n"
     - name: Install matching Clang20 source diagnostic toolchain
       run: 'curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
