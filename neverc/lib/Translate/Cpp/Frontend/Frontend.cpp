@@ -10122,6 +10122,81 @@ class UtilityPairByteComparisonSources
     return Spelling && Spelling->Root == "libcxx" && Expansion &&
            Expansion->Root == "libcxx";
   }
+  bool stringConstantQuery(CallExpr *Call, const FunctionDecl *Function) {
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    if (!Origin || Origin->Root != "libcxx" || Origin->Path != "string" ||
+        Function->getBuiltinID() != Builtin::BI__builtin_constant_p ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BI__builtin_constant_p ||
+        !Function->isImplicit() || Function->isInvalidDecl() || Function->hasBody() ||
+        Function->getPrimaryTemplate() || Function->getNumParams() ||
+        !Function->isVariadic() || !Prototype || !Prototype->isNothrow() ||
+        !A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy) ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||
+        Reference->getDecl() != Function || Reference->getFoundDecl() != Function ||
+        !Cast->getType()->isFunctionPointerType() ||
+        !A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType()) ||
+        Call->getNumArgs() != 1 || !Call->isPRValue() ||
+        !A.Context.hasSameType(Call->getType(), A.Context.IntTy) ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType()))
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!Declaration->isImplicit() || Declaration->getBuiltinID() != Builtin::BI__builtin_constant_p)
+        return false;
+      if (Declaration->getLocation().isValid()) {
+        const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
+        if (!File || File->Root != "libcxx" ||
+            (File->Path != "string" && File->Path != "__utility/is_valid_range.h"))
+          return false;
+      }
+    }
+    // A compiler proof query in the immutable helper, never an emitted call.
+    // The enclosing visitor still closes the original member/operand sources.
+    return true;
+  }
+  bool stringPointerAddressof(CallExpr *Call, const FunctionDecl *Function) {
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    const auto Element = A.Context.CharTy.withConst();
+    const auto Pointer = A.Context.getPointerType(Element);
+    if (!Origin || Origin->Root != "libcxx" ||
+        Origin->Path != "__memory/pointer_traits.h" ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIaddressof ||
+        Function->getBuiltinID() != Builtin::BIaddressof ||
+        !Function->getIdentifier() || Function->getName() != "addressof" ||
+        !Primary || !Function->isInlined() || !Function->isConstexpr() ||
+        Function->getNumParams() != 1 || Function->getParamDecl(0)->hasDefaultArg() ||
+        !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() || !Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(Arguments->get(0).getAsType(), Element) ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||
+        Reference->getDecl() != Function ||
+        (Reference->getFoundDecl() != Function && Reference->getFoundDecl() != Primary) ||
+        operationCalleePrototype(Call) != Prototype ||
+        Call->getNumArgs() != 1 || !Call->isPRValue() || !Call->getArg(0)->isLValue() ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(), Element) ||
+        !A.Context.hasSameType(Function->getParamDecl(0)->getType(),
+                              A.Context.getLValueReferenceType(Element)) ||
+        !A.Context.hasSameType(Function->getReturnType(), Pointer) ||
+        !A.Context.hasSameType(Call->getType(), Pointer))
+      return false;
+    // Clang implements this selected library builtin. Its primary and every
+    // declaration still come from the immutable SDK; operands keep traversing.
+    return utilitySDKFunctionSource(A, Function, "__memory/addressof.h",
+                                     /*RequireDefinition=*/false);
+  }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
@@ -10205,6 +10280,10 @@ public:
     if (!Function)
       return false;
     if (Function->getBuiltinID()) {
+      if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
+        return stringConstantQuery(Call, Function);
+      if (Function->getBuiltinID() == Builtin::BIaddressof)
+        return stringPointerAddressof(Call, Function);
       const auto Name = Function->getName();
       return location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
@@ -10255,7 +10334,7 @@ static bool utilityPairSelectedComparisonSource(Adapter &A,
   if (!utilitySDKFunctionSource(A, Call->getDirectCallee(), "__utility/pair.h"))
     return false;
   for (const auto *Child : *Comparisons) {
-    const auto Operation = approvedUtilityOperation(A.S, A.Sources, Child, A.Context);
+    const auto Operation = approvedUtilityPairComparisonChildOperation(A.S, A.Sources, Child, A.Context);
     if (!Operation)
       return false;
     if (*Operation == UtilityOperation::MemoryUniquePtrEqual ||
@@ -13952,6 +14031,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
       Args.push_back(zero(Optional->Engaged->getType(), L));
+      if (Optional->TailPaddingBytes)
+        Args.push_back(zero(Context.getConstantArrayType(
+                                Context.UnsignedCharTy,
+                                llvm::APInt(64, Optional->TailPaddingBytes),
+                                nullptr, ArraySizeModifier::Normal, 0),
+                            L));
     } else {
       if (const auto *Base = emptyBase(R))
         Args.push_back(zero(Context.getRecordType(Base->Base), L));
@@ -28738,6 +28823,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
         Fields.push_back(json::Object{
             {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+      if (UtilityOptional->TailPaddingBytes)
+        Fields.push_back(json::Object{
+            {"name", "nct_optional_tail_storage"},
+            {"type", "arr:" + std::to_string(UtilityOptional->TailPaddingBytes) +
+                         ":u8"}});
     } else {
       for (const auto *F : R->fields())
         Fields.push_back(json::Object{
@@ -28793,6 +28883,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         const auto &StorageLayout =
             Context.getASTRecordLayout(UtilityOptional->DestructBase);
         Offsets.push_back(StorageLayout.getFieldOffset(1));
+        if (UtilityOptional->TailPaddingBytes)
+          Offsets.push_back(StorageLayout.getFieldOffset(1) +
+                           Context.getTypeSize(UtilityOptional->Engaged->getType()));
       } else {
         for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
           Offsets.push_back(Layout.getFieldOffset(I));

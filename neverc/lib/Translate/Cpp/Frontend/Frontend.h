@@ -1660,6 +1660,10 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const clang::ASTContext &Context,
     std::vector<UtilityPairElementAssignment> *SelectedAssignments =
         nullptr);
+std::optional<UtilityOperation>
+approvedUtilityPairComparisonChildOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Call, const clang::ASTContext &Context);
 std::optional<std::vector<const clang::CXXOperatorCallExpr *>>
 approvedUtilityPairSelectedComparisons(
     const State &S, const clang::SourceManager &SM,
@@ -2110,6 +2114,7 @@ struct UtilityOptionalRecord {
   const clang::CXXRecordDecl *StorageBase, *DestructBase;
   const clang::FieldDecl *Value, *Engaged;
   clang::QualType ElementType;
+  uint64_t TailPaddingBytes = 0;
 };
 std::optional<FunctionalReferenceRecord>
 approvedUtilityOptionalReferenceEmplace(const State &S,

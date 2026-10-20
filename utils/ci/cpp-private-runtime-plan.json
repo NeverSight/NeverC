@@ -1,28 +1,28 @@
 {
-  "component_commit": "dfe3d6673cb394f62d0e01dd94e1332dbc5ccce1",
-  "component_run_id": 39383666022,
-  "component_actual_job": 118498344099,
+  "component_commit": "e01d409932c934b382f82a169e21d9b374aa15f9",
+  "component_run_id": 39415737904,
+  "component_actual_job": 118604178688,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12247545155,
-    "name": "cpp-pair-intrinsic-forward-dfe3d6673cb394f62d0e01dd94e1332dbc5ccce1",
-    "digest": "sha256:c714a832f61775c992b05b6eb8f6ab7574723282cf30f58904e89248fabba087"
+    "id": 12262822143,
+    "name": "cpp-pair-string-source-repair-e01d409932c934b382f82a169e21d9b374aa15f9",
+    "digest": "sha256:3b687f9b79ea698afe7480d90c8df60ac55ec771e470386768be38bcf85cc37c"
   },
   "component_archive_artifact": {
-    "id": 12247295674,
-    "name": "cpp-current-private-archive-remote-only-dfe3d6673cb394f62d0e01dd94e1332dbc5ccce1",
-    "digest": "sha256:b2fcca302ae4c4efa0b67daae326afd9f00a39f7b2e805b03bbd6984e28627b0"
+    "id": 12263446493,
+    "name": "cpp-current-private-archive-remote-only-e01d409932c934b382f82a169e21d9b374aa15f9",
+    "digest": "sha256:83f103ab263ce89897bcdce181880ae1ba8330b707e41836b7a8d8451ef0a66e"
   },
-  "component_report_sha256": "b45b637342bcf96a0f7c407f2d1a2dc1d6f20e6d8afb7e451ed16abde73da1dc",
-  "private_archive_sha256": "7cbb028748a65a9340cf110ffbb31fac20b0cc1e3699d335cccbca6247a668a1",
-  "frontend_build_id": "cpp-frontend-1-7f772551cc64104837c39e888524c4c637970305d4ae752a1f9f41014cef87c4",
+  "component_report_sha256": "e082c53025f19540e5f2a1ae744ba10a2200d9997ce37714733fa81a0f83de1b",
+  "private_archive_sha256": "6861655230bd7d4d7a81b3594411f07a1766ee97a67cf2a7109449a01e23490c",
+  "frontend_build_id": "cpp-frontend-1-3eb44639400a36385b478d829da6a7d10b5c6bc0ad37ac13d9d33fc94644a9f3",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "0331b1806b61351dba9b31daf469bee0e032a95da610f10f162fbc41abc92406",
-    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Frontend.cpp": "c47e81acc1287f8429e50800fcf05977d26095733c254d1a1381a7ebcd482552",
+    "Lowering.cpp": "3c9e34f87636423a66c234f02e6d85ab0456585d88cffe87d1a74c3db0371db3",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "1faed8c89fcf05d57d6c1aee0058991da21c4a06cfe1eebb18758456c26e2685",
+    "MathSDK.cpp": "74d899776eeaf76276dc53e4b246a53a1ae100cfda9ef3f30c764e3fd4e18f3c",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "95dcf9e55ab7102099db154beed75a5dfc00d807ae2d50aee8dee82a72784bff",
+    "Frontend.h": "cd1961bd9a7171b5fd022f114577b5e43bac677a9467d3eec050634d5e892289",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 39360350577,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "e286a0555c8a0ad76818be2eb43e4cd8b61213a2e4a1764e18707830266deac3",
+  "original_tests_file_sha256": "0099922e5f92464dde0ea0c4d9cd0359d0659eeb886a099d6f558c17ef8e70b5",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -100,5 +100,18 @@
     "cause": "The project include expanded Python3_EXECUTABLE before the Python package was found; the generated PRE_LINK command was omitted.",
     "fix": "Resolve the real pinned Python before constructing PRE_LINK and require actual command and audit success evidence before running tests.",
     "known_pair_failures_not_fixed_by_this_harness_change": true
+  },
+  "actual_previous_verified_source_rejections": {
+    "commit": "c82b63d96ed042daa4ef1b9f91fb9dd208df25ac",
+    "run_id": 39393293195,
+    "artifact_id": 12250842864,
+    "actual_host_abi_audit_verified": true,
+    "actual_original_formal_xml": 124,
+    "actual_original_formal_passed": 122,
+    "actual_formal_failed": [
+      "TranslateTest.CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations"
+    ],
+    "report_sha256": "2b49ae956bae9d72ddc081f225315a6e7e94eab72e17baf6362bb5bef8ce2cce"
   }
 }
