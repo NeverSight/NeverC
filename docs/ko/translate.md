@@ -4,6 +4,8 @@
 
 # C++를 NeverC로 변환
 
+Linux에서 부동 소수점 분포를 샘플링하는 생성 C23 프로그램을 링크할 때는 `-lm`을 지정하세요. 네이티브 비교 프로그램과 생성 프로그램은 모두 `-fno-fast-math -ffp-contract=off`로 컴파일하세요.
+
 Core v2는 지원하는 원시 포인터 또는 인증된 래핑 반복자의 스칼라 범위에서 `std::shuffle`과 C++17 `std::sample`을 직접 낮춥니다. 생성기는 소스 소유의 표준 레이아웃 레코드이며, 복사와 소멸이 trivial해야 합니다. bool을 제외한 최대 64비트 부호 없는 `result_type`을 직접 선언하고, 같은 타입을 반환하는 무인자 호출 연산자와 단일 상수 return으로 `min() < max()`를 만족하는 static constexpr `min()`/`max()`를 정의해야 합니다. 생성기를 참조로 전달하여 상태, libc++의 정확한 거부 재추출 횟수와 독립 비트 조합을 유지합니다. Sample은 최대 64비트의 음이 아닌 내장 정수 개수를 받아 입력 순서를 유지하고 쓰기 가능한 출력의 끝 포인터를 반환합니다. 빈 범위나 단일 요소 shuffle, 개수가 0이거나 입력이 빈 sample은 생성기를 호출하지 않습니다. 선택된 SDK의 소스 대체는 거부하며, 다른 `<random>` 기능, 사용자 정의 반복자와 레코드 요소는 이 지원 범위 밖입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
 Core v2는 인증된 `std::linear_congruential_engine`과 `std::mersenne_twister_engine`도 지원합니다. 부호 없는 결과 타입은 최대 64비트이며 `minstd_rand0`, `minstd_rand`, `default_random_engine`, `mt19937`, `mt19937_64`를 포함합니다. 기본 및 정수 시드 생성, 복사, 대입, `seed`, `operator()`, `discard`, `min`/`max`, 동등 비교는 고정 SDK의 상태와 대상 레이아웃을 보존합니다. 래핑된 범위를 포함하여 `shuffle`/`sample`에 전달할 수 있습니다. 선택된 SDK의 소스 대체는 거부합니다. 다른 분포, 스트림 직렬화와 `random_device`는 추가 지원이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).

@@ -7666,6 +7666,34 @@ class UtilityTupleQueryGraph
     }
     return true;
   }
+  bool pairStringFillTraitRoot() const {
+    const auto *E = PairTraitConstruction;
+    const auto *Constructor = E ? E->getConstructor() : nullptr;
+    if (Mode != UtilityTupleQueryMode::PairConstruction || !PairTraitQuery ||
+        !Constructor ||
+        (PairTraitQuery->getTrait() != TT_IsConstructible &&
+         PairTraitQuery->getTrait() != TT_IsNothrowConstructible) ||
+        PairTraitQuery->getNumArgs() != 3 || Operands.size() != 2 ||
+        !Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) ||
+        !PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
+        !E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||
+        E->getNumArgs() != 2 || Constructor->getNumParams() != 2 ||
+        Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||
+        Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+        Constructor->getAccess() != AS_public ||
+        !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
+      return false;
+    const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+    return Prototype && Prototype->getExceptionSpecType() == EST_None &&
+        !Prototype->getNoexceptExpr() &&
+        Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType()) &&
+        Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy) &&
+        Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType()) &&
+        Context.hasSameType(E->getArg(1)->getType(), Context.CharTy) &&
+        !Constructor->getParamDecl(0)->hasDefaultArg() &&
+        !Constructor->getParamDecl(1)->hasDefaultArg() &&
+        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value();
+  }
   bool pinned(const Decl *D) {
     if (!D || !step() || D->isInvalidDecl() ||
         !approvedStandardSDKDeclaration(S, SM, D))
@@ -7685,7 +7713,12 @@ class UtilityTupleQueryGraph
               Origin->Path == "__utility/integer_sequence.h" ||
               Origin->Path == "__memory/unique_ptr.h")) ||
             Origin->Path == "string" || Origin->Path == "string_view" ||
-            llvm::StringRef(Origin->Path).starts_with("__fwd/"));
+            llvm::StringRef(Origin->Path).starts_with("__fwd/") ||
+            // Only this retained, independently bound count/char signature
+            // consumes allocator_traits' actual size_type alias dependencies.
+            // This metadata walker grants no allocator operation or body.
+            ((Origin->Path == "__memory/allocator_traits.h" ||
+              Origin->Path == "__memory/allocator.h") && pairStringFillTraitRoot()));
   }
   bool family(const Decl *D) {
     bool Complete = false;
@@ -10166,6 +10199,34 @@ public:
           !Prototype->getNoexceptExpr() &&
           cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string_view") &&
           function(Constructor) && !Failed;
+    }
+    if (Mode == UtilityTupleQueryMode::PairConstruction &&
+        E == PairTraitConstruction && PairTraitQuery && Constructor &&
+        (PairTraitQuery->getTrait() == TT_IsConstructible ||
+         PairTraitQuery->getTrait() == TT_IsNothrowConstructible) &&
+        PairTraitQuery->getNumArgs() == 3 && Operands.size() == 2 &&
+        Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
+        PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) &&
+        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context)) {
+      // Sema's retained count/character construction is a signature query,
+      // not a copy/move special member. Runtime fill keeps its separate body
+      // and argument-source checks; this grants nothing to caller expressions.
+      const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+      if (!E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||
+          E->getNumArgs() != 2 || Constructor->getNumParams() != 2 ||
+          Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||
+          Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+          Constructor->getAccess() != AS_public || !Prototype ||
+          Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+          !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType()) ||
+          !Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy) ||
+          !Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType()) ||
+          !Context.hasSameType(E->getArg(1)->getType(), Context.CharTy) ||
+          Constructor->getParamDecl(0)->hasDefaultArg() ||
+          Constructor->getParamDecl(1)->hasDefaultArg() ||
+          !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
+        return false;
+      return function(Constructor) && !Failed;
     }
     const auto SavedOwnerUse = PairOwnerUse;
     if (Mode == UtilityTupleQueryMode::PairConstruction && E == PairTraitConstruction &&
@@ -14533,8 +14594,14 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       uint64_t(TopLayout.getAlignment().getQuantity()) * 8 != ValueAlign)
     return std::nullopt;
 
+  // MS ABI's two proven empty SFINAE bases occupy storage after Main.
+  // Include Main's intervening tail padding in the byte carrier so its
+  // natural placement follows the value and engagement flag exactly.
+  const uint64_t TailPaddingBytes = SFINAEStorageBits
+      ? (ExpectedTopBits - ValueBits - BoolBits) / Context.getCharWidth()
+      : 0;
   return UtilityOptionalRecord{Specialization, Storage, Destruct,
-                               Value,          Engaged, Element};
+                               Value, Engaged, Element, TailPaddingBytes};
 }
 
 static const CXXRecordDecl *approvedNulloptRecord(const State &S,
@@ -17381,6 +17448,59 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
 
 // Selected SDK children retain the actual operator and field source. Storage
 // admission alone never grants a string/view/owner runtime comparison.
+std::optional<UtilityOperation>
+approvedUtilityPairComparisonChildOperation(
+    const State &S, const SourceManager &SM, const CXXOperatorCallExpr *Call,
+    const ASTContext &Context) {
+  if (const auto Operation = approvedUtilityOperation(S, SM, Call, Context))
+    return Operation;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  // A pair's selected byte comparison is written in the immutable SDK body.
+  // Ordinary runtime calls still require their original caller-owned reference.
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Call->isPRValue() ||
+      Call->getNumArgs() != 2 || !Function || isa<CXXMethodDecl>(Function) ||
+      Function->isDeleted() || Function->isInvalidDecl() || Function->isVariadic() ||
+      !Function->isInlined() || Function->getNumParams() != 2 ||
+      !Reference || Reference->getDecl() != Function ||
+      !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__utility/pair.h") ||
+      !Primary || !Pattern || !Pattern->hasBody() || !Prototype || !Prototype->isNothrow() ||
+      !Context.hasSameType(Function->getReturnType(), Context.BoolTy) ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      (Call->getOperator() != OO_EqualEqual && Call->getOperator() != OO_Less) ||
+      Function->getOverloadedOperator() != Call->getOperator())
+    return std::nullopt;
+  for (const auto *Declaration : Function->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "string"))
+      return std::nullopt;
+  for (const auto *Declaration : Primary->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !approvedStandardSDKDeclaration(S, SM, Declaration->getTemplatedDecl()) ||
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "string") ||
+        !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", "string"))
+      return std::nullopt;
+  const auto Left = approvedUtilityStringRecord(
+      S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto Right = approvedUtilityStringRecord(
+      S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (!Left || !Right || Left->Record->getCanonicalDecl() != Right->Record->getCanonicalDecl())
+    return std::nullopt;
+  const auto StringType = Context.getRecordType(Left->Record);
+  for (unsigned I = 0; I != 2; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                            Context.getLValueReferenceType(StringType.withConst())) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(), StringType))
+      return std::nullopt;
+  return Call->getOperator() == OO_EqualEqual ? UtilityOperation::StringEqual
+                                             : UtilityOperation::StringLess;
+}
+
 class UtilitySelectedPairComparison {
   const State &S;
   const SourceManager &SM;
@@ -17457,7 +17577,7 @@ class UtilitySelectedPairComparison {
       return false;
     if (pair(LeftType) || pair(RightType))
       return check(Call, Depth + 1);
-    const auto Operation = approvedUtilityOperation(S, SM, Call, Context);
+    const auto Operation = approvedUtilityPairComparisonChildOperation(S, SM, Call, Context);
     const auto *Selected = Call->getDirectCallee();
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
         directFunctionReference(Call));
@@ -82167,6 +82287,47 @@ approvedUtilityPairPiecewiseConstruction(
         return false;
     return true;
   };
+  // Clang can retain std::forward as an implicit builtin without an
+  // instantiated body. Only that exact pinned cast may use its primary body;
+  // the constructors above still require their actual instantiated definitions.
+  auto ForwardFamily = [&](const CallExpr *Forward) {
+    const auto *F = Forward ? Forward->getDirectCallee() : nullptr;
+    if (F && F->getDefinition())
+      return Family(F, "__utility/forward.h");
+    const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    const auto *Definition = Pattern ? Pattern->getDefinition() : nullptr;
+    const auto *Builtin = F ? F->getAttr<BuiltinAttr>() : nullptr;
+    const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *Cast = Forward ? dyn_cast<ImplicitCastExpr>(Forward->getCallee()) : nullptr;
+    const auto *Pointer = Cast ? Cast->getType()->getAs<PointerType>() : nullptr;
+    if (!F || !Primary || !Definition || !Pinned(Definition, "__utility/forward.h") ||
+        F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+        F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !F->getIdentifier() || F->getName() != "forward" ||
+        F->getNumParams() != 1 || Forward->getNumArgs() != 1 ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIforward ||
+        F->getBuiltinID() != Builtin::BIforward || !Prototype ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Pointer ||
+        Pointer->getPointeeType()->getAs<FunctionProtoType>() != Prototype ||
+        !F->getParamDecl(0)->getType()->isLValueReferenceType() ||
+        !Forward->getArg(0)->isLValue() ||
+        !Context.hasSameType(F->getParamDecl(0)->getType()->getPointeeType(),
+                             Forward->getArg(0)->getType()))
+      return false;
+    for (const auto *D : F->redecls())
+      if (++FamilyDeclarations > 512 || !Pinned(D, "__utility/forward.h"))
+        return false;
+    for (const auto *D : Primary->redecls())
+      if (++FamilyDeclarations > 512 || !Pinned(D, "__utility/forward.h") ||
+          !Pinned(D->getTemplatedDecl(), "__utility/forward.h"))
+        return false;
+    for (const auto *D : Pattern->redecls())
+      if (++FamilyDeclarations > 512 || !Pinned(D, "__utility/forward.h"))
+        return false;
+    return true;
+  };
   if (!Public || !Pair || !Definition || !Body || !Body->body_empty() ||
       Public->getAccess() != AS_public || Public->getNumParams() != 3 ||
       !Public->isDelegatingConstructor() ||
@@ -82349,7 +82510,7 @@ approvedUtilityPairPiecewiseConstruction(
           !Context.hasSameType(F->getReturnType(), Forwarded) ||
           Forward->getValueKind() != Expr::getValueKindForType(Forwarded) ||
           !utilityPairForwardingUseSource(S, SM, Forward) ||
-          !Family(F, "__utility/forward.h"))
+          !ForwardFamily(Forward))
         return std::nullopt;
       const auto *Get = dyn_cast_or_null<CallExpr>(
           functionalInvokeStrippedExpression(Forward->getArg(0)));

@@ -10122,6 +10122,43 @@ class UtilityPairByteComparisonSources
     return Spelling && Spelling->Root == "libcxx" && Expansion &&
            Expansion->Root == "libcxx";
   }
+  bool stringConstantQuery(CallExpr *Call, const FunctionDecl *Function) {
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    if (!Origin || Origin->Root != "libcxx" || Origin->Path != "string" ||
+        Function->getBuiltinID() != Builtin::BI__builtin_constant_p ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BI__builtin_constant_p ||
+        !Function->isImplicit() || Function->isInvalidDecl() || Function->hasBody() ||
+        Function->getPrimaryTemplate() || Function->getNumParams() ||
+        !Function->isVariadic() || !Prototype || !Prototype->isNothrow() ||
+        !A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy) ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||
+        Reference->getDecl() != Function || Reference->getFoundDecl() != Function ||
+        !Cast->getType()->isFunctionPointerType() ||
+        !A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType()) ||
+        Call->getNumArgs() != 1 || !Call->isPRValue() ||
+        !A.Context.hasSameType(Call->getType(), A.Context.IntTy) ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType()))
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!Declaration->isImplicit() || Declaration->getBuiltinID() != Builtin::BI__builtin_constant_p)
+        return false;
+      if (Declaration->getLocation().isValid()) {
+        const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
+        if (!File || File->Root != "libcxx" ||
+            (File->Path != "string" && File->Path != "__utility/is_valid_range.h"))
+          return false;
+      }
+    }
+    // A compiler proof query in the immutable helper, never an emitted call.
+    // The enclosing visitor still closes the original member/operand sources.
+    return true;
+  }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
@@ -10205,6 +10242,8 @@ public:
     if (!Function)
       return false;
     if (Function->getBuiltinID()) {
+      if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
+        return stringConstantQuery(Call, Function);
       const auto Name = Function->getName();
       return location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
@@ -10255,7 +10294,7 @@ static bool utilityPairSelectedComparisonSource(Adapter &A,
   if (!utilitySDKFunctionSource(A, Call->getDirectCallee(), "__utility/pair.h"))
     return false;
   for (const auto *Child : *Comparisons) {
-    const auto Operation = approvedUtilityOperation(A.S, A.Sources, Child, A.Context);
+    const auto Operation = approvedUtilityPairComparisonChildOperation(A.S, A.Sources, Child, A.Context);
     if (!Operation)
       return false;
     if (*Operation == UtilityOperation::MemoryUniquePtrEqual ||
@@ -10489,6 +10528,7 @@ class UtilityPairPiecewiseOuterSources
   std::set<const CXXConstructorDecl *> ErasedConstructors;
   unsigned Nodes = 0;
   bool Failed = false;
+  TypeLoc UnwrittenConstructorReturn;
 
   bool step(SourceLocation Location) {
     A.chargeExpansion(1, Location);
@@ -10579,9 +10619,64 @@ class UtilityPairPiecewiseOuterSources
       Functions.insert(Function);
     return Complete;
   }
+  bool callSource(const CallExpr *Call) {
+    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    if (!Function || Function->getDefinition())
+      return family(Function);
+    // The descriptor independently binds each exact forward call, intrinsic
+    // signature and original SDK primary. Complete that primary's written
+    // source as well as the selected specialization; no other missing body is
+    // eligible, including either selected constructor layer.
+    bool Bound = false;
+    for (const auto &Element : Piecewise.Elements)
+      for (const auto *Forward : Element.Forwarders)
+        Bound |= Forward == Call;
+    const auto *Callee = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    if (!Callee || Callee->getCastKind() != CK_BuiltinFnToFnPtr ||
+        !Callee->getSubExpr()->getType()->isSpecificBuiltinType(BuiltinType::BuiltinFn) ||
+        Function->isInvalidDecl() || Function->isDeleted() || Function->isVariadic())
+      return false;
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    const auto Origin = Pattern ? A.S.sdkFile(A.Sources, Pattern->getLocation())
+                                : std::nullopt;
+    if (!Bound || !Builtin || !Builtin->isImplicit() ||
+        Builtin->getID() != Builtin::BIforward ||
+        Function->getBuiltinID() != Builtin::BIforward ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Pattern || !Pattern->getDefinition() || !Origin ||
+        Origin->Root != "libcxx" || Origin->Path != "__utility/forward.h")
+      return false;
+    for (const auto *D : Function->redecls())
+      if (!declaration(D) || !signature(D))
+        return false;
+    if (!family(Pattern))
+      return false;
+    Functions.insert(Function);
+    return !Failed;
+  }
   bool signature(const FunctionDecl *Function) {
     const auto *Info = Function->getTypeSourceInfo();
-    if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
+    if (!Info)
+      return false;
+    const auto SavedReturn = UnwrittenConstructorReturn;
+    UnwrittenConstructorReturn = TypeLoc();
+    auto RestoreReturn = llvm::make_scope_exit([&] {
+      UnwrittenConstructorReturn = SavedReturn;
+    });
+    if (isa<CXXConstructorDecl>(Function)) {
+      const auto Prototype = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+      if (!Prototype || !Prototype.getReturnLoc().getType()->isVoidType())
+        return false;
+      // A constructor has no written return type. Clang retains a semantic
+      // void node with invalid locations; bind that exact node for this one
+      // signature, keeping every real parameter and exception source checked.
+      const auto Return = Prototype.getReturnLoc();
+      if (Return.getBeginLoc().isInvalid() && Return.getEndLoc().isInvalid())
+        UnwrittenConstructorReturn = Return;
+    }
+    if (!TraverseTypeLoc(Info->getTypeLoc()))
       return false;
     for (const auto *Parameter : Function->parameters()) {
       const auto *Written = Parameter->getTypeSourceInfo();
@@ -10668,9 +10763,23 @@ public:
     return step(Statement->getBeginLoc()) &&
            location(Statement->getBeginLoc()) && location(Statement->getEndLoc());
   }
+  bool TraverseTypeLoc(TypeLoc Type) {
+    if (UnwrittenConstructorReturn &&
+        Type.getOpaqueData() == UnwrittenConstructorReturn.getOpaqueData() &&
+        Type.getType() == UnwrittenConstructorReturn.getType() &&
+        Type.getType()->isVoidType() && Type.getBeginLoc().isInvalid() &&
+        Type.getEndLoc().isInvalid())
+      return true;
+    return RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseTypeLoc(Type);
+  }
   bool VisitTypeLoc(TypeLoc Type) {
     return step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
            location(Type.getEndLoc());
+  }
+  bool VisitTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc Type) {
+    const auto *Template = Type.getTypePtr()->getTemplateName().getAsTemplateDecl();
+    return location(Type.getTemplateNameLoc()) && Template &&
+           declaration(Template) && declaration(Template->getTemplatedDecl());
   }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!location(Reference->getLocation()))
@@ -10694,8 +10803,17 @@ public:
   bool TraverseCXXConstructExpr(CXXConstructExpr *Construction) {
     if (BoundChildren.count(Construction))
       return true; // The caller separately completes this exact child operation.
-    if (Construction == Piecewise.Delegation)
-      return family(Construction->getConstructor());
+    if (Construction == Piecewise.Delegation) {
+      if (!family(Construction->getConstructor()))
+        return false;
+      // The selected private body does not contain the public delegation's
+      // written index factories. Preserve their TypeLocs and template names,
+      // including macro spelling, before erasing the empty index arguments.
+      for (const auto *Argument : Construction->arguments())
+        if (!TraverseStmt(const_cast<Expr *>(Argument)))
+          return false;
+      return !Failed;
+    }
     return erasedConstruction(Construction) &&
         RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseCXXConstructExpr(Construction);
   }
@@ -10711,7 +10829,7 @@ public:
     const auto *Function = Call->getDirectCallee();
     if (!Function || !location(Call->getExprLoc()))
       return false;
-    return family(Function);
+    return callSource(Call);
   }
   bool check() {
     bool Complete = false;
@@ -10730,7 +10848,7 @@ public:
         const auto *Get = Element.Getters[I].first;
         const auto *Forward = Element.Forwarders[I];
         if (!location(Get->getExprLoc()) || !location(Forward->getExprLoc()) ||
-            !family(Get->getDirectCallee()) || !family(Forward->getDirectCallee()))
+            !callSource(Get) || !callSource(Forward))
           return false;
       }
     Complete = !Failed;
@@ -13873,6 +13991,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
       Args.push_back(zero(Optional->Engaged->getType(), L));
+      if (Optional->TailPaddingBytes)
+        Args.push_back(zero(Context.getConstantArrayType(
+                                Context.UnsignedCharTy,
+                                llvm::APInt(64, Optional->TailPaddingBytes),
+                                nullptr, ArraySizeModifier::Normal, 0),
+                            L));
     } else {
       if (const auto *Base = emptyBase(R))
         Args.push_back(zero(Context.getRecordType(Base->Base), L));
@@ -28458,18 +28582,34 @@ static void orderCoreV2Records(Adapter &A) {
   A.Records = std::move(Ordered);
 }
 
-void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives,
-                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives,
-                  llvm::ArrayRef<TemplateUseSource> TemplateUses,
-                  llvm::ArrayRef<FunctionSpecializationSource> Specializations,
-                  llvm::ArrayRef<VariableTypeSource> VariableTypes,
-                  llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls,
-                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> MemberClassDirectives,
-                  llvm::ArrayRef<FriendFunctionSource> FriendFunctions,
-                  llvm::ArrayRef<FriendDeclarationSource> FriendDeclarations,
-                  llvm::ArrayRef<FriendFunctionTemplateSource> FriendTemplates,
-                  llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies,
-                  llvm::ArrayRef<FriendClassTemplateSource> FriendClasses) {
+void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirectives,
+                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> InputStaticDirectives,
+                  llvm::ArrayRef<TemplateUseSource> InputTemplateUses,
+                  llvm::ArrayRef<FunctionSpecializationSource> InputSpecializations,
+                  llvm::ArrayRef<VariableTypeSource> InputVariableTypes,
+                  llvm::ArrayRef<SelectedTemplateCallSource> InputSelectedCalls,
+                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> InputMemberClassDirectives,
+                  llvm::ArrayRef<FriendFunctionSource> InputFriendFunctions,
+                  llvm::ArrayRef<FriendDeclarationSource> InputFriendDeclarations,
+                  llvm::ArrayRef<FriendFunctionTemplateSource> InputFriendTemplates,
+                  llvm::ArrayRef<FunctionTemplateBodySource> InputTemplateBodies,
+                  llvm::ArrayRef<FriendClassTemplateSource> InputFriendClasses) {
+  // Index immutable owned snapshots. RequireCompleteType may re-enter the
+  // Consumer and grow its source vectors while this run still uses record
+  // addresses; those later callback records keep their original Consumer owner.
+  // Capturing a snapshot supplies no missing late source or runtime permission.
+  const auto Directives = InputDirectives.vec();
+  const auto StaticDirectives = InputStaticDirectives.vec();
+  const auto TemplateUses = InputTemplateUses.vec();
+  const auto Specializations = InputSpecializations.vec();
+  const auto VariableTypes = InputVariableTypes.vec();
+  const auto SelectedCalls = InputSelectedCalls.vec();
+  const auto MemberClassDirectives = InputMemberClassDirectives.vec();
+  const auto FriendFunctions = InputFriendFunctions.vec();
+  const auto FriendDeclarations = InputFriendDeclarations.vec();
+  const auto FriendTemplates = InputFriendTemplates.vec();
+  const auto TemplateBodies = InputTemplateBodies.vec();
+  const auto FriendClasses = InputFriendClasses.vec();
   CheckingSource = true;
   auto FinishSource = llvm::make_scope_exit([&] { CheckingSource = false; });
   // Reuse successful roots only within this AST and run. Every later Sema
@@ -28659,6 +28799,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
         Fields.push_back(json::Object{
             {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+      if (UtilityOptional->TailPaddingBytes)
+        Fields.push_back(json::Object{
+            {"name", "nct_optional_tail_storage"},
+            {"type", "arr:" + std::to_string(UtilityOptional->TailPaddingBytes) +
+                         ":u8"}});
     } else {
       for (const auto *F : R->fields())
         Fields.push_back(json::Object{
@@ -28714,6 +28859,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         const auto &StorageLayout =
             Context.getASTRecordLayout(UtilityOptional->DestructBase);
         Offsets.push_back(StorageLayout.getFieldOffset(1));
+        if (UtilityOptional->TailPaddingBytes)
+          Offsets.push_back(StorageLayout.getFieldOffset(1) +
+                           Context.getTypeSize(UtilityOptional->Engaged->getType()));
       } else {
         for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
           Offsets.push_back(Layout.getFieldOffset(I));
@@ -30299,7 +30447,7 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                              {"version", "20.1.8"},
                                              {"build", NEVERC_CPP_BUILD_ID}}}};
   bool Valid = request(S, Request);
-  if (Valid && S.sdk() && !isolateProjectEnvironment()) {
+  if (Valid && (S.project() || S.sdk()) && !isolateProjectEnvironment()) {
     S.diagnose(
         "TR0101", "frontend environment",
         "Cannot isolate implicit compiler configuration from the environment.",

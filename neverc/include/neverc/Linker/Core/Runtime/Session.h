@@ -37,6 +37,9 @@ namespace linker {
 
 struct SpecificAllocBase;
 class LinkerExecutionContext;
+namespace session_detail {
+struct WorkerAllocCache;
+}
 
 struct LinkThreadPolicy {
   uint64_t MinParallelBytes = 16ULL * 1024ULL * 1024ULL;
@@ -127,13 +130,18 @@ private:
   /// construction and before the backend is exposed to callers.
   void bindResourceSession(neverc::ResourceSessionView Session);
 
-  CommonLinkerContext *PreviousContext = nullptr;
+  session_detail::WorkerAllocCache &workerCacheForCurrentThread();
+
+  // A non-owning saved binding; the previous context outlives this scope.
+  // Replacing the previous-context pointer preserves this member's size.
+  session_detail::WorkerAllocCache *PreviousWorkerCache = nullptr;
   unsigned PreviousWorkerSlot = 0;
   // This byte was the legacy Finalized field. Sharing it between internal
   // state bits keeps every following member and the total object size stable.
   uint8_t StateFlags = 0;
   std::mutex WorkerMutex;
-  std::map<std::thread::id, unsigned> WorkerSlots;
+  std::map<std::thread::id,
+           std::unique_ptr<session_detail::WorkerAllocCache>> WorkerSlots;
   unsigned NextWorkerSlot = 1;
   std::map<std::pair<unsigned, const void *>, SpecificAllocBase *>
       WorkerInstances;
@@ -153,6 +161,7 @@ private:
   std::vector<unsigned char> SavedAffinity;
 
   friend class LinkerExecutionContext;
+  friend class LinkerContextGuard;
 };
 
 class LinkerContextGuard {
@@ -164,7 +173,7 @@ public:
   ~LinkerContextGuard();
 
 private:
-  CommonLinkerContext *Previous = nullptr;
+  session_detail::WorkerAllocCache *PreviousWorkerCache = nullptr;
   unsigned PreviousWorkerSlot = 0;
 };
 

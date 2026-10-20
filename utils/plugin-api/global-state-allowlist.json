@@ -42,24 +42,76 @@
       "cleared_by_test": "PluginVFSTest.DeniesSamePathRecursiveRouting"
     },
     {
-      "files": ["neverc/lib/Linker/Core/Runtime/Session.cpp"],
+      "files": [
+        "neverc/lib/Linker/Core/Runtime/Session.cpp"
+      ],
       "symbol": "ActiveLinkerContext",
-      "declaration": "thread_local CommonLinkerContext *ActiveLinkerContext",
-      "definition_sha256": "b67267bd166fdda55f0d821e965ac001bef42e3e6679b4ea96aa6f5ff40c950f",
-      "owner": "LinkerExecutionContext",
-      "lifetime": "stack-scoped RAII guard per LinkTask/worker scope",
-      "justification": "Legacy allocator/diagnostic facade guard. Installed/restored by nestable RAII; cleared on worker join and thread-pool reuse. Never queried by plugin callbacks (they receive explicit task/context handles).",
-      "cleared_by_test": "PluginLinkContextTests"
+      "declaration": "LLVM_THREAD_LOCAL CommonLinkerContext *linker::session_detail::ActiveLinkerContext",
+      "definition_sha256": "8d7a4cd4585fd2e02d5e7747f0b522984327f5026d3d4f8980395ecc5d987093",
+      "owner": "CommonLinkerContext scoped runtime binding",
+      "lifetime": "dynamic extent of CommonLinkerContext or LinkerContextGuard; exact previous context, slot and borrowed record restored together",
+      "justification": "Nonowning context facade pointer or worker-slot ordinal only. Installed and restored by the same scope as the borrowed WorkerSlots record; owns no options, graph, allocator cache or compilation payload. Header extern declarations identify the exact same definitions.",
+      "cleared_by_test": "SessionCacheOwnershipTest.GuardBorrowClearsOnReusedForeignThread, NestedContextsRestoreCachedArenaAcrossUnwind, CrashBackendCleanupRestoresBorrowAndSlot, AbandonRestoresPreviousBorrowBeforeProcessExit; actual72 GoogleTest XML cases and6 native processes"
     },
     {
-      "files": ["neverc/lib/Linker/Core/Runtime/Session.cpp"],
+      "files": [
+        "neverc/lib/Linker/Core/Runtime/Session.cpp"
+      ],
       "symbol": "CurrentWorkerSlot",
-      "declaration": "thread_local unsigned CurrentWorkerSlot",
-      "definition_sha256": "582ddc33f47bf28223abc4f9b55594555f793c6579e406ce677954d50c700caf",
-      "owner": "LinkerParallel",
-      "lifetime": "stack-scoped per worker scope",
-      "justification": "Worker-slot index for context-owned allocator shard selection; set/reset by worker wrapper, zero at rest. No link state.",
-      "cleared_by_test": "PluginParallelLinkTests"
+      "declaration": "LLVM_THREAD_LOCAL unsigned linker::session_detail::CurrentWorkerSlot",
+      "definition_sha256": "d2ff7613da0abd16b47e7d616fa143094d468f72f7e06f7c491f411eb1dd385c",
+      "owner": "CommonLinkerContext scoped runtime binding",
+      "lifetime": "dynamic extent of CommonLinkerContext or LinkerContextGuard; exact previous context, slot and borrowed record restored together",
+      "justification": "Nonowning context facade pointer or worker-slot ordinal only. Installed and restored by the same scope as the borrowed WorkerSlots record; owns no options, graph, allocator cache or compilation payload. Header extern declarations identify the exact same definitions.",
+      "cleared_by_test": "SessionCacheOwnershipTest.GuardBorrowClearsOnReusedForeignThread, NestedContextsRestoreCachedArenaAcrossUnwind, CrashBackendCleanupRestoresBorrowAndSlot, AbandonRestoresPreviousBorrowBeforeProcessExit; actual72 GoogleTest XML cases and6 native processes"
+    },
+    {
+      "files": [
+        "neverc/lib/Linker/Core/Runtime/Session.cpp"
+      ],
+      "symbol": "ActiveWorkerCache",
+      "declaration": "LLVM_THREAD_LOCAL WorkerAllocCache *ActiveWorkerCache",
+      "definition_sha256": "fe2244a75890dd5eb5a31e57240da05fa41fbfa3172fe8941b184ccc95776015",
+      "owner": "CommonLinkerContext scoped runtime binding",
+      "lifetime": "dynamic extent of CommonLinkerContext or LinkerContextGuard; exact previous context, slot and borrowed record restored together",
+      "justification": "A single nonowning pointer to a stable WorkerSlots-owned record. Memo arrays and allocator instances belong to CommonLinkerContext, never TLS. It is null between worker scopes, restores on nested unwind and crash cleanup, and owns nothing.",
+      "cleared_by_test": "SessionCacheOwnershipTest.GuardBorrowClearsOnReusedForeignThread, NestedContextsRestoreCachedArenaAcrossUnwind, CrashBackendCleanupRestoresBorrowAndSlot, AbandonRestoresPreviousBorrowBeforeProcessExit; actual72 GoogleTest XML cases and6 native processes"
+    },
+    {
+      "files": [
+        "neverc/include/neverc/Linker/Core/Runtime/Session.h"
+      ],
+      "symbol": "ActiveLinkerContext",
+      "declaration": "extern LLVM_THREAD_LOCAL CommonLinkerContext *ActiveLinkerContext",
+      "definition_sha256": "33a8a4eac02b23fa2baaa9f549cc39118d53f67f5349fb1062be02757eb8f953",
+      "owner": "CommonLinkerContext scoped runtime binding",
+      "lifetime": "dynamic extent of CommonLinkerContext or LinkerContextGuard; exact previous context, slot and borrowed record restored together",
+      "justification": "Nonowning context facade pointer or worker-slot ordinal only. Installed and restored by the same scope as the borrowed WorkerSlots record; owns no options, graph, allocator cache or compilation payload. Header extern declarations identify the exact same definitions.",
+      "cleared_by_test": "SessionCacheOwnershipTest.GuardBorrowClearsOnReusedForeignThread, NestedContextsRestoreCachedArenaAcrossUnwind, CrashBackendCleanupRestoresBorrowAndSlot, AbandonRestoresPreviousBorrowBeforeProcessExit; actual72 GoogleTest XML cases and6 native processes"
+    },
+    {
+      "files": [
+        "neverc/include/neverc/Linker/Core/Runtime/Session.h"
+      ],
+      "symbol": "CurrentWorkerSlot",
+      "declaration": "extern LLVM_THREAD_LOCAL unsigned CurrentWorkerSlot",
+      "definition_sha256": "0e3ba798167f84988c176c51228675a9281de3f4044dac46ac815d361b0e9d3c",
+      "owner": "CommonLinkerContext scoped runtime binding",
+      "lifetime": "dynamic extent of CommonLinkerContext or LinkerContextGuard; exact previous context, slot and borrowed record restored together",
+      "justification": "Nonowning context facade pointer or worker-slot ordinal only. Installed and restored by the same scope as the borrowed WorkerSlots record; owns no options, graph, allocator cache or compilation payload. Header extern declarations identify the exact same definitions.",
+      "cleared_by_test": "SessionCacheOwnershipTest.GuardBorrowClearsOnReusedForeignThread, NestedContextsRestoreCachedArenaAcrossUnwind, CrashBackendCleanupRestoresBorrowAndSlot, AbandonRestoresPreviousBorrowBeforeProcessExit; actual72 GoogleTest XML cases and6 native processes"
+    },
+    {
+      "files": [
+        "neverc/lib/Linker/Backends/ELF/FastPath/FastLinkSupport.h"
+      ],
+      "symbol": "tid_",
+      "declaration": "static inline thread_local unsigned tid_",
+      "definition_sha256": "b8fd0965ff1dc9f66f2f2af64f7359f38a0ae0efa70de60e7239a9f59aff9c7d",
+      "owner": "ELF FastLink Pool worker ordinal scope",
+      "lifetime": "dynamic extent of WorkerOrdinalScope; exact previous ordinal restored for nested serial, small, parallel and exceptional work",
+      "justification": "An unsigned worker ordinal only; no task/options/graph/cache payload. WorkerOrdinalScope binds and restores every dispatch and serial/small-count path. The scoped implementation is authenticated by four real builds and twelve native probe runs.",
+      "cleared_by_test": "Pool original/scoped O0/O2 native diagnostic (four builds, twelve runs, nine conditions, eight rounds)"
     },
     {
       "files": ["neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"],

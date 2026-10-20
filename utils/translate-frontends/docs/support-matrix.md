@@ -1,5 +1,7 @@
 # C++ translation support matrix
 
+On Linux, link generated C23 programs that sample floating-point distributions with `-lm`. Compile native comparison programs and generated programs with `-fno-fast-math -ffp-contract=off`.
+
 Status: experimental built-in C++ implementation of `cpp-core-v1`,
 `cpp-core-v2`, `cpp-project-v1`, and `cpp-math-v1`. NeverC statically contains the pinned full
 Clang frontend and approved SDK headers. No separate frontend executable,

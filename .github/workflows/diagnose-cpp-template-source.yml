@@ -1,6 +1,7 @@
 name: cpp-template-source-diagnostics
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
@@ -79,8 +80,11 @@ jobs:
         \n  if \"$RUNNER_TEMP/runtime-aggregate-array\"; then\n    result=0\n  else\n    result=$?\n  fi\n  echo \"runtime-aggregate-array\
         \ O$optimization upstream result: $result, expected 10\"\n  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\n\
         done\nexit \"$status\"\n"
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group != 'not-fn-source'
-      }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group != 'windows-arm-source-repair'
+      && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group != 'session-cache-ownership' && inputs.fixture_group
+      != 'macho-data-const' && inputs.fixture_group != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest'
+      && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' && inputs.fixture_group
+      != 'not-fn-source' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -242,6 +246,599 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery' }}
+  repair-windows-arm64:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'windows-arm-source-repair' }}
+    runs-on: windows-11-arm
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      NEVERC_PCG_STRICT: '1'
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        path: neverc
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+        architecture: arm64
+    - name: Install ARM64-native CMake & Ninja
+      shell: pwsh
+      run: '$cmakeVer = ''3.31.11''
+
+        Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip"
+        -OutFile cmake.zip
+
+        Expand-Archive cmake.zip C:\tools -Force
+
+        Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
+
+
+        $ninjaVer = ''1.13.1''
+
+        Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" -OutFile
+        ninja.zip
+
+        Expand-Archive ninja.zip C:\tools\ninja -Force
+
+        Add-Content $env:GITHUB_PATH "C:\tools\ninja"
+
+
+        choco install 7zip -y
+
+        '
+    - name: Setup MSVC (native arm64)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
+    - name: Build neverc
+      shell: bash
+      run: 'cmake -GNinja -Bbuild \
+
+        -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
+
+        -DCMAKE_INSTALL_PREFIX=install \
+
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+
+        -DNEVERC_INCLUDE_TESTS=ON \
+
+        -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+
+        -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+
+        -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+
+        -DNEVERC_STRIP_BINARY=OFF \
+
+        -DNEVERC_ENABLE_LTO=ON \
+
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+
+        neverc/llvm
+
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
+
+        '
+    - name: Verify native wide integer carry and borrow
+      shell: bash
+      run: '"${{ steps.python.outputs.python-path }}" neverc/utils/ci/check-arm64-wide-integers.py           --repo "$PWD/neverc"
+        --compiler "$PWD/build/bin/neverc.exe"           --output "$RUNNER_TEMP/arm-wide-integers"
+
+        '
+    - name: Upload wide integer regression evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm-wide-integers-${{ github.sha }}
+        path: ${{ runner.temp }}/arm-wide-integers
+        if-no-files-found: ignore
+        retention-days: 14
+    - name: Verify frozen SDK on eight frontend ABIs and six backends
+      shell: bash
+      run: '"${{ steps.python.outputs.python-path }}" neverc/utils/ci/check-cpp-ci-recovery.py           --repo "$PWD/neverc"
+        --compiler "$PWD/build/bin/neverc.exe"           --output "$RUNNER_TEMP/cpp-ci-recovery"
+
+        '
+    - name: Upload exact frozen SDK recovery evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-ci-recovery-windows-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-ci-recovery
+        if-no-files-found: ignore
+        retention-days: 14
+    - name: Verify compiled C++ SDK catalog bytes
+      shell: bash
+      run: 'cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-translate-tests
+
+        build/bin/neverc-translate-tests.exe --gtest_filter=TranslateCppSdkTest.CompiledCatalogPreservesSourceBytesAndTrailingNul
+
+        '
+    - name: Build bundled Windows runtime
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-arm64-msvc neverc-runtime-shared-msvc
+    - name: Install neverc
+      shell: bash
+      run: 'cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+        '
+    - name: Package neverc
+      run: 7z a windows-arm64-neverc.zip install
+    - name: Verify relocated full compiler archive
+      shell: bash
+      run: "\"${{ steps.python.outputs.python-path }}\" \\\n  neverc/utils/release/test-python-plugin-package.py \\\n  --archive\
+        \ windows-arm64-neverc.zip\n"
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc
+        path: windows-arm64-neverc.zip
+    - name: Package neverc compiler (without runtime)
+      shell: bash
+      run: 'mv install/runtime install-runtime-stash
+
+        7z a windows-arm64-neverc-compiler.zip install
+
+        mv install-runtime-stash install/runtime
+
+        '
+    - name: Verify relocated compiler-only archive
+      shell: bash
+      run: "\"${{ steps.python.outputs.python-path }}\" \\\n  neverc/utils/release/test-python-plugin-package.py \\\n  --archive\
+        \ windows-arm64-neverc-compiler.zip\n"
+    - name: Upload Compiler Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc-compiler
+        path: windows-arm64-neverc-compiler.zip
+    - name: Package neverc runtime
+      run: 7z a windows-arm64-neverc-runtime.zip install/runtime
+    - name: Upload Runtime Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc-runtime
+        path: windows-arm64-neverc-runtime.zip
+    - name: Package PDBs
+      shell: bash
+      run: 7z a windows-arm64-neverc-pdb.zip ./build/bin/*.pdb
+    - name: Upload PDB Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc-pdb
+        path: windows-arm64-neverc-pdb.zip
+    - name: Build Plugin SDK
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+    - name: Build network product examples
+      shell: bash
+      run: neverc/utils/ci/build-network-product-examples.sh "$PWD/build/bin/neverc.exe" "$PWD/neverc" aarch64-pc-windows-msvc
+    - name: Test Plugin SDK (build + load)
+      shell: bash
+      run: "set -e\nmake -C build/pluginsdk/examples \\\n  NEVERC=$PWD/build/bin/neverc \\\n  INCLUDE_DIR=$PWD/build/pluginsdk/include\
+        \ \\\n  HOST_TARGET=aarch64-pc-windows-msvc\nprintf 'int main(void) { return 0; }\\n' > /tmp/plugin_test.c\nfor plugin\
+        \ in ExamplePlugin CrtShimPlugin BenchPlugin; do\n  echo \"--- Testing $plugin ---\"\n  build/bin/neverc \\\n    --target=aarch64-pc-windows-msvc\
+        \ \\\n    -fplugin-pass=build/pluginsdk/examples/${plugin}.dll \\\n    -c /tmp/plugin_test.c -o /tmp/plugin_test.obj\n\
+        \  echo \"--- $plugin OK ---\"\ndone\n"
+    - name: Run neverc tests
+      id: tests
+      shell: bash
+      continue-on-error: true
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+    - name: Run network concurrency gates
+      if: steps.tests.outcome == 'success'
+      shell: bash
+      run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc.exe" "$PWD/neverc" 25
+    - name: Run network transport soak
+      if: steps.tests.outcome == 'success'
+      shell: bash
+      run: neverc/utils/ci/run-network-transport-soak.sh "$PWD/build/bin/neverc.exe" "$PWD/neverc" 5000
+    - name: Diagnose crashes
+      if: steps.tests.outcome == 'failure'
+      shell: bash
+      run: "set -x\nNCC=$(cygpath -m \"$PWD/build/bin/neverc.exe\")\nTESTDIR=$(cygpath -m \"$PWD/neverc/tests/neverc\")\n\
+        WDIAG=$(cygpath -m \"$PWD/diag_out\")\nBDIAG=\"$PWD/diag_out\"\nmkdir -p \"$BDIAG\"\n\n# \u2500\u2500 Environment\
+        \ & SDK diagnostics \u2500\u2500\necho \"=== MSVC / SDK environment ===\"\necho \"LIB=$LIB\"\necho \"INCLUDE=$INCLUDE\"\
+        \necho \"VCToolsInstallDir=$VCToolsInstallDir\"\necho \"WindowsSdkDir=$WindowsSdkDir\"\necho \"WindowsSDKVersion=$WindowsSDKVersion\"\
+        \necho \"VSCMD_ARG_TGT_ARCH=$VSCMD_ARG_TGT_ARCH\"\necho \"PROCESSOR_ARCHITECTURE=$PROCESSOR_ARCHITECTURE\"\n\necho\
+        \ \"=== Check ARM64 CRT & SDK libs exist ===\"\nfor lib in libcmt.lib libvcruntime.lib libucrt.lib kernel32.lib bcryptprimitives.lib;\
+        \ do\n  found=false\n  IFS=';' read -ra LIBDIRS <<< \"$LIB\"\n  for dir in \"${LIBDIRS[@]}\"; do\n    wdir=$(cygpath\
+        \ -u \"$dir\" 2>/dev/null || echo \"$dir\")\n    if [ -f \"$wdir/$lib\" ]; then\n      echo \"  FOUND: $dir/$lib ($(wc\
+        \ -c < \"$wdir/$lib\") bytes)\"\n      found=true\n      break\n    fi\n  done\n  $found || echo \"  MISSING: $lib\"\
+        \ndone\n\necho \"=== Linker search paths (neverc -v) ===\"\n\"$NCC\" -std=c11 -v \"$TESTDIR/standards/test_c_stdlib_patterns.c\"\
+        \ \\\n  -o \"$WDIAG/diag_verbose.exe\" 2>&1 | head -80 || true\n\ndiagnose() {\n  local label=$1 src=$2 flags=$3\n\
+        \  echo \"=== [$label] step 1: compile to .obj ===\"\n  \"$NCC\" $flags -c \"$src\" -o \"$WDIAG/diag_${label}.obj\"\
+        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 2: link .obj to exe (with .pdata validation)\
+        \ ===\"\n  \"$NCC\" $flags -v \"$WDIAG/diag_${label}.obj\" -o \"$WDIAG/diag_${label}.exe\" 2>&1 && echo \"OK\" ||\
+        \ echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 3a: compile+link (one shot, LTO) ===\"\n  \"$NCC\" $flags \"$src\"\
+        \ -o \"$WDIAG/diag_${label}_oneshot.exe\" 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 3b:\
+        \ compile+link (one shot, NO LTO) ===\"\n  \"$NCC\" $flags -fno-lto \"$src\" -o \"$WDIAG/diag_${label}_nolto.exe\"\
+        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 3c: compile+link (save LTO temps) ===\"\n\
+        \  \"$NCC\" $flags -save-temps \"$src\" -o \"$WDIAG/diag_${label}_temps.exe\" 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\
+        \n  ls -la \"$WDIAG\"/diag_${label}_temps.*.obj 2>/dev/null || echo \"(no LTO temps)\"\n\n  echo \"=== [$label] check\
+        \ output files ===\"\n  ls -la \"$BDIAG\"/diag_${label}* 2>&1 || echo \"NO FILES FOUND\"\n  file \"$BDIAG\"/diag_${label}_oneshot.exe\
+        \ 2>&1 || true\n\n  echo \"=== [$label] DLL dependencies ===\"\n  dumpbin //DEPENDENTS \"$BDIAG/diag_${label}_oneshot.exe\"\
+        \ 2>&1 || true\n\n  echo \"=== [$label] IMPORTS (function names) ===\"\n  dumpbin //IMPORTS \"$BDIAG/diag_${label}_oneshot.exe\"\
+        \ 2>&1 || true\n\n  echo \"=== [$label] PE headers ===\"\n  dumpbin //HEADERS \"$BDIAG/diag_${label}_oneshot.exe\"\
+        \ 2>&1 | head -60 || true\n\n  echo \"=== [$label] UNWIND INFO (.pdata/.xdata content) ===\"\n  dumpbin //UNWINDINFO\
+        \ \"$BDIAG/diag_${label}_oneshot.exe\" 2>&1 | head -200 || true\n\n  echo \"=== [$label] .pdata raw hex (first 256\
+        \ bytes) ===\"\n  dumpbin //RAWDATA:.pdata \"$BDIAG/diag_${label}_oneshot.exe\" 2>&1 | head -40 || true\n\n  echo\
+        \ \"=== [$label] step 4: run LTO exe ===\"\n  powershell.exe -NoProfile -Command \"\n    try {\n      \\$p = Start-Process\
+        \ -FilePath '$WDIAG/diag_${label}_oneshot.exe' \\\n        -NoNewWindow -Wait -PassThru \\\n        -RedirectStandardOutput\
+        \ '$WDIAG/diag_${label}_stdout.txt' \\\n        -RedirectStandardError '$WDIAG/diag_${label}_stderr.txt'\n      Write-Host\
+        \ \\\"EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    } catch {\n      Write-Host \\\"EXCEPTION: \\$_\\\"\n      Write-Host\
+        \ \\\"WIN32_ERROR: \\$([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())\\\"\n    }\n  \" 2>&1 || echo\
+        \ \"POWERSHELL_EXIT=$?\"\n  echo \"--- stdout ---\"\n  cat \"$BDIAG/diag_${label}_stdout.txt\" 2>/dev/null || echo\
+        \ \"(empty)\"\n  echo \"--- stderr ---\"\n  cat \"$BDIAG/diag_${label}_stderr.txt\" 2>/dev/null || echo \"(empty)\"\
+        \n\n  echo \"=== [$label] step 4b: run NO-LTO exe ===\"\n  powershell.exe -NoProfile -Command \"\n    try {\n    \
+        \  \\$p = Start-Process -FilePath '$WDIAG/diag_${label}_nolto.exe' \\\n        -NoNewWindow -Wait -PassThru \\\n \
+        \       -RedirectStandardOutput '$WDIAG/diag_${label}_nolto_stdout.txt' \\\n        -RedirectStandardError '$WDIAG/diag_${label}_nolto_stderr.txt'\n\
+        \      Write-Host \\\"NOLTO_EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    } catch {\n      Write-Host \\\"NOLTO_EXCEPTION:\
+        \ \\$_\\\"\n    }\n  \" 2>&1 || echo \"NOLTO_POWERSHELL_EXIT=$?\"\n\n  echo \"=== [$label] step 4c: compare LTO vs\
+        \ NO-LTO .pdata ===\"\n  echo \"--- LTO exe .pdata entry count ---\"\n  dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_oneshot.exe\"\
+        \ 2>&1 | grep -c \"Function:\" || echo \"0\"\n  echo \"--- NO-LTO exe .pdata entry count ---\"\n  dumpbin //UNWINDINFO\
+        \ \"$BDIAG/diag_${label}_nolto.exe\" 2>&1 | grep -c \"Function:\" || echo \"0\"\n  echo \"--- NO-LTO exe IMPORTS (RtlUnwind\
+        \ check) ---\"\n  dumpbin //IMPORTS \"$BDIAG/diag_${label}_nolto.exe\" 2>&1 | grep -i \"RtlUnwind\" || echo \"(no\
+        \ RtlUnwind)\"\n\n  echo \"=== [$label] step 5: auto-LTO .obj .pdata analysis (bitcode wrapper, expect none) ===\"\
+        \n  echo \"--- .obj sections with .pdata ---\"\n  dumpbin //SECTIONS \"$WDIAG/diag_${label}.obj\" 2>&1 | grep -i \"\
+        pdata\\|xdata\" || echo \"(none)\"\n  echo \"--- .obj symbols (functions) ---\"\n  dumpbin //SYMBOLS \"$WDIAG/diag_${label}.obj\"\
+        \ 2>&1 | grep -E \"notype.*\\(\\)|\\.pdata|\\.xdata\" | head -60 || echo \"(none)\"\n\n  echo \"=== [$label] step\
+        \ 5b: -fno-lto -c REAL machine-code .obj .pdata check ===\"\n  # The auto-LTO .obj above is a bitcode wrapper, so\
+        \ it never has .pdata.\n  # Build a true machine-code object to see whether the AArch64 COFF\n  # codegen backend\
+        \ actually emits .pdata/.xdata for user functions.\n  \"$NCC\" $flags -fno-lto -c \"$src\" -o \"$WDIAG/diag_${label}_nolto.obj\"\
+        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n  echo \"--- nolto .obj SECTIONS (head) ---\"\n  dumpbin //SECTIONS \"\
+        $WDIAG/diag_${label}_nolto.obj\" 2>&1 | head -60 || true\n  echo \"--- nolto .obj .pdata/.xdata present? ---\"\n \
+        \ dumpbin //SECTIONS \"$WDIAG/diag_${label}_nolto.obj\" 2>&1 | grep -i \"pdata\\|xdata\" || echo \"(NONE - codegen\
+        \ not emitting .pdata!)\"\n  echo \"--- nolto .obj UNWINDINFO ---\"\n  dumpbin //UNWINDINFO \"$WDIAG/diag_${label}_nolto.obj\"\
+        \ 2>&1 | head -80 || echo \"(none)\"\n\n  echo \"=== [$label] step 5c: uwtable attribute in LLVM IR ===\"\n  # If\
+        \ the frontend attaches `uwtable` but no .pdata appears, the loss is\n  # in the backend / LTO codegen, not the frontend.\n\
+        \  echo \"--- non-LTO frontend IR ---\"\n  \"$NCC\" $flags -fno-lto -emit-llvm -S \"$src\" -o \"$WDIAG/diag_${label}_nolto.ll\"\
+        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n  echo \"non-LTO uwtable occurrences: $(grep -c \"uwtable\" \"$BDIAG/diag_${label}_nolto.ll\"\
+        \ 2>/dev/null)\"\n  grep -E \"^define|^attributes #\" \"$BDIAG/diag_${label}_nolto.ll\" 2>/dev/null | head -40 ||\
+        \ echo \"(none)\"\n  echo \"--- LTO bitcode IR (pre-link, TY_LTO_IR) ---\"\n  \"$NCC\" $flags -flto -S \"$src\" -o\
+        \ \"$WDIAG/diag_${label}_lto.ll\" 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n  echo \"LTO uwtable occurrences: $(grep\
+        \ -c \"uwtable\" \"$BDIAG/diag_${label}_lto.ll\" 2>/dev/null)\"\n  grep -E \"^define|^attributes #\" \"$BDIAG/diag_${label}_lto.ll\"\
+        \ 2>/dev/null | head -40 || echo \"(none)\"\n\n  echo \"=== [$label] step 6: MSVC link.exe comparison ===\"\n  echo\
+        \ \"--- link with MSVC link.exe ---\"\n  link.exe //NOLOGO //MACHINE:ARM64 //SUBSYSTEM:CONSOLE \\\n    //DEFAULTLIB:libcmt\
+        \ //DEFAULTLIB:libvcruntime //DEFAULTLIB:libucrt \\\n    //DEFAULTLIB:legacy_stdio_definitions //DEFAULTLIB:oldnames\
+        \ \\\n    \"$WDIAG/diag_${label}.obj\" \\\n    \"//OUT:$WDIAG/diag_${label}_msvc.exe\" 2>&1 && echo \"MSVC_LINK=OK\"\
+        \ || echo \"MSVC_LINK=FAIL\"\n  echo \"--- run MSVC-linked exe ---\"\n  if [ -f \"$BDIAG/diag_${label}_msvc.exe\"\
+        \ ]; then\n    powershell.exe -NoProfile -Command \"\n      try {\n        \\$p = Start-Process -FilePath '$WDIAG/diag_${label}_msvc.exe'\
+        \ \\\n          -NoNewWindow -Wait -PassThru \\\n          -RedirectStandardOutput '$WDIAG/diag_${label}_msvc_stdout.txt'\
+        \ \\\n          -RedirectStandardError '$WDIAG/diag_${label}_msvc_stderr.txt'\n        Write-Host \\\"MSVC_EXIT_CODE=\\\
+        $(\\$p.ExitCode)\\\"\n      } catch {\n        Write-Host \\\"MSVC_EXCEPTION: \\$_\\\"\n      }\n    \" 2>&1 || echo\
+        \ \"MSVC_POWERSHELL_EXIT=$?\"\n    echo \"--- MSVC stdout ---\"\n    cat \"$BDIAG/diag_${label}_msvc_stdout.txt\"\
+        \ 2>/dev/null || echo \"(empty)\"\n    echo \"--- compare .pdata: neverc-linked vs MSVC-linked ---\"\n    echo \"\
+        neverc .pdata entries:\"\n    dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_nolto.exe\" 2>&1 | grep -c \"Begin\" ||\
+        \ echo \"0\"\n    echo \"MSVC .pdata entries:\"\n    dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_msvc.exe\" 2>&1 |\
+        \ grep -c \"Begin\" || echo \"0\"\n  else\n    echo \"MSVC link failed, skipping run\"\n  fi\n}\n\ndiagnose \"c_stdlib\"\
+        \ \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"-std=c11\"\n\n# Minimal test: just main() { return\
+        \ 0; } to isolate CRT vs codegen\necho 'int main(void) { return 0; }' > \"$BDIAG/diag_minimal.c\"\ndiagnose \"minimal\"\
+        \ \\\n  \"$(cygpath -m \"$BDIAG/diag_minimal.c\")\" \\\n  \"-std=c11\"\n\ndiagnose \"mc64bit\" \\\n  \"$TESTDIR/codegen/test_mc_64bit_format.c\"\
+        \ \\\n  \"-std=gnu11 -O2\"\n\ndiagnose \"arch_cleanup_r2\" \\\n  \"$TESTDIR/codegen/test_arch_cleanup_round2.c\" \\\
+        \n  \"-std=gnu11 -O2\"\n\n# \u2500\u2500 Frame pointer forced on \u2500\u2500\n# ARM64 longjmp always does stack unwinding.\
+        \  If -mframe-pointer=none\n# causes missing/wrong .pdata entries the forced-fp build will pass.\necho \"=== frame-pointer=all\
+        \ comparison ===\"\ndiagnose \"c_stdlib_fp\" \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"-std=c11\
+        \ -mframe-pointer=all\"\n\n# \u2500\u2500 Pure MSVC cl.exe baseline (eliminates neverc entirely) \u2500\u2500\necho\
+        \ \"=== MSVC cl.exe full compile+link baseline ===\"\necho \"cl.exe version:\"\ncl.exe 2>&1 | head -1 || true\ncl.exe\
+        \ //nologo //W3 //EHsc //TC \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"//Fe$WDIAG/diag_c_stdlib_msvc_cl.exe\"\
+        \ \\\n  //link //MACHINE:ARM64 //SUBSYSTEM:CONSOLE 2>&1 \\\n  && echo \"MSVC_CL_BUILD=OK\" || echo \"MSVC_CL_BUILD=FAIL\"\
+        \nif [ -f \"$BDIAG/diag_c_stdlib_msvc_cl.exe\" ]; then\n  echo \"--- run pure-MSVC exe ---\"\n  powershell.exe -NoProfile\
+        \ -Command \"\n    try {\n      \\$p = Start-Process -FilePath '$WDIAG/diag_c_stdlib_msvc_cl.exe' \\\n        -NoNewWindow\
+        \ -Wait -PassThru \\\n        -RedirectStandardOutput '$WDIAG/diag_c_stdlib_msvc_cl_stdout.txt' \\\n        -RedirectStandardError\
+        \ '$WDIAG/diag_c_stdlib_msvc_cl_stderr.txt'\n      Write-Host \\\"MSVC_CL_EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    }\
+        \ catch {\n      Write-Host \\\"MSVC_CL_EXCEPTION: \\$_\\\"\n    }\n  \" 2>&1 || echo \"MSVC_CL_POWERSHELL_EXIT=$?\"\
+        \n  echo \"--- MSVC cl.exe stdout ---\"\n  cat \"$BDIAG/diag_c_stdlib_msvc_cl_stdout.txt\" 2>/dev/null || echo \"\
+        (empty)\"\nelse\n  echo \"MSVC cl.exe build failed, skipping run\"\nfi\n"
+    - name: Fail if tests failed
+      if: steps.tests.outcome == 'failure'
+      shell: bash
+      run: exit 1
+  inspect-fastlink-request-ownership:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'fastlink-request-ownership' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 8
+    - name: Set up CPython 3.12.10
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Build actual FastLink and verify serial nested and concurrent request isolation
+      id: probe
+      shell: bash
+      run: "\"${{ steps.python.outputs.python-path }}\" utils/ci/check-fastlink-request-ownership.py \\\n  --repo \"$PWD\"\
+        \ --output \"$RUNNER_TEMP/cpp-fastlink-request-ownership\"\n"
+    - name: Upload actual FastLink request isolation evidence
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-fastlink-request-ownership-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-fastlink-request-ownership
+        if-no-files-found: error
+        retention-days: 14
+  inspect-session-cache-ownership:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'session-cache-ownership' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 4
+    - name: Prepare Session cache ownership bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-session-cache-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-session-cache-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-session-cache-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)''
+        | tee "$RUNNER_TEMP/cpp-session-cache-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-session-cache-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-session-cache-bootstrap/dependencies.log"
+
+        '
+    - name: Build real Session owners and verify scoped cache lifetime with actual GTest XML
+      run: 'python3 utils/ci/check-session-cache-ownership.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-session-cache-ownership"
+        --clangxx /usr/bin/clang++-22
+
+        '
+    - name: Upload actual Session programs XML source identities and raw logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-session-cache-ownership-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-session-cache-ownership
+
+          ${{ runner.temp }}/cpp-session-cache-bootstrap
+
+          !${{ runner.temp }}/cpp-session-cache-ownership/cmake-build/**
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+  inspect-macho-data-const:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-data-const' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare Mach-O data-const bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-macho-data-const-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-macho-data-const-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-macho-data-const-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)''
+        | tee "$RUNNER_TEMP/cpp-macho-data-const-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-macho-data-const-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-macho-data-const-bootstrap/dependencies.log"
+
+        '
+    - name: Compile actual Mach-O driver and run real default-policy GoogleTests
+      run: 'python3 utils/ci/check-macho-data-const.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-macho-data-const"
+
+        '
+    - name: Upload real Mach-O production object programs XML and build logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-macho-data-const-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-macho-data-const
+
+          ${{ runner.temp }}/cpp-macho-data-const-bootstrap
+
+          !${{ runner.temp }}/cpp-macho-data-const/cmake-build/**
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+  inspect-macho-image-backend:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-image-backend' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare Mach-O data-const bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-macho-image-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-macho-image-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-macho-image-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)''
+        | tee "$RUNNER_TEMP/cpp-macho-image-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-macho-image-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-macho-image-bootstrap/dependencies.log"
+
+        '
+    - name: Build actual Mach-O backend and link retained objects to special images
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/check-macho-image-backend.py --repo \"$GITHUB_WORKSPACE\" \\\n  --output \"$RUNNER_TEMP/cpp-macho-image-backend\"\
+        \ --build \"$RUNNER_TEMP/cpp-macho-image-build\"\n"
+    - name: Upload actual backend image object command and source evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-macho-image-backend-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-macho-image-backend
+
+          ${{ runner.temp }}/cpp-macho-image-bootstrap
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain actual backend probe remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-macho-image-binary-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-macho-image-build/**/macho-image-backend
+        if-no-files-found: warn
+        retention-days: 7
+        compression-level: 0
+  inspect-algorithm-sdk-manifest:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'algorithm-sdk-manifest' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Authenticate prior compiler on Actions only
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 \\\n  --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-algorithm-sdk-baseline\"\n"
+    - name: Capture real SDK dependency closure and original optimized executions
+      run: "python3 utils/ci/check-algorithm-sdk-manifest.py --repo \"$GITHUB_WORKSPACE\" \\\n  --baseline \"$RUNNER_TEMP/cpp-algorithm-sdk-baseline/provenance.json\"\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-algorithm-sdk-manifest\" \\\n  --build \"$RUNNER_TEMP/cpp-algorithm-sdk-programs\"\
+        \n"
+    - name: Upload exact small manifest source command and execution evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-algorithm-sdk-manifest-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-algorithm-sdk-manifest
+        if-no-files-found: warn
+        retention-days: 14
+    - name: Preserve real generated programs remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-algorithm-sdk-programs-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-algorithm-sdk-programs
+        if-no-files-found: warn
+        retention-days: 7
+  inspect-algorithm-sdk-abi-manifest:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'algorithm-sdk-abi-manifest' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Replay actual SDK source across eight ABIs with unchanged authenticated Sema
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/check-algorithm-sdk-abi-manifest.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-algorithm-sdk-abi-plan.json\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-algorithm-sdk-abi-manifest\" \\\n  --build \"$RUNNER_TEMP/cpp-algorithm-sdk-abi-reuse\"\
+        \n"
+    - name: Upload small eight-ABI source request response and exact manifest evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-algorithm-sdk-abi-manifest-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-algorithm-sdk-abi-manifest
+        if-no-files-found: warn
+        retention-days: 14
+  inspect-algorithm-manifest-formal:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'algorithm-manifest-formal' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Prepare retained formal replay bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)''
+        | tee "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap/dependencies.log"
+
+        '
+    - name: Download exact existing compiler without rebuilding
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: "set -o pipefail\npython3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 \\\n  --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-algorithm-manifest-formal-prior\" 2>&1 | tee \"$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap/download.log\"\
+        \n"
+    - name: Replay original repaired manifest GTest and retained optimized products
+      run: "python3 utils/ci/check-algorithm-manifest-formal.py --repo \"$GITHUB_WORKSPACE\" \\\n  --baseline \"$RUNNER_TEMP/cpp-algorithm-manifest-formal-prior/provenance.json\"\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-algorithm-manifest-formal\" \\\n  --build \"$RUNNER_TEMP/cpp-algorithm-manifest-formal-build\"\
+        \n"
+    - name: Upload only actual XML source manifest and execution evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-algorithm-manifest-formal-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-algorithm-manifest-formal
+
+          ${{ runner.temp }}/cpp-algorithm-manifest-formal-bootstrap
+
+          '
+        if-no-files-found: error
+        retention-days: 14
   inspect-not-fn-source:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-source' }}
     permissions:
@@ -293,6 +890,14 @@ jobs:
         options:
         - template-source
         - ci-recovery
+        - windows-arm-source-repair
+        - fastlink-request-ownership
+        - session-cache-ownership
+        - macho-data-const
+        - macho-image-backend
+        - algorithm-sdk-manifest
+        - algorithm-sdk-abi-manifest
+        - algorithm-manifest-formal
         - not-fn-source
   push:
     branches:

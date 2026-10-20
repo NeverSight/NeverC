@@ -1,5 +1,7 @@
 # Builtin C++ frontend profiles
 
+On Linux, link generated C23 programs that sample floating-point distributions with `-lm`. Compile native comparison programs and generated programs with `-fno-fast-math -ffp-contract=off`.
+
 NeverC includes the full C++17 frontend for its experimental `cpp-core-v1`,
 owned-project `cpp-project-v1`, and bounded `cpp-math-v1` translation profiles.
 Only C++ translation is implemented. The [support matrix](../docs/support-matrix.md)

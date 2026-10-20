@@ -1,0 +1,60 @@
+{
+  "producer_commit": "a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+  "producer_run_id": 39360350577,
+  "producer_small_artifact": {
+    "id": 12238915359,
+    "name": "cpp-private-frontend-protocol-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:d1ab9fa3c119dc297baa81e778bc0a856a4d339d7620a85eba375aeb824fe55a"
+  },
+  "producer_binary_artifact": {
+    "id": 12238019813,
+    "name": "cpp-private-frontend-binary-remote-only-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:cc0ea69be64ac4f8d5c20b37a71d526eb8a332cf6652397ed8869d8b1f739bd2"
+  },
+  "producer_report_sha256": "2bb186c6fcff3223e0daf78eff00c67e5cf3482d0949526ca01298b5ec66ff0c",
+  "producer_manifest_sha256": "d76283cabbc5883381c942f42099d896626e4ca885274c15826c064e178f25e9",
+  "producer_executable_sha256": "d3265db31e4ddb952a3b9fecad9e698082b7f1a6e243952d4d7e04bb3f3a49cc",
+  "producer_executable_bytes": 79380344,
+  "producer_c_entry_source_sha256": "fdbaeb018668e4e1ba3e9578bf04540f9e75e1194a8e04ea6147eeb83966c324",
+  "producer_c_entry_header_sha256": "65073abf3fcae01c84a6d27bfee94b124ada131cfd55f1a9167a1fad93139465",
+  "expected_frontend_version": "neverc-cpp-frontend 20.1.8 protocol 1 cpp-frontend-1-d42ad9c4267b157da3acb0941e16375729ae1a04a0bde795c7d3948bb47af3a4",
+  "exact_private_input_sha256": {
+    "Frontend.cpp": "c610559df4f52b54a7e96fa3ad20d8f7baa34d7e38e1e40c70d26c1ff07a630e",
+    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "0506507ca68446475c1f4da4339735a50c1d083d5386ded146d73aab90f7eae1",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "8b77eb365687ea35fc554079c02a187a804b0b9a1d932355a48671f455b2deea",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "original_test_name": "CoreV2AlgorithmStandardComparatorOrderedRangesRunAtBothOptimizations",
+  "original_test_body_sha256": "0a9b7d5b4314b5942fff96e801fb9499e372f0beb2cbe10ef855e3b0fa901e7b",
+  "original_program_sha256": "965ce7fc980683766335f4b182cc14513e7314f747d3baabe3b0c8baeb0d9f41",
+  "linux_reference_manifest_sha256": "70f2b7b28316247f1b3ae06e4274581e2aa202ad1a6a541aca7f93b740d33ca8",
+  "target_abis": [
+    "x86_64-apple-macosx15.0.0",
+    "arm64-apple-macosx15.0.0",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "i686-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "i686-pc-windows-msvc"
+  ],
+  "reuse_mode": "existing real C-entry caller, unchanged19inputs and ABI",
+  "source_or_bridge_rebuild_performed": false,
+  "all_binaries_remote_only": true
+}
