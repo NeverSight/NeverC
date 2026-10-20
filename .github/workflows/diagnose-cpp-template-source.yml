@@ -1,6 +1,7 @@
 name: cpp-template-source-diagnostics
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
@@ -91,7 +92,8 @@ jobs:
         \  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
       != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group
-      != 'session-cache-ownership' && inputs.fixture_group != 'macho-data-const' }}
+      != 'session-cache-ownership' && inputs.fixture_group != 'macho-data-const' && inputs.fixture_group
+      != 'macho-image-backend' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -700,6 +702,66 @@ jobs:
           '
         if-no-files-found: error
         retention-days: 14
+  inspect-macho-image-backend:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-image-backend'
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare Mach-O data-const bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-macho-image-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-macho-image-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-macho-image-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install real GoogleTest and matching host compiler
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest);
+        print(sys.version)'' | tee "$RUNNER_TEMP/cpp-macho-image-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-macho-image-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build libgtest-dev gdb binutils 2>&1 | tee "$RUNNER_TEMP/cpp-macho-image-bootstrap/dependencies.log"
+
+        '
+    - name: Build actual Mach-O backend and link retained objects to special images
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/check-macho-image-backend.py --repo \"$GITHUB_WORKSPACE\" \\\n  --output\
+        \ \"$RUNNER_TEMP/cpp-macho-image-backend\" --build \"$RUNNER_TEMP/cpp-macho-image-build\"\n"
+    - name: Upload actual backend image object command and source evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-macho-image-backend-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-macho-image-backend
+
+          ${{ runner.temp }}/cpp-macho-image-bootstrap
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain actual backend probe remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-macho-image-binary-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-macho-image-build/**/macho-image-backend
+        if-no-files-found: warn
+        retention-days: 7
+        compression-level: 0
 'on':
   workflow_dispatch:
     inputs:
@@ -715,6 +777,7 @@ jobs:
         - fastlink-request-ownership
         - session-cache-ownership
         - macho-data-const
+        - macho-image-backend
   push:
     branches:
     - dev
