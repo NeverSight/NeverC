@@ -11307,6 +11307,48 @@ public:
            llvm::is_contained(Paths, Spell->Path) &&
            llvm::is_contained(Paths, Expansion->Path);
   }
+
+  // Clang's parser splits a closing >> token into character-range expansion
+  // entries with scratch spelling. This is not a macro-origin exemption:
+  // authenticate the exact enable_if_t root and the same original SDK token
+  // for each independently retained default role.
+  bool factoryDefaultSource(const TypeSourceInfo *Info,
+                            const TypeSourceInfo *Primary) {
+    if (!Info || !Primary) return false;
+    const auto Root = Info->getTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+    const auto Original = Primary->getTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+    const auto *Alias = Root.isNull() ? nullptr
+        : dyn_cast_or_null<TypeAliasTemplateDecl>(
+            Root.getTypePtr()->getTemplateName().getAsTemplateDecl());
+    const auto *OriginalAlias = Original.isNull() ? nullptr
+        : dyn_cast_or_null<TypeAliasTemplateDecl>(
+            Original.getTypePtr()->getTemplateName().getAsTemplateDecl());
+    if (!Alias || Alias != OriginalAlias || !Alias->getIdentifier() ||
+        Alias->getName() != "enable_if_t" || Root.getNumArgs() != 1 ||
+        Original.getNumArgs() != 1 ||
+        Root.getBeginLoc() != Original.getBeginLoc() ||
+        Root.getRAngleLoc() != Original.getRAngleLoc() ||
+        Root.getEndLoc() != Root.getRAngleLoc() ||
+        !family(Alias, {"__type_traits/enable_if.h"}) ||
+        !location(Root.getBeginLoc(), {"__functional/not_fn.h"})) return false;
+    const auto End = Root.getRAngleLoc();
+    if (location(End, {"__functional/not_fn.h"})) return true;
+    if (!End.isMacroID()) return false;
+    const auto Spell = SM.getSpellingLoc(End);
+    const auto Range = SM.getImmediateExpansionRange(End);
+    const auto Begin = Range.getBegin();
+    if (!Spell.isFileID() || SM.getImmediateSpellingLoc(End) != Spell ||
+        !SM.isWrittenInScratchSpace(Spell) || Range.isTokenRange() ||
+        !Begin.isFileID() || !Range.getEnd().isFileID() ||
+        Range.getEnd() != Begin.getLocWithOffset(1) ||
+        SM.getExpansionLoc(End) != Begin ||
+        !location(Begin, {"__functional/not_fn.h"})) return false;
+    bool Invalid = false;
+    const char *Written = SM.getCharacterData(Begin, &Invalid);
+    if (Invalid || *Written != '>') return false;
+    const char *Split = SM.getCharacterData(Spell, &Invalid);
+    return !Invalid && *Split == '>';
+  }
   bool family(const Decl *Root, llvm::ArrayRef<llvm::StringRef> Paths) {
     std::vector<const Decl *> Work{Root};
     while (!Work.empty()) {
@@ -11845,12 +11887,8 @@ describeFunctionalNotFnFactoryTemplateSource(
   const auto *Substituted = DefaultUse.Written.getTypeSourceInfo();
   const auto *Converted = DefaultUse.Converted.getTypeSourceInfo();
   if (!PrimaryDefault || !Substituted || !Converted) return std::nullopt;
-  for (const auto *Info : {PrimaryDefault, Substituted, Converted}) {
-    const auto Location = Info->getTypeLoc();
-    if (Location.isNull() ||
-        !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"}) ||
-        !Check.location(Location.getEndLoc(), {"__functional/not_fn.h"})) return std::nullopt;
-  }
+  for (const auto *Info : {PrimaryDefault, Substituted, Converted})
+    if (!Check.factoryDefaultSource(Info, PrimaryDefault)) return std::nullopt;
   // Sema records Written after SubstDefaultTemplateArgumentIfAvailable, before
   // CheckTemplateArgument adds conversions. It is not the primary's dependent
   // default. Keep all three original AST roots for separate source traversal.
