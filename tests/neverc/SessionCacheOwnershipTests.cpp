@@ -59,14 +59,14 @@ TEST(SessionCacheOwnershipTest, GuardBorrowClearsOnReusedForeignThread) {
   auto *MainCache = session_detail::ActiveWorkerCache;
   ASSERT_NE(MainCache, nullptr);
   std::atomic<unsigned> Destroyed{0};
+  auto Bound = bindLinkerContext([&] {
+    EXPECT_EQ(currentLinkerContext(), &Context);
+    EXPECT_GT(currentLinkerWorkerSlot(), 0U);
+    EXPECT_NE(session_detail::ActiveWorkerCache, nullptr);
+    EXPECT_NE(session_detail::ActiveWorkerCache, MainCache);
+    (void)makeThreadLocal<CacheTrackedValue<0>>(Destroyed, 0);
+  });
   std::thread Worker([&] {
-    auto Bound = bindLinkerContext([&] {
-      EXPECT_EQ(currentLinkerContext(), &Context);
-      EXPECT_GT(currentLinkerWorkerSlot(), 0U);
-      EXPECT_NE(session_detail::ActiveWorkerCache, nullptr);
-      EXPECT_NE(session_detail::ActiveWorkerCache, MainCache);
-      (void)makeThreadLocal<CacheTrackedValue<0>>(Destroyed, 0);
-    });
     for (unsigned I = 0; I != 32; ++I) {
       EXPECT_FALSE(hasContext());
       EXPECT_EQ(session_detail::ActiveWorkerCache, nullptr);
