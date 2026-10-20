@@ -38,12 +38,13 @@
   "allowed_bridge_source_changes": [
     "Frontend.cpp",
     "Frontend.h",
+    "Lowering.cpp",
     "MathSDK.cpp"
   ],
   "feature_admission_or_guard_relaxed": false,
   "all_binaries_remote_only": true,
   "trace_preserves_false_return_values": true,
-  "trace_source_basis": "16d7c1337c65f0f6808334b2b84a3ef22b55fd5f",
+  "trace_source_basis": "a9b2cdbc7aba1ed0564349f7ad560c0b5fb61112",
   "cases": [
     {
       "name": "cstddef-predefines",
@@ -74,8 +75,7 @@
       "source_sha256": "aa5bc57185c1389a95d6809b2413a386f9b90929bbe5593e3a8c30cbf60e7860",
       "expected": "reject",
       "diagnostic_codes": [
-        "TR0203",
-        "TR0201"
+        "TR0203"
       ]
     }
   ],
@@ -85,28 +85,98 @@
         {
           "begin": "class UtilityTupleQueryGraph\n",
           "end": "\nstatic const DeclRefExpr *approvedUtilityReference(",
-          "original_sha256": "bf588501487fc0adbe060be9ce0bf5c09a18350d776ab42e673c0e1cda9e9984",
-          "false_count": 418,
+          "original_sha256": "d2121bfa41c77c295cfe82c9b5a55a4391750868ac641ccc1df280c422c93505",
+          "false_count": 419,
           "empty_count": 5
         },
         {
-          "begin": "class UtilitySelectedPairComparison {",
+          "begin": "std::optional<UtilityOperation>\napprovedUtilityPairComparisonChildOperation(",
           "end": "\nstd::optional<std::vector<const CXXOperatorCallExpr *>>\napprovedUtilityPairSelectedComparisons(",
-          "original_sha256": "7943fceb13c45f4566bdc2fa7812f4c3804a6fc96df0e0a1b70e5ea6aeb4e05c",
+          "original_sha256": "3273b848ca35340a596125ad8c6b1a7d7b0c94bfd9b5abf384c5dd2c8988110f",
           "false_count": 15,
-          "empty_count": 2
+          "empty_count": 7
         }
       ],
       "helper": "static bool pairStringTraceFalse(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE MathSDK.cpp:\" << Line << \"\\n\";\n  return false;\n}\nstatic std::nullopt_t pairStringTraceEmpty(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_EMPTY MathSDK.cpp:\" << Line << \"\\n\";\n  return std::nullopt;\n}\n\n",
-      "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n"
+      "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
+      "inserts": [
+        "    if (PairTraitQuery && PairTraitQuery->getNumArgs() && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      const auto *Owner = PairTraitQuery->getArg(0)->getType()->getAsCXXRecordDecl();\n      if (Owner && Owner->getIdentifier() && Owner->getName() == \"basic_string\") {\n        llvm::errs() << \"PAIR_STRING_ROOT_BEGIN\\n\";\n        Source.Root->dump(llvm::errs());\n        PairTraitQuery->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_ROOT_END\\n\";\n      }\n    }\n"
+      ]
     },
     "Frontend.cpp": {
-      "false_return": "return (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")\n            ? (llvm::errs() << \"PAIR_STRING_FALSE Frontend.cpp:\" << __LINE__ << \"\\n\", false)\n            : false);",
-      "inserts": [
-        "        if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n          llvm::errs() << \"PAIR_STRING_RUNTIME_CALLEE_BEGIN\\n\";\n          F->dump(llvm::errs());\n          llvm::errs() << \"PAIR_STRING_RUNTIME_CALLEE_END\\n\";\n        }\n",
-        "        if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n          llvm::errs() << \"PAIR_STRING_TEMPLATE_PACKET \"\n                       << unsigned(Source.Kind) << \" written=\" << bool(Source.Written)\n                       << \" canonical=\" << bool(Source.Canonical)\n                       << \" sugared=\" << bool(Source.Sugared) << \"\\n\";\n          Source.Template->dump(llvm::errs());\n          llvm::errs() << \"PAIR_STRING_TEMPLATE_PACKET_END\\n\";\n        }\n"
-      ],
       "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
+      "helper": "static bool pairStringFrontendObserved(bool Value, unsigned Line) {\n  if (!Value && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE Frontend.cpp:\" << Line << \"\\n\";\n  return Value;\n}\n\n",
+      "regions": [
+        {
+          "begin": "class UtilityPairByteComparisonSources\n",
+          "end": "\nstatic bool utilityStringDestructionSource(",
+          "original_sha256": "a85e84be8475102287c38c241347ba6b104fdd060a7c13f60823e40302851a32",
+          "return_rewrites": [
+            {
+              "before": "return true;",
+              "after": "return pairStringFrontendObserved((true), __LINE__);"
+            },
+            {
+              "before": "return Spelling && Spelling->Root == \"libcxx\" && Expansion &&\n           Expansion->Root == \"libcxx\";",
+              "after": "return pairStringFrontendObserved((Spelling && Spelling->Root == \"libcxx\" && Expansion &&\n           Expansion->Root == \"libcxx\"), __LINE__);"
+            },
+            {
+              "before": "return false;",
+              "after": "return pairStringFrontendObserved((false), __LINE__);"
+            },
+            {
+              "before": "return approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&\n           location(Definition->getLocation());",
+              "after": "return pairStringFrontendObserved((approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&\n           location(Definition->getLocation())), __LINE__);"
+            },
+            {
+              "before": "return ++Nodes <= 16384 && location(Statement->getBeginLoc()) &&\n           location(Statement->getEndLoc());",
+              "after": "return pairStringFrontendObserved((++Nodes <= 16384 && location(Statement->getBeginLoc()) &&\n           location(Statement->getEndLoc())), __LINE__);"
+            },
+            {
+              "before": "return ++Nodes <= 16384 && location(Type.getBeginLoc()) &&\n           location(Type.getEndLoc());",
+              "after": "return pairStringFrontendObserved((++Nodes <= 16384 && location(Type.getBeginLoc()) &&\n           location(Type.getEndLoc())), __LINE__);"
+            },
+            {
+              "before": "return location(Member->getMemberLoc()) &&\n           approvedStandardSDKDeclaration(A.S, A.Sources,\n                                            Member->getMemberDecl());",
+              "after": "return pairStringFrontendObserved((location(Member->getMemberLoc()) &&\n           approvedStandardSDKDeclaration(A.S, A.Sources,\n                                            Member->getMemberDecl())), __LINE__);"
+            },
+            {
+              "before": "return location(Variable->getLocation());",
+              "after": "return pairStringFrontendObserved((location(Variable->getLocation())), __LINE__);"
+            },
+            {
+              "before": "return isa<FunctionDecl>(Declaration) ||\n           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);",
+              "after": "return pairStringFrontendObserved((isa<FunctionDecl>(Declaration) ||\n           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)), __LINE__);"
+            },
+            {
+              "before": "return utilitySDKFunctionSource(A, Constructor, \"string_view\", false);",
+              "after": "return pairStringFrontendObserved((utilitySDKFunctionSource(A, Constructor, \"string_view\", false)), __LINE__);"
+            },
+            {
+              "before": "return File && File->Root == \"libcxx\" && File->Path == \"__algorithm/comp.h\" &&\n               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);",
+              "after": "return pairStringFrontendObserved((File && File->Root == \"libcxx\" && File->Path == \"__algorithm/comp.h\" &&\n               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)), __LINE__);"
+            },
+            {
+              "before": "return function(Constructor);",
+              "after": "return pairStringFrontendObserved((function(Constructor)), __LINE__);"
+            },
+            {
+              "before": "return location(Call->getExprLoc()) &&\n             (Name == \"__builtin_memcmp\" ||\n              Name == \"__builtin_is_constant_evaluated\" ||\n              Name == \"__builtin_addressof\" || Name == \"__builtin_assume\" ||\n              Name == \"__builtin_expect\" || Name == \"__builtin_launder\");",
+              "after": "return pairStringFrontendObserved((location(Call->getExprLoc()) &&\n             (Name == \"__builtin_memcmp\" ||\n              Name == \"__builtin_is_constant_evaluated\" ||\n              Name == \"__builtin_addressof\" || Name == \"__builtin_assume\" ||\n              Name == \"__builtin_expect\" || Name == \"__builtin_launder\")), __LINE__);"
+            },
+            {
+              "before": "return function(Function);",
+              "after": "return pairStringFrontendObserved((function(Function)), __LINE__);"
+            },
+            {
+              "before": "return Prototype && (!Prototype->getNoexceptExpr() ||\n        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&\n        TraverseStmt(const_cast<Stmt *>(Definition->getBody()));",
+              "after": "return pairStringFrontendObserved((Prototype && (!Prototype->getNoexceptExpr() ||\n        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&\n        TraverseStmt(const_cast<Stmt *>(Definition->getBody()))), __LINE__);"
+            }
+          ]
+        }
+      ],
+      "false_return": "return pairStringFrontendObserved(false, __LINE__);",
+      "inserts": [],
       "false_count": 3
     }
   },
@@ -154,6 +224,291 @@
     "utils/ci/replay-pair-string-residual.py",
     "utils/ci/cpp-pair-string-residual-trace-plan.json",
     "utils/ci/FrontendProtocolDriver.cpp",
-    ".github/workflows/diagnose-cpp-template-source.yml"
-  ]
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp"
+  ],
+  "actual_previous_source_execution_failure": {
+    "commit": "973a78acc610a21b2449e7b752607939af309948",
+    "run_id": 39397474584,
+    "artifact_id": 12252692204,
+    "report_sha256": "eb3c8034ccd683a4ba6aacbe4f8cfffe2990d4d1e186e6c255c791f2cf6efb22",
+    "actual_requests": 120,
+    "accepted_positive_requests": 24,
+    "original_source_guard_rejections": 80,
+    "failed_expectations": [
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      }
+    ]
+  },
+  "source_trace_version": 2
 }

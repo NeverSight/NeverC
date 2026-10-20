@@ -1,5 +1,11 @@
 #include <cstdlib>
 #include "llvm/Support/raw_ostream.h"
+static bool pairStringFrontendObserved(bool Value, unsigned Line) {
+  if (!Value && std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE"))
+    llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << Line << "\n";
+  return Value;
+}
+
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -10118,61 +10124,61 @@ class UtilityPairByteComparisonSources
 
   bool location(SourceLocation L) const {
     if (L.isInvalid())
-      return true;
+      return pairStringFrontendObserved((true), __LINE__);
     const auto Spelling = A.S.sdkFile(A.Sources, L);
     const auto Expansion = A.S.sdkFile(A.Sources, A.Sources.getExpansionLoc(L));
-    return Spelling && Spelling->Root == "libcxx" && Expansion &&
-           Expansion->Root == "libcxx";
+    return pairStringFrontendObserved((Spelling && Spelling->Root == "libcxx" && Expansion &&
+           Expansion->Root == "libcxx"), __LINE__);
   }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
         Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     for (const auto *Declaration : Function->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
-        return false;
+        return pairStringFrontendObserved((false), __LINE__);
     }
     if (const auto *Primary = Function->getPrimaryTemplate())
       for (const auto *Declaration : Primary->redecls())
         if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
-          return false;
+          return pairStringFrontendObserved((false), __LINE__);
     const auto *Definition = Function->getDefinition();
-    return approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&
-           location(Definition->getLocation());
+    return pairStringFrontendObserved((approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&
+           location(Definition->getLocation())), __LINE__);
   }
 public:
   explicit UtilityPairByteComparisonSources(Adapter &A) : A(A) {}
   bool VisitStmt(Stmt *Statement) {
     A.chargeExpansion(1, Statement->getBeginLoc());
-    return ++Nodes <= 16384 && location(Statement->getBeginLoc()) &&
-           location(Statement->getEndLoc());
+    return pairStringFrontendObserved((++Nodes <= 16384 && location(Statement->getBeginLoc()) &&
+           location(Statement->getEndLoc())), __LINE__);
   }
   bool VisitTypeLoc(TypeLoc Type) {
-    return ++Nodes <= 16384 && location(Type.getBeginLoc()) &&
-           location(Type.getEndLoc());
+    return pairStringFrontendObserved((++Nodes <= 16384 && location(Type.getBeginLoc()) &&
+           location(Type.getEndLoc())), __LINE__);
   }
   bool VisitMemberExpr(MemberExpr *Member) {
-    return location(Member->getMemberLoc()) &&
+    return pairStringFrontendObserved((location(Member->getMemberLoc()) &&
            approvedStandardSDKDeclaration(A.S, A.Sources,
-                                            Member->getMemberDecl());
+                                            Member->getMemberDecl())), __LINE__);
   }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     const auto *Declaration = Reference->getDecl();
     if (!location(Reference->getLocation()))
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     if (const auto *Variable = dyn_cast<VarDecl>(Declaration))
       if (Variable->isLocalVarDeclOrParm())
-        return location(Variable->getLocation());
-    return isa<FunctionDecl>(Declaration) ||
-           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+        return pairStringFrontendObserved((location(Variable->getLocation())), __LINE__);
+    return pairStringFrontendObserved((isa<FunctionDecl>(Declaration) ||
+           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)), __LINE__);
   }
   bool VisitCXXConstructExpr(CXXConstructExpr *Construction) {
     const auto *Constructor = Construction->getConstructor();
     if (Constructor && Constructor->isTrivial() && Constructor->isDefaulted() &&
         approvedStringHashViewCopyArgument(A.S, A.Sources, Construction, A.Context))
-      return utilitySDKFunctionSource(A, Constructor, "string_view", false);
+      return pairStringFrontendObserved((utilitySDKFunctionSource(A, Constructor, "string_view", false)), __LINE__);
     const auto *Record = Constructor ?
         dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
     const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
@@ -10186,62 +10192,62 @@ public:
       auto Origin = [&](const Decl *Declaration) {
         const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
         A.chargeExpansion(1, Declaration->getLocation());
-        return File && File->Root == "libcxx" && File->Path == "__algorithm/comp.h" &&
-               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+        return pairStringFrontendObserved((File && File->Root == "libcxx" && File->Path == "__algorithm/comp.h" &&
+               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)), __LINE__);
       };
       for (const auto &Argument : Record->getTemplateArgs().asArray())
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Argument.getAsType()->isVoidType()) return false;
+            !Argument.getAsType()->isVoidType()) return pairStringFrontendObserved((false), __LINE__);
       for (const auto *Declaration : Record->redecls())
-        if (!Origin(Declaration)) return false;
+        if (!Origin(Declaration)) return pairStringFrontendObserved((false), __LINE__);
       for (const auto *Declaration : Primary->redecls())
-        if (!Origin(Declaration) || !Origin(Declaration->getTemplatedDecl())) return false;
+        if (!Origin(Declaration) || !Origin(Declaration->getTemplatedDecl())) return pairStringFrontendObserved((false), __LINE__);
       for (const auto *Declaration : Constructor->redecls())
-        if (!Origin(Declaration)) return false;
-      return true;
+        if (!Origin(Declaration)) return pairStringFrontendObserved((false), __LINE__);
+      return pairStringFrontendObserved((true), __LINE__);
     }
-    return function(Constructor);
+    return pairStringFrontendObserved((function(Constructor)), __LINE__);
   }
   bool VisitCallExpr(CallExpr *Call) {
     const auto *Function = Call->getDirectCallee();
     if (!Function)
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     if (Function->getBuiltinID()) {
       const auto Name = Function->getName();
-      return location(Call->getExprLoc()) &&
+      return pairStringFrontendObserved((location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
               Name == "__builtin_is_constant_evaluated" ||
               Name == "__builtin_addressof" || Name == "__builtin_assume" ||
-              Name == "__builtin_expect" || Name == "__builtin_launder");
+              Name == "__builtin_expect" || Name == "__builtin_launder")), __LINE__);
     }
-    return function(Function);
+    return pairStringFrontendObserved((function(Function)), __LINE__);
   }
   bool function(const FunctionDecl *Function) {
     if (!pinned(Function))
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     if (!Seen.insert(Function->getCanonicalDecl()).second)
-      return true;
+      return pairStringFrontendObserved((true), __LINE__);
     if (Seen.size() > 128)
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     const auto *Definition = Function->getDefinition();
     if (const auto *Pattern = Function->getTemplateInstantiationPattern(true))
       if (!pinned(Pattern))
-        return false;
+        return pairStringFrontendObserved((false), __LINE__);
     for (const auto *Parameter : Definition->parameters()) {
       const auto *Info = Parameter->getTypeSourceInfo();
       if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
-        return false;
+        return pairStringFrontendObserved((false), __LINE__);
     }
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Definition))
       for (const auto *Initializer : Constructor->inits())
         if (!Initializer->isMemberInitializer() ||
             !approvedStandardSDKDeclaration(A.S, A.Sources, Initializer->getMember()) ||
             !TraverseStmt(const_cast<Expr *>(Initializer->getInit())))
-          return false;
+          return pairStringFrontendObserved((false), __LINE__);
     const auto *Prototype = Definition->getType()->getAs<FunctionProtoType>();
-    return Prototype && (!Prototype->getNoexceptExpr() ||
+    return pairStringFrontendObserved((Prototype && (!Prototype->getNoexceptExpr() ||
         TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&
-        TraverseStmt(const_cast<Stmt *>(Definition->getBody()));
+        TraverseStmt(const_cast<Stmt *>(Definition->getBody()))), __LINE__);
   }
 };
 
@@ -10251,24 +10257,24 @@ static bool utilityPairSelectedComparisonSource(Adapter &A,
   const auto Comparisons = approvedUtilityPairSelectedComparisons(
       A.S, A.Sources, Call, A.Context);
   if (!Comparisons)
-    return false;
+    return pairStringFrontendObserved((false), __LINE__);
   if (Comparisons->empty())
-    return true;
+    return pairStringFrontendObserved((true), __LINE__);
   if (!utilitySDKFunctionSource(A, Call->getDirectCallee(), "__utility/pair.h"))
-    return false;
+    return pairStringFrontendObserved((false), __LINE__);
   for (const auto *Child : *Comparisons) {
-    const auto Operation = approvedUtilityOperation(A.S, A.Sources, Child, A.Context);
+    const auto Operation = approvedUtilityPairComparisonChildOperation(A.S, A.Sources, Child, A.Context);
     if (!Operation)
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     if (*Operation == UtilityOperation::MemoryUniquePtrEqual ||
         *Operation == UtilityOperation::MemoryUniquePtrLess) {
       if (!utilityUniquePtrOwnerComparisonSource(A, Child))
-        return false;
+        return pairStringFrontendObserved((false), __LINE__);
     } else if (!UtilityPairByteComparisonSources(A).function(Child->getDirectCallee())) {
-      return false;
+      return pairStringFrontendObserved((false), __LINE__);
     }
   }
-  return true;
+  return pairStringFrontendObserved((true), __LINE__);
 }
 
 static bool utilityStringDestructionSource(Adapter &A,
@@ -13954,6 +13960,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
       Args.push_back(zero(Optional->Engaged->getType(), L));
+      if (Optional->TailPaddingBytes)
+        Args.push_back(zero(Context.getConstantArrayType(
+                                Context.UnsignedCharTy,
+                                llvm::APInt(64, Optional->TailPaddingBytes),
+                                nullptr, ArraySizeModifier::Normal, 0),
+                            L));
     } else {
       if (const auto *Base = emptyBase(R))
         Args.push_back(zero(Context.getRecordType(Base->Base), L));
@@ -21935,14 +21947,6 @@ public:
       if (DeferredDeclaration || !Source.Written || !Source.Canonical ||
           !Source.Sugared || Source.Canonical->size() != Source.Sugared->size() ||
           Written.size() != Source.Written->NumTemplateArgs) {
-        if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
-          llvm::errs() << "PAIR_STRING_TEMPLATE_PACKET "
-                       << unsigned(Source.Kind) << " written=" << bool(Source.Written)
-                       << " canonical=" << bool(Source.Canonical)
-                       << " sugared=" << bool(Source.Sugared) << "\n";
-          Source.Template->dump(llvm::errs());
-          llvm::errs() << "PAIR_STRING_TEMPLATE_PACKET_END\n";
-        }
         A.reject(L, "standard template source",
                  "The approved standard template use is missing its exact "
                  "concrete argument source.");
@@ -22362,14 +22366,10 @@ public:
     const auto Location = Selection.Location;
     const PairConstructorSourceKey Key{Construction, Factory};
     if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
-      return (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
-            ? (llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
-            : false);
+      return pairStringFrontendObserved(false, __LINE__);
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
-        Found == FunctionSources.end() || Found->second.empty()) return (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
-            ? (llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
-            : false);
+        Found == FunctionSources.end() || Found->second.empty()) return pairStringFrontendObserved(false, __LINE__);
     const TemplateUseSource *First = nullptr;
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
@@ -22383,9 +22383,7 @@ public:
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
               Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
-        return (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
-            ? (llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
-            : false);
+        return pairStringFrontendObserved(false, __LINE__);
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
       Members.insert(LocalMembers.begin(), LocalMembers.end());
@@ -28114,11 +28112,6 @@ public:
       if (A.S.coreV2() && UtilityAllocatorAssignment)
         return true;
       if (A.S.coreV2() && F && approvedSDKDeclaration(A.S, A.Sources, F)) {
-        if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
-          llvm::errs() << "PAIR_STRING_RUNTIME_CALLEE_BEGIN\n";
-          F->dump(llvm::errs());
-          llvm::errs() << "PAIR_STRING_RUNTIME_CALLEE_END\n";
-        }
         A.reject(S->getBeginLoc(), "standard library runtime call",
                  "Approved SDK declarations may run only through a documented "
                  "direct lowering; this call has none.",
@@ -28759,6 +28752,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
         Fields.push_back(json::Object{
             {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+      if (UtilityOptional->TailPaddingBytes)
+        Fields.push_back(json::Object{
+            {"name", "nct_optional_tail_storage"},
+            {"type", "arr:" + std::to_string(UtilityOptional->TailPaddingBytes) +
+                         ":u8"}});
     } else {
       for (const auto *F : R->fields())
         Fields.push_back(json::Object{
@@ -28814,6 +28812,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         const auto &StorageLayout =
             Context.getASTRecordLayout(UtilityOptional->DestructBase);
         Offsets.push_back(StorageLayout.getFieldOffset(1));
+        if (UtilityOptional->TailPaddingBytes)
+          Offsets.push_back(StorageLayout.getFieldOffset(1) +
+                           Context.getTypeSize(UtilityOptional->Engaged->getType()));
       } else {
         for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
           Offsets.push_back(Layout.getFieldOffset(I));
