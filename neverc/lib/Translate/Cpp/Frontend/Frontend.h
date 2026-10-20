@@ -150,6 +150,9 @@ struct TemplateUseSource {
   const clang::TemplateArgumentList *Selection;
   bool WrittenStorageClass;
   const clang::NamedDecl *Origin = nullptr; // Exact copied partial/full class source; null for a written event.
+  // Inert SDK evidence for an exact not_fn constraint root. It is never
+  // indexed as ordinary owned source or as permission to execute an SDK body.
+  bool FunctionalNotFnConstraint = false;
 };
 // Retain each type substitution already performed by Sema. The final
 // VarDecl may keep its first declaration's TypeSourceInfo after completion.
@@ -1796,6 +1799,14 @@ describeFunctionalNotFnFactoryTemplateSource(
     const SelectedTemplateCallSource &Selection, const TemplateUseSource &Use,
     const clang::ASTContext &Context);
 
+
+// Collection is purpose-bound and inert. Consuming the selected factory's
+// default/alias/trait source and granting runtime use remain separate checks.
+bool retainFunctionalNotFnConstraintRoot(
+    const State &S, const clang::SourceManager &SM, TemplateSourceKind Kind,
+    const clang::NamedDecl *Template, const clang::Decl *Declaration,
+    const clang::Type *Type, const clang::TypeSourceInfo *Underlying,
+    clang::SourceLocation Location);
 
 struct FunctionalNotFnTupleTagSource {
   const clang::CXXConstructExpr *Construction;
