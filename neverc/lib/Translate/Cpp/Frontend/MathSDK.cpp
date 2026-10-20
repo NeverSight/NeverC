@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -11314,7 +11315,7 @@ public:
   // for each independently retained default role.
   bool factoryDefaultSource(const TypeSourceInfo *Info,
                             const TypeSourceInfo *Primary) {
-    if (!Info || !Primary) return false;
+    if (!Info || !Primary) return (std::fprintf(stderr, "NOT_FN_DEFAULT_TOKEN_REJECT line=%u\n", __LINE__), false);
     auto Specialization = [](const TypeSourceInfo *Source) {
       auto Written = Source->getTypeLoc();
       // The actual unqualified alias spelling has an implicit elaborated
@@ -11343,10 +11344,10 @@ public:
         Root.getRAngleLoc() != Original.getRAngleLoc() ||
         Root.getEndLoc() != Root.getRAngleLoc() ||
         !family(Alias, {"__type_traits/enable_if.h"}) ||
-        !location(Root.getBeginLoc(), {"__functional/not_fn.h"})) return false;
+        !location(Root.getBeginLoc(), {"__functional/not_fn.h"})) return (std::fprintf(stderr, "NOT_FN_DEFAULT_TOKEN_REJECT line=%u\n", __LINE__), false);
     const auto End = Root.getRAngleLoc();
     if (location(End, {"__functional/not_fn.h"})) return true;
-    if (!End.isMacroID()) return false;
+    if (!End.isMacroID()) return (std::fprintf(stderr, "NOT_FN_DEFAULT_TOKEN_REJECT line=%u\n", __LINE__), false);
     const auto Spell = SM.getSpellingLoc(End);
     const auto Range = SM.getImmediateExpansionRange(End);
     const auto Begin = Range.getBegin();
@@ -11355,10 +11356,10 @@ public:
         !Begin.isFileID() || !Range.getEnd().isFileID() ||
         Range.getEnd() != Begin.getLocWithOffset(1) ||
         SM.getExpansionLoc(End) != Begin ||
-        !location(Begin, {"__functional/not_fn.h"})) return false;
+        !location(Begin, {"__functional/not_fn.h"})) return (std::fprintf(stderr, "NOT_FN_DEFAULT_TOKEN_REJECT line=%u\n", __LINE__), false);
     bool Invalid = false;
     const char *Written = SM.getCharacterData(Begin, &Invalid);
-    if (Invalid || *Written != '>') return false;
+    if (Invalid || *Written != '>') return (std::fprintf(stderr, "NOT_FN_DEFAULT_TOKEN_REJECT line=%u\n", __LINE__), false);
     const char *Split = SM.getCharacterData(Spell, &Invalid);
     return !Invalid && *Split == '>';
   }
@@ -11861,7 +11862,7 @@ describeFunctionalNotFnFactoryTemplateSource(
       Use.Instantiation || Use.Origin || Use.WrittenStorageClass || Use.DefaultsOverflow ||
       !Use.Canonical || !Use.Sugared || Use.Canonical->size() != 2 ||
       Use.Sugared->size() != 2 || Use.Defaults.size() != 1 ||
-      !Use.ParameterTypes.empty()) return std::nullopt;
+      !Use.ParameterTypes.empty()) return (std::fprintf(stderr, "NOT_FN_DEFAULT_BINDING_REJECT line=%u\n", __LINE__), std::nullopt);
   const auto *Arguments = Function->getTemplateSpecializationArgs();
   const auto *Parameters = Primary->getTemplateParameters();
   const auto *Input = Parameters && Parameters->size() == 2
@@ -11875,7 +11876,7 @@ describeFunctionalNotFnFactoryTemplateSource(
       Input->getIndex() != 0 || Default->getIndex() != 1 ||
       !Check.family(Primary, {"__functional/not_fn.h"}) ||
       !Check.family(Input, {"__functional/not_fn.h"}) ||
-      !Check.family(Default, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(Default, {"__functional/not_fn.h"})) return (std::fprintf(stderr, "NOT_FN_DEFAULT_BINDING_REJECT line=%u\n", __LINE__), std::nullopt);
   for (unsigned I = 0; I != 2; ++I) {
     const auto &Canonical = Use.Canonical->get(I);
     const auto &Sugared = Use.Sugared->get(I);
@@ -11885,7 +11886,7 @@ describeFunctionalNotFnFactoryTemplateSource(
         Canonical.isInstantiationDependent() || Sugared.isInstantiationDependent() ||
         !Arguments->get(I).structurallyEquals(Canonical) ||
         !Canonical.structurallyEquals(Context.getCanonicalTemplateArgument(Sugared)))
-      return std::nullopt;
+      return (std::fprintf(stderr, "NOT_FN_DEFAULT_BINDING_REJECT line=%u\n", __LINE__), std::nullopt);
   }
   const auto &DefaultUse = Use.Defaults.front();
   if (DefaultUse.Parameter != Default ||
@@ -11895,13 +11896,13 @@ describeFunctionalNotFnFactoryTemplateSource(
       !Context.hasSameType(DefaultUse.Written.getArgument().getAsType(),
                            Use.Sugared->get(1).getAsType()) ||
       !Context.hasSameType(DefaultUse.Converted.getArgument().getAsType(),
-                           Use.Canonical->get(1).getAsType())) return std::nullopt;
+                           Use.Canonical->get(1).getAsType())) return (std::fprintf(stderr, "NOT_FN_DEFAULT_BINDING_REJECT line=%u\n", __LINE__), std::nullopt);
   const auto *PrimaryDefault = Default->getDefaultArgument().getTypeSourceInfo();
   const auto *Substituted = DefaultUse.Written.getTypeSourceInfo();
   const auto *Converted = DefaultUse.Converted.getTypeSourceInfo();
-  if (!PrimaryDefault || !Substituted || !Converted) return std::nullopt;
+  if (!PrimaryDefault || !Substituted || !Converted) return (std::fprintf(stderr, "NOT_FN_DEFAULT_BINDING_REJECT line=%u\n", __LINE__), std::nullopt);
   for (const auto *Info : {PrimaryDefault, Substituted, Converted})
-    if (!Check.factoryDefaultSource(Info, PrimaryDefault)) return std::nullopt;
+    if (!Check.factoryDefaultSource(Info, PrimaryDefault)) return (std::fprintf(stderr, "NOT_FN_DEFAULT_BINDING_REJECT line=%u\n", __LINE__), std::nullopt);
   // Sema records Written after SubstDefaultTemplateArgumentIfAvailable, before
   // CheckTemplateArgument adds conversions. It is not the primary's dependent
   // default. Keep all three original AST roots for separate source traversal.

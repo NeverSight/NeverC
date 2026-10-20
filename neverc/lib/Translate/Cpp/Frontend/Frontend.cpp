@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -29546,6 +29547,58 @@ class Consumer : public ASTConsumer {
       bool Overflow, const SourceLocation &Location, bool Instantiation = false,
       const TemplateArgumentList *Selection = nullptr,
       bool WrittenStorageClass = false, const NamedDecl *Origin = nullptr) {
+
+    // Diagnostic-only source ingress. All original filtering follows unchanged.
+    if (S.coreV2() && Template && Template->getIdentifier()) {
+      const auto N = Template->getName();
+      const bool Wanted = N == "enable_if_t" || N == "__enable_if_t" ||
+          N == "enable_if" || N == "decay_t" || N == "__decay_t" ||
+          N == "decay" || N == "is_constructible_v" ||
+          N == "is_move_constructible_v" || N == "__not_fn_t" ||
+          N == "__perfect_forward" || N == "__perfect_forward_impl" ||
+          N == "__tuple_types" || N == "__tuple_indices";
+      auto &C = Template->getASTContext();
+      auto &SM = C.getSourceManager();
+      const auto Origin = S.sdkFile(SM, Template->getLocation());
+      if (Wanted && Origin && Origin->Root == "libcxx") {
+        std::fprintf(stderr, "NOT_FN_ALIAS_INGRESS_BEGIN name=%s kind=%u type_kind=%u function_kind=%u count=%u defaults=%u types=%u\n",
+            Template->getNameAsString().c_str(), static_cast<unsigned>(Kind),
+            static_cast<unsigned>(Kind == TemplateSourceKind::Type),
+            static_cast<unsigned>(Kind == TemplateSourceKind::Function),
+            Count, DefaultCount, TypeCount);
+        std::fprintf(stderr, "LOCATION %s\n", Location.printToString(SM).c_str());
+        if (isa<TypeAliasTemplateDecl, VarTemplateDecl>(Template))
+          Template->dump();
+        else
+          std::fprintf(stderr, "TEMPLATE kind=%s location=%s\n", Template->getDeclKindName(),
+              Template->getLocation().printToString(SM).c_str());
+        if (Underlying) {
+          const auto L = Underlying->getTypeLoc();
+          std::fprintf(stderr, "UNDERLYING type=%s begin=%s end=%s\n",
+              Underlying->getType().getAsString().c_str(),
+              L.getBeginLoc().printToString(SM).c_str(), L.getEndLoc().printToString(SM).c_str());
+        }
+        if (Written) {
+          std::fprintf(stderr, "WRITTEN_COUNT %u\n", static_cast<unsigned>(Written->size()));
+          for (unsigned I = 0; I < Written->size() && I < 64; ++I) {
+            const auto &A = (*Written)[I];
+            std::fprintf(stderr, "WRITTEN index=%u kind=%u begin=%s end=%s\n", I,
+                static_cast<unsigned>(A.getArgument().getKind()),
+                A.getSourceRange().getBegin().printToString(SM).c_str(),
+                A.getSourceRange().getEnd().printToString(SM).c_str());
+          }
+        }
+        if (Count <= 64 && (!Count || (Canonical && Sugared)))
+          for (unsigned I = 0; I < Count; ++I) {
+            std::fprintf(stderr, "ARGUMENT index=%u canonical_kind=%u sugared_kind=%u\n", I,
+                static_cast<unsigned>(Canonical[I].getKind()),
+                static_cast<unsigned>(Sugared[I].getKind()));
+            if (Sugared[I].getKind() == TemplateArgument::Type && !Sugared[I].getAsType().isNull())
+              std::fprintf(stderr, "SUGARED_TYPE %s\n", Sugared[I].getAsType().getAsString().c_str());
+          }
+        std::fprintf(stderr, "NOT_FN_ALIAS_INGRESS_END\n");
+      }
+    }
     if (!S.coreV2() || !Template || !S.Diagnostics.empty())
       return;
     auto &Context = Template->getASTContext();
@@ -30244,6 +30297,72 @@ public:
         }
         if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
           return;
+      }
+    }
+
+    // Read immutable copies of the actual selected/default packets. These
+    // descriptions never admit a call or complete a lazy type through Sema.
+    {
+      auto &Context = CI.getASTContext();
+      auto &SM = Context.getSourceManager();
+      const auto Calls = SelectedCalls;
+      const auto Uses = TemplateUses;
+      for (const auto &Selection : Calls) {
+        const auto *F = Selection.Function;
+        if (!F || !F->getIdentifier() || F->getName() != "not_fn" ||
+            !S.owns(SM, Selection.Location)) continue;
+        for (const auto &Use : Uses) {
+          if (Use.Kind != TemplateSourceKind::Function || Use.Declaration != F ||
+              Use.Location != Selection.Location) continue;
+          const auto Factory = describeFunctionalNotFnFactorySource(
+              S, SM, dyn_cast_or_null<CallExpr>(Selection.Expression), Context);
+          const auto Default = describeFunctionalNotFnFactoryTemplateSource(
+              S, SM, Selection, Use, Context);
+          std::fprintf(stderr, "NOT_FN_FACTORY_DEFAULT_BEGIN factory=%u bound=%u defaults=%zu\n",
+              static_cast<unsigned>(Factory.has_value()),
+              static_cast<unsigned>(Default.has_value()), Use.Defaults.size());
+          auto Info = [&](const char *Role, const TypeSourceInfo *TSI) {
+            std::fprintf(stderr, "DEFAULT_ROLE role=%s present=%u\n", Role, static_cast<unsigned>(TSI != nullptr));
+            if (!TSI) return;
+            const auto TL = TSI->getTypeLoc();
+            std::fprintf(stderr, "DEFAULT_TYPE role=%s type=%s\n", Role, TSI->getType().getAsString().c_str());
+            for (const auto L : {TL.getBeginLoc(), TL.getEndLoc()}) {
+              if (L.isInvalid()) {
+                std::fprintf(stderr, "DEFAULT_LOCATION role=%s invalid=1\n", Role);
+                continue;
+              }
+
+              if (L.isMacroID()) {
+                const auto R = SM.getImmediateExpansionRange(L);
+                std::fprintf(stderr, "DEFAULT_TOKEN_SPLIT role=%s char_range=%u begin_file=%u end_file=%u width_one=%u begin=%s end=%s\n",
+                    Role, static_cast<unsigned>(!R.isTokenRange()),
+                    static_cast<unsigned>(R.getBegin().isFileID()),
+                    static_cast<unsigned>(R.getEnd().isFileID()),
+                    static_cast<unsigned>(R.getBegin().isFileID() &&
+                        R.getEnd() == R.getBegin().getLocWithOffset(1)),
+                    R.getBegin().printToString(SM).c_str(), R.getEnd().printToString(SM).c_str());
+              }
+              const auto Spell = SM.getSpellingLoc(L);
+              const auto Expansion = SM.getExpansionLoc(L);
+              const auto SF = S.sdkFile(SM, Spell);
+              const auto EF = S.sdkFile(SM, Expansion);
+              std::fprintf(stderr, "DEFAULT_LOCATION role=%s macro=%u scratch=%u spelling_sdk=%u expansion_sdk=%u location=%s spelling=%s expansion=%s\n",
+                  Role, static_cast<unsigned>(L.isMacroID()),
+                  static_cast<unsigned>(SM.isWrittenInScratchSpace(Spell)),
+                  static_cast<unsigned>(SF && SF->Root == "libcxx"),
+                  static_cast<unsigned>(EF && EF->Root == "libcxx"),
+                  L.printToString(SM).c_str(), Spell.printToString(SM).c_str(), Expansion.printToString(SM).c_str());
+            }
+          };
+          if (Use.Defaults.size() == 1) {
+            const auto &D = Use.Defaults.front();
+            const auto *P = dyn_cast_or_null<TemplateTypeParmDecl>(D.Parameter);
+            Info("primary", P && P->hasDefaultArgument() ? P->getDefaultArgument().getTypeSourceInfo() : nullptr);
+            Info("substituted-written", D.Written.getArgument().getKind() == TemplateArgument::Type ? D.Written.getTypeSourceInfo() : nullptr);
+            Info("converted", D.Converted.getArgument().getKind() == TemplateArgument::Type ? D.Converted.getTypeSourceInfo() : nullptr);
+          }
+          std::fprintf(stderr, "NOT_FN_FACTORY_DEFAULT_END\n");
+        }
       }
     }
     Adapter A(S, C, OperationTraits, SpecialMembers);
