@@ -518,7 +518,7 @@ jobs:
     - name: Execute original linker suites and real SDK generation consistency
       run: "python3 utils/ci/check-cpp-linker-sdk-replay.py --repo \"$GITHUB_WORKSPACE\" \\\n  --clangxx\
         \ /usr/bin/clang++-22 \\\n  --baseline \"$RUNNER_TEMP/cpp-linker-sdk-prior/provenance.json\" \\\
-        \n  --output \"$RUNNER_TEMP/cpp-linker-sdk\" \\\n+  --host-ubuntu-version 24.04\n"
+        \n  --output \"$RUNNER_TEMP/cpp-linker-sdk\" \\\n  --host-ubuntu-version 24.04\n"
       id: replay
       env:
         NEVERC_LINKER_REPLAY_EVIDENCE_DIR: ${{ runner.temp }}/cpp-linker-sdk
