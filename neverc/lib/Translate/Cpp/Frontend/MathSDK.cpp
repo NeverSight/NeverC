@@ -11520,7 +11520,7 @@ describeFunctionalNotFnCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11512\n"; return std::nullopt; }
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11512\n"; return std::nullopt; }
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -11674,8 +11674,11 @@ describeFunctionalNotFnTupleTagSources(
     const bool Indices = I % 2 == 0;
     const auto Name = Indices ? "__tuple_indices" : "__tuple_types";
     const auto Path = Indices ? "__tuple/tuple_indices.h" : "__tuple/tuple_types.h";
+    // The selected empty tag and its definition retain the original identity;
+    // its exact primary also has a declaration in integer_sequence.h.
+    const llvm::StringRef DeclarationPath = Indices ? "__utility/integer_sequence.h" : Path;
     const auto *Record = Construction
-        ? Check.record(Construction->getType(), Name, {Path}) : nullptr;
+        ? Check.record(Construction->getType(), Name, {Path, DeclarationPath}) : nullptr;
     const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
     const auto *Written = Construction ? Construction->getTypeSourceInfo() : nullptr;
     if (!Record || !Constructor || !Written || Construction->getNumArgs() ||
@@ -11687,19 +11690,19 @@ describeFunctionalNotFnTupleTagSources(
         Constructor->getTypeSourceInfo() ||
         Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         !Context.hasSameType(Written->getType(), Construction->getType()) ||
-        !Check.family(Constructor, {Path}) ||
+        !Check.family(Constructor, {Path, DeclarationPath}) ||
         !Check.location(Construction->getExprLoc(), {"tuple"}) ||
         !Check.location(Written->getTypeLoc().getBeginLoc(), {"tuple"}) ||
-        !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11682\n"; return std::nullopt; }
+        !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11685\n"; return std::nullopt; }
     const auto &Arguments = Record->getTemplateArgs();
     if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Pack ||
-        Arguments[0].pack_size() != (I < 2 ? 1u : 0u)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11685\n"; return std::nullopt; }
+        Arguments[0].pack_size() != (I < 2 ? 1u : 0u)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11688\n"; return std::nullopt; }
     if (I == 0) {
       const auto &Index = Arguments[0].pack_elements()[0];
       if (Index.getKind() != TemplateArgument::Integral || !Index.getAsIntegral().isZero() ||
-          !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11689\n"; return std::nullopt; }
+          !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11692\n"; return std::nullopt; }
     } else if (I == 1 && !Check.oneTypePack(Arguments[0], Factory.Storage.CallableType))
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11691\n"; return std::nullopt; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11694\n"; return std::nullopt; }
     Result.push_back({Construction, Record, Written});
   }
   // Empty tag layout or a canonical pack is never an alias-source certificate.

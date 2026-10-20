@@ -333,7 +333,7 @@ def main():
                                             for entry in dependencies)
                 else:
                     satisfied = bool(valid_response and code == 1 and diagnostics
-                        and all(row.get('code') in ['TR0201', 'TR0203'] for row in diagnostics)
+                        and ( [row.get('code') for row in diagnostics] == plan['failed_diagnostic_expected_codes'] if name == 'live-source-failed' else all(row.get('code') in ['TR0201', 'TR0203'] for row in diagnostics) )
                         and not any(field in result for field in ['functions', 'globals', 'records']))
                 report['requests'].append({'name': name, 'target': target, 'expected': case['expected'],
                     'returncode': code, 'source_sha256': sha(source), 'response_sha256': sha(response) if response.exists() else None,
