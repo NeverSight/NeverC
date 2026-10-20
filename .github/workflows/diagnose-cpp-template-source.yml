@@ -84,7 +84,7 @@ jobs:
       && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group != 'session-cache-ownership' && inputs.fixture_group
       != 'macho-data-const' && inputs.fixture_group != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest'
       && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' && inputs.fixture_group
-      != 'arm-abi-oracles' }}
+      != 'arm-abi-oracles' && inputs.fixture_group != 'arm-private-frontend-crash' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -887,6 +887,66 @@ jobs:
         path: ${{ runner.temp }}/cpp-arm-abi-programs
         if-no-files-found: warn
         retention-days: 7
+  inspect-arm-private-frontend-crash:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'arm-private-frontend-crash' }}
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    env:
+      NEVERC_PCG_STRICT: '1'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up native pinned Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+        architecture: arm64
+    - name: Set up actual ARM64 MSVC reference compiler
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
+    - name: Authenticate existing repaired compiler on Actions only
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: 'python utils/ci/download-repaired-windows-arm.py --run-id 39341054945 --revision 43c7c0c55874c8b3ebfd4c1c39096189741f9616
+        --output "$env:RUNNER_TEMP/cpp-arm-abi-compiler" --evidence "$env:RUNNER_TEMP/cpp-arm-abi-oracles/download-provenance.json"
+
+        '
+    - name: Authenticate exact installed ARM compiler remotely
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: 'python utils/ci/download-repaired-windows-arm.py --run-id 39341054945 --revision 43c7c0c55874c8b3ebfd4c1c39096189741f9616
+        --output "$env:RUNNER_TEMP/cpp-arm-private-compiler" --evidence "$env:RUNNER_TEMP/cpp-arm-private-bootstrap/download-provenance.json"
+
+        '
+    - name: Retain original frontend AV and matching private-symbol CDB stack
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: 'python utils/ci/check-arm-private-frontend-crash.py --repo "$env:GITHUB_WORKSPACE" --plan utils/ci/cpp-arm-private-frontend-crash-plan.json
+        --baseline "$env:RUNNER_TEMP/cpp-arm-private-compiler/provenance.json" --output "$env:RUNNER_TEMP/cpp-arm-private-crash"
+        --build "$env:RUNNER_TEMP/cpp-arm-private-crash-build"
+
+        '
+    - name: Upload only original source request provenance and actual debugger logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-arm-private-frontend-crash-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-arm-private-crash
+
+          ${{ runner.temp }}/cpp-arm-private-bootstrap'
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain actual crash minidump remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-arm-private-frontend-dump-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-arm-private-crash-build/actual-private-frontend.dmp
+        if-no-files-found: warn
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -907,6 +967,7 @@ jobs:
         - algorithm-sdk-abi-manifest
         - algorithm-manifest-formal
         - arm-abi-oracles
+        - arm-private-frontend-crash
   push:
     branches:
     - dev
