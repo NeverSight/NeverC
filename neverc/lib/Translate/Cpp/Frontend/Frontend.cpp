@@ -10214,6 +10214,12 @@ public:
       return pairStringFrontendObserved((false), __LINE__);
     if (Function->getBuiltinID()) {
       const auto Name = Function->getName();
+      if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+        llvm::errs() << "PAIR_STRING_BYTE_BUILTIN_BEGIN " << Name << "\n";
+        Call->dump(llvm::errs(), A.Context);
+        Function->dump(llvm::errs());
+        llvm::errs() << "PAIR_STRING_BYTE_BUILTIN_END\n";
+      }
       return pairStringFrontendObserved((location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
               Name == "__builtin_is_constant_evaluated" ||

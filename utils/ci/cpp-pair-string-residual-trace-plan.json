@@ -101,7 +101,8 @@
       "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
       "inserts": [
         "    if (PairTraitQuery && PairTraitQuery->getNumArgs() && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      const auto *Owner = PairTraitQuery->getArg(0)->getType()->getAsCXXRecordDecl();\n      if (Owner && Owner->getIdentifier() && Owner->getName() == \"basic_string\") {\n        llvm::errs() << \"PAIR_STRING_ROOT_BEGIN\\n\";\n        Source.Root->dump(llvm::errs(), Context);\n        PairTraitQuery->dump(llvm::errs(), Context);\n        llvm::errs() << \"PAIR_STRING_ROOT_END\\n\";\n      }\n    }\n",
-        "    if (Mode == UtilityTupleQueryMode::PairConstruction && Constructor &&\n        Constructor->getParent()->getIdentifier() &&\n        Constructor->getParent()->getName() == \"basic_string\" &&\n        std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_BEGIN root=\" << (E == PairTraitConstruction)\n                   << \" query=\" << bool(PairTraitQuery) << \"\\n\";\n      E->dump(llvm::errs(), Context);\n      Constructor->dump(llvm::errs());\n      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_END\\n\";\n    }\n"
+        "    if (Mode == UtilityTupleQueryMode::PairConstruction && Constructor &&\n        Constructor->getParent()->getIdentifier() &&\n        Constructor->getParent()->getName() == \"basic_string\" &&\n        std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_BEGIN root=\" << (E == PairTraitConstruction)\n                   << \" query=\" << bool(PairTraitQuery) << \"\\n\";\n      E->dump(llvm::errs(), Context);\n      Constructor->dump(llvm::errs());\n      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_END\\n\";\n    }\n",
+        "      if (D && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_REJECTED_DECL_BEGIN\\n\";\n        D->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_REJECTED_DECL_END\\n\";\n      }\n"
       ]
     },
     "Frontend.cpp": {
@@ -177,7 +178,9 @@
         }
       ],
       "false_return": "return pairStringFrontendObserved(false, __LINE__);",
-      "inserts": [],
+      "inserts": [
+        "      if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_BEGIN \" << Name << \"\\n\";\n        Call->dump(llvm::errs(), A.Context);\n        Function->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_END\\n\";\n      }\n"
+      ],
       "false_count": 3
     }
   },
@@ -511,5 +514,14 @@
       }
     ]
   },
-  "source_trace_version": 2
+  "source_trace_version": 2,
+  "actual_previous_v2_trace": {
+    "commit": "4f9152bfc37ec089174857903fa20d4ec8995980",
+    "run_id": 39401988046,
+    "artifact_id": 12256641933,
+    "report_sha256": "153259eb746778f952395625d1d6b112f6b322ede0dca4c7de1b449c41d3e520",
+    "actual_requests": 4,
+    "accepted_controls": 2,
+    "reproduced_pair_rejections": 2
+  }
 }

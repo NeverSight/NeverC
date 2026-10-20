@@ -7706,6 +7706,11 @@ class UtilityTupleQueryGraph
       if (!Complete && Mode == UtilityTupleQueryMode::PairConstruction) Failed = true;
     });
     if (!pinned(D)) {
+      if (D && std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+        llvm::errs() << "PAIR_STRING_REJECTED_DECL_BEGIN\n";
+        D->dump(llvm::errs());
+        llvm::errs() << "PAIR_STRING_REJECTED_DECL_END\n";
+      }
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
       if (Mode == UtilityTupleQueryMode::PairConstruction) Failed = true;
