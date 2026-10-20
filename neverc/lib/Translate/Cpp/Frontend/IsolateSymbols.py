@@ -1538,7 +1538,6 @@ _COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
 # do not roll back previously completed patches.
 isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
 preserve_explicit_function_instantiation_source(args.source)
-preserve_ordinary_template_call_source(args.source / "clang/lib/Sema/SemaExpr.cpp")
 fix_visible_friend_instantiation_context(args.source / "clang/lib/Sema/SemaTemplateInstantiateDecl.cpp")
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
@@ -1554,6 +1553,7 @@ fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")
 fix_deduced_variable_instantiations(args.source / "clang/lib/Sema/SemaExpr.cpp")
+preserve_ordinary_template_call_source(args.source / "clang/lib/Sema/SemaExpr.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [
