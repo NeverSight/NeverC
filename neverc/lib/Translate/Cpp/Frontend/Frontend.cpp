@@ -22751,9 +22751,7 @@ public:
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
       if (Source.FunctionalNotFnConstraint) {
-        if (!Selected || Selected != Source.Function ||
-            !retainFunctionalNotFnConstraintRoot(A.S, A.Sources, TemplateSourceKind::Function,
-                Selected->getPrimaryTemplate(), Selected, nullptr, nullptr, Source.Location)) {
+        if (!matchesFunctionalNotFnSelectedSource(A.S, A.Sources, Source, A.Context)) {
           A.reject(Source.Location, "not_fn selected source", "The exact retained SDK selection is required.");
           continue;
         }

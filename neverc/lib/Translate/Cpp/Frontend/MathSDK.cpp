@@ -11988,6 +11988,56 @@ bool retainFunctionalNotFnConstraintRoot(
   return Check.family(Template, {Path});
 }
 
+bool matchesFunctionalNotFnSelectedSource(
+    const State &S, const SourceManager &SM,
+    const SelectedTemplateCallSource &Source, const ASTContext &Context) {
+  if (!Source.FunctionalNotFnConstraint || !Source.Expression || !Source.Function ||
+      !retainFunctionalNotFnConstraintRoot(S, SM, TemplateSourceKind::Function,
+          Source.Function->getPrimaryTemplate(), Source.Function,
+          nullptr, nullptr, Source.Location)) return false;
+  const FunctionDecl *Selected = nullptr;
+  if (const auto *Construction = dyn_cast<CXXConstructExpr>(Source.Expression))
+    Selected = Construction->getConstructor();
+  else if (const auto *Call = dyn_cast<CallExpr>(Source.Expression))
+    Selected = Call->getDirectCallee();
+  else if (const auto *Allocation = dyn_cast<CXXNewExpr>(Source.Expression))
+    Selected = Allocation->getOperatorNew();
+  if (Selected == Source.Function) return true;
+
+  // Sema reports the selected base template for this derived construction.
+  // Preserve both original identities; a canonical type or SDK file alone
+  // cannot turn an unrelated constructor callback into this selection.
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Source.Expression);
+  const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Owner = Actual
+      ? dyn_cast<ClassTemplateSpecializationDecl>(Actual->getParent()) : nullptr;
+  const auto *Base = dyn_cast<CXXConstructorDecl>(Source.Function);
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Actual || !Owner || !Base || Base->getNumParams() != 1 || !Actual->isImplicit() ||
+      !Actual->isInheritingConstructor() || Actual->isDeleted() ||
+      Actual->getPrimaryTemplate() || Actual->getNumParams() != 1 ||
+      Actual->getNumCtorInitializers() != 1 || Construction->getNumArgs() != 1 ||
+      !Owner->getIdentifier() || Owner->getName() != "__not_fn_t" ||
+      Owner->getTemplateArgs().size() != 1 ||
+      Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Owner->getTemplateArgs()[0].getAsType()->isFunctionPointerType() ||
+      Source.Location != Construction->getExprLoc() ||
+      !Check.location(Source.Location, {"__functional/not_fn.h"}) ||
+      !Check.family(Actual, {"__functional/not_fn.h"}) ||
+      !Check.family(Owner, {"__functional/not_fn.h"})) return false;
+  const auto Inherited = Actual->getInheritedConstructor();
+  if (!Inherited || Inherited.getConstructor() != Base ||
+      !Check.family(Inherited.getShadowDecl(), {"__functional/not_fn.h"}) ||
+      !Check.family(Base, {"__functional/perfect_forward.h"})) return false;
+  const auto *Initializer = *Actual->init_begin();
+  const auto *InheritedExpression = dyn_cast<CXXInheritedCtorInitExpr>(Initializer->getInit());
+  return Initializer->isBaseInitializer() && !Initializer->isBaseVirtual() &&
+      InheritedExpression && InheritedExpression->getConstructor() == Base &&
+      !InheritedExpression->constructsVBase() && !InheritedExpression->inheritedFromVBase() &&
+      Context.hasSameType(InheritedExpression->getType(), Context.getRecordType(Base->getParent())) &&
+      Context.hasSameType(Actual->getParamDecl(0)->getType(), Base->getParamDecl(0)->getType());
+}
+
 std::optional<std::vector<FunctionalNotFnTupleTagSource>>
 describeFunctionalNotFnTupleTagSources(
     const State &S, const SourceManager &SM,
@@ -12343,23 +12393,17 @@ public:
     // layout never supplies their missing source.
     for (const auto *Construction : Factory.Selected.SelectedConstructions) {
       const auto *Constructor = Construction->getConstructor();
+      if (Constructor->isInheritingConstructor()) {
+        if (Constructor->getParent()->getCanonicalDecl() != Pointer->Record->getCanonicalDecl())
+          return false;
+        Constructor = Constructor->getInheritedConstructor().getConstructor();
+        if (!Constructor || Constructor->getParent()->getCanonicalDecl() !=
+                Pointer->Forwarder->getCanonicalDecl()) return false;
+      }
       const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
-      if (!PrimaryTemplate) {
-        // The selected inherited constructor has no independent written
-        // parameter tokens. Its actual base constructor supplies that source.
-        if (!Constructor->isInheritingConstructor()) return false;
-        const auto *Base = Constructor->getInheritedConstructor().getConstructor();
-        if (!Base || !Graph.function(Base)) return false;
-        continue;
-      }
-      if (Constructor->getParent()->getCanonicalDecl() == Pointer->Forwarder->getCanonicalDecl()) {
-        if (!Graph.function(Constructor)) return false;
-      } else if (!Tuple.function(Constructor)) return false;
-      if (const auto *Written = Constructor->getTypeSourceInfo()) {
-        auto &Signatures = Constructor->getParent()->getCanonicalDecl() == Pointer->Forwarder->getCanonicalDecl()
-            ? Graph : Tuple;
-        if (!Signatures.TraverseTypeLoc(Written->getTypeLoc())) return false;
-      }
+      if (!PrimaryTemplate || !Graph.function(Constructor)) return false;
+      if (const auto *Written = Constructor->getTypeSourceInfo())
+        if (!Graph.TraverseTypeLoc(Written->getTypeLoc())) return false;
       bool Found = false;
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
@@ -12368,7 +12412,8 @@ public:
         for (const auto *Selection : Selections)
           if (Selection && Selection->FunctionalNotFnConstraint &&
               Selection->Expression == Construction && Selection->Function == Constructor &&
-              Selection->Location == Source->Location) Selected = true;
+              Selection->Location == Source->Location &&
+              matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
         if (!Selected) continue;
         if (Source->Template != PrimaryTemplate || !arguments(*Source)) return false;
         for (const auto &Default : Source->Defaults) {

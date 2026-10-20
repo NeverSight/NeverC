@@ -1809,6 +1809,13 @@ bool retainFunctionalNotFnConstraintRoot(
     const clang::Type *Type, const clang::TypeSourceInfo *Underlying,
     clang::SourceLocation Location);
 
+// Match an actual retained callback to its original expression. Inherited
+// construction keeps the real selected base declaration and derived AST node;
+// this identity check grants no factory, signature or body permission.
+bool matchesFunctionalNotFnSelectedSource(
+    const State &S, const clang::SourceManager &SM,
+    const SelectedTemplateCallSource &Source, const clang::ASTContext &Context);
+
 // A storage descriptor grants no selected call permission. The allowlist
 // records certificates only after the exact retained source graph completes.
 std::optional<FunctionalNotFnStorage>
