@@ -2904,8 +2904,12 @@ utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record,
             A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
       OwningElement = true;
     else if (!Record->hasTrivialDestructor() && needsDestruction(Element)) {
-      if (!utilityTupleDestructionSource(
-              A, Element->getAsCXXRecordDecl(), Depth + 1))
+      const auto *Member = Element->getAsCXXRecordDecl();
+      // The tuple's implicit SDK destructor supplies only its storage edge.
+      // OperationSourceChecker::destruction independently closes each source
+      // record's actual destructor body, signature and nested field sources.
+      if ((!Member || !A.S.owns(A.Sources, Member->getLocation())) &&
+          !utilityTupleDestructionSource(A, Member, Depth + 1))
         return std::nullopt;
       OwningElement = true;
     }
@@ -9596,7 +9600,9 @@ static bool utilityUniquePtrOwnerComparisonSource(Adapter &A,
   default:
     return false;
   }
-  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected)
+  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected &&
+      approvedUtilityPairComparisonChildOperation(A.S, A.Sources,
+          dyn_cast<CXXOperatorCallExpr>(Call), A.Context) != Expected)
     return false;
   const auto Left = utilityUniquePtrSource(
       A, Call->getArg(0)->getType()->getAsCXXRecordDecl());

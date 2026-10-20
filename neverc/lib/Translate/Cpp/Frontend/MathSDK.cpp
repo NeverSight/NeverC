@@ -9737,6 +9737,67 @@ class UtilityTupleQueryGraph
     return !Failed;
   }
 
+  std::optional<bool> pairViewCountSizeAlias(
+      const TypedefNameDecl *Alias, const CXXRecordDecl *Owner) {
+    if (Mode != UtilityTupleQueryMode::PairConstruction || !PairTraitQuery ||
+        !PairTraitConstruction || !Alias || !Alias->getIdentifier() ||
+        Alias->getName() != "size_type" || !Owner ||
+        !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "string_view"))
+      return std::nullopt;
+    const auto *Constructor = PairTraitConstruction->getConstructor();
+    const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Constructor ? Constructor->getParent() : nullptr);
+    const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
+    if (!Instance || !Instance->getIdentifier() || Instance->getName() != "basic_string_view" ||
+        !Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl())
+      return std::nullopt;
+    // This is only the original alias in the selected retained pointer/count
+    // signature. Its dependent primary is an owner identity, not a layout or
+    // a runtime operation. Every other primary still follows record().
+    const auto *E = PairTraitConstruction;
+    const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+    bool Complete =
+        (PairTraitQuery->getTrait() == TT_IsConstructible ||
+         PairTraitQuery->getTrait() == TT_IsNothrowConstructible) &&
+        PairTraitQuery->getNumArgs() == 3 && Operands.size() == 2 &&
+        Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
+        PairInputRecords.count(Instance->getCanonicalDecl()) &&
+        E->isPRValue() && E->getConstructionKind() == CXXConstructionKind::Complete &&
+        E->getNumArgs() == 2 && Constructor->getNumParams() == 2 &&
+        Constructor->isConstexpr() && !Constructor->getPrimaryTemplate() &&
+        !Constructor->isDeleted() && !Constructor->isInvalidDecl() && !Constructor->isVariadic() &&
+        Constructor->getAccess() == AS_public && Prototype &&
+        Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
+        approvedUtilityStringViewRecord(S, SM, Instance, Context).has_value() &&
+        approvedUtilityStringViewConstruction(S, SM, E, Context) ==
+            UtilityStringViewConstruction::PointerAndSize;
+    const auto *CountSource = Complete ? Constructor->getParamDecl(1)->getTypeSourceInfo() : nullptr;
+    const auto CountSpelling = CountSource
+        ? CountSource->getTypeLoc().getAsAdjusted<TypedefTypeLoc>() : TypedefTypeLoc();
+    Complete = Complete && CountSpelling && CountSpelling.getTypedefNameDecl() == Alias &&
+        cstddefOrigin(S, SM, CountSpelling.getNameLoc(), "libcxx", "string_view") &&
+        Context.hasSameType(Alias->getUnderlyingType(), Context.getSizeType()) &&
+        Alias->getTypeSourceInfo() && family(Alias) && family(Owner) && family(Primary) &&
+        family(Constructor);
+    if (Complete) {
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
+        auto Input = PairTraitQuery->getArg(I + 1)->getType();
+        if (Input->isObjectType() || Input->isFunctionType())
+          Input = Context.getRValueReferenceType(Input);
+        if (!Operand || !Operands.count(Operand) || Operand->getSourceExpr() ||
+            Constructor->getParamDecl(I)->hasDefaultArg() ||
+            !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
+            Operand->getValueKind() != Expr::getValueKindForType(Input)) {
+          Complete = false;
+          break;
+        }
+      }
+    }
+    if (!Complete) Failed = true;
+    return Complete;
+  }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
     const auto *PairTrait = dyn_cast<ClassTemplateSpecializationDecl>(R);
@@ -10006,8 +10067,11 @@ public:
   bool VisitTypedefType(TypedefType *T) {
     const auto *Declaration = T->getDecl();
     if (!family(Declaration)) return false;
-    if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext()))
-      if (!record(Owner)) return false;
+    if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
+      if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
+        if (!*ViewAlias) return false;
+      } else if (!record(Owner)) return false;
+    }
     return Declaration->getTypeSourceInfo() &&
            TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
   }
@@ -10200,6 +10264,39 @@ public:
           !Prototype->getNoexceptExpr() &&
           cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string_view") &&
           function(Constructor) && !Failed;
+    }
+    if (Mode == UtilityTupleQueryMode::PairConstruction &&
+        E == PairTraitConstruction && PairTraitQuery && Constructor &&
+        (PairTraitQuery->getTrait() == TT_IsConstructible ||
+         PairTraitQuery->getTrait() == TT_IsNothrowConstructible) &&
+        PairTraitQuery->getNumArgs() == 3 && Operands.size() == 2 &&
+        Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
+        PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) &&
+        approvedUtilityStringViewRecord(S, SM, Constructor->getParent(), Context)) {
+      // This exact retained pointer/count root is a signature query. The
+      // enclosing graph still checks both original opaque operands and casts;
+      // runtime view construction keeps its body and borrowed-lifetime proof.
+      const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+      if (!E->isPRValue() || !Constructor->isConstexpr() ||
+          Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||
+          Constructor->isInvalidDecl() || Constructor->getAccess() != AS_public ||
+          !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+          Prototype->getNoexceptExpr() ||
+          approvedUtilityStringViewConstruction(S, SM, E, Context) !=
+              UtilityStringViewConstruction::PointerAndSize)
+        return false;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
+        auto Input = PairTraitQuery->getArg(I + 1)->getType();
+        if (Input->isObjectType() || Input->isFunctionType())
+          Input = Context.getRValueReferenceType(Input);
+        if (!Operand || !Operands.count(Operand) || Operand->getSourceExpr() ||
+            Constructor->getParamDecl(I)->hasDefaultArg() ||
+            !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
+            Operand->getValueKind() != Expr::getValueKindForType(Input))
+          return false;
+      }
+      return function(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         E == PairTraitConstruction && PairTraitQuery && Constructor &&
@@ -10557,7 +10654,12 @@ public:
         PairDefaultOwnerSignature->getConstructor()->getParent(), Context, false, false) : std::nullopt;
     const bool Deleter = ParentOwner && !ParentOwner->CustomDeleter &&
         ParentOwner->Deleter.Record->getCanonicalDecl() == Record->getCanonicalDecl();
-    if (OwnerPointer && !Owner) return std::nullopt;
+    // This signature root is only the selected pointer constructor. A move
+    // constructor has a reference parameter and must retain the ordinary
+    // special-member source path instead of entering the pointer-only query.
+    if (OwnerPointer && (!Owner || !Constructor || Constructor->getNumParams() != 1 ||
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType)))
+      return std::nullopt;
     if (!String && !Owner && !Allocator && !Deleter) return std::nullopt;
     if (!Construction || !Constructor || !Construction->isPRValue() ||
         Construction->getConstructionKind() != CXXConstructionKind::Complete ||
@@ -16894,22 +16996,83 @@ approvedUtilityPairComparisonChildOperation(
       !Function->isInlined() || Function->getNumParams() != 2 ||
       !Reference || Reference->getDecl() != Function ||
       !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__utility/pair.h") ||
-      !Primary || !Pattern || !Pattern->hasBody() || !Prototype || !Prototype->isNothrow() ||
+      !Primary || !Pattern || !Pattern->hasBody() || !Prototype ||
       !Context.hasSameType(Function->getReturnType(), Context.BoolTy) ||
       !Context.hasSameType(Call->getType(), Context.BoolTy) ||
       (Call->getOperator() != OO_EqualEqual && Call->getOperator() != OO_Less) ||
       Function->getOverloadedOperator() != Call->getOperator())
     return std::nullopt;
+  const auto LeftOwner = approvedUtilityUniquePtrRecord(
+      S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto RightOwner = approvedUtilityUniquePtrRecord(
+      S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (LeftOwner || RightOwner) {
+    // C++17 owner comparisons have their original potentially-throwing
+    // signature. Their SDK body, pointer ordering and selected get() sources
+    // remain mandatory in utilityUniquePtrOwnerComparisonSource.
+    if (!LeftOwner || !RightOwner ||
+        Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+        LeftOwner->Deleter.Array != RightOwner->Deleter.Array ||
+        (Call->getOperator() == OO_Less &&
+         (LeftOwner->ElementType->isIncompleteType() || RightOwner->ElementType->isIncompleteType())) ||
+        (LeftOwner->Record->getCanonicalDecl() != RightOwner->Record->getCanonicalDecl() &&
+         !utilityPointerConversion(Context, LeftOwner->PointerType, RightOwner->PointerType) &&
+         !utilityPointerConversion(Context, RightOwner->PointerType, LeftOwner->PointerType)))
+      return std::nullopt;
+    for (const auto *Declaration : Function->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h"))
+        return std::nullopt;
+    for (const auto *Declaration : Primary->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !approvedStandardSDKDeclaration(S, SM, Declaration->getTemplatedDecl()) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
+          !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", "__memory/unique_ptr.h"))
+        return std::nullopt;
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto &Owner = I ? *RightOwner : *LeftOwner;
+      const auto Type = Context.getRecordType(Owner.Record);
+      if (!Call->getArg(I)->isGLValue() ||
+          !Context.hasSameType(Function->getParamDecl(I)->getType(),
+                               Context.getLValueReferenceType(Type.withConst())) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(), Type))
+        return std::nullopt;
+    }
+    return Call->getOperator() == OO_EqualEqual ? UtilityOperation::MemoryUniquePtrEqual
+                                               : UtilityOperation::MemoryUniquePtrLess;
+  }
+  // The preexisting string/view paths retain their original noexcept rule.
+  if (!Prototype->isNothrow()) return std::nullopt;
+  const auto LeftView = approvedUtilityStringViewRecord(
+      S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto RightView = approvedUtilityStringViewRecord(
+      S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  const bool View = bool(LeftView) || bool(RightView);
+  if (View && (!LeftView || !RightView || !Function->isConstexpr() ||
+      LeftView->Record->getCanonicalDecl() != RightView->Record->getCanonicalDecl()))
+    return std::nullopt;
+  const llvm::StringRef Path = View ? "string_view" : "string";
   for (const auto *Declaration : Function->redecls())
     if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "string"))
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path))
       return std::nullopt;
   for (const auto *Declaration : Primary->redecls())
     if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
         !approvedStandardSDKDeclaration(S, SM, Declaration->getTemplatedDecl()) ||
-        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "string") ||
-        !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", "string"))
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path) ||
+        !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", Path))
       return std::nullopt;
+  if (View) {
+    const auto Type = Context.getRecordType(LeftView->Record);
+    for (unsigned I = 0; I != 2; ++I)
+      if (!Context.hasSameType(Function->getParamDecl(I)->getType(), Type) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(), Type))
+        return std::nullopt;
+    // A selected by-value view comparison still closes its original SDK
+    // function body and every copied operand at the caller's pair boundary.
+    return Call->getOperator() == OO_EqualEqual ? UtilityOperation::StringViewEqual
+                                               : UtilityOperation::StringViewLess;
+  }
   const auto Left = approvedUtilityStringRecord(
       S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
   const auto Right = approvedUtilityStringRecord(

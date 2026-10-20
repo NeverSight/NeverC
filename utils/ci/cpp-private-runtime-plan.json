@@ -1,26 +1,26 @@
 {
-  "component_commit": "d0318ccd4291fa3e64e1b5aab4279412ebeaf595",
-  "component_run_id": 39447586240,
-  "component_actual_job": 118713516328,
+  "component_commit": "f7f0bfec9885e5eea79faa2a5243d207b2eef3bc",
+  "component_run_id": 39480874192,
+  "component_actual_job": 118828786460,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12275789927,
-    "name": "cpp-pair-owner-pointer-d0318ccd4291fa3e64e1b5aab4279412ebeaf595",
-    "digest": "sha256:5dd80d8edc3eec97148ba727282af670502f08e4c14f9ff793e20b8da500514f"
+    "id": 12291529620,
+    "name": "cpp-pair-formal-repair-f7f0bfec9885e5eea79faa2a5243d207b2eef3bc",
+    "digest": "sha256:c8d5900fa7ad9fc4f1dee935c225b6541e25c67a6a711554e1ef9fbe046653d3"
   },
   "component_archive_artifact": {
-    "id": 12275909970,
-    "name": "cpp-current-private-archive-remote-only-d0318ccd4291fa3e64e1b5aab4279412ebeaf595",
-    "digest": "sha256:4e01e702a49004c9c47b578a7849e04427318bacb50e224df199c6065f35e562"
+    "id": 12292395196,
+    "name": "cpp-current-private-archive-remote-only-f7f0bfec9885e5eea79faa2a5243d207b2eef3bc",
+    "digest": "sha256:21c21005fc12724ba38f6e259fc0bc5081d2b55f78c4a66ecc54e7cf1ed95793"
   },
-  "component_report_sha256": "9cfc628d9458e775fc8b79d9e0b56ee502488d6bedfe5ba7394440004557a1fc",
-  "private_archive_sha256": "674c9dfeed28c79fb39081c9f793976a1ab53844c460b0e89af0163267e42d88",
-  "frontend_build_id": "cpp-frontend-1-00a94b623dfe5587241eeeddc84cd11d09b7f6e8cb7baf99bc6504213c880f1a",
+  "component_report_sha256": "48dbee2debc2aa113e275cfafe778527cf473166b05ff3f12faa4ab2f406d8d1",
+  "private_archive_sha256": "fae1af6dcb83fd1cbb5d88d51065b0d37e36e442f3f61add7ce31d855c6ce405",
+  "frontend_build_id": "cpp-frontend-1-1c69d284b82dd0aac4746f9514818431e511daa6f7b68af84485301bc3846df7",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "c47e81acc1287f8429e50800fcf05977d26095733c254d1a1381a7ebcd482552",
+    "Frontend.cpp": "25254ab8966171bcec812cf119c0be29687364d6c8692335f4738f45fb4864bc",
     "Lowering.cpp": "20deab0213f7aefd5c0267b8ae2cf936cbae1ab97a6fe57e6343f8d3237e681e",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "548e1ee3ec407ac245cb7ce0fa7ee32ef70b439fc6ffbf249c5a697a198137cd",
+    "MathSDK.cpp": "4b2e27e9c08002a9f0b67f6c56503da00c4866fa8fdc6c0220fd81ffdc5212f3",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "cd1961bd9a7171b5fd022f114577b5e43bac677a9467d3eec050634d5e892289",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -102,16 +102,19 @@
     "known_pair_failures_not_fixed_by_this_harness_change": true
   },
   "actual_previous_verified_source_rejections": {
-    "commit": "7d656e3274a76a87656d99212bd95af89c89515f",
-    "run_id": 39424253867,
-    "artifact_id": 12267178105,
+    "commit": "67219ee16d42a706691392ac397c1cc3a8f11c3d",
+    "run_id": 39450797344,
+    "artifact_id": 12280120383,
     "actual_host_abi_audit_verified": true,
     "actual_original_formal_xml": 124,
-    "actual_original_formal_passed": 122,
+    "actual_original_formal_passed": 119,
     "actual_formal_failed": [
+      "TranslateTest.CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
       "TranslateTest.CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
-      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations"
+      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "TranslateTest.CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations"
     ],
-    "report_sha256": "2752b40b7c4a5a64e63a1a5246341103020e9d355fbb4e1c0c83e54757db6b9d"
+    "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   }
 }
