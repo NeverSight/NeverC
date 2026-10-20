@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import shlex
+import sys
 
 
 def build_runtime_gtest(root, build, output, backend, archive, system_libraries,
@@ -14,7 +15,8 @@ def build_runtime_gtest(root, build, output, backend, archive, system_libraries,
     options = ['-O0', '-g0', '-fno-fast-math', '-ffp-contract=off']
     includes = [root / 'neverc/include', root / 'llvm/include',
                 root / 'neverc/lib/Translate/Cpp/Frontend']
-    lines = ['find_package(GTest REQUIRED)',
+    lines = ['find_package(Python3 REQUIRED COMPONENTS Interpreter)',
+             'find_package(GTest REQUIRED)',
              'add_executable(cpp-private-runtime-driver "' + driver_source.as_posix() + '")',
              'add_executable(cpp-private-runtime-gtests "' + Path(generated_test).as_posix() + '"',
              '  "' + (root / 'tests/neverc/NeverCTestFixture.cpp').as_posix() + '")']
@@ -49,6 +51,7 @@ def build_runtime_gtest(root, build, output, backend, archive, system_libraries,
     config = ['cmake', '-S', root / 'llvm', '-B', owner, '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=/usr/bin/clang-22',
         '-DCMAKE_CXX_COMPILER=/usr/bin/clang++-22', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+        '-DPython3_EXECUTABLE=' + sys.executable,
         '-DCMAKE_PROJECT_LLVM_INCLUDE=' + str(hook),
         '-DLLVM_ENABLE_PROJECTS=neverc', '-DLLVM_TARGETS_TO_BUILD=X86;AArch64',
         '-DLLVM_INCLUDE_TESTS=OFF', '-DNEVERC_INCLUDE_TESTS=OFF',
@@ -59,9 +62,14 @@ def build_runtime_gtest(root, build, output, backend, archive, system_libraries,
     assert run(config, 'runtime-build/configure-real-owners', 180) == 0
     assert run(['cmake', '--build', owner, '--target', 'cpp-private-runtime-gtests',
                 '--verbose', '--parallel', '4'], 'runtime-build/real-owners', 1800) == 0
+    audit_log = (output / 'runtime-build/real-owners.log').read_text()
+    assert all(token in audit_log for token in [
+        'AuditArchive.py', '--host-lib-dir', '--host-nm',
+        'Builtin C++ frontend: defined and undefined symbols use the private LLVM ABI'])
     assert driver.is_file() and tests.is_file()
     return driver, tests, {'hook': str(hook), 'hook_sha256': hashlib.sha256(hook.read_bytes()).hexdigest(),
         'driver': str(driver), 'gtest': str(tests), 'cmake_owner': str(owner),
         'libraries': ['actual audited private archive', 'nevercTranslate', 'LLVMSupport', 'real GTest'],
         'root_llvm_support_owner': 'llvm/lib/CSupport', 'library_stubs_used': False,
+        'host_abi_audit_verified_before_tests': True,
         'host_compiler_artifact_rebuilt': False, 'full_compiler_ci_coverage': False}

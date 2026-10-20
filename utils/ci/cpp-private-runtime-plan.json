@@ -79,5 +79,26 @@
     "actual_formal_xml": 0,
     "actual_component_download_attempts": 0,
     "failure": "A bootstrap directory created by the workflow must be reused for authenticated evidence."
+  },
+  "required_host_abi_audit_before_gtest": true,
+  "actual_previous_runtime_failure": {
+    "commit": "fca2aba3aac09922deb87b027bcbad8bf9d000b9",
+    "run_id": 39387668889,
+    "artifact_id": 12249526104,
+    "full_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/pair-ci-failure-39387668889-job-118511320313.log",
+    "full_log_sha256": "7911c121c6e880ceee994a574fe3125aaee31540ab2b09ab7292cbab737d3a24",
+    "proof_sha256": "8c83f4023bee1b3c8bc7435153ae4a226bdea579c7be69193cec9217602c1f4e",
+    "report_sha256": "4c5b9d65648967b9e1f00720a41f4f084ac2dd0e9e20d243dc75ca9b27b7ff99",
+    "actual_original_formal_xml": 124,
+    "actual_original_formal_passed": 122,
+    "actual_formal_failed": [
+      "TranslateTest.CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations"
+    ],
+    "actual_formal_skipped": [],
+    "actual_host_abi_audit_verified": false,
+    "cause": "The project include expanded Python3_EXECUTABLE before the Python package was found; the generated PRE_LINK command was omitted.",
+    "fix": "Resolve the real pinned Python before constructing PRE_LINK and require actual command and audit success evidence before running tests.",
+    "known_pair_failures_not_fixed_by_this_harness_change": true
   }
 }
