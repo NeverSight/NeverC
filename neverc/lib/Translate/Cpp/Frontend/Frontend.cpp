@@ -13417,6 +13417,11 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
+      } else if (const auto NotFn = approvedFunctionalNotFnPointerStorage(S, Sources, D, Context)) {
+        if (RequiredFunctionalNotFnPointers.insert(D->getCanonicalDecl()).second) {
+          if (type(NotFn->CallableType, L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
         if (!requireFunctionalReference(D, L, Depth + 1))
           return {};
@@ -13983,6 +13988,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     json::Array Args;
     if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto NotFn = approvedFunctionalNotFnPointerStorage(S, Sources, R, Context)) {
+      Args.push_back(zero(NotFn->CallableType, L));
     } else if (auto Wrapper =
                    approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
       if (Wrapper->PaddedBase)
@@ -18561,6 +18568,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Iterator->IteratorType, true, Depth + 1);
           return;
         }
+        if (const auto NotFn = approvedFunctionalNotFnPointerStorage(
+                A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, NotFn->CallableType, false, Depth + 1);
+          return;
+        }
         if (const auto Wrapper = approvedFunctionalReferenceRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // A projected wrapper retains its authenticated pointer storage and
@@ -22799,9 +22811,16 @@ public:
                                                    A.Context) ||
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
-      const bool ApprovedUtilityCall =
-          UtilityCall &&
-          approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context);
+      const bool ApprovedUtilityCall = UtilityCall &&
+          (approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context) ||
+           (describeFunctionalNotFnFactorySource(A.S, A.Sources, UtilityCall, A.Context) &&
+            approvedFunctionalNotFnPointerStorage(A.S, A.Sources,
+                UtilityCall->getType()->getAsCXXRecordDecl(), A.Context)) ||
+           (describeFunctionalNotFnCallSource(A.S, A.Sources, UtilityCall,
+                A.Context, FunctionalNotFnSourceMode::Runtime) &&
+            approvedFunctionalNotFnPointerStorage(A.S, A.Sources,
+                UtilityCall->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl(), A.Context)));
+
       if (!Selected || Selected != Source.Function ||
           !concreteFunctionTemplate(Selected) ||
           !A.S.owns(A.Sources, Source.Location)) {
@@ -25775,7 +25794,103 @@ public:
       Source.Complete = true;
     return Result;
   }
+  std::optional<bool> traverseNotFnFactory(CallExpr *Call) {
+    const auto Shape = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);
+    if (!Shape || !approvedFunctionalNotFnPointerStorage(
+            A.S, A.Sources, Shape->Storage.Record, A.Context)) return std::nullopt;
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+    if (!Reference || Reference->getDecl() != Shape->Factory ||
+        Reference->hasExplicitTemplateArgs() || !A.S.owns(A.Sources, Reference->getExprLoc())) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer factory",
+               "A direct deduced factory use with its original source is required.");
+      return true;
+    }
+    const auto Selections = SelectedCallSources.find(Call);
+    if (Selections == SelectedCallSources.end() || Selections->second.empty()) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+               "The actual selected factory deduction is required.");
+      return true;
+    }
+    for (const auto *Selection : sourceCandidates(Selections->second)) {
+      const auto Uses = FunctionSources.find({Shape->Factory, Selection->Location.getRawEncoding()});
+      if (Uses == FunctionSources.end() || Uses->second.empty()) {
+        A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+                 "The selected factory's original defaults are required.");
+        return true;
+      }
+      for (const auto *Use : sourceCandidates(Uses->second)) {
+        const auto Source = describeFunctionalNotFnFactoryTemplateSource(
+            A.S, A.Sources, *Selection, *Use, A.Context);
+        std::vector<const TemplateUseSource *> Dependencies = NotFnConstraintSources;
+        for (const auto &[Key, Entries] : FunctionSources)
+          for (const auto *Entry : Entries)
+            if (!A.S.owns(A.Sources, Entry->Location)) Dependencies.push_back(Entry);
+        if (!Source || !approvedFunctionalNotFnPointerFactorySource(
+                A.S, A.Sources, A.Context, *Source, Dependencies,
+                A.SpecialMembers, A.OperationTraits)) {
+          A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+                   "The selected default, alias, trait and constructor source graph must be complete.");
+          return true;
+        }
+      }
+    }
+    A.VerifiedNotFnFactories.emplace(Call, *Shape);
+    A.type(Call->getType(), Call->getExprLoc());
+    return TraverseStmt(Call->getArg(0));
+  }
+  std::optional<bool> traverseNotFnCall(CXXOperatorCallExpr *Call) {
+    const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Runtime);
+    if (!Runtime || !approvedFunctionalNotFnPointerStorage(
+            A.S, A.Sources, Runtime->Storage.Record, A.Context)) return std::nullopt;
+    const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Signature);
+    const auto Exception = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Exception);
+    const auto *Target = Runtime->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto *Negation = dyn_cast<UnaryOperator>(Runtime->Negation);
+    const auto *Prototype = Runtime->Method->getType()->getAs<FunctionProtoType>();
+    bool Source = Signature && Exception && Negation && Negation->getOpcode() == UO_LNot &&
+        Target && ordinaryCallbackPrototype(Target) && Target->getReturnType()->isArithmeticType() &&
+        Prototype && Prototype->isNothrow() == Target->isNothrow() &&
+        Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
+        A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
+        functionalFunctionInvokeSource(A, Runtime->InvokeCall);
+    // Consume the selected operator's real enable_if/default packet, including
+    // its original primary spelling, rather than assuming that void means valid.
+    bool SelectedDefault = false;
+    for (const auto *Use : NotFnConstraintSources) {
+      if (Use->Kind != TemplateSourceKind::Function || Use->Declaration != Runtime->Method) continue;
+      if (Use->Template != Runtime->Method->getPrimaryTemplate() ||
+          Use->Defaults.size() != 1 || Use->DefaultsOverflow) { Source = false; break; }
+      const auto &Default = Use->Defaults.front();
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
+      if (!Parameter || !Parameter->hasDefaultArgument() ||
+          Default.Written.getArgument().getKind() != TemplateArgument::Type ||
+          Default.Converted.getArgument().getKind() != TemplateArgument::Type) { Source = false; break; }
+      // This bounded walker follows actual selected aliases, partials, trait
+      // roots and all original declaration chains. No ordinary permission leaks.
+      SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
+          A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources,
+          A.SpecialMembers, A.OperationTraits);
+      if (!SelectedDefault) { Source = false; break; }
+    }
+    if (!Source || !SelectedDefault || !Call->getType()->isBooleanType()) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer call source",
+               "The selected invocation, exception and enabling source graph must be complete.");
+      return true;
+    }
+    A.VerifiedNotFnCalls.emplace(Call, *Runtime);
+    A.type(Runtime->Storage.CallableType, Call->getExprLoc());
+    // The SDK receiver cast is exactly bound by the descriptor. Traverse its
+    // original object and every original argument once, with normal lifetimes.
+    if (!TraverseStmt(const_cast<Expr *>(Runtime->Object))) return false;
+    for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+      if (!TraverseStmt(Call->getArg(I))) return false;
+    return true;
+  }
   bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto NotFn = traverseNotFnFactory(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
     // Keep selection/default source that can disappear from the instantiated
@@ -25786,6 +25901,7 @@ public:
     });
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto NotFn = traverseNotFnCall(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, Queue);
     return traverseTypeQuerySource(Call, [&] {
@@ -28631,7 +28747,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
     const auto FunctionalReference =
         approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = FunctionalObject || FunctionalReference ||
+    const auto NotFn = approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context);
+    if (const auto *Base = FunctionalObject || FunctionalReference || NotFn ||
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
@@ -28688,6 +28805,8 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
+    } else if (NotFn) {
+      DependencyTypes.emplace_back(NotFn->CallableType, R->getLocation());
     } else if (FunctionalReference) {
       DependencyTypes.emplace_back(FunctionalReference->PointerType,
                                    FunctionalReference->Record->getLocation());
@@ -28884,7 +29003,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto FunctionalReference =
         S.coreV2() ? approvedFunctionalReferenceRecord(S, Sources, R, Context)
                    : std::optional<FunctionalReferenceRecord>();
-    const auto *Base = S.coreV2() && !FunctionalObject &&
+    const auto NotFn = S.coreV2()
+        ? approvedFunctionalNotFnPointerStorage(S, Sources, R, Context)
+        : std::optional<FunctionalNotFnStorage>();
+    const auto *Base = S.coreV2() && !FunctionalObject && !NotFn &&
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
@@ -28903,6 +29025,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     if (FunctionalObject) {
       Fields.push_back(json::Object{{"name", "nct_functional_storage"},
                                     {"type", "u8"}});
+    } else if (NotFn) {
+      Fields.push_back(json::Object{{"name", "nct_not_fn_callable"},
+          {"type", type(NotFn->CallableType, R->getLocation())}});
     } else if (FunctionalReference) {
       if (FunctionalReference->PaddedBase)
         Fields.push_back(json::Object{
