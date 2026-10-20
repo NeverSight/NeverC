@@ -10143,16 +10143,16 @@ class UtilityPairByteComparisonSources
         Call->getNumArgs() != 1 || !Call->isPRValue() ||
         !A.Context.hasSameType(Call->getType(), A.Context.IntTy) ||
         !A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType()))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Declaration : Function->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       if (!Declaration->isImplicit() || Declaration->getBuiltinID() != Builtin::BI__builtin_constant_p)
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (Declaration->getLocation().isValid()) {
         const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
         if (!File || File->Root != "libcxx" ||
             (File->Path != "string" && File->Path != "__utility/is_valid_range.h"))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
     }
     // A compiler proof query in the immutable helper, never an emitted call.
@@ -10191,7 +10191,7 @@ class UtilityPairByteComparisonSources
                               A.Context.getLValueReferenceType(Element)) ||
         !A.Context.hasSameType(Function->getReturnType(), Pointer) ||
         !A.Context.hasSameType(Call->getType(), Pointer))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     // Clang implements this selected library builtin. Its primary and every
     // declaration still come from the immutable SDK; operands keep traversing.
     return utilitySDKFunctionSource(A, Function, "__memory/addressof.h",
@@ -10201,16 +10201,16 @@ class UtilityPairByteComparisonSources
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
         Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Declaration : Function->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     if (const auto *Primary = Function->getPrimaryTemplate())
       for (const auto *Declaration : Primary->redecls())
         if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto *Definition = Function->getDefinition();
     return approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&
            location(Definition->getLocation());
@@ -10234,7 +10234,7 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     const auto *Declaration = Reference->getDecl();
     if (!location(Reference->getLocation()))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (const auto *Variable = dyn_cast<VarDecl>(Declaration))
       if (Variable->isLocalVarDeclOrParm())
         return location(Variable->getLocation());
@@ -10264,21 +10264,25 @@ public:
       };
       for (const auto &Argument : Record->getTemplateArgs().asArray())
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Argument.getAsType()->isVoidType()) return false;
+            !Argument.getAsType()->isVoidType()) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Declaration : Record->redecls())
-        if (!Origin(Declaration)) return false;
+        if (!Origin(Declaration)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Declaration : Primary->redecls())
-        if (!Origin(Declaration) || !Origin(Declaration->getTemplatedDecl())) return false;
+        if (!Origin(Declaration) || !Origin(Declaration->getTemplatedDecl())) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Declaration : Constructor->redecls())
-        if (!Origin(Declaration)) return false;
+        if (!Origin(Declaration)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       return true;
     }
     return function(Constructor);
   }
   bool VisitCallExpr(CallExpr *Call) {
     const auto *Function = Call->getDirectCallee();
+    llvm::errs() << "PAIR_FORMAL_BYTE_CALL_BEGIN\n";
+    Call->dump(llvm::errs(), A.Context);
+    if (Function) Function->dump(llvm::errs());
+    llvm::errs() << "PAIR_FORMAL_BYTE_CALL_END\n";
     if (!Function)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (Function->getBuiltinID()) {
       if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
         return stringConstantQuery(Call, Function);
@@ -10295,26 +10299,26 @@ public:
   }
   bool function(const FunctionDecl *Function) {
     if (!pinned(Function))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (!Seen.insert(Function->getCanonicalDecl()).second)
       return true;
     if (Seen.size() > 128)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto *Definition = Function->getDefinition();
     if (const auto *Pattern = Function->getTemplateInstantiationPattern(true))
       if (!pinned(Pattern))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Parameter : Definition->parameters()) {
       const auto *Info = Parameter->getTypeSourceInfo();
       if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Definition))
       for (const auto *Initializer : Constructor->inits())
         if (!Initializer->isMemberInitializer() ||
             !approvedStandardSDKDeclaration(A.S, A.Sources, Initializer->getMember()) ||
             !TraverseStmt(const_cast<Expr *>(Initializer->getInit())))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto *Prototype = Definition->getType()->getAs<FunctionProtoType>();
     return Prototype && (!Prototype->getNoexceptExpr() ||
         TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&
@@ -10928,19 +10932,19 @@ public:
     if (!Expression)
       return true;
     if (!Expressions)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     auto Found = Expressions->find(Expression);
     if (Found == Expressions->end() || !Found->second.Complete)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     add(&Found->second.Dependencies);
     return true;
   }
   bool requireType(OperationTypeSourceKey Key) {
     if (!Types)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     auto Found = Types->find(Key);
     if (Found == Types->end() || !Found->second.Complete)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     add(&Found->second.Dependencies);
     return true;
   }
@@ -10980,7 +10984,7 @@ public:
   }
   bool queryConstructorSignature(const CXXConstructorDecl *Constructor) {
     if (!lazyQueryConstructorSignature(A, Constructor))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Declaration : Constructor->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
@@ -10989,14 +10993,14 @@ public:
           !Declaration->getTypeSourceInfo() ||
           !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
           !prototypeSource(Prototype, Declaration))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     return true;
   }
   bool queryDestructorSignature(const CXXDestructorDecl *Destructor) {
     if (!QueryDestructors || !QueryDestructors->count(Destructor) ||
         !lazyQueryDestructorSignature(A, Destructor))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Declaration : Destructor->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
@@ -11005,13 +11009,13 @@ public:
           !Declaration->getTypeSourceInfo() ||
           !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
           !prototypeSource(Prototype, Declaration))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     return true;
   }
   bool queryCallSignature(const CXXMethodDecl *Method) {
     if (!lazyQueryCallSignature(A, Method))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Declaration : Method->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
@@ -11019,23 +11023,23 @@ public:
           !standardExceptionSpecification(Prototype) || !Declaration->getTypeSourceInfo() ||
           !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
           !prototypeSource(Prototype, Declaration))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       // Uninstantiated query methods bypass VisitFunctionDecl. Their completed
       // TSI proves source, not permission for an otherwise unsupported return
       // carrier; retained primitive operands may use incomplete identities.
       if (A.type(Declaration->getReturnType(), Declaration->getLocation(), true).empty())
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     return true;
   }
   bool generatedDeclaration(const CXXMethodDecl *Method) {
     if (!Method || !A.S.owns(A.Sources, Method->getLocation()))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     bool WrittenDefaulting = false;
     for (const auto *Declaration : Method->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       if (!A.S.owns(A.Sources, Declaration->getLocation()))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (!Declaration->isImplicit()) {
         // The origin only proves a template declaration's category. Actual
         // redeclarations still supply defaulting and every completed TSI.
@@ -11044,7 +11048,7 @@ public:
             !Declaration->getTypeSourceInfo() ||
             !requireType(operationTypeSourceKey(
                 Declaration->getTypeSourceInfo()->getTypeLoc())))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         WrittenDefaulting |= Declaration->isDefaulted();
       }
       const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
@@ -11055,10 +11059,10 @@ public:
             !Prototype->getExceptionSpecDecl() ||
             Prototype->getExceptionSpecDecl()->getCanonicalDecl() !=
                 Method->getCanonicalDecl())
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       if (!prototypeSource(Prototype, Declaration))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     return Method->isImplicit() || WrittenDefaulting;
   }
@@ -11068,18 +11072,18 @@ public:
   bool selectedOperationSignature(const CXXMethodDecl *Method) {
     if (!QuerySpecialMembers || !QuerySpecialMembers->count(Method) ||
         !selectedSpecialMemberSignature(A, Method))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Declaration : Method->redecls()) {
       const auto *Member = cast<CXXMethodDecl>(Declaration);
       A.chargeExpansion(1, Declaration->getLocation());
       if (!selectedSpecialMemberSignature(A, Member) ||
           !requireType(operationTypeSourceKey(Member->getTypeSourceInfo()->getTypeLoc())))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       const auto *Prototype = Member->getType()->getAs<FunctionProtoType>();
       if (!standardExceptionSpecification(Prototype))
         Prototype = Member->getTypeSourceInfo()->getType()->getAs<FunctionProtoType>();
       if (!prototypeSource(Prototype, Member))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     // An ordinary selected definition must finish normal traversal. Only the
     // exact inline class-template signature may keep its unused body lazy.
@@ -11137,7 +11141,7 @@ public:
       if (!Node)
         return true;
       if (Depth > 64)
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       A.chargeExpansion(1, Node->getBeginLoc());
       if (isa<UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, TypeTraitExpr,
               ArrayTypeTraitExpr>(Node))
@@ -11146,7 +11150,7 @@ public:
           E && !E->getType().isNull() && E->isPRValue())
         if (const auto *Record = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl())
           if (!Destruction(Destruction, Record, 0))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       // MarkFunctionReferenced can resolve an implicit special member's inferred
       // specification even for non-nothrow queries. A trivial parent body need
       // never be generated, leaving selected subobject signatures unvisited.
@@ -11157,21 +11161,21 @@ public:
             !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(ObjectType),
                 A.Context.getRecordType(Constructor->getParent())) ||
             !ExceptionSource(Constructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         // Every exact record prvalue passed the shared destruction proof above.
         // Classify the whole family: an earlier selected declaration need not
         // carry its later =default definition's flag or generated source.
         if ((Constructor->isImplicit() || defaultedDeclaration(Constructor)) &&
             !implicitSpecialMemberSource(A, Constructor, false) &&
             !GeneratedOperation(Constructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       if (const auto *Call = dyn_cast<CallExpr>(Node))
         if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
             Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
             (Method->isImplicit() || defaultedDeclaration(Method)))
           if (!implicitSpecialMemberSource(A, Method, true) && !GeneratedOperation(Method))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
         const auto *Destructor = Temporary->getTemporary()->getDestructor();
         const auto *Sub = Temporary->getSubExpr();
@@ -11181,31 +11185,31 @@ public:
             !A.Context.hasSameUnqualifiedType(Temporary->getType(),
                 A.Context.getRecordType(Destructor->getParent())) ||
             !Destruction(Destruction, Destructor->getParent(), 0))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node))
         if (Cleanup->getNumObjects() || !Cleanup->getSubExpr() ||
             !A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) ||
             Cleanup->getValueKind() != Cleanup->getSubExpr()->getValueKind())
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (const auto *New = dyn_cast<CXXNewExpr>(Node))
         if (!ExceptionSource(New->getOperatorNew()))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
         auto T = Delete->getDestroyedType();
         if (T.isNull() || !ExceptionSource(Delete->getOperatorDelete()))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         if (const auto *Record = A.Context.getBaseElementType(T)->getAsCXXRecordDecl())
           if (!Destruction(Destruction, Record, 0) ||
               !ExceptionSource(Record->getDestructor()))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       if (const auto *Call = dyn_cast<CallExpr>(Node)) {
         if (!CallExceptionSource(Call))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Call->getDirectCallee()))
           if (!Destruction(Destruction, Destructor->getParent(), 0))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       // These source wrappers have no normal Stmt children. Array fillers may
       // likewise exist only in the semantic initializer form.
@@ -11218,55 +11222,55 @@ public:
       if (const auto *List = dyn_cast<InitListExpr>(Node)) {
         if (const auto *Semantic = List->getSemanticForm(); Semantic && Semantic != List)
           if (!Self(Self, Semantic, Depth + 1))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         if (List->hasArrayFiller() && !Self(Self, List->getArrayFiller(), Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       for (const auto *Child : Node->children())
         if (!Self(Self, Child, Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       return true;
     };
     return DefaultDependencies(DefaultDependencies, Initializer, InitialDepth);
   }
   bool selectedOperation(const CXXMethodDecl *Method, unsigned Depth) {
     if (!QuerySpecialMembers || !QuerySpecialMembers->count(Method) || Depth > 64)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto *Source = specialMemberSelectionSource(A, Method);
     if (!Source)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (auto Found = CompletedSpecialMembers.find(Method);
         Found != CompletedSpecialMembers.end() && Depth <= Found->second)
       return true;
     if (!ActiveSpecialMembers.insert(Method).second)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     auto Restore = llvm::make_scope_exit([&] { ActiveSpecialMembers.erase(Method); });
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     const bool Default = Constructor && Constructor->isDefaultConstructor();
     for (const auto &Base : Method->getParent()->bases())
       if (!requireType(operationTypeSourceKey(Base.getTypeSourceInfo()->getTypeLoc())))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Field : Method->getParent()->fields()) {
       if (!requireType(operationTypeSourceKey(Field->getTypeSourceInfo()->getTypeLoc())))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (Default && Field->hasInClassInitializer() &&
           (!Field->getInClassInitializer() ||
            !requireExpression(Field->getInClassInitializer()) ||
            !initializerDependencies(Field->getInClassInitializer(), Depth + 1)))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     for (const auto &Selection : Source->Selections) {
       const auto *Child = Selection.Method;
       if (Selection.ConstructorDestruction) {
         if (!destruction(Child->getParent(), Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         continue;
       }
       if (Child->isImplicit() || defaultedDeclaration(Child)) {
         if (!generatedOperation(Child, Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       } else if (!selectedOperationSignature(Child)) {
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       const auto *ChildConstructor = dyn_cast<CXXConstructorDecl>(Child);
       const unsigned Supplied = ChildConstructor && ChildConstructor->isDefaultConstructor() ? 0 : 1;
@@ -11274,10 +11278,10 @@ public:
         const auto *Parameter = Child->getParamDecl(I);
         const auto *Init = operationDefaultInitializer(A, Parameter);
         if (!Defaults || !Init)
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         auto Proof = Defaults->find({Parameter, Init});
         if (Proof == Defaults->end() || !initializerDependencies(Init, Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         add(Proof->second);
       }
     }
@@ -11290,15 +11294,15 @@ public:
     const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
     if (!(Constructor ? (defaultedLifecycle(Constructor) || defaultedCopyOrMoveConstructor(Constructor))
                       : defaultedAssignment(Method)))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     // Collection records possible edges, including unused defaults and pointee
     // layouts. Only consumption of this exact family may complete its selected
     // signatures. An existing nontrivial body keeps its normal source proof.
     if ((Method->isTrivial() || !Method->hasBody()) && PrepareSpecialMember &&
         specialMemberSelectionSource(A, Method) && !PrepareSpecialMember(Method))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (!generatedDeclaration(Method))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (Method->isTrivial()) {
       // The exact written root has its own declaration proof. Subobjects still
       // require the original implicit-family proof, with no written exception
@@ -11317,33 +11321,33 @@ public:
     if (!Method->hasBody(BodyOwner))
       return selectedOperation(Method, Depth);
     if (!Generated)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(BodyOwner);
     if (!Definition || !generatedDeclaration(Definition))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     auto Found = Generated->find(Definition);
     if (Found == Generated->end() || !Found->second.Complete)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     add(&Found->second.Dependencies);
     return true;
   }
   bool uniquePtrDeletion(const UtilityUniquePtrRecord &Owner, unsigned Depth) {
     if (Depth > 64 || !utilityUniquePtrDeletionSource(A, Owner))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (Owner.CustomDeleter) {
       // The callback decides whether to destroy or release its pointee.
       // Retain each original signature and exception specification.
       for (const auto *Declaration : Owner.CustomDeleter->redecls()) {
         A.chargeExpansion(1, Declaration->getLocation());
         if (!defined(Declaration))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       return true;
     }
     // Use the same selected deallocation function as lowering, which can
     // differ from the SDK delete expression's implicit unsized declaration.
     if (!heapDefined(A.uniquePtrDeleteFunction(Owner, Owner.Record->getLocation())))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (const auto *Element = A.Context.getBaseElementType(Owner.ElementType)
                                   ->getAsCXXRecordDecl())
       return destruction(Element, Depth + 1);
@@ -11352,7 +11356,7 @@ public:
   bool destruction(const CXXRecordDecl *Record, unsigned Depth = 0) {
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Depth > 64)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     A.chargeExpansion(1, Record->getLocation());
     if (const auto Array =
             utilityArrayDestructionSource(A, Record)) {
@@ -11371,7 +11375,7 @@ public:
         if (!Element->isReferenceType())
           if (const auto *Member = A.Context.getBaseElementType(Element)->getAsCXXRecordDecl())
             if (!destruction(Member, Depth + 1))
-              return false;
+              { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       return true;
     }
@@ -11396,7 +11400,7 @@ public:
       return true;
     if (const auto Owner = utilityUniquePtrDestructionSource(A, Record)) {
       if (!uniquePtrDeletion(*Owner, Depth))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       return !Owner->CustomDeleter ||
              destruction(Owner->Deleter.Record, Depth + 1);
     }
@@ -11406,19 +11410,19 @@ public:
       const auto *Destructor = Record->getDestructor();
       if (!Destructor || !Destructor->isImplicit() ||
           !approvedStandardSDKDeclaration(A.S, A.Sources, Destructor))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (Piecewise->Record == Piecewise->Distribution)
         return destruction(Piecewise->Parameter, Depth + 1);
       for (const auto *Field : {Piecewise->Bounds, Piecewise->Densities, Piecewise->Areas})
         if (!destruction(Field->getType()->getAsCXXRecordDecl(), Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       return true;
     }
     if (const auto Discrete = approvedDiscreteDistributionRecord(A.S, A.Sources, Record, A.Context)) {
       const auto *Destructor = Record->getDestructor();
       if (!Destructor || !Destructor->isImplicit() ||
           !approvedStandardSDKDeclaration(A.S, A.Sources, Destructor))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       const auto *Field = Discrete->Record == Discrete->Distribution
                               ? Discrete->Storage : Discrete->Thresholds;
       return destruction(Field->getType()->getAsCXXRecordDecl(), Depth + 1);
@@ -11427,7 +11431,7 @@ public:
       const auto *Destructor = Record->getDestructor();
       if (!Destructor || !Destructor->isImplicit() ||
           !approvedStandardSDKDeclaration(A.S, A.Sources, Destructor))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       return destruction(Seq->Storage->getType()->getAsCXXRecordDecl(), Depth + 1);
     }
     if (approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Record, A.Context)) return true;
@@ -11439,44 +11443,44 @@ public:
       return true;
     }
     if (!A.S.owns(A.Sources, Record->getLocation()))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (Record->hasUserDeclaredDestructor()) {
       const auto *Destructor = Record->getDestructor();
       // An out-of-line defaulted destructor's first declaration can still look
       // user-provided. Classify the family before choosing its source proof.
       if (defaultedDeclaration(Destructor)) {
         if (!generatedDestructor(Destructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       } else if (!ordinaryDestructor(Destructor) ||
                  (!defined(Destructor) && !queryDestructorSignature(Destructor))) {
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
     } else if (!Record->hasTrivialDestructor() &&
                !generatedDestructor(Record->getDestructor())) {
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     for (const auto &Base : Record->bases())
       if (!Base.getTypeSourceInfo() ||
           !requireType(operationTypeSourceKey(Base.getTypeSourceInfo()->getTypeLoc())) ||
           !destruction(Base.getType()->getAsCXXRecordDecl(), Depth + 1))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     for (const auto *Field : Record->fields()) {
       if (!Field->getTypeSourceInfo() ||
           !requireType(operationTypeSourceKey(Field->getTypeSourceInfo()->getTypeLoc())))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
         if (!destruction(Member, Depth + 1))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     return true;
   }
   bool vectorConstruction(const CXXConstructorDecl *Constructor,
                           unsigned Depth = 0) {
     if (Depth >= 64)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto Vector = utilityNestedVectorConstructionSource(A, Constructor);
     if (!Vector)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     A.chargeExpansion(1, Constructor->getLocation());
     // A nested vector's default constructor creates no elements, so it never
     // selects a constructor for that vector's own elements.
@@ -11486,7 +11490,7 @@ public:
     const auto *ElementConstructor = utilityVectorElementConstructor(
         A, *Vector, Constructor->isDefaultConstructor());
     if (!ElementConstructor)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (approvedUtilityVectorRecord(A.S, A.Sources,
                                     ElementConstructor->getParent(), A.Context))
       return vectorConstruction(ElementConstructor, Depth + 1);
@@ -11504,10 +11508,10 @@ public:
     if (!Owner || !utilityUniquePtrFunctionSource(A, Constructor) ||
         (Constructor->isDefaultConstructor() &&
          !utilityUniquePtrElementConstructionSource(A, Constructor)))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (Constructor->isMoveConstructor() &&
         !UniqueExchangeSources(A, *Owner, true).moveConstructor(Constructor))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     return !Owner->CustomDeleter ||
            generatedOperation(
                utilityUniquePtrDeleterConstructor(A, Constructor, *Owner));
@@ -11516,22 +11520,22 @@ public:
     const auto Info = utilityMakeUniqueSource(A, Call);
     if (!Info || !Info->OwnerConstruction ||
         !uniquePtrConstruction(Info->OwnerConstruction->getConstructor()))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto L = Call->getExprLoc();
     if (!heapDefined(A.allocationFunction(Info->Allocation->getOperatorNew(), true,
                                           L, Info->Owner.Deleter.Array,
                                           Info->Owner.ElementType)) ||
         !destruction(Info->Owner.Record))
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     if (const auto *Constructor = Info->Constructor) {
       if (Constructor->isImplicit() || defaultedDeclaration(Constructor)) {
         if (!generatedOperation(Constructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       } else {
         for (const auto *Declaration : Constructor->redecls()) {
           A.chargeExpansion(1, Declaration->getLocation());
           if (!defined(Declaration))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         }
       }
       // The SDK forwards the written arguments, but selected trailing defaults
@@ -11541,7 +11545,7 @@ public:
         if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument)) {
           const auto *Initializer = selectedDefaultArgument(Default, A.Context);
           if (!Initializer || !requireExpression(Initializer))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         }
     }
     return true;
@@ -11566,48 +11570,48 @@ public:
       A.chargeExpansion(1, L);
       for (const auto *Function : Dependencies->Definitions)
         if (!defined(Function))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Constructor : Dependencies->VectorConstructors)
         if (!vectorConstruction(Constructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Constructor : Dependencies->StringConstructors)
         if (!utilityStringElementConstructionSource(A, Constructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Method : Dependencies->StringAssignments)
         if (!utilitySDKFunctionSource(A, Method, "string", !Method->isCopyAssignmentOperator()))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Method : Dependencies->PairOwnerAssignments) {
         const auto Owner = utilityUniquePtrSource(A, Method->getParent());
-        if (!Owner || !UniqueExchangeSources(A, *Owner, true).assignment(Method, false)) return false;
+        if (!Owner || !UniqueExchangeSources(A, *Owner, true).assignment(Method, false)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       for (const auto *Call : Dependencies->PairSDKSwaps)
-        if (!utilityPairSelectedSDKSwapSource(A, Call)) return false;
+        if (!utilityPairSelectedSDKSwapSource(A, Call)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Call : Dependencies->PairSDKComparisons)
-        if (!utilityPairSelectedComparisonSource(A, Call)) return false;
+        if (!utilityPairSelectedComparisonSource(A, Call)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Constructor : Dependencies->UniquePtrConstructors)
         if (!uniquePtrConstruction(Constructor))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Call : Dependencies->UniquePtrFactories)
         if (!uniquePtrFactory(Call))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Call : Dependencies->UniquePtrDeletions)
         if (!uniquePtrDeletionCall(Call))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Record : Dependencies->ArrayAssignments)
         if (!implicitOperationFamilySource(A, Record, OperationFamily::Assignment, false))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Record : Dependencies->Destructions)
         if (!destruction(Record))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto *Expression : Dependencies->Expressions)
         if (!requireExpression(Expression))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (const auto &Type : Dependencies->Types)
         if (!requireType(Type))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     return true;
   }
@@ -19422,20 +19426,20 @@ private:
         Piecewise.Elements.size() != 2 || !pairPiecewiseLifetime(Construction, Piecewise)) {
       A.reject(L, "pair piecewise lifetime",
                "The exact tuple references must outlive their use and destination bindings.");
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     UtilityPairPiecewiseOuterSources Outer(A, Piecewise);
     if (!Outer.check()) {
       A.reject(L, "pair piecewise outer source",
                "Both selected constructor layers and every get/forward require original SDK sources.");
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
     for (const auto *Use : {Construction, Piecewise.Delegation}) {
       const auto Found = SelectedCallSources.find(Use);
       if (Found == SelectedCallSources.end() || Found->second.empty()) {
         A.reject(L, "pair piecewise selected source",
                  "Each exact public or delegating constructor needs its retained successful selection.");
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       const TemplateUseSource *First = nullptr;
       for (const auto *Selection : Found->second) {
@@ -19444,20 +19448,20 @@ private:
             (Use == Construction ? !A.S.owns(A.Sources, Selection->Location)
               : !pairPiecewiseSelectionLocation(A.S, A.Sources, Selection->Location,
                                                 Selection->Function)))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         const auto Sources = FunctionSources.find(
             {Selection->Function, Selection->Location.getRawEncoding()});
         if (Sources == FunctionSources.end() || Sources->second.empty())
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         for (const auto *Source : Sources->second) {
           if (!Source || Source->Location != Selection->Location ||
               (First && !equivalentUse(*First, *Source)) ||
               !Outer.deduction(*Source, Use->getConstructor()))
-            return false;
+            { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
           First = Source;
         }
         if (Use == Construction && !pairConstructorTemplateSource(*Selection))
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
     }
     auto &Dependencies = PairPiecewiseSources[Construction];
@@ -19473,7 +19477,7 @@ private:
         if (Stored.EmptyBase) {
           A.reject(L, "pair piecewise tuple storage",
                    "Every selected tuple argument needs a proved live storage projection.");
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         }
       Dependencies.Destructions.insert(Element.Tuple.Record);
       queueOwningDestructorSignatures(Element.Tuple.Record,
@@ -19487,17 +19491,17 @@ private:
       const auto *Child = dyn_cast_or_null<CXXConstructExpr>(Operation);
       if (!Child) {
         if (Element.Tuple.Elements.empty()) {
-          if (!isa_and_nonnull<ImplicitValueInitExpr>(Operation)) return false;
+          if (!isa_and_nonnull<ImplicitValueInitExpr>(Operation)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         } else if (Element.Forwarders.size() != 1 || Operation != Element.Forwarders[0]) {
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
         }
         continue;
       }
-      if (Element.Forwarders.size() != Element.Tuple.Elements.size()) return false;
+      if (Element.Forwarders.size() != Element.Tuple.Elements.size()) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       for (unsigned I = 0; I < Element.Forwarders.size(); ++I)
         if (I >= Child->getNumArgs() ||
             pairPiecewiseOperation(Child->getArg(I)) != Element.Forwarders[I])
-          return false;
+          { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       const auto *Constructor = Child->getConstructor();
       if (A.S.owns(A.Sources, Constructor->getLocation())) {
         collectOperationFunctionTypeSource(Constructor);
@@ -19509,22 +19513,22 @@ private:
       } else if (approvedUtilityStringRecord(A.S, A.Sources,
                      Constructor->getParent(), A.Context)) {
         if (!approvedUtilityStringConstruction(A.S, A.Sources, Child, A.Context) ||
-            !utilityStringOperationSource(A, Constructor)) return false;
+            !utilityStringOperationSource(A, Constructor)) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       } else if (approvedUtilityStringViewRecord(A.S, A.Sources,
                      Constructor->getParent(), A.Context)) {
         if (!approvedUtilityStringViewConstruction(A.S, A.Sources, Child, A.Context) ||
             !utilitySDKFunctionSource(A, Constructor, "string_view",
-                                     !Constructor->isTrivial())) return false;
+                                     !Constructor->isTrivial())) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       } else if (approvedUtilityUniquePtrRecord(A.S, A.Sources,
                      Constructor->getParent(), A.Context)) {
         Dependencies.UniquePtrConstructors.insert(Constructor);
       } else {
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       }
       if (!checkUtilitySelectedConstruction(Child, L, Element.Tuple.Elements.size()))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     }
-    if (!A.S.Diagnostics.empty()) return false;
+    if (!A.S.Diagnostics.empty()) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     PendingPairPiecewise.insert(Construction);
     return true;
   }
@@ -19539,7 +19543,7 @@ public:
         A.reject(Construction->getExprLoc(), "pair piecewise source completion",
                  "Tuple parameters, selected child signatures, defaults and destruction require completed sources.",
                  "TR0203");
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       };
       const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
           A.S, A.Sources, Construction, A.Context);
@@ -22437,10 +22441,10 @@ public:
     const auto Location = Selection.Location;
     const PairConstructorSourceKey Key{Construction, Factory};
     if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
-      return false;
+      { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
-        Found == FunctionSources.end() || Found->second.empty()) return false;
+        Found == FunctionSources.end() || Found->second.empty()) { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
     const TemplateUseSource *First = nullptr;
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
@@ -22454,7 +22458,7 @@ public:
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
               Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
-        return false;
+        { llvm::errs() << "PAIR_FORMAL_FALSE Frontend.cpp:" << __LINE__ << "\n"; return false; }
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
       Members.insert(LocalMembers.begin(), LocalMembers.end());
