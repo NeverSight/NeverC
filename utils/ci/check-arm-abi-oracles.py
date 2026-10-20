@@ -96,6 +96,15 @@ def main():
         assert run([compiler, '__neverc_cpp_frontend', '--version'], 'environment/private-frontend-version') == 0
         assert (out / 'environment/private-frontend-version.log').read_text().strip() == plan['expected_frontend_version']
         assert run(['cl.exe'], 'environment/native-msvc') in [0, 2]
+        native_compiler = shutil.which('clang-cl.exe')
+        assert native_compiler, 'Real native ARM64 clang-cl unavailable; no reference compiler stub'
+        assert run([native_compiler, '--version'], 'environment/native-clang') == 0
+        version = (out / 'environment/native-clang.log').read_text()
+        assert 'clang version' in version and ('aarch64' in version or 'arm64' in version)
+        r['native_reference_compiler'] = {'path': native_compiler, 'version': version,
+            'sha256': sha(native_compiler), 'vendor_cpp_library': 'MSVC STL',
+            'frozen_sdk_abi_identity_proved': False}
+        assert sha(compiler) == plan['compiler_sha256']
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
         catalog = json.loads((sdk / 'catalog.json').read_text())
@@ -132,14 +141,14 @@ def main():
                     native = build / (stem + '-native.exe')
                     obj = build / (stem + '-native.obj')
                     if case.get('c_harness'):
-                        code = run(['cl.exe', '/nologo', '/std:c++17', '/EHsc', '/MT', native_flag,
+                        code = run([native_compiler, '/nologo', '/std:c++17', '/EHsc', '/MT', native_flag,
                             '/c', source, '/Fo' + str(obj)], 'native/' + stem + '-compile')
                         if code == 0:
-                            code = run(['cl.exe', '/nologo', '/MT', native_flag, harness, obj,
+                            code = run([native_compiler, '/nologo', '/MT', native_flag, harness, obj,
                                 '/Fo' + str(build / (stem + '-harness.obj')), '/Fe' + str(native)],
                                 'native/' + stem + '-link')
                     else:
-                        code = run(['cl.exe', '/nologo', '/std:c++17', '/EHsc', '/MT', native_flag,
+                        code = run([native_compiler, '/nologo', '/std:c++17', '/EHsc', '/MT', native_flag,
                             source, '/Fo' + str(obj), '/Fe' + str(native)], 'native/' + stem + '-compile')
                     n = {'mode': mode, 'compile_returncode': code}
                     if code == 0:
@@ -151,14 +160,15 @@ def main():
                         binary = build / (stem + '-translated.exe')
                         if case.get('c_harness'):
                             obj = build / (stem + '-translated.obj')
-                            code = run([compiler, '-x', 'nc', nc, '-' + mode, '-c', '-fstrict-aliasing',
-                                '-o', obj], 'backend/' + stem + '-compile')
+                            code = run([compiler, nc, '-' + mode, '-fno-lto', '-fno-builtin-mimalloc',
+                                '-o', obj, '-c', '-fstrict-aliasing'], 'backend/' + stem + '-compile')
                             if code == 0:
-                                code = run([compiler, harness, '-' + mode, obj, '-o', binary],
+                                code = run([compiler, harness, '-' + mode, '-fno-lto', '-fno-builtin-mimalloc',
+                                        '-o', binary, obj],
                                            'backend/' + stem + '-link')
                         else:
-                            code = run([compiler, '-x', 'nc', nc, '-' + mode, '-fno-inline',
-                                        '-o', binary], 'backend/' + stem + '-compile')
+                            code = run([compiler, nc, '-' + mode, '-fno-lto', '-fno-builtin-mimalloc',
+                                        '-o', binary, '-fno-inline'], 'backend/' + stem + '-compile')
                         t['compile_returncode'] = code
                         if code == 0:
                             t['image'] = executable(binary)

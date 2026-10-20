@@ -144,6 +144,7 @@ def main():
     evidence['same_as_preinstall_wide_binary'] = evidence['compiler_sha256'] == evidence['preinstall_wide_compiler_sha256']
     evidence['equality_to_later_test_binary_established'] = False
     assert re.fullmatch('[0-9a-f]{64}', evidence['compiler_sha256'])
+    assert evidence['compiler_sha256'] == 'adf3b0421e9ccf5120e121393595b85e351b90dfaccc16d4a707cd3c374e0176'
     evidence['pdb_downloaded'] = False
     evidence['whole_source_run_passed'] = False
     (root / 'provenance.json').write_text(json.dumps(evidence, indent=2) + '\n')

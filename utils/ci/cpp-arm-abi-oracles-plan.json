@@ -129,5 +129,61 @@
     "diagnostic_requests_or_native_programs_run": 0,
     "artifact_digest_authentication_retained": true,
     "compiler_fixed": false
-  }
+  },
+  "compiler_sha256": "adf3b0421e9ccf5120e121393595b85e351b90dfaccc16d4a707cd3c374e0176",
+  "native_reference_compiler": "clang-cl.exe targeting native ARM64 with MSVC STL",
+  "original_msvc_reference_observations": {
+    "actual_evidence_authenticated": true,
+    "passed": false,
+    "commit": "fbe5fd998ee837f00b0f15ec5d9d1e33e06265c7",
+    "run_id": 39379744634,
+    "artifact_id": 12245336125,
+    "archive_sha256": "a5c2b1d710e57a26a158c515f6ccb5ae8c78522b871b25de68dedc910cd68885",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245336125/unpacked/results.json",
+    "report_sha256": "45a0a5e7217704cfe2599ef7a2bebc10a482ec0113852786666a5fd6a72dcba1",
+    "compiler_package_sha256": "adf3b0421e9ccf5120e121393595b85e351b90dfaccc16d4a707cd3c374e0176",
+    "compiler_stage": "authenticated installed package; not assumed byte-identical to preinstall wide or later test binaries",
+    "same_as_later_test_binary_established": false,
+    "native_program_runs": 12,
+    "translated_program_runs": 0,
+    "native_reference_passed": false,
+    "proposed_oracle_runtime_passed": false,
+    "original_translated_failures_reproduced": false,
+    "native_vendor_stl_is_not_frozen_sdk_abi_proof": true,
+    "actual_protocol_requests": 16,
+    "actual_protocol_failures": [],
+    "actual_string_crash_replays": [
+      {
+        "attempt": 0,
+        "returncode": 1,
+        "output_exists": false,
+        "nc_sha256": null
+      },
+      {
+        "attempt": 1,
+        "returncode": 1,
+        "output_exists": false,
+        "nc_sha256": null
+      },
+      {
+        "attempt": 2,
+        "returncode": 1,
+        "output_exists": false,
+        "nc_sha256": null
+      }
+    ],
+    "compiler_repaired": false,
+    "current_production_sources_runtime_verified": false,
+    "full_ci_passed": false,
+    "published_to_dev": false,
+    "goal_complete": false
+  },
+  "original_compile_generated_helper": "  CmdResult compileGenerated(const fs::path &Source, const fs::path &Output,\n                             const std::string &Optimization,\n                             const std::vector<std::string> &Extra = {}) {\n    std::vector<std::string> Args = {\n        Source.string(),         Optimization, \"-fno-lto\",\n        \"-fno-builtin-mimalloc\", \"-o\",         Output.string()};\n    Args.insert(Args.end(), Extra.begin(), Extra.end());\n    return ncc(Args);\n  }",
+  "original_compile_generated_helper_sha256": "26698b99c870dcbef221959573167aee23425e5380f18b8b74382ade66dedda8",
+  "generated_backend_language": "ordinary emitted C source, inferred from .nc by NeverC",
+  "original_test_backend_flags": [
+    "-fno-lto",
+    "-fno-builtin-mimalloc"
+  ],
+  "production_compiler_or_defaults_modified": false
 }
