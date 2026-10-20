@@ -1,0 +1,279 @@
+{
+  "producer_commit": "a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+  "producer_run_id": 39360350577,
+  "producer_small_artifact": {
+    "id": 12238915359,
+    "name": "cpp-private-frontend-protocol-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:d1ab9fa3c119dc297baa81e778bc0a856a4d339d7620a85eba375aeb824fe55a"
+  },
+  "producer_components_artifact": {
+    "id": 12238805525,
+    "name": "cpp-private-frontend-components-remote-only-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:0076a18844250551abd4d3cb883100da1a7187c9dca13f1d426bbea391e5ef5f"
+  },
+  "producer_report_sha256": "2bb186c6fcff3223e0daf78eff00c67e5cf3482d0949526ca01298b5ec66ff0c",
+  "producer_manifest_sha256": "d76283cabbc5883381c942f42099d896626e4ca885274c15826c064e178f25e9",
+  "producer_private_input_sha256": {
+    "Frontend.cpp": "c610559df4f52b54a7e96fa3ad20d8f7baa34d7e38e1e40c70d26c1ff07a630e",
+    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "0506507ca68446475c1f4da4339735a50c1d083d5386ded146d73aab90f7eae1",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "8b77eb365687ea35fc554079c02a187a804b0b9a1d932355a48671f455b2deea",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "allowed_bridge_source_changes": [
+    "Frontend.cpp",
+    "Frontend.h",
+    "Lowering.cpp",
+    "MathSDK.cpp"
+  ],
+  "candidate_source_paths": [
+    "utils/ci/replay-pair-owner-source.py",
+    "utils/ci/cpp-pair-owner-source-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "utils/ci/FrontendProtocolDriver.cpp",
+    "tests/neverc/TranslateTests.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp"
+  ],
+  "source_repair_commit": "6ba45b8b8e92bddec04d1c785e690359cfd93518",
+  "target_abis": [
+    "x86_64-unknown-linux-gnu"
+  ],
+  "cases": [
+    {
+      "name": "cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "expected": "accept"
+    },
+    {
+      "name": "tuple-get",
+      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
+      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-string-fill",
+      "source": "#include <string>\n#include <tuple>\n#include <utility>\nint main(){std::pair<std::string,int> p(std::piecewise_construct,std::forward_as_tuple(3,'x'),std::forward_as_tuple(7));return p.first.size()!=3||p.first[0]!='x'||p.first[2]!='x'||p.second!=7;}\n",
+      "source_sha256": "7ad8e18df32e6b2f25ce1c8e5aa358acb2df5335929dcde1dc3ec729a4aacd4d",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-comparison-embedded-zero",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;\nint check(const P& a,const P& b){return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}\nint main(){P a(std::string(\"a\\0x\",3),9),b(std::string(\"a\\0y\",3),1);if(check(a,b))return 1;b.first=a.first;b.second=a.second;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}\n",
+      "source_sha256": "aa5bc57185c1389a95d6809b2413a386f9b90929bbe5593e3a8c30cbf60e7860",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-owner-pointer",
+      "source": "#include <memory>\n#include <tuple>\n#include <utility>\nint destroyed;struct X{int value;~X(){++destroyed;}};\nint main(){{X* raw=new X{17};std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::forward_as_tuple(raw),std::forward_as_tuple(9));if(p.first.get()!=raw||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}\n",
+      "source_sha256": "f2b331bd6907d1f6d20831164c387dcf2d5a1842b5c359bc75cf12874ec27e78",
+      "expected": "reject"
+    }
+  ],
+  "original_guard_test_body_sha256": "5e09e0e3082d4fe7b865840b94f6396c1bb5dfe490ba4b7f916f81ea48a6072f",
+  "original_guard_test_names": [
+    "pair-piecewise-forward-identity",
+    "pair-piecewise-get-identity",
+    "pair-piecewise-piecewise-construct-t-identity",
+    "pair-piecewise-tuple-identity",
+    "pair-piecewise-tuple-indices-identity",
+    "pair-piecewise-make-tuple-indices-identity",
+    "pair-piecewise-is-nothrow-constructible-identity",
+    "pair-piecewise-tuple-selected-get",
+    "pair-piecewise-standalone-tag",
+    "pair-piecewise-reference-to-value-parameter"
+  ],
+  "required_requests": 6,
+  "required_acceptances": 5,
+  "required_guard_rejections": 1,
+  "original_guards_modified": false,
+  "frontend_execution_timeout_seconds": 60,
+  "source_trace_included": true,
+  "all_binaries_remote_only": true,
+  "full_feature_completion_proved_by_this_job": false,
+  "all_five_internal_adapter_consumers_rebuilt": true,
+  "original_public_c_entry_abi_unchanged": true,
+  "exact_source_revision": "6ba45b8b8e92bddec04d1c785e690359cfd93518",
+  "consumer_record_ownership_source": {
+    "commit": "4239be93f596895b8d895290ffc4027c7fe93ad3",
+    "parent": "41e83ee4375c6e6f037225099cef25f85845e40e",
+    "branch": "codex/cpp-stl-consumer-record-ownership",
+    "changed_files": [
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.h"
+    ],
+    "source_sha256": {
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp": "0efecbc8f39a52b621d36cd81f2ea06460bb24b0dbdfd71c400686f5de301b37",
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.h": "95dcf9e55ab7102099db154beed75a5dfc00d807ae2d50aee8dee82a72784bff"
+    },
+    "port_of_ownership_only_diff": "8f4ba90d..0cafc88a",
+    "not_fn_metadata_or_permission_added": false,
+    "source_record_owner": "Consumer",
+    "adapter_borrows_live_maps": true,
+    "template_event_vector_stability_implemented": false,
+    "incremental_source_event_indexing_implemented": false,
+    "current_sources_compiled_or_executed": false,
+    "late_sema_callback_runtime_regression_verified": false,
+    "work_branch_pushed": true,
+    "published_to_dev": false,
+    "full_ci_passed": false,
+    "goal_complete": false,
+    "push_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/consumer-record-ownership-push-1792473131654838000.log"
+  },
+  "actual_previous_104_request_evidence": {
+    "receipt": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-artifact-validation.json",
+    "receipt_sha256": "a2a230e5b0f20b6c66805e7be336b7c5d24910fbe8625435de62fcce6b4ff138",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245594924/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "3c070df74452a575ff1f41ff1fe14ce69b5e6aff65fa517a622b2efc478d901a",
+    "commit": "4412035d04ad9b57173e74b55f3f57c0e3843dec",
+    "run_id": 39381381628,
+    "artifact_id": 12245594924,
+    "actual_requests": 104,
+    "accepted_positive_requests": 24,
+    "original_source_guard_rejections": 72,
+    "failed_expectations": [
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-piecewise-make-tuple-indices-identity",
+        "expected": "reject",
+        "returncode": 0,
+        "diagnostics": []
+      }
+    ]
+  },
+  "exact_bound_intrinsic_forward_primary_closure": true,
+  "ordinary_constructor_and_function_body_checks_retained": true,
+  "actual_previous_source_compilation_failure": {
+    "commit": "d5dafbc9171bc2d73915821d40d42bbfada9de8b",
+    "run_id": 39380075551,
+    "artifact_id": 12245028201,
+    "archive_sha256": "8002815b14407daf8380ab86ea2f7601921693008cb7fd954300e41dda5e46b0",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245028201/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "2c6914ee0da8f0dd455b79aa508d99655333351c66ad7a85bb990060b9bb4cea",
+    "failed_compile_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12245028201/unpacked/cpp-pair-intrinsic-forward/compile/Frontend.cpp.log",
+    "failed_compile_log_sha256": "271db645e224dfd58cbc2fa10075ba81ebeb02a66d63ab413bf9b0699195614c",
+    "actual_requests": 0,
+    "source_compile_failed": true,
+    "compiler_runtime_verified": false
+  },
+  "delegation_arguments_source_completion": true,
+  "original_constructor_body_and_signature_checks_retained": true,
+  "source_rejection_trace": {
+    "commit": "16d7c1337c65f0f6808334b2b84a3ef22b55fd5f",
+    "diagnostic_commit": "5982c08c46fa13c2187b30469765e1a0796f1672",
+    "run_id": 39394308750,
+    "artifact_id": 12251062772,
+    "report_sha256": "b3a665375bf5dd4245bab8e9e8a0ce21ba095225e261b7e102bd4733166706c7"
+  },
+  "newly_required_cases": [
+    "pair-piecewise-string-fill",
+    "pair-string-comparison-embedded-zero"
+  ],
+  "latest_dependency_rejection_trace": {
+    "commit": "d8f43d7fd2c2145f42f4b76c924077783078e4bc",
+    "run_id": 39410672169,
+    "artifact_id": 12259997249,
+    "report_sha256": "a4d77bcf85cb2b4419bd293483cc613148aa131ad7928bc608a6b3c0b0a0633f",
+    "actual_requests": 4,
+    "accepted_controls": 2,
+    "reproduced_pair_rejections": 2
+  },
+  "observation_only": true,
+  "source_trace_preserves_all_returns": true,
+  "inverse_source_edits": {
+    "MathSDK.cpp": {
+      "helper": "static bool pairOwnerTraceFalse(unsigned Line) {\n  llvm::errs() << \"PAIR_OWNER_FALSE MathSDK.cpp:\" << Line << \"\\n\";\n  return false;\n}\nstatic std::nullopt_t pairOwnerTraceEmpty(unsigned Line) {\n  llvm::errs() << \"PAIR_OWNER_EMPTY MathSDK.cpp:\" << Line << \"\\n\";\n  return std::nullopt;\n}\n\n",
+      "addition": "      llvm::errs() << \"PAIR_OWNER_REJECTED_DECL_BEGIN\\n\";\n      if (D) D->dump(llvm::errs());\n      llvm::errs() << \"PAIR_OWNER_REJECTED_DECL_END\\n\";\n",
+      "observed_false": "return pairOwnerTraceFalse(__LINE__);",
+      "observed_empty": "return pairOwnerTraceEmpty(__LINE__);",
+      "original_sha256": "74d899776eeaf76276dc53e4b246a53a1ae100cfda9ef3f30c764e3fd4e18f3c"
+    },
+    "Frontend.cpp": {
+      "observed_false": "{ llvm::errs() << \"PAIR_OWNER_FALSE Frontend.cpp:\" << __LINE__ << \"\\n\"; return false; }",
+      "original_sha256": "c47e81acc1287f8429e50800fcf05977d26095733c254d1a1381a7ebcd482552"
+    }
+  },
+  "actual_formal_failure": {
+    "commit": "7d656e3274a76a87656d99212bd95af89c89515f",
+    "run_id": 39424253867,
+    "artifact_id": 12267178105,
+    "report_sha256": "2752b40b7c4a5a64e63a1a5246341103020e9d355fbb4e1c0c83e54757db6b9d",
+    "actual_original_formal_xml": 124,
+    "actual_original_formal_passed": 122
+  },
+  "const_borrow_source_fix": "6ba45b8b8e92bddec04d1c785e690359cfd93518",
+  "const_borrow_verifier_pass_claimed": false
+}
