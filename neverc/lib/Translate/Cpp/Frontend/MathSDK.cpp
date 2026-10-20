@@ -7666,6 +7666,34 @@ class UtilityTupleQueryGraph
     }
     return true;
   }
+  bool pairStringFillTraitRoot() const {
+    const auto *E = PairTraitConstruction;
+    const auto *Constructor = E ? E->getConstructor() : nullptr;
+    if (Mode != UtilityTupleQueryMode::PairConstruction || !PairTraitQuery ||
+        !Constructor ||
+        (PairTraitQuery->getTrait() != TT_IsConstructible &&
+         PairTraitQuery->getTrait() != TT_IsNothrowConstructible) ||
+        PairTraitQuery->getNumArgs() != 3 || Operands.size() != 2 ||
+        !Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) ||
+        !PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
+        !E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||
+        E->getNumArgs() != 2 || Constructor->getNumParams() != 2 ||
+        Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||
+        Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+        Constructor->getAccess() != AS_public ||
+        !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
+      return false;
+    const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+    return Prototype && Prototype->getExceptionSpecType() == EST_None &&
+        !Prototype->getNoexceptExpr() &&
+        Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType()) &&
+        Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy) &&
+        Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType()) &&
+        Context.hasSameType(E->getArg(1)->getType(), Context.CharTy) &&
+        !Constructor->getParamDecl(0)->hasDefaultArg() &&
+        !Constructor->getParamDecl(1)->hasDefaultArg() &&
+        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value();
+  }
   bool pinned(const Decl *D) {
     if (!D || !step() || D->isInvalidDecl() ||
         !approvedStandardSDKDeclaration(S, SM, D))
@@ -7685,7 +7713,12 @@ class UtilityTupleQueryGraph
               Origin->Path == "__utility/integer_sequence.h" ||
               Origin->Path == "__memory/unique_ptr.h")) ||
             Origin->Path == "string" || Origin->Path == "string_view" ||
-            llvm::StringRef(Origin->Path).starts_with("__fwd/"));
+            llvm::StringRef(Origin->Path).starts_with("__fwd/") ||
+            // Only this retained, independently bound count/char signature
+            // consumes allocator_traits' actual size_type alias dependencies.
+            // This metadata walker grants no allocator operation or body.
+            ((Origin->Path == "__memory/allocator_traits.h" ||
+              Origin->Path == "__memory/allocator.h") && pairStringFillTraitRoot()));
   }
   bool family(const Decl *D) {
     bool Complete = false;
