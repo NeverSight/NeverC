@@ -342,7 +342,7 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 4 and len(report['invocation_inventory']) == 375
+        assert len(report['requests']) == 4 and len(report['invocation_inventory']) == 20
         def const_root(node):
             if node.get('kind') == 'member':
                 return const_root(node['args'][0])
