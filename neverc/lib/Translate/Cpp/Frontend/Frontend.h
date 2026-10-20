@@ -167,6 +167,12 @@ struct SelectedTemplateCallSource {
   const clang::FunctionDecl *Function;
   clang::SourceLocation Location;
 };
+// Each batch is copied before indexing and then remains immutable. Its AST
+// pointers still belong to the same ASTContext; retaining a batch grants no use.
+struct TemplateSourceEventBatch {
+  std::vector<TemplateUseSource> Uses;
+  std::vector<SelectedTemplateCallSource> Calls;
+};
 struct OperationTraitSource {
   const clang::Expr *Root;
   std::vector<const clang::Expr *> Operands;
@@ -2634,6 +2640,9 @@ public:
   std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
   bool CheckingSource = false;
   std::function<bool(clang::QualType, clang::SourceLocation)> CompleteSDKRecord;
+  std::function<std::optional<TemplateSourceEventBatch>(std::size_t, std::size_t)>
+      SnapshotTemplateSourceEvents;
+  std::function<void()> SynchronizeTemplateSourceEvents;
   std::set<const clang::CallExpr *> VerifiedTupleFactories;
   std::set<const clang::CXXConstructExpr *> VerifiedPairPiecewiseConstructions;
   std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
