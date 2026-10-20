@@ -84,7 +84,8 @@ jobs:
       && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group != 'session-cache-ownership' && inputs.fixture_group
       != 'macho-data-const' && inputs.fixture_group != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest'
       && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' && inputs.fixture_group
-      != 'pair-string-source-repair' && inputs.fixture_group != 'not-fn-selected-source' }}
+      != 'pair-string-source-repair' && inputs.fixture_group != 'not-fn-selected-source' && inputs.fixture_group != 'not-fn-selected-source-crash'
+      }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -979,6 +980,39 @@ jobs:
         if-no-files-found: error
         compression-level: 0
         retention-days: 7
+  inspect-not-fn-selected-source-crash:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-selected-source-crash' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install read-only native debugger
+      run: 'sudo apt-get update
+
+        sudo apt-get install -y gdb
+
+        '
+    - name: Authenticate exact probe ELF and collect unmodified crashes and real GDB stacks
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: 'python3 utils/ci/check-not-fn-selected-source-crash.py --repo "$GITHUB_WORKSPACE" --plan utils/ci/cpp-not-fn-selected-source-crash-plan.json
+        --output "$RUNNER_TEMP/cpp-not-fn-source-crash" --build "$RUNNER_TEMP/cpp-not-fn-source-crash-build"
+
+        '
+    - name: Upload only small actual stack and request evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-source-crash-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-not-fn-source-crash
+        if-no-files-found: error
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -1000,6 +1034,7 @@ jobs:
         - algorithm-manifest-formal
         - pair-string-source-repair
         - not-fn-selected-source
+        - not-fn-selected-source-crash
   push:
     branches:
     - dev
