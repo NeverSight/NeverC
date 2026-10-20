@@ -2,7 +2,7 @@
 
 ## Current snapshot — 2026-10-20
 
-- Cutoff: **2026-10-20 01:07 UTC / 09:07 Asia/Shanghai**. Reviewed dev source: [ee83c2e1](https://github.com/NeverSight/NeverC/commit/ee83c2e1916cb640d6791f56648f99af41b681aa), authored October 19 at 10:04:33 UTC.
+- Cutoff: **2026-10-20T01:07:00Z**. Reviewed dev source: [ee83c2e1](https://github.com/NeverSight/NeverC/commit/ee83c2e1916cb640d6791f56648f99af41b681aa), authored October 19 at 10:04:33 UTC.
 - Incoming [ecfd4a0b…ee83c2e1](https://github.com/NeverSight/NeverC/compare/ecfd4a0b72b5dc81a4f95bcdd399c1f3073a9b6d...ee83c2e1916cb640d6791f56648f99af41b681aa): **3 commits / 20 paths**. Excluding the previous progress-only commit dd16d741 and PROGRESS.md, the product delta is **2 implementation commits / 19 paths**. Complete inventory does not mean complete code coverage.
 - **No newly proven source defect, and no source/test repair submitted in this review.** The historical piecewise sampling-order finding remains an unresolved carry-forward item; its earlier publication outcome is not certified here and the uncertain write was not retried.
 - Strict static inspection only. No project execution, repository scripts, builds, tests, benchmarks, dynamic analysis, or manually triggered CI. Author validation statements are not independent validation.
