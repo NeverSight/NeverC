@@ -81448,12 +81448,25 @@ std::optional<UtilityPairPiecewiseConstruction>
 approvedUtilityPairPiecewiseConstruction(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
+  if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+    llvm::errs() << "PAIR_PIECEWISE_AST_BEGIN\n";
+    if (Construction) {
+      Construction->dump(llvm::errs(), Context);
+      if (const auto *Selected = Construction->getConstructor()) {
+        Selected->dump(llvm::errs());
+        if (const auto *Definition = Selected->getDefinition();
+            Definition && Definition != Selected)
+          Definition->dump(llvm::errs());
+      }
+    }
+    llvm::errs() << "PAIR_PIECEWISE_AST_END\n";
+  }
   if (!Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
       Construction->getNumArgs() != 3)
-    return std::nullopt;
+    return (recordPairSourceFailure(__LINE__), std::nullopt);
   const auto *Public = Construction->getConstructor();
   const auto *Definition = Public
       ? dyn_cast_or_null<CXXConstructorDecl>(Public->getDefinition()) : nullptr;
@@ -81476,16 +81489,16 @@ approvedUtilityPairPiecewiseConstruction(
     if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
         F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !F->getDefinition() || !Pinned(F->getDefinition(), Path))
-      return false;
+      return recordPairSourceFailure(__LINE__);
     const auto *Primary = F->getPrimaryTemplate();
     if (!Primary)
-      return false;
+      return recordPairSourceFailure(__LINE__);
     for (const auto *D : F->redecls())
       if (++FamilyDeclarations > 512 || !Pinned(D, Path))
-        return false;
+        return recordPairSourceFailure(__LINE__);
     for (const auto *D : Primary->redecls())
       if (++FamilyDeclarations > 512 || !Pinned(D, Path) || !Pinned(D->getTemplatedDecl(), Path))
-        return false;
+        return recordPairSourceFailure(__LINE__);
     return true;
   };
   if (!Public || !Pair || !Definition || !Body || !Body->body_empty() ||
@@ -81498,7 +81511,7 @@ approvedUtilityPairPiecewiseConstruction(
           S, SM, Public->getParamDecl(0)->getType(), Context) ||
       !approvedUtilityPiecewiseConstructExpression(
           S, SM, Construction->getArg(0), Context))
-    return std::nullopt;
+    return (recordPairSourceFailure(__LINE__), std::nullopt);
   const auto *Delegating = *Definition->init_begin();
   const auto *Delegation = Delegating->isDelegatingInitializer()
       ? dyn_cast_or_null<CXXConstructExpr>(
@@ -81508,6 +81521,11 @@ approvedUtilityPairPiecewiseConstruction(
       ? dyn_cast_or_null<CXXConstructorDecl>(Private->getDefinition()) : nullptr;
   const auto *PrivateBody = PrivateDefinition
       ? dyn_cast_or_null<CompoundStmt>(PrivateDefinition->getBody()) : nullptr;
+  if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE") && PrivateDefinition) {
+    llvm::errs() << "PAIR_PIECEWISE_PRIVATE_AST_BEGIN\n";
+    PrivateDefinition->dump(llvm::errs());
+    llvm::errs() << "PAIR_PIECEWISE_PRIVATE_AST_END\n";
+  }
   if (!Delegation || Delegation->getNumArgs() != 5 || !Private ||
       Private->getAccess() != AS_private || Private->getNumParams() != 5 ||
       Private->getParent()->getCanonicalDecl() != Pair->Record->getCanonicalDecl() ||
@@ -81517,7 +81535,7 @@ approvedUtilityPairPiecewiseConstruction(
       !Context.hasSameType(Delegation->getType(), Construction->getType()) ||
       !Context.hasSameType(Private->getParamDecl(0)->getType(),
                            Public->getParamDecl(0)->getType()))
-    return std::nullopt;
+    return (recordPairSourceFailure(__LINE__), std::nullopt);
   const auto *PublicArguments = Public->getTemplateSpecializationArgs();
   const auto *PrivateArguments = Private->getTemplateSpecializationArgs();
   const auto *PublicParameters = Public->getPrimaryTemplate()->getTemplateParameters();
@@ -81525,19 +81543,19 @@ approvedUtilityPairPiecewiseConstruction(
   if (!PublicArguments || PublicArguments->size() != 2 ||
       !PrivateArguments || PrivateArguments->size() != 4 ||
       PublicParameters->size() != 2 || PrivateParameters->size() != 4)
-    return std::nullopt;
+    return (recordPairSourceFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I != 4; ++I) {
     const auto *T = dyn_cast<TemplateTypeParmDecl>(PrivateParameters->getParam(I));
     const auto *N = dyn_cast<NonTypeTemplateParmDecl>(PrivateParameters->getParam(I));
     if (I < 2 ? !T || !T->isParameterPack() || T->hasDefaultArgument()
               : !N || !N->isParameterPack() || N->hasDefaultArgument() ||
                     !Context.hasSameType(N->getType(), Context.getSizeType()))
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     if (I < 2) {
       const auto *P = dyn_cast<TemplateTypeParmDecl>(PublicParameters->getParam(I));
       if (!P || !P->isParameterPack() || P->hasDefaultArgument() ||
           !PublicArguments->get(I).structurallyEquals(PrivateArguments->get(I)))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
     }
   }
   // Delegation passes the public tag by its exact trivial copy. No source
@@ -81551,7 +81569,7 @@ approvedUtilityPairPiecewiseConstruction(
       !TagConstructor->isCopyOrMoveConstructor() || !TagReference ||
       TagReference->getDecl() != Definition->getParamDecl(0) ||
       !Pinned(TagConstructor, "__utility/piecewise_construct.h"))
-    return std::nullopt;
+    return (recordPairSourceFailure(__LINE__), std::nullopt);
   UtilityPairPiecewiseConstruction Result{*Pair, Public, Private, Delegation, {}};
   const FieldDecl *Fields[] = {Pair->First, Pair->Second};
   for (unsigned I = 0; I != 2; ++I) {
@@ -81560,7 +81578,7 @@ approvedUtilityPairPiecewiseConstruction(
         !Context.hasSameType(Construction->getArg(I + 1)->getType(), Parameter) ||
         !Context.hasSameType(Private->getParamDecl(I + 1)->getType(),
                              Context.getLValueReferenceType(Parameter)))
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     auto Tuple = approvedUtilityTupleRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
     if (!Tuple)
       Tuple = approvedUtilityReferenceTupleRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
@@ -81569,16 +81587,16 @@ approvedUtilityPairPiecewiseConstruction(
     const auto &Types = PublicArguments->get(I);
     if (!Tuple || Tuple->Elements.size() > 64 || Types.getKind() != TemplateArgument::Pack ||
         Types.pack_size() != Tuple->Elements.size())
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     unsigned Index = 0;
     for (const auto &Type : Types.pack_elements())
       if (Type.getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Type.getAsType(), Tuple->Elements[Index++].getType()))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
     const auto *TupleReference = dyn_cast<DeclRefExpr>(
         Delegation->getArg(I + 1)->IgnoreParenImpCasts());
     if (!TupleReference || TupleReference->getDecl() != Definition->getParamDecl(I + 1))
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         Private->getParamDecl(I + 3)->getType()->getAsCXXRecordDecl());
     const auto *IndicesDefinition = Indices ? Indices->getDefinition() : nullptr;
@@ -81590,10 +81608,10 @@ approvedUtilityPairPiecewiseConstruction(
         !IndicesDefinition->field_empty() || IndicesDefinition->getNumBases() ||
         !Context.hasSameType(Delegation->getArg(I + 3)->getType(),
                              Private->getParamDecl(I + 3)->getType()))
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     for (const auto *D : Indices->redecls())
       if (++FamilyDeclarations > 512 || !Pinned(D, "__tuple/tuple_indices.h"))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
     const auto *IndexPrimary = Indices->getSpecializedTemplate();
     const auto *IndexParameters = IndexPrimary ? IndexPrimary->getTemplateParameters() : nullptr;
     const auto *IndexParameter = IndexParameters && IndexParameters->size() == 1
@@ -81604,53 +81622,53 @@ approvedUtilityPairPiecewiseConstruction(
         !IndicesDefinition->isEmpty() || !IndicesDefinition->isStandardLayout() ||
         !IndicesDefinition->hasTrivialDefaultConstructor() ||
         !IndicesDefinition->hasTrivialDestructor())
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     const auto &IndexLayout = Context.getASTRecordLayout(IndicesDefinition);
     if (IndexLayout.getSize().getQuantity() != 1 ||
         IndexLayout.getAlignment().getQuantity() != 1)
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     for (const auto *D : IndexPrimary->redecls()) {
       if (++FamilyDeclarations > 512 ||
           !approvedStandardSDKDeclaration(S, SM, D) ||
           !approvedStandardSDKDeclaration(S, SM, D->getTemplatedDecl()))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
       for (const auto *Declaration : {static_cast<const Decl *>(D),
                                      static_cast<const Decl *>(D->getTemplatedDecl())})
         if (!cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__tuple/tuple_indices.h") &&
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-          return std::nullopt;
+          return (recordPairSourceFailure(__LINE__), std::nullopt);
     }
     const Expr *Initializer = nullptr;
     for (const auto *Init : PrivateDefinition->inits()) {
       if (!Init->isMemberInitializer() ||
           (Init->getMember() != Pair->First && Init->getMember() != Pair->Second))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
       if (Init->getMember() == Fields[I]) {
         if (Initializer)
-          return std::nullopt;
+          return (recordPairSourceFailure(__LINE__), std::nullopt);
         Initializer = Init->getInit();
       }
     }
     if (!Initializer)
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     UtilityPairPiecewiseElement Element{Fields[I], *Tuple, Initializer, {}, {}};
     const auto *Operation = functionalInvokeStrippedExpression(Initializer);
     std::vector<const Expr *> Inputs;
     if (const auto *C = dyn_cast_or_null<CXXConstructExpr>(Operation)) {
       if (C->getNumArgs() < Tuple->Elements.size() ||
           !Context.hasSameUnqualifiedType(C->getType(), Fields[I]->getType()))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
       for (unsigned J = 0; J < C->getNumArgs(); ++J)
         if (J < Tuple->Elements.size())
           Inputs.push_back(C->getArg(J));
         else if (!isa<CXXDefaultArgExpr>(C->getArg(J)))
-          return std::nullopt;
+          return (recordPairSourceFailure(__LINE__), std::nullopt);
     } else if (Tuple->Elements.empty()) {
       if (!isa_and_nonnull<ImplicitValueInitExpr>(Operation))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
     } else {
       if (Tuple->Elements.size() != 1)
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
       Inputs.push_back(Operation);
     }
     const UtilityTupleLikeSource Source{Tuple->Elements, nullptr, {}, 0};
@@ -81671,7 +81689,7 @@ approvedUtilityPairPiecewiseConstruction(
           Forward->getValueKind() != Expr::getValueKindForType(Forwarded) ||
           !utilityPairForwardingUseSource(S, SM, Forward) ||
           !Family(F, "__utility/forward.h"))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
       const auto *Get = dyn_cast_or_null<CallExpr>(
           functionalInvokeStrippedExpression(Forward->getArg(0)));
       const auto *Reference = Get && Get->getNumArgs() == 1
@@ -81682,12 +81700,12 @@ approvedUtilityPairPiecewiseConstruction(
           !cstddefOrigin(S, SM, Use->getLocation(), "libcxx", "__utility/pair.h") ||
           !approvedUtilityTupleLikeGet(S, SM, Get,
               Private->getParamDecl(I + 1)->getType(), Source, J, Context))
-        return std::nullopt;
+        return (recordPairSourceFailure(__LINE__), std::nullopt);
       Element.Getters.emplace_back(Get, J);
       Element.Forwarders.push_back(Forward);
     }
     if (Element.Getters.size() != Tuple->Elements.size())
-      return std::nullopt;
+      return (recordPairSourceFailure(__LINE__), std::nullopt);
     Result.Elements.push_back(std::move(Element));
   }
   return Result;
