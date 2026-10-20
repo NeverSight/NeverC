@@ -52,8 +52,6 @@
     "pair-piecewise-scalars": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
     "tuple-get": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182"
   },
-  "math_false_sites_instrumented": 395,
-  "frontend_false_sites_instrumented": 3,
   "trace_preserves_false_return_values": true,
   "feature_admission_or_guard_relaxed": false,
   "all_binaries_remote_only": true,
