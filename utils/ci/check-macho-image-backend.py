@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import stat
 import struct
 import subprocess
@@ -41,10 +42,18 @@ def main():
         start = time.monotonic()
         with log.open('w') as stream:
             try:
-                code = subprocess.run(argv, cwd=root, stdout=stream,
-                                      stderr=subprocess.STDOUT, timeout=timeout).returncode
+                process = subprocess.Popen(argv, cwd=root, stdout=stream,
+                    stderr=subprocess.STDOUT, start_new_session=True)
+                code = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                stream.write('\nDIAGNOSTIC COMMAND TIMED OUT\n')
+                # Kill this diagnostic's owned compiler workers before closing
+                # or hashing their log. Never leave writers behind the timeout.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                stream.write('\nDIAGNOSTIC COMMAND TIMED OUT; OWNED PROCESS GROUP STOPPED\n')
                 code = -1000
         r['commands'].append({'command': argv, 'returncode': code, 'timeout_seconds': timeout,
                              'log': str(log.relative_to(out)), 'log_sha256': sha(log),
@@ -123,7 +132,7 @@ target_link_libraries(macho-image-backend PRIVATE linkerMachO)
              '-DLLVM_ENABLE_LIBXML2=OFF', '-DLLVM_ENABLE_CURL=OFF', '-DLLVM_ENABLE_TERMINFO=OFF'],
             'build/configure', 180)
         run(['cmake', '--build', build, '--target', 'macho-image-backend', '--verbose', '--parallel', '4'],
-            'build/actual-macho-backend', 3600)
+            'build/actual-macho-backend', 7200)
         matches = [f for f in build.rglob('macho-image-backend') if f.is_file()]
         assert len(matches) == 1
         binary = matches[0]

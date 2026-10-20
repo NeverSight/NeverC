@@ -706,7 +706,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-image-backend'
       }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 145
     steps:
     - uses: actions/checkout@v4
       with:
