@@ -398,6 +398,32 @@ def fix_visible_friend_instantiation_context(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def preserve_ordinary_template_call_source(path):
+    before = '  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);'
+    after = '  auto NeverCOrdinaryCallResult =\n      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);\n  if (!NeverCOrdinaryCallResult.isInvalid() && FDecl &&\n      FDecl->getPrimaryTemplate() &&\n      getASTConsumer().wantsNeverCTemplateSource())\n    getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n        TheCall, FDecl, TheCall->getExprLoc());\n  return NeverCOrdinaryCallResult;'
+    message = "Unexpected pinned Clang ordinary template-call source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(message) from error
+    if any(text.count(header) != 1 for header in (
+            '#include "clang/AST/ASTConsumer.h"',
+            '#include "clang/AST/ASTContext.h"')):
+        raise SystemExit(message)
+    counts = (text.replace(after, "").count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if re.search(r"\b(?:NeverCOrdinaryCallResult|HandleNeverCSelectedTemplateCallSource)\b", remainder):
+        raise SystemExit(message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_copied_full_initializers(path):
     before = '''  if (!Field->getInClassInitializer()) {
     // Maybe we haven't instantiated the in-class initializer. Go check the
@@ -1527,6 +1553,7 @@ fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")
 fix_deduced_variable_instantiations(args.source / "clang/lib/Sema/SemaExpr.cpp")
+preserve_ordinary_template_call_source(args.source / "clang/lib/Sema/SemaExpr.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [

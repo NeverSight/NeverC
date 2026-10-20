@@ -27643,8 +27643,11 @@ class FunctionLowering {
         const auto RightType = ReverseOrder ? Leaf.LeftType : Leaf.RightType;
         if (const auto String = approvedUtilityStringRecord(
                 A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
-          auto LeftAddress = snapshot(address(std::move(Left), LeftType, L), L);
-          auto RightAddress = snapshot(address(std::move(Right), RightType, L), L);
+          // Comparisons borrow string subobjects through the const pair.
+          auto LeftAddress = snapshot(
+              address(std::move(Left), LeftType.withConst(), L), L);
+          auto RightAddress = snapshot(
+              address(std::move(Right), RightType.withConst(), L), L);
           auto LeftBytes = readStringAt(std::move(LeftAddress), *String, L);
           auto RightBytes = readStringAt(std::move(RightAddress), *String, L);
           return comparePairByteRanges(Relation, std::move(LeftBytes.first),
@@ -31150,7 +31153,7 @@ class FunctionLowering {
     jump(Ready, L);
     label(Short, L);
     auto ShortPointer =
-        cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
+        cast(cast(json::Object(Address), "cptr:void", L), PointerType, L);
     assign(Data,
            String.AlternateLayout
                ? std::move(ShortPointer)

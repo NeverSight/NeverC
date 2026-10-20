@@ -2905,8 +2905,12 @@ utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record,
             A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
       OwningElement = true;
     else if (!Record->hasTrivialDestructor() && needsDestruction(Element)) {
-      if (!utilityTupleDestructionSource(
-              A, Element->getAsCXXRecordDecl(), Depth + 1))
+      const auto *Member = Element->getAsCXXRecordDecl();
+      // The tuple's implicit SDK destructor supplies only its storage edge.
+      // OperationSourceChecker::destruction independently closes each source
+      // record's actual destructor body, signature and nested field sources.
+      if ((!Member || !A.S.owns(A.Sources, Member->getLocation())) &&
+          !utilityTupleDestructionSource(A, Member, Depth + 1))
         return std::nullopt;
       OwningElement = true;
     }
@@ -9597,7 +9601,9 @@ static bool utilityUniquePtrOwnerComparisonSource(Adapter &A,
   default:
     return false;
   }
-  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected)
+  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected &&
+      approvedUtilityPairComparisonChildOperation(A.S, A.Sources,
+          dyn_cast<CXXOperatorCallExpr>(Call), A.Context) != Expected)
     return false;
   const auto Left = utilityUniquePtrSource(
       A, Call->getArg(0)->getType()->getAsCXXRecordDecl());
@@ -10160,6 +10166,44 @@ class UtilityPairByteComparisonSources
     // The enclosing visitor still closes the original member/operand sources.
     return true;
   }
+  bool stringPointerAddressof(CallExpr *Call, const FunctionDecl *Function) {
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    const auto Element = A.Context.CharTy.withConst();
+    const auto Pointer = A.Context.getPointerType(Element);
+    if (!Origin || Origin->Root != "libcxx" ||
+        Origin->Path != "__memory/pointer_traits.h" ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIaddressof ||
+        Function->getBuiltinID() != Builtin::BIaddressof ||
+        !Function->getIdentifier() || Function->getName() != "addressof" ||
+        !Primary || !Function->isInlined() || !Function->isConstexpr() ||
+        Function->getNumParams() != 1 || Function->getParamDecl(0)->hasDefaultArg() ||
+        !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() || !Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(Arguments->get(0).getAsType(), Element) ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||
+        Reference->getDecl() != Function ||
+        (Reference->getFoundDecl() != Function && Reference->getFoundDecl() != Primary) ||
+        operationCalleePrototype(Call) != Prototype ||
+        Call->getNumArgs() != 1 || !Call->isPRValue() || !Call->getArg(0)->isLValue() ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(), Element) ||
+        !A.Context.hasSameType(Function->getParamDecl(0)->getType(),
+                              A.Context.getLValueReferenceType(Element)) ||
+        !A.Context.hasSameType(Function->getReturnType(), Pointer) ||
+        !A.Context.hasSameType(Call->getType(), Pointer))
+      return false;
+    // Clang implements this selected library builtin. Its primary and every
+    // declaration still come from the immutable SDK; operands keep traversing.
+    return utilitySDKFunctionSource(A, Function, "__memory/addressof.h",
+                                     /*RequireDefinition=*/false);
+  }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
@@ -10245,6 +10289,8 @@ public:
     if (Function->getBuiltinID()) {
       if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
         return stringConstantQuery(Call, Function);
+      if (Function->getBuiltinID() == Builtin::BIaddressof)
+        return stringPointerAddressof(Call, Function);
       const auto Name = Function->getName();
       return location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
