@@ -260,7 +260,10 @@
       "observed_false": "return pairOwnerTraceFalse(__LINE__);",
       "observed_empty": "return pairOwnerTraceEmpty(__LINE__);",
       "original_sha256": "74d899776eeaf76276dc53e4b246a53a1ae100cfda9ef3f30c764e3fd4e18f3c",
-      "includes": "#include \"llvm/Support/raw_ostream.h\"\n"
+      "includes": "#include \"llvm/Support/raw_ostream.h\"\n",
+      "observation_additions": [
+        "    if (Method && Method->getPrimaryTemplate()) {\n      llvm::errs() << \"PAIR_OWNER_TEMPLATE_MEMBER_BEGIN\\n\";\n      Method->dump(llvm::errs());\n      Method->getPrimaryTemplate()->dump(llvm::errs());\n      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);\n      if (PairTraitConstruction) PairTraitConstruction->dump(llvm::errs(), Context);\n      llvm::errs() << \"PAIR_OWNER_TEMPLATE_MEMBER_END\\n\";\n    }\n"
+      ]
     },
     "Frontend.cpp": {
       "observed_false": "{ llvm::errs() << \"PAIR_OWNER_FALSE Frontend.cpp:\" << __LINE__ << \"\\n\"; return false; }",
@@ -276,5 +279,13 @@
     "actual_original_formal_passed": 122
   },
   "const_borrow_source_fix": "6ba45b8b8e92bddec04d1c785e690359cfd93518",
-  "const_borrow_verifier_pass_claimed": false
+  "const_borrow_verifier_pass_claimed": false,
+  "previous_owner_trace": {
+    "commit": "238c362770d643c10951756099879525482382b9",
+    "run_id": 39433918294,
+    "artifact_id": 12269638692,
+    "report_sha256": "0e38a8e905eb623c3fd5e77404e86a1e2e284106f5864273e89cb4d46b6bc2a1",
+    "actual_repaired_borrow_sites": 40,
+    "actual_read_only_string_borrows": 41
+  }
 }

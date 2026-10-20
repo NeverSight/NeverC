@@ -8672,6 +8672,14 @@ class UtilityTupleQueryGraph
   }
   bool specialMember(const CXXMethodDecl *Method, unsigned Nesting = 0,
                      bool PairDefault = false) {
+    if (Method && Method->getPrimaryTemplate()) {
+      llvm::errs() << "PAIR_OWNER_TEMPLATE_MEMBER_BEGIN\n";
+      Method->dump(llvm::errs());
+      Method->getPrimaryTemplate()->dump(llvm::errs());
+      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);
+      if (PairTraitConstruction) PairTraitConstruction->dump(llvm::errs(), Context);
+      llvm::errs() << "PAIR_OWNER_TEMPLATE_MEMBER_END\n";
+    }
     if (!Method || Nesting > 64 || !step() || Method->isInvalidDecl() ||
         Method->isDeleted() || Method->isVariadic() || Method->isVirtual() ||
         Method->getPrimaryTemplate()) return pairOwnerTraceFalse(__LINE__);
