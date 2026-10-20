@@ -19,6 +19,49 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def optional_layout(response):
+    # An independent layout calculation over actual protocol records. This is
+    # explicitly not execution of Translate's C++ record verifier.
+    carrier = response['target']['carrier_layout']
+    records = {record['id']: record for record in response['records']}
+
+    def storage(kind):
+        if kind in carrier:
+            result = carrier[kind]
+        elif kind.startswith(('ptr:', 'cptr:', 'fnptr:')) or kind == 'nullptr':
+            result = carrier['default-pointer']
+        elif kind in records:
+            result = records[kind]['layout']
+        elif kind.startswith('arr:'):
+            _, count, element = kind.split(':', 2)
+            size, align = storage(element)
+            return size * int(count), align
+        else:
+            raise AssertionError(kind)
+        return result['size_bits'], result['abi_align_bits']
+
+    def natural(fields):
+        end, align, offsets = (8 if not fields else 0), 8, []
+        for field in fields:
+            size, alignment = storage(field['type'])
+            align = max(align, alignment)
+            start = (end + alignment - 1) // alignment * alignment
+            offsets.append(start)
+            end = start + size
+        return {'size_bits': (end + align - 1) // align * align,
+                'abi_align_bits': align, 'field_offsets_bits': offsets}
+
+    values = [record for record in records.values() if len(record['fields']) in [2, 3]
+              and record['fields'][1]['type'] == 'bool']
+    assert len(values) == 1
+    record = values[0]
+    wrapper = records[record['fields'][0]['type']]
+    assert natural(wrapper['fields']) == wrapper['layout']
+    actual, emitted = record['layout'], natural(record['fields'])
+    return {'actual_sdk_layout': actual, 'emitted_fields_layout': emitted,
+            'tail_carrier': len(record['fields']) == 3, 'matches': actual == emitted}
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ['repo', 'output', 'build', 'plan']:
@@ -173,6 +216,10 @@ def main():
                'request_sha256': sha(req), 'response': response.relative_to(out).as_posix() if actual else None,
                'response_sha256': sha(response) if actual else None, 'returncode': cmd['returncode'],
                'pid': cmd['pid'], 'diagnostic_codes': codes, 'passed': passed}
+        if stage == 'current' and case['name'] == plan['optional_case']['name'] and passed:
+            row['actual_record_layout'] = optional_layout(actual)
+            row['passed'] = row['actual_record_layout']['matches'] and (
+                row['actual_record_layout']['tail_carrier'] == target.endswith('-pc-windows-msvc'))
         report['requests'].append(row)
         invocation = out / 'invocations' / str(cmd['pid'])
         assert invocation.is_dir() and sha(invocation / 'request.json') == sha(req)
