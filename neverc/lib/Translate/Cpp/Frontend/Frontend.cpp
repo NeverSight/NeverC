@@ -10580,6 +10580,42 @@ class UtilityPairPiecewiseOuterSources
       Functions.insert(Function);
     return Complete;
   }
+  bool callSource(const CallExpr *Call) {
+    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    if (!Function || Function->getDefinition())
+      return family(Function);
+    // The descriptor independently binds each exact forward call, intrinsic
+    // signature and original SDK primary. Complete that primary's written
+    // source as well as the selected specialization; no other missing body is
+    // eligible, including either selected constructor layer.
+    bool Bound = false;
+    for (const auto &Element : Piecewise.Elements)
+      for (const auto *Forward : Element.Forwarders)
+        Bound |= Forward == Call;
+    const auto *Callee = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    if (!Callee || Callee->getCastKind() != CK_BuiltinFnToFnPtr ||
+        !Callee->getSubExpr()->getType()->isSpecificBuiltinType(BuiltinType::BuiltinFn) ||
+        Function->isInvalidDecl() || Function->isDeleted() || Function->isVariadic())
+      return false;
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    if (!Bound || !Builtin || !Builtin->isImplicit() ||
+        Builtin->getID() != Builtin::BIforward ||
+        Function->getBuiltinID() != Builtin::BIforward ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Pattern || !Pattern->getDefinition() ||
+        !cstddefOrigin(A.S, A.Sources, Pattern->getLocation(),
+                       "libcxx", "__utility/forward.h"))
+      return false;
+    for (const auto *D : Function->redecls())
+      if (!declaration(D) || !signature(D))
+        return false;
+    if (!family(Pattern))
+      return false;
+    Functions.insert(Function);
+    return !Failed;
+  }
   bool signature(const FunctionDecl *Function) {
     const auto *Info = Function->getTypeSourceInfo();
     if (!Info)
@@ -10739,7 +10775,7 @@ public:
     const auto *Function = Call->getDirectCallee();
     if (!Function || !location(Call->getExprLoc()))
       return false;
-    return family(Function);
+    return callSource(Call);
   }
   bool check() {
     bool Complete = false;
@@ -10758,7 +10794,7 @@ public:
         const auto *Get = Element.Getters[I].first;
         const auto *Forward = Element.Forwarders[I];
         if (!location(Get->getExprLoc()) || !location(Forward->getExprLoc()) ||
-            !family(Get->getDirectCallee()) || !family(Forward->getDirectCallee()))
+            !callSource(Get) || !callSource(Forward))
           return false;
       }
     Complete = !Failed;
