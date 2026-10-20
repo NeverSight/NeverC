@@ -246,11 +246,61 @@ private:
 
 class LinkerTest : public NeverCTest {
 protected:
+  mutable unsigned ReplayCommandIndex = 0;
+
+  CmdResult exec(const std::string &Program,
+                 const std::vector<std::string> &Args) const {
+    CmdResult Result = NeverCTest::exec(Program, Args);
+    if (const char *Root = std::getenv("NEVERC_LINKER_REPLAY_EVIDENCE_DIR")) {
+      const auto *Info = ::testing::UnitTest::GetInstance()->current_test_info();
+      const fs::path Directory = fs::path(Root) / "recorded-commands" / Info->name();
+      fs::create_directories(Directory);
+      llvm::json::Array Arguments;
+      for (const auto &Arg : Args)
+        Arguments.push_back(Arg);
+      llvm::json::Object Environment;
+      if (const char *Value = std::getenv("NEVERC_ELF_FASTLINK_TIME"))
+        Environment["NEVERC_ELF_FASTLINK_TIME"] = Value;
+      std::string Text;
+      llvm::raw_string_ostream Stream(Text);
+      Stream << llvm::json::Value(llvm::json::Object{
+          {"program", Program}, {"arguments", std::move(Arguments)},
+          {"cwd", fs::current_path().string()}, {"tmp", tmp().string()},
+          {"environment", std::move(Environment)},
+          {"returncode", Result.exitCode}, {"stdout", Result.out},
+          {"stderr", Result.err}});
+      Stream.flush();
+      writeFile(Directory / (std::to_string(ReplayCommandIndex++) + ".json"), Text);
+    }
+    return Result;
+  }
+
   CmdResult ncc(const std::vector<std::string> &Args) const {
     // Keep allocator runtime injection out of isolated object/linker fixtures.
     std::vector<std::string> LinkerArgs = {"-fno-builtin-mimalloc"};
     LinkerArgs.insert(LinkerArgs.end(), Args.begin(), Args.end());
-    return NeverCTest::ncc(LinkerArgs);
+    // NeverCTest::ncc is exactly this forwarding call to its real exec/popen.
+    return exec(neverc().string(), LinkerArgs);
+  }
+
+  void TearDown() override {
+    const auto *Info = ::testing::UnitTest::GetInstance()->current_test_info();
+    const std::string Name = Info->name();
+    const bool ObservedTarget = Name == "NativeMachOImageKinds" ||
+        Name == "NativeMachOProbesAndInternalOptions" ||
+        Name == "FastPipelinePacksRelativeRelocations";
+    if (HasFailure() || ObservedTarget)
+      if (const char *Root = std::getenv("NEVERC_LINKER_REPLAY_EVIDENCE_DIR")) {
+        const auto *Info = ::testing::UnitTest::GetInstance()->current_test_info();
+        const fs::path Saved = fs::path(Root) / "captured-fixtures" / Info->name();
+        std::error_code Error;
+        fs::create_directories(Saved.parent_path(), Error);
+        EXPECT_FALSE(Error) << Error.message();
+        fs::copy(tmp(), Saved, fs::copy_options::recursive |
+                                 fs::copy_options::overwrite_existing, Error);
+        EXPECT_FALSE(Error) << Error.message();
+      }
+    NeverCTest::TearDown();
   }
 
   uint64_t requireELFSymbolAddress(llvm::StringRef Bytes,

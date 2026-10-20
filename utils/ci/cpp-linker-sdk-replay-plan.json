@@ -65,7 +65,7 @@
     "EmitStaticLibSingleFile"
   ],
   "source_sha256": {
-    "tests/neverc/LinkerTests.cpp": "412aa3af061b248a3489c1ecd3e34c389a30f98c7796d1d18b84c1d4336e69ba",
+    "tests/neverc/LinkerTests.cpp": "c94da063392fd0f61f969a924900e02143d8245f67db2bfe5285c0ea9d7cd63b",
     "pluginsdk/include/neverc/Plugin/NevercPluginAPI.h": "b8b417c9453367e6d6f8e64dc8b84e7003b017282bf56de87ca78d0e182f34ec",
     "pluginsdk/manifest/plugin.json": "a818a5263cddec84c18d0649050ddd6348a0a112c5acce1b6bd3c4963c975660",
     "tests/neverc/NeverCTestFixture.cpp": "11c9aff152730b069d353baea20d2a47067db8d386f0f751a873caffb4008086",
@@ -79,7 +79,7 @@
     "utils/plugin-api/gen-sdk-manifest.py": "2d7f4d3b9a1386eb0e9afe804df1d3b5914e9f25efca68686432c7741724292c"
   },
   "linker_original_sha256": "c68f605e37e508793d71d307bf07e85eff442189b7408a1bc1040bd0f2781e17",
-  "linker_helper": "  CmdResult ncc(const std::vector<std::string> &Args) const {\n    // Keep allocator runtime injection out of isolated object/linker fixtures.\n    std::vector<std::string> LinkerArgs = {\"-fno-builtin-mimalloc\"};\n    LinkerArgs.insert(LinkerArgs.end(), Args.begin(), Args.end());\n    return NeverCTest::ncc(LinkerArgs);\n  }\n\n",
+  "linker_helper": "  mutable unsigned ReplayCommandIndex = 0;\n\n  CmdResult exec(const std::string &Program,\n                 const std::vector<std::string> &Args) const {\n    CmdResult Result = NeverCTest::exec(Program, Args);\n    if (const char *Root = std::getenv(\"NEVERC_LINKER_REPLAY_EVIDENCE_DIR\")) {\n      const auto *Info = ::testing::UnitTest::GetInstance()->current_test_info();\n      const fs::path Directory = fs::path(Root) / \"recorded-commands\" / Info->name();\n      fs::create_directories(Directory);\n      llvm::json::Array Arguments;\n      for (const auto &Arg : Args)\n        Arguments.push_back(Arg);\n      llvm::json::Object Environment;\n      if (const char *Value = std::getenv(\"NEVERC_ELF_FASTLINK_TIME\"))\n        Environment[\"NEVERC_ELF_FASTLINK_TIME\"] = Value;\n      std::string Text;\n      llvm::raw_string_ostream Stream(Text);\n      Stream << llvm::json::Value(llvm::json::Object{\n          {\"program\", Program}, {\"arguments\", std::move(Arguments)},\n          {\"cwd\", fs::current_path().string()}, {\"tmp\", tmp().string()},\n          {\"environment\", std::move(Environment)},\n          {\"returncode\", Result.exitCode}, {\"stdout\", Result.out},\n          {\"stderr\", Result.err}});\n      Stream.flush();\n      writeFile(Directory / (std::to_string(ReplayCommandIndex++) + \".json\"), Text);\n    }\n    return Result;\n  }\n\n  CmdResult ncc(const std::vector<std::string> &Args) const {\n    // Keep allocator runtime injection out of isolated object/linker fixtures.\n    std::vector<std::string> LinkerArgs = {\"-fno-builtin-mimalloc\"};\n    LinkerArgs.insert(LinkerArgs.end(), Args.begin(), Args.end());\n    // NeverCTest::ncc is exactly this forwarding call to its real exec/popen.\n    return exec(neverc().string(), LinkerArgs);\n  }\n\n  void TearDown() override {\n    const auto *Info = ::testing::UnitTest::GetInstance()->current_test_info();\n    const std::string Name = Info->name();\n    const bool ObservedTarget = Name == \"NativeMachOImageKinds\" ||\n        Name == \"NativeMachOProbesAndInternalOptions\" ||\n        Name == \"FastPipelinePacksRelativeRelocations\";\n    if (HasFailure() || ObservedTarget)\n      if (const char *Root = std::getenv(\"NEVERC_LINKER_REPLAY_EVIDENCE_DIR\")) {\n        const auto *Info = ::testing::UnitTest::GetInstance()->current_test_info();\n        const fs::path Saved = fs::path(Root) / \"captured-fixtures\" / Info->name();\n        std::error_code Error;\n        fs::create_directories(Saved.parent_path(), Error);\n        EXPECT_FALSE(Error) << Error.message();\n        fs::copy(tmp(), Saved, fs::copy_options::recursive |\n                                 fs::copy_options::overwrite_existing, Error);\n        EXPECT_FALSE(Error) << Error.message();\n      }\n    NeverCTest::TearDown();\n  }\n\n",
   "all_62_original_test_bodies_assertions_and_loops_byte_preserved": true,
   "plugin_sdk_abi_modules_changed": false,
   "private_sdk_changed": false,
@@ -87,5 +87,6 @@
   "compiler_sha256": "fc803587bb5ad6997f9921a05da06c79816f510e8cb9a3185f21cd0a8eb1ad84",
   "compiler_rebuilt": false,
   "full_ci_passed": false,
-  "goal_complete": false
+  "goal_complete": false,
+  "diagnostic_observability_only": true
 }
