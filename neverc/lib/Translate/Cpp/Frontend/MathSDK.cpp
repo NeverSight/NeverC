@@ -10382,6 +10382,78 @@ public:
           Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return false;
     return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
   }
+  bool pairOwnerPointerAlias(const CXXConstructorDecl *Constructor) {
+    const auto Owner = Constructor ? utilityUniquePtrRecord(
+        S, SM, Constructor->getParent(), Context, false, false) : std::nullopt;
+    const auto *Record = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
+    if (!Record || !PairDefaultOwnerSignature ||
+        PairDefaultOwnerSignature->getConstructor() != Constructor ||
+        Constructor->getNumParams() != 1 || Record->getTemplateArgs().size() != 2)
+      return false;
+    const TypedefNameDecl *Pointer = nullptr;
+    for (const auto *Declaration : Record->decls())
+      if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
+          Alias && Alias->getIdentifier() && Alias->getName() == "pointer") {
+        if (Pointer) return false;
+        Pointer = Alias;
+      }
+    auto Use = [](QualType Type) {
+      const auto *Raw = Type.isNull() ? nullptr : Type.getTypePtr();
+      if (const auto *Elaborated = dyn_cast_or_null<ElaboratedType>(Raw))
+        Raw = Elaborated->getNamedType().getTypePtr();
+      return dyn_cast_or_null<TemplateSpecializationType>(Raw);
+    };
+    const auto *Info = Pointer ? Pointer->getTypeSourceInfo() : nullptr;
+    const auto *Written = Info ? Use(Info->getType()) : nullptr;
+    const auto *Alias = Written ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        Written->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *Declaration = Alias ? Alias->getTemplatedDecl() : nullptr;
+    const auto *Original = Declaration ? Use(Declaration->getUnderlyingType()) : nullptr;
+    const auto *Detected = Original ? Original->getTemplateName().getAsTemplateDecl() : nullptr;
+    const auto *Member = Original && Original->template_arguments().size() == 3 &&
+        Original->template_arguments()[1].getKind() == TemplateArgument::Template
+        ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+            Original->template_arguments()[1].getAsTemplate().getAsTemplateDecl()) : nullptr;
+    if (!Pointer || Pointer->getDeclContext() != Record || !Info || !Written ||
+        !Written->isTypeAlias() || Written->template_arguments().size() != 2 ||
+        !Context.hasSameType(Pointer->getUnderlyingType(), Owner->PointerType) ||
+        !Context.hasSameType(Info->getType(), Pointer->getUnderlyingType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Pointer) ||
+        !cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
+        !Alias || Alias->getName() != "__pointer" || !Original || !Original->isTypeAlias() ||
+        !Detected || Detected->getName() != "__detected_or_t" || !family(Detected) ||
+        !Member || Member->getName() != "__pointer_member") return false;
+    for (unsigned I = 0; I != 2; ++I)
+      if (Written->template_arguments()[I].getKind() != TemplateArgument::Type ||
+          Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Written->template_arguments()[I].getAsType(),
+                               Record->getTemplateArgs()[I].getAsType())) return false;
+    std::set<const Decl *> Family{Pointer};
+    for (const auto *Template : {Alias, Member}) {
+      if (Template->getDeclContext() != Alias->getDeclContext() ||
+          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return false;
+      for (const auto *Redeclaration : Template->redecls()) {
+        for (const auto *D : {static_cast<const Decl *>(Redeclaration),
+                              static_cast<const Decl *>(Redeclaration->getTemplatedDecl())}) {
+          if (!approvedStandardSDKDeclaration(S, SM, D) ||
+              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+          Family.insert(D);
+        }
+        for (const auto *Parameter : *Redeclaration->getTemplateParameters()) {
+          const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+          if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() ||
+              !approvedStandardSDKDeclaration(S, SM, Type) ||
+              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+          Family.insert(Type);
+        }
+      }
+    }
+    // Only these declarations of the bound parameter alias join the metadata
+    // graph. The original TSI, selected detector and all source edges still close.
+    PairInputFamilies.insert(Family.begin(), Family.end());
+    PairStorageUseSource Spelling(*this);
+    return Spelling.check(Info) && !Failed;
+  }
   bool pairDefaultOwnerTypeSource(const TemplateTypeParmDecl *Parameter,
       const TemplateArgumentLoc &Written, const TemplateArgumentLoc &Converted) {
     const auto *Constructor = PairDefaultOwnerSignature
@@ -10534,7 +10606,8 @@ public:
       auto RestoreOwner = llvm::make_scope_exit([&] { PairDefaultOwnerSignature = Saved; });
       if (!PairFunctions || !PairSelections ||
           !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h", OwnerPointer) ||
-          !pairDefaultOwnerAlias(Constructor)) return false;
+          !pairDefaultOwnerAlias(Constructor) ||
+          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return false;
       const auto Events = PairSelections->find(Construction);
       if (Events == PairSelections->end() || Events->second.empty()) return false;
       for (const auto *Event : Events->second) {
