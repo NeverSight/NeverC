@@ -50,7 +50,7 @@
     "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
     "neverc/lib/Translate/Cpp/Frontend/Frontend.h"
   ],
-  "source_repair_commit": "84fb4701d411b8ee23889a3908b9289cbb589e64",
+  "source_repair_commit": "02dcef975c55b96cc469de510d29f559f10ba06e",
   "target_abis": [
     "x86_64-apple-macosx15.0.0",
     "arm64-apple-macosx15.0.0",
@@ -262,16 +262,16 @@
   "full_feature_completion_proved_by_this_job": false,
   "all_five_internal_adapter_consumers_rebuilt": true,
   "original_public_c_entry_abi_unchanged": true,
-  "exact_source_revision": "84fb4701d411b8ee23889a3908b9289cbb589e64",
+  "exact_source_revision": "02dcef975c55b96cc469de510d29f559f10ba06e",
   "outer_source_trace_evidence": {
     "passed": false,
     "actual_source_trace_authenticated": true,
-    "commit": "840fc246bfd1bbb83388d779e98fd8b04087d96a",
-    "run_id": 39374376966,
-    "artifact_id": 12243019961,
-    "archive_sha256": "f14bb1fd5e0a41b10cb8e460bf64a7602722030e6a96568ceab6c9c9deea9b09",
-    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-source-replay-ci-artifact-12243019961/unpacked/cpp-pair-source-replay/results.json",
-    "report_sha256": "85a2bc7eebbee4a1aac9f1c624194e03e334ea58d6600b3d56fdbc4837eb76ee",
+    "commit": "ab563cea8fdcf078dc030010344858cf5c86aba7",
+    "run_id": 39379045406,
+    "artifact_id": 12244234857,
+    "archive_sha256": "aea38fce4919f60c73ab9a9b7b80a9ab4fd41999184ce46076eb43188cf9d748",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-source-replay-ci-artifact-12244234857/unpacked/cpp-pair-source-replay/results.json",
+    "report_sha256": "6afedd3e9848f50b908b3a65574f079cccba89dabcdf482cc5159898202052bf",
     "bridge_units_recompiled": 5,
     "actual_requests": 3,
     "accepted_controls": 2,
@@ -280,45 +280,2559 @@
       {
         "case": "pair-piecewise-scalars",
         "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10627,
+        "line": 10646,
         "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
       },
       {
         "case": "pair-piecewise-scalars",
         "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10511,
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10646,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10587,
         "source": "      return observed((false), __LINE__);"
       },
       {
         "case": "pair-piecewise-scalars",
         "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10706,
-        "source": "           location(Type.getEndLoc())), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10608,
-        "source": "      return observed((false), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10573,
-        "source": "        return observed((false), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10758,
-        "source": "      return observed((false), __LINE__);"
+        "line": 10795,
+        "source": "          return observed((false), __LINE__);"
       }
     ],
-    "member_replacement_ledger_sha256": "2d374782187dc34f89b52d655de41b2d3b21e74df3494da49f36ea22699e8e9e",
+    "member_replacement_ledger_sha256": "a706f219c7bf1e3869dc115b8ba3e7d65eec9b0215374ff219871129e1ee0b91",
     "private_feature_fixed": false,
     "descriptor_root_ast_authenticated": false,
     "outer_source_trace_authenticated": true,
-    "unchanged_source_basis": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
+    "unchanged_source_basis": "c41d9e4c6ebfe4ea4656b9f32bffe7b8beaf3230",
     "upstream_dependency_rebuilt": false,
     "host_neverc_rebuilt": false,
     "all_binaries_remote_only": true,
@@ -355,13 +2869,13 @@
   "actual_previous_104_request_evidence": {
     "passed": false,
     "actual_execution_evidence_authenticated": true,
-    "commit": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
-    "production_source_repair_commit": "41e83ee4375c6e6f037225099cef25f85845e40e",
-    "run_id": 39371411233,
-    "artifact_id": 12241678552,
-    "archive_sha256": "a274c264b66d32185037c7995fd45dc6247e5460a6cc72a74cbaa7b072bea786",
-    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12241678552/unpacked/cpp-pair-intrinsic-forward/results.json",
-    "report_sha256": "3fbb14ebbeefeed9063424905c697d525549b5d95e58564e95d144f2874f6018",
+    "commit": "c41d9e4c6ebfe4ea4656b9f32bffe7b8beaf3230",
+    "production_source_repair_commit": "84fb4701d411b8ee23889a3908b9289cbb589e64",
+    "run_id": 39377120422,
+    "artifact_id": 12243719619,
+    "archive_sha256": "7902750dbe88a45bf54ca2bee30e7c83f7a2b88d5e64dadfc0aa38b12385955d",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12243719619/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "de6fc4d19573411aeb3d751ec132e1945e7c6d6d998afc3c6492acb1d518ad82",
     "bridge_units_recompiled": 5,
     "target_abis": [
       "x86_64-apple-macosx15.0.0",
@@ -517,12 +3031,14 @@
     "all_private_sources_identical_to_production_candidate": true,
     "source_trace_included": false,
     "sdk_files_verified": 665,
-    "member_replacement_ledger_sha256": "ce678b295703d9d4d55bfd476af430189d17b4c75184a8c2afc8d38e39601baf",
+    "member_replacement_ledger_sha256": "34d90db11ceddb5abee7e33bd3e6e9852ba72356a14a3dc744e2054579e5287d",
     "all_binaries_remote_only": true,
     "native_generated_programs_executed": false,
     "formal_xml_cases_executed": 0,
     "full_ci_passed": false,
     "published_to_dev": false,
     "goal_complete": false
-  }
+  },
+  "exact_bound_intrinsic_forward_primary_closure": true,
+  "ordinary_constructor_and_function_body_checks_retained": true
 }
