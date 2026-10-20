@@ -10255,7 +10255,7 @@ static bool utilityPairSelectedComparisonSource(Adapter &A,
   if (!utilitySDKFunctionSource(A, Call->getDirectCallee(), "__utility/pair.h"))
     return false;
   for (const auto *Child : *Comparisons) {
-    const auto Operation = approvedUtilityOperation(A.S, A.Sources, Child, A.Context);
+    const auto Operation = approvedUtilityPairComparisonChildOperation(A.S, A.Sources, Child, A.Context);
     if (!Operation)
       return false;
     if (*Operation == UtilityOperation::MemoryUniquePtrEqual ||
