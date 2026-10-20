@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import re
+import struct
 import subprocess
 import time
 import traceback
@@ -57,6 +58,20 @@ def main():
         assert int.from_bytes(data[16:18], 'little') in kind
         return {'path': str(path.relative_to(output)), 'size': len(data), 'sha256': sha(path)}
 
+    def section_bytes(path, wanted):
+        data = path.read_bytes()
+        offset = struct.unpack_from('<Q', data, 40)[0]
+        size, count, names = struct.unpack_from('<HHH', data, 58)
+        rows = [struct.unpack_from('<IIQQQQIIQQ', data, offset + index * size)
+                for index in range(count)]
+        strings = rows[names]
+        strings = data[strings[4]:strings[4] + strings[5]]
+        for row in rows:
+            end = strings.index(b'\0', row[0])
+            if strings[row[0]:end].decode() == wanted:
+                return data[row[4]:row[4] + row[5]], row[2]
+        raise AssertionError('missing actual output section ' + wanted)
+
     save()
     try:
         run(['python3', '--version'], 'environment/python')
@@ -103,7 +118,10 @@ __attribute__((noinline)) int duplicate_two(void) { return 2; }
 int result(void) { return @VALUE@ + duplicate_one() - duplicate_two() + text_a[0] - text_b[0]; }
 __asm__(".pushsection .rodata.str1.1,\\\"aMS\\\",@progbits,1\\n"
         ".globl text_a\\ntext_a: .asciz \\\"same-merge-piece\\\"\\n"
-        ".globl text_b\\ntext_b: .asciz \\\"same-merge-piece\\\"\\n.popsection\\n");
+        ".globl text_b\\ntext_b: .asciz \\\"same-merge-piece\\\"\\n.popsection\\n"
+        ".pushsection .debug_str,\\\"MS\\\",@progbits,1\\n"
+        ".asciz \\\"scope-debug-piece\\\"\\n"
+        ".asciz \\\"scope-debug-piece\\\"\\n.popsection\\n");
 '''.replace('@VALUE@', str(value)))
             obj = unit.with_suffix('.o')
             run(['cc', '-std=c11', '-O0', '-g', '-ffunction-sections', '-fdata-sections',
@@ -166,7 +184,11 @@ __asm__(".pushsection .rodata.str1.1,\\\"aMS\\\",@progbits,1\\n"
                     if len(parts) == 3 and parts[2] in ['duplicate_one', 'duplicate_two', 'text_a', 'text_b']:
                         addresses[parts[2]] = int(parts[0], 16)
                 assert len(addresses) == 4
-                assert addresses['text_a'] == addresses['text_b']
+                assert addresses['text_a'] != addresses['text_b']
+                allocated, allocated_flags = section_bytes(path, '.rodata')
+                debug, debug_flags = section_bytes(path, '.debug_str')
+                assert allocated_flags & 2 and allocated.count(b'same-merge-piece\0') == 2
+                assert not debug_flags & 2 and debug.count(b'scope-debug-piece\0') == 1
                 folded = addresses['duplicate_one'] == addresses['duplicate_two']
                 assert folded == (name not in ['serial-0', 'serial-3'])
                 if variant == 'original':
@@ -175,7 +197,8 @@ __asm__(".pushsection .rodata.str1.1,\\\"aMS\\\",@progbits,1\\n"
                     assert product['sha256'] == baseline_products[name]
                 case['linked'] += 1
                 case['results'].append({'name': name, 'status': status, 'expected_exit': expected,
-                                        'product': product, 'addresses': addresses, 'icf_folded': folded})
+                                        'product': product, 'addresses': addresses, 'icf_folded': folded,
+                                        'allocated_text_pieces': 2, 'merged_debug_pieces': 1})
             assert (case['linked'], case['declined']) == ((4, 1) if variant == 'original' else (18, 6))
         report['serial_products_identical_to_original'] = True
         report['native_product_executions'] = 40
