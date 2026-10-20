@@ -280,7 +280,6 @@
   "required_unimplemented_not_fn_runtime_refusals": 10,
   "required_failed_substitutions": 1,
   "ordinary_default_positive_strengthened": true,
-  "all_100_original_input_sources_preserved": true,
   "source_trace_included": true,
   "original_guards_modified": false,
   "private_not_fn_admission_implemented": false,
@@ -300,5 +299,6 @@
     }
   },
   "source_matrix_parent_commit": "d8e62323e2c2d6c41e91728a0f7d6e50897e6532",
-  "source_matrix_parent_report_sha256": "aa3fc86c7df89be043bc03414fcaed3b6d579e8c7746be81849c57a4cf10e159"
+  "source_matrix_parent_report_sha256": "aa3fc86c7df89be043bc03414fcaed3b6d579e8c7746be81849c57a4cf10e159",
+  "original_25_source_inputs_preserved": true
 }
