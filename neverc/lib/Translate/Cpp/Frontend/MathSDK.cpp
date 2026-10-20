@@ -10101,9 +10101,9 @@ public:
         std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
       llvm::errs() << "PAIR_STRING_CONSTRUCT_BEGIN root=" << (E == PairTraitConstruction)
                    << " query=" << bool(PairTraitQuery) << "\n";
-      E->dump(llvm::errs());
+      E->dump(llvm::errs(), Context);
       Constructor->dump(llvm::errs());
-      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs());
+      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);
       llvm::errs() << "PAIR_STRING_CONSTRUCT_END\n";
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -10587,8 +10587,8 @@ public:
       const auto *Owner = PairTraitQuery->getArg(0)->getType()->getAsCXXRecordDecl();
       if (Owner && Owner->getIdentifier() && Owner->getName() == "basic_string") {
         llvm::errs() << "PAIR_STRING_ROOT_BEGIN\n";
-        Source.Root->dump(llvm::errs());
-        PairTraitQuery->dump(llvm::errs());
+        Source.Root->dump(llvm::errs(), Context);
+        PairTraitQuery->dump(llvm::errs(), Context);
         llvm::errs() << "PAIR_STRING_ROOT_END\n";
       }
     }
