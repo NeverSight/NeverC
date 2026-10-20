@@ -67,12 +67,12 @@ def main():
     assert run['head_sha'] == plan['component_commit']
     assert run['status'] == 'completed' and run['conclusion'] == 'success'
     actual_jobs = api('actions/runs/' + str(run['id']) + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100')
-    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-pair-string-source-repair']
+    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-pair-owner-pointer']
     assert len(selected) == 1
     job = api('actions/jobs/' + str(selected[0]['id']))
     assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
     assert job['id'] == plan['component_actual_job'] and run['run_attempt'] == plan['component_attempt']
-    for name in ['Verify both original pair string failures and ten original guards on eight ABIs',
+    for name in ['Verify original pair owner construction and all source guards on eight ABIs',
                  'Retain audited current private archive remotely for real runtime replay']:
         assert any(step['name'] == name and step['conclusion'] == 'success' for step in job['steps'])
     downloads = []
@@ -106,8 +106,8 @@ def main():
     r = json.loads(report.read_text())
     assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed']
     assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed']
-    assert len(r['requests']) == 120 and all(row['expectation_satisfied'] for row in r['requests'])
-    assert sum(row['expected'] == 'accept' for row in r['requests']) == 40
+    assert len(r['requests']) == 128 and all(row['expectation_satisfied'] for row in r['requests'])
+    assert sum(row['expected'] == 'accept' for row in r['requests']) == 48
     assert sum(row['expected'] == 'reject' for row in r['requests']) == 80
     assert len(r['exact_private_input_sha256']) == 19
     for name, identity in r['exact_private_input_sha256'].items():

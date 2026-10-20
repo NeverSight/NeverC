@@ -10263,7 +10263,7 @@ public:
   bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return false; }
   bool VisitLambdaExpr(LambdaExpr *) { return false; }
   bool pairDefaultFunctionFamily(const CXXConstructorDecl *Constructor,
-                                  llvm::StringRef Path) {
+                                  llvm::StringRef Path, bool OwnerPointer = false) {
     const auto *Record = Constructor ? Constructor->getParent() : nullptr;
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
@@ -10279,12 +10279,15 @@ public:
           !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return false;
       if (const auto *Member = dyn_cast<CXXConstructorDecl>(Declaration)) {
         const auto *Owner = Member->getParent();
-        if (!Member->isDefaultConstructor() || Member->getNumParams() ||
+        if ((OwnerPointer ? Member->isDefaultConstructor() || Member->getNumParams() != 1 ||
+                                Member->getParamDecl(0)->hasDefaultArg()
+                          : !Member->isDefaultConstructor() || Member->getNumParams()) ||
             Member->isDeleted() || Member->isVariadic() ||
             (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
              Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl() &&
              (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return false;
         for (const auto *Redeclaration : Member->redecls()) Pending.push_back(Redeclaration);
+        if (OwnerPointer) Pending.push_back(Member->getParamDecl(0));
         if (const auto *Template = Member->getPrimaryTemplate()) Pending.push_back(Template);
         if (const auto *Original = Member->getTemplateInstantiationPattern()) Pending.push_back(Original);
       } else if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
@@ -10292,10 +10295,15 @@ public:
         Pending.push_back(Template->getTemplatedDecl());
         if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
+      } else if (const auto *Parameter = dyn_cast<ParmVarDecl>(Declaration)) {
+        const auto *Owner = dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext());
+        if (!OwnerPointer || !Owner || Owner->getNumParams() != 1 ||
+            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return false;
       } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
     }
-    // One exact retained default query supplies these signature identities.
-    // No runtime constructor body or generic zero-operand use is registered.
+    // One exact retained element query supplies these signature identities.
+    // A pointer constructor still closes its actual defaults and parameter source;
+    // this does not register a runtime body or a generic signature permission.
     PairInputFamilies.insert(Family.begin(), Family.end());
     return family(Constructor);
   }
@@ -10373,6 +10381,78 @@ public:
       if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
           Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return false;
     return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
+  }
+  bool pairOwnerPointerAlias(const CXXConstructorDecl *Constructor) {
+    const auto Owner = Constructor ? utilityUniquePtrRecord(
+        S, SM, Constructor->getParent(), Context, false, false) : std::nullopt;
+    const auto *Record = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
+    if (!Record || !PairDefaultOwnerSignature ||
+        PairDefaultOwnerSignature->getConstructor() != Constructor ||
+        Constructor->getNumParams() != 1 || Record->getTemplateArgs().size() != 2)
+      return false;
+    const TypedefNameDecl *Pointer = nullptr;
+    for (const auto *Declaration : Record->decls())
+      if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
+          Alias && Alias->getIdentifier() && Alias->getName() == "pointer") {
+        if (Pointer) return false;
+        Pointer = Alias;
+      }
+    auto Use = [](QualType Type) {
+      const auto *Raw = Type.isNull() ? nullptr : Type.getTypePtr();
+      if (const auto *Elaborated = dyn_cast_or_null<ElaboratedType>(Raw))
+        Raw = Elaborated->getNamedType().getTypePtr();
+      return dyn_cast_or_null<TemplateSpecializationType>(Raw);
+    };
+    const auto *Info = Pointer ? Pointer->getTypeSourceInfo() : nullptr;
+    const auto *Written = Info ? Use(Info->getType()) : nullptr;
+    const auto *Alias = Written ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        Written->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *Declaration = Alias ? Alias->getTemplatedDecl() : nullptr;
+    const auto *Original = Declaration ? Use(Declaration->getUnderlyingType()) : nullptr;
+    const auto *Detected = Original ? Original->getTemplateName().getAsTemplateDecl() : nullptr;
+    const auto *Member = Original && Original->template_arguments().size() == 3 &&
+        Original->template_arguments()[1].getKind() == TemplateArgument::Template
+        ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+            Original->template_arguments()[1].getAsTemplate().getAsTemplateDecl()) : nullptr;
+    if (!Pointer || Pointer->getDeclContext() != Record || !Info || !Written ||
+        !Written->isTypeAlias() || Written->template_arguments().size() != 2 ||
+        !Context.hasSameType(Pointer->getUnderlyingType(), Owner->PointerType) ||
+        !Context.hasSameType(Info->getType(), Pointer->getUnderlyingType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Pointer) ||
+        !cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
+        !Alias || Alias->getName() != "__pointer" || !Original || !Original->isTypeAlias() ||
+        !Detected || Detected->getName() != "__detected_or_t" || !family(Detected) ||
+        !Member || Member->getName() != "__pointer_member") return false;
+    for (unsigned I = 0; I != 2; ++I)
+      if (Written->template_arguments()[I].getKind() != TemplateArgument::Type ||
+          Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Written->template_arguments()[I].getAsType(),
+                               Record->getTemplateArgs()[I].getAsType())) return false;
+    std::set<const Decl *> Family{Pointer};
+    for (const auto *Template : {Alias, Member}) {
+      if (Template->getDeclContext() != Alias->getDeclContext() ||
+          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return false;
+      for (const auto *Redeclaration : Template->redecls()) {
+        for (const auto *D : {static_cast<const Decl *>(Redeclaration),
+                              static_cast<const Decl *>(Redeclaration->getTemplatedDecl())}) {
+          if (!approvedStandardSDKDeclaration(S, SM, D) ||
+              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+          Family.insert(D);
+        }
+        for (const auto *Parameter : *Redeclaration->getTemplateParameters()) {
+          const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+          if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() ||
+              !approvedStandardSDKDeclaration(S, SM, Type) ||
+              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+          Family.insert(Type);
+        }
+      }
+    }
+    // Only these declarations of the bound parameter alias join the metadata
+    // graph. The original TSI, selected detector and all source edges still close.
+    PairInputFamilies.insert(Family.begin(), Family.end());
+    PairStorageUseSource Spelling(*this);
+    return Spelling.check(Info) && !Failed;
   }
   bool pairDefaultOwnerTypeSource(const TemplateTypeParmDecl *Parameter,
       const TemplateArgumentLoc &Written, const TemplateArgumentLoc &Converted) {
@@ -10457,9 +10537,10 @@ public:
     return Info && TraverseTypeLoc(Info->getTypeLoc()) && !Failed;
   }
   std::optional<bool> pairSelectedDefaultQuery(
-      const TypeTraitExpr *Query, const OperationTraitSource &Source) {
+      const TypeTraitExpr *Query, const OperationTraitSource &Source,
+      bool OwnerPointer = false) {
     if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
-        Query->getNumArgs() != 1) return std::nullopt;
+        Query->getNumArgs() != (OwnerPointer ? 2U : 1U)) return std::nullopt;
     const auto *Original = Source.Root->IgnoreParenImpCasts();
     const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Original);
     const auto *Root = Temporary ? Temporary->getSubExpr()->IgnoreParenImpCasts() : Original;
@@ -10476,12 +10557,35 @@ public:
         PairDefaultOwnerSignature->getConstructor()->getParent(), Context, false, false) : std::nullopt;
     const bool Deleter = ParentOwner && !ParentOwner->CustomDeleter &&
         ParentOwner->Deleter.Record->getCanonicalDecl() == Record->getCanonicalDecl();
+    if (OwnerPointer && !Owner) return std::nullopt;
     if (!String && !Owner && !Allocator && !Deleter) return std::nullopt;
     if (!Construction || !Constructor || !Construction->isPRValue() ||
         Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-        Construction->getNumArgs() || !Constructor->isDefaultConstructor() || Constructor->getNumParams() ||
-        !Source.Operands.empty() || !Context.hasSameType(Construction->getType(), Target) ||
+        Construction->getNumArgs() != (OwnerPointer ? 1U : 0U) ||
+        Constructor->getNumParams() != Construction->getNumArgs() ||
+        Constructor->isDefaultConstructor() == OwnerPointer ||
+        Source.Operands.size() != Construction->getNumArgs() ||
+        !Context.hasSameType(Construction->getType(), Target) ||
         Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+    if (OwnerPointer) {
+      // Bind the original opaque argument and selected pointer conversion. The
+      // ordinary runtime construction and cleanup retain their separate checks.
+      const auto *Operand = dyn_cast<OpaqueValueExpr>(Source.Operands.front());
+      const auto *Argument = Construction->getArg(0);
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument->IgnoreParens());
+      auto Input = Query->getArg(1)->getType();
+      if (Input->isObjectType() || Input->isFunctionType()) Input = Context.getRValueReferenceType(Input);
+      if (!Operand || Operand->getSourceExpr() || !Cast ||
+          Cast->getCastKind() != CK_LValueToRValue ||
+          Cast->getSubExpr()->IgnoreParens() != Operand ||
+          !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
+          Operand->getValueKind() != Expr::getValueKindForType(Input) ||
+          !Context.hasSameType(Argument->getType(), Owner->PointerType) ||
+          !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType) ||
+          Constructor->getParamDecl(0)->hasDefaultArg() ||
+          approvedUtilityUniquePtrConstruction(S, SM, Construction, Context) !=
+              UtilityUniquePtrConstruction::Pointer) return false;
+    }
     const auto *SavedQuery = PairTraitQuery;
     const auto *SavedConstruction = PairTraitConstruction;
     const auto SavedOwnerUse = PairOwnerUse;
@@ -10501,8 +10605,9 @@ public:
       PairDefaultOwnerSignature = Construction;
       auto RestoreOwner = llvm::make_scope_exit([&] { PairDefaultOwnerSignature = Saved; });
       if (!PairFunctions || !PairSelections ||
-          !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h") ||
-          !pairDefaultOwnerAlias(Constructor)) return false;
+          !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h", OwnerPointer) ||
+          !pairDefaultOwnerAlias(Constructor) ||
+          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return false;
       const auto Events = PairSelections->find(Construction);
       if (Events == PairSelections->end() || Events->second.empty()) return false;
       for (const auto *Event : Events->second) {
@@ -10532,9 +10637,10 @@ public:
           Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return false;
       if (Owner) PairOwnerUse = PairOwnerMemberUse{Destructor, Query, Construction, nullptr, nullptr, Temporary};
       if (!specialMember(Destructor) || Failed) return false;
-    } else if (!Record->hasTrivialDestructor()) return false;
-    // The exact retained zero-operand root and optional cleanup are now closed
-    // independently of expression/method caches. Runtime checks stay separate.
+    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return false;
+    // Pointer constructibility retains a constructor-only root with no cleanup;
+    // the original OperationTraitSource must have no destructor/lookup request.
+    // Actual runtime destruction is still authenticated at its owning boundary.
     return !Failed;
   }
 
@@ -10575,6 +10681,8 @@ public:
         Source.DestructionExceptionAttempted) return false;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && !Count)
       if (const auto Default = pairSelectedDefaultQuery(E, Source)) return *Default;
+    if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && Count == 1)
+      if (const auto Pointer = pairSelectedDefaultQuery(E, Source, true)) return *Pointer;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction &&
         !Count && isa<ImplicitValueInitExpr>(Source.Root)) {
       const auto Target = E->getArg(0)->getType();
@@ -10975,7 +11083,10 @@ bool approvedUtilityPairTraitSelectionLocation(
   const auto *Arguments = Constructor->getTemplateSpecializationArgs();
   const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
   return (Query || Origin->Path == "__utility/pair.h") &&
-      Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
+      ((Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ||
+       (!Constructor->isDefaultConstructor() && Constructor->getNumParams() == 1 &&
+        Constructor->getParamDecl(0)->getType()->isPointerType() &&
+        !Constructor->getParamDecl(0)->hasDefaultArg())) &&
       !Constructor->isVariadic() && Arguments && Arguments->size() == 2 &&
       Arguments->get(0).getKind() == TemplateArgument::Integral &&
       Arguments->get(0).getIntegralType()->isBooleanType() &&

@@ -84,8 +84,8 @@ def main():
         assert sha(args.component_report) == args.component_report_sha256
         assert component['revision'] == args.component_revision and component['completed'] and component['passed']
         assert component['all_five_bridge_units_recompiled'] is True
-        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 120
-        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 40
+        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 128
+        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 48
         assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 80
         archive = args.archive.resolve()
         assert archive.is_file() and sha(archive) == component['replayed_archive_sha256']
