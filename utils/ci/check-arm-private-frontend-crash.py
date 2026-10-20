@@ -168,7 +168,11 @@ def main():
         script = out / 'actual-av.cdb'
         dump = build / 'actual-private-frontend.dmp'
         script.write_text('.symopt-0x40; sxd ibp; sxe av; g; .echo NEVERC_ACTUAL_PRIVATE_AV; '
-            'lmv m neverc; .ecxr; kv 30; r; u @pc L20; dv /t; .dump /m "' + str(dump) + '"; q\n')
+            '.reload /f neverc.exe; lmv m neverc; !lmi neverc; .exr -1; '
+            '.ecxr; kv 30; r; u @pc L20; dv /t; '
+            '.frame /r 1; dv /t /v; .frame /r 2; dv /t /v; '
+            'uf neverc!nct::FunctionLowering::generatedNodes; '
+            '.frame /r 0; .dump /m "' + str(dump) + '"; q\n')
         report['debugger_script_sha256'] = sha(script)
         report['debugger_sha256'] = sha(cdb)
         status, log = run([cdb, '-o', '-G', '-y', pdb.parent, '-cf', script, *argv], 'debugger/actual-av')

@@ -98,5 +98,19 @@
   "all_compiler_pdb_dump_binaries_remote_only": true,
   "compiler_rebuild": false,
   "compiler_repair_verified": false,
-  "goal_complete": false
+  "goal_complete": false,
+  "previous_actual_av_and_deferred_symbol_observation": {
+    "commit": "e9edb3988fa99088e453f34c878663a9b580172c",
+    "run_id": 39382875447,
+    "artifact_id": 12246323002,
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-private-frontend-crash-ci-artifact-12246323002/unpacked/cpp-arm-private-crash/results.json",
+    "report_sha256": "7a18d4bdbd95f5461de2d5469c34562a7a8d7325cb8c3a77a25f5dd2172ce20e",
+    "actual_av_stack": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-private-frontend-crash-ci-artifact-12246323002/unpacked/cpp-arm-private-crash/debugger/actual-av.log",
+    "actual_av_stack_sha256": "6035522279f999901ac1592f90cfa823932f41a968c0307038415181b2b1a6ff",
+    "full_symbol_authentication_passed": false,
+    "compiler_repaired": false,
+    "reason": "lmv ran while symbols were deferred; later stack loaded private-looking names. Require explicit symbol load and lmv after it."
+  },
+  "explicit_private_symbol_load_required": true,
+  "readonly_generated_nodes_inspection": true
 }
