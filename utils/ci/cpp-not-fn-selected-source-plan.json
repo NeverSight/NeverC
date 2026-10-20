@@ -376,7 +376,7 @@
         "original": "return false;"
       },
       {
-        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11101\\n\"; return false; }",
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11101\\n\"; llvm::errs() << \"NOT_FN_FAMILY_REJECT_BEGIN paths=\";\n            for (const auto Path : Paths) llvm::errs() << \" \" << Path;\n            llvm::errs() << \"\\n\";\n            if (D) {\n              llvm::errs() << \"decl=\" << D->getDeclKindName()\n                           << \" location=\" << D->getLocation().printToString(SM)\n                           << \" spelling=\" << SM.getSpellingLoc(D->getLocation()).printToString(SM)\n                           << \" expansion=\" << SM.getExpansionLoc(D->getLocation()).printToString(SM) << \"\\n\";\n              D->dump(llvm::errs());\n            }\n            llvm::errs() << \"NOT_FN_FAMILY_REJECT_END\\n\";\n            return false; }",
         "original": "return false;"
       },
       {
@@ -693,5 +693,13 @@
     "report_sha256": "aad72ed679e032d9a1323e9da030ec528d1b311f3580aaf9ff8ce7bfbd4baeed",
     "actual_requests": 23
   },
-  "index_tag_is_source_only_not_storage_layout": true
+  "index_tag_is_source_only_not_storage_layout": true,
+  "previous_tag_source_observations": {
+    "commit": "064ea6a70a76eb5866c9f24154d843d9d0ce7c75",
+    "run_id": 39439451968,
+    "artifact_id": 12275210980,
+    "report_sha256": "5c6b489afe93ba04f4ec9cc0449be905e13ed07bca84f3596acba15af1b1581e",
+    "actual_requests": 23
+  },
+  "observe_rejected_declaration_only_no_family_permission": true
 }

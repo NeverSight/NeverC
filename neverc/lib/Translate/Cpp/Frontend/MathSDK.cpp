@@ -11098,7 +11098,18 @@ public:
     while (!Work.empty()) {
       const auto *D = Work.back(); Work.pop_back();
       if (!D || D->isInvalidDecl() || !location(D->getLocation(), Paths) ||
-          !approvedStandardSDKDeclaration(S, SM, D)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11101\n"; return false; }
+          !approvedStandardSDKDeclaration(S, SM, D)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11101\n"; llvm::errs() << "NOT_FN_FAMILY_REJECT_BEGIN paths=";
+            for (const auto Path : Paths) llvm::errs() << " " << Path;
+            llvm::errs() << "\n";
+            if (D) {
+              llvm::errs() << "decl=" << D->getDeclKindName()
+                           << " location=" << D->getLocation().printToString(SM)
+                           << " spelling=" << SM.getSpellingLoc(D->getLocation()).printToString(SM)
+                           << " expansion=" << SM.getExpansionLoc(D->getLocation()).printToString(SM) << "\n";
+              D->dump(llvm::errs());
+            }
+            llvm::errs() << "NOT_FN_FAMILY_REJECT_END\n";
+            return false; }
       if (!Families.insert(D).second) continue;
       if (Families.size() > 512) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11103\n"; return false; }
       if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
