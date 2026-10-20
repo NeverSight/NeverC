@@ -11145,14 +11145,17 @@ public:
   }
   bool zeroIndices(const CXXRecordDecl *R) {
     const auto *I = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R);
+    // This tag may be named without instantiating its class definition.
+    // Layout/source descriptions cannot read DefinitionData until it exists.
+    const auto *Definition = I ? I->getDefinition() : nullptr;
     if (!I || !I->getIdentifier() || I->getName() != "integer_sequence" ||
-        I->getNumBases() || !I->field_empty() ||
-        !family(I, {"__utility/integer_sequence.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11150\n"; return false; }
+        !Definition || Definition->getNumBases() || !Definition->field_empty() ||
+        !family(I, {"__utility/integer_sequence.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11153\n"; return false; }
     const auto &Args = I->getTemplateArgs();
     if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Args[0].getAsType(), Context.getSizeType()) ||
         Args[1].getKind() != TemplateArgument::Pack || Args[1].pack_size() != 1)
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11155\n"; return false; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11158\n"; return false; }
     const auto &Index = Args[1].pack_elements()[0];
     return Index.getKind() == TemplateArgument::Integral &&
            Index.getAsIntegral().isZero() &&
@@ -11237,7 +11240,7 @@ public:
         !Context.hasSameType(F->getReturnType(), Parameter->getType()) ||
         !Context.hasSameType(Args->get(0).getAsType(),
             Parameter->getType()->isLValueReferenceType() ? Parameter->getType()
-                : Parameter->getType()->getPointeeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11240\n"; return false; }
+                : Parameter->getType()->getPointeeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11243\n"; return false; }
     Result = Call;
     return true;
   }
@@ -11248,34 +11251,34 @@ std::optional<FunctionalNotFnStorage>
 describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
                               const ASTContext &Context) {
-  if (!S.coreV2() || !Record) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11251\n"; return std::nullopt; }
+  if (!S.coreV2() || !Record) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11254\n"; return std::nullopt; }
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Outer = Check.record(Context.getRecordType(Record), "__not_fn_t",
                                   {"__functional/not_fn.h"});
   if (!Outer || !Outer->isStandardLayout() || !Outer->field_empty() ||
       Outer->getNumBases() != 1 || Outer->getTemplateArgs().size() != 1 ||
       Outer->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11258\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11261\n"; return std::nullopt; }
   const auto Callable = Outer->getTemplateArgs()[0].getAsType();
   if (Callable.isNull() || Callable.hasQualifiers() || Callable->isReferenceType() ||
-      Callable->isIncompleteType() || Callable->isDependentType()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11261\n"; return std::nullopt; }
+      Callable->isIncompleteType() || Callable->isDependentType()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11264\n"; return std::nullopt; }
   const auto &OuterBase = *Outer->bases_begin();
   const auto *Forwarder = Check.record(OuterBase.getType(), "__perfect_forward_impl",
                                       {"__functional/perfect_forward.h"});
   if (!Forwarder || OuterBase.isVirtual() || OuterBase.getAccessSpecifier() != AS_public ||
       Forwarder->getNumBases() || !Forwarder->isStandardLayout() ||
       std::distance(Forwarder->field_begin(), Forwarder->field_end()) != 1)
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11268\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11271\n"; return std::nullopt; }
   const auto &FArgs = Forwarder->getTemplateArgs();
   if (FArgs.size() != 3 || FArgs[0].getKind() != TemplateArgument::Type ||
       FArgs[1].getKind() != TemplateArgument::Type || !Check.oneTypePack(FArgs[2], Callable) ||
-      !Check.zeroIndices(FArgs[1].getAsType()->getAsCXXRecordDecl())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11272\n"; return std::nullopt; }
+      !Check.zeroIndices(FArgs[1].getAsType()->getAsCXXRecordDecl())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11275\n"; return std::nullopt; }
   const auto *Operation = FArgs[0].getAsType()->getAsCXXRecordDecl();
   Operation = Operation ? Operation->getDefinition() : nullptr;
   if (!Operation || !Operation->getIdentifier() || Operation->getName() != "__not_fn_op" ||
       !Operation->isEmpty() || Operation->getNumBases() || !Operation->field_empty() ||
       !Operation->hasTrivialDefaultConstructor() || !Operation->hasTrivialDestructor() ||
-      !Check.family(Operation, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11278\n"; return std::nullopt; }
+      !Check.family(Operation, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11281\n"; return std::nullopt; }
   const auto *Bound = *Forwarder->field_begin();
   const auto *Tuple = Check.record(Bound->getType(), "tuple", {"tuple", "__fwd/tuple.h"});
   if (!Bound->getIdentifier() || Bound->getName() != "__bound_args_" ||
@@ -11284,7 +11287,7 @@ describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
       !Tuple || Tuple->getNumBases() ||
       Tuple->getTemplateArgs().size() != 1 || !Check.oneTypePack(Tuple->getTemplateArgs()[0], Callable) ||
       std::distance(Tuple->field_begin(), Tuple->field_end()) != 1)
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11287\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11290\n"; return std::nullopt; }
   const auto *TupleBase = *Tuple->field_begin();
   const auto *Impl = Check.record(TupleBase->getType(), "__tuple_impl", {"tuple"});
   if (!TupleBase->getIdentifier() || TupleBase->getName() != "__base_" ||
@@ -11292,56 +11295,56 @@ describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
       TupleBase->isMutable() || TupleBase->hasAttrs() || !Check.family(TupleBase, {"tuple"}) || !Impl ||
       !Impl->field_empty() || Impl->getNumBases() != 1 ||
       Impl->getTemplateArgs().size() != 2 || Impl->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !Check.oneTypePack(Impl->getTemplateArgs()[1], Callable)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11295\n"; return std::nullopt; }
+      !Check.oneTypePack(Impl->getTemplateArgs()[1], Callable)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11298\n"; return std::nullopt; }
   const auto *TupleIndices = Check.record(Impl->getTemplateArgs()[0].getAsType(),
       "__tuple_indices", {"__tuple/tuple_indices.h"});
   if (!TupleIndices || TupleIndices->getNumBases() || !TupleIndices->field_empty() ||
       TupleIndices->getTemplateArgs().size() != 1 ||
       TupleIndices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-      TupleIndices->getTemplateArgs()[0].pack_size() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11301\n"; return std::nullopt; }
+      TupleIndices->getTemplateArgs()[0].pack_size() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11304\n"; return std::nullopt; }
   const auto &TupleIndex = TupleIndices->getTemplateArgs()[0].pack_elements()[0];
   if (TupleIndex.getKind() != TemplateArgument::Integral || !TupleIndex.getAsIntegral().isZero() ||
-      !Context.hasSameType(TupleIndex.getIntegralType(), Context.getSizeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11304\n"; return std::nullopt; }
+      !Context.hasSameType(TupleIndex.getIntegralType(), Context.getSizeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11307\n"; return std::nullopt; }
   const auto &LeafBase = *Impl->bases_begin();
   const auto *Leaf = Check.record(LeafBase.getType(), "__tuple_leaf", {"tuple"});
   if (!Leaf || LeafBase.isVirtual() || LeafBase.getAccessSpecifier() != AS_public)
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11308\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11311\n"; return std::nullopt; }
   const auto &LArgs = Leaf->getTemplateArgs();
   if (LArgs.size() != 3 || LArgs[0].getKind() != TemplateArgument::Integral ||
       !LArgs[0].getAsIntegral().isZero() || LArgs[1].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(LArgs[1].getAsType(), Callable) ||
       LArgs[2].getKind() != TemplateArgument::Integral ||
-      !LArgs[2].getIntegralType()->isBooleanType()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11314\n"; return std::nullopt; }
+      !LArgs[2].getIntegralType()->isBooleanType()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11317\n"; return std::nullopt; }
   const auto &OL = Context.getASTRecordLayout(Outer);
   const auto &FL = Context.getASTRecordLayout(Forwarder);
   const auto &TL = Context.getASTRecordLayout(Tuple);
   const auto &IL = Context.getASTRecordLayout(Impl);
   const auto &LL = Context.getASTRecordLayout(Leaf);
   if (OL.getBaseClassOffset(Forwarder).getQuantity() || FL.getFieldOffset(0) ||
-      TL.getFieldOffset(0) || IL.getBaseClassOffset(Leaf).getQuantity()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11321\n"; return std::nullopt; }
+      TL.getFieldOffset(0) || IL.getBaseClassOffset(Leaf).getQuantity()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11324\n"; return std::nullopt; }
   for (const auto *Layout : {&OL, &FL, &TL, &IL, &LL})
     if (Layout->getSize() != Context.getTypeSizeInChars(Callable) ||
-        Layout->getAlignment() != Context.getTypeAlignInChars(Callable)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11324\n"; return std::nullopt; }
+        Layout->getAlignment() != Context.getTypeAlignInChars(Callable)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11327\n"; return std::nullopt; }
   if (!LArgs[2].getAsIntegral().isZero()) {
     const auto *C = Callable->getAsCXXRecordDecl();
     C = C ? C->getDefinition() : nullptr;
     if (!C || !C->isEmpty() || Leaf->getNumBases() != 1 || !Leaf->field_empty())
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11329\n"; return std::nullopt; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11332\n"; return std::nullopt; }
     const auto &Base = *Leaf->bases_begin();
     const auto *B = Base.getType()->getAsCXXRecordDecl();
     if (Base.isVirtual() || Base.getAccessSpecifier() != AS_private || !B ||
         B->getCanonicalDecl() != C->getCanonicalDecl() || LL.getBaseClassOffset(C).getQuantity())
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11334\n"; return std::nullopt; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11337\n"; return std::nullopt; }
     return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
         Impl, Leaf, UtilityTupleElement(C, Callable, 0), Callable};
   }
   if (Leaf->getNumBases() || std::distance(Leaf->field_begin(), Leaf->field_end()) != 1)
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11339\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11342\n"; return std::nullopt; }
   const auto *Value = *Leaf->field_begin();
   if (!Value->getIdentifier() || Value->getName() != "__value_" ||
       Value->getAccess() != AS_private || Value->isBitField() || Value->isMutable() ||
       Value->hasAttrs() || !Context.hasSameType(Value->getType(), Callable) ||
-      LL.getFieldOffset(0) || !Check.family(Value, {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11344\n"; return std::nullopt; }
+      LL.getFieldOffset(0) || !Check.family(Value, {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11347\n"; return std::nullopt; }
   return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
       Impl, Leaf, UtilityTupleElement(Value, 0), Callable};
 }
@@ -11356,7 +11359,7 @@ describeFunctionalNotFnFactorySource(
   if (!Storage || !F || !F->getIdentifier() || F->getName() != "not_fn" ||
       !S.owns(SM, Call->getExprLoc()) || Call->getNumArgs() != 1 ||
       F->getNumParams() != 1 || F->isVariadic() || !Call->isPRValue() ||
-      !Context.hasSameType(Call->getType(), F->getReturnType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11359\n"; return std::nullopt; }
+      !Context.hasSameType(Call->getType(), F->getReturnType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11362\n"; return std::nullopt; }
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = F->getPrimaryTemplate();
   const auto *Args = F->getTemplateSpecializationArgs();
@@ -11364,48 +11367,48 @@ describeFunctionalNotFnFactorySource(
       Args->get(0).getKind() != TemplateArgument::Type ||
       Args->get(1).getKind() != TemplateArgument::Type || !Args->get(1).getAsType()->isVoidType() ||
       Primary->getTemplateParameters()->size() != 2 ||
-      !Check.family(F, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11367\n"; return std::nullopt; }
+      !Check.family(F, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11370\n"; return std::nullopt; }
   const auto *Parameter = F->getParamDecl(0);
   const auto Input = Args->get(0).getAsType();
   const auto Expected = Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input);
   if (!Context.hasSameType(Parameter->getType(), Expected) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Expected->getPointeeType()))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11373\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11376\n"; return std::nullopt; }
   const auto *Construct = Check.construction(Check.returned(F));
   const auto *Constructor = Construct ? Construct->getConstructor() : nullptr;
   if (!Construct || !Constructor || !Constructor->isInheritingConstructor() ||
       Constructor->isDeleted() || Constructor->getNumParams() != 1 || Construct->getNumArgs() != 1 ||
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
-      !Check.family(Constructor, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11379\n"; return std::nullopt; }
+      !Check.family(Constructor, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11382\n"; return std::nullopt; }
   const CallExpr *Forward = nullptr;
   if (!Check.forwarding(Construct->getArg(0), Parameter, "__functional/not_fn.h", Forward))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11382\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11385\n"; return std::nullopt; }
   const auto Inherited = Constructor->getInheritedConstructor();
   const auto *BaseConstructor = Inherited ? Inherited.getConstructor() : nullptr;
   if (!BaseConstructor || !Check.family(Inherited.getShadowDecl(), {"__functional/not_fn.h"}) ||
       BaseConstructor->getParent()->getCanonicalDecl() != Storage->Forwarder->getCanonicalDecl() ||
       !Check.family(BaseConstructor, {"__functional/perfect_forward.h"}) ||
       Constructor->getNumCtorInitializers() != 1 || BaseConstructor->getNumCtorInitializers() != 1 ||
-      BaseConstructor->getNumParams() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11389\n"; return std::nullopt; }
+      BaseConstructor->getNumParams() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11392\n"; return std::nullopt; }
   const auto *BaseInit = *Constructor->init_begin();
   const auto *InheritedInit = dyn_cast<CXXInheritedCtorInitExpr>(BaseInit->getInit());
   if (!BaseInit->isBaseInitializer() || BaseInit->isBaseVirtual() || !InheritedInit ||
       InheritedInit->getConstructor() != BaseConstructor || InheritedInit->constructsVBase() ||
-      InheritedInit->inheritedFromVBase()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11394\n"; return std::nullopt; }
+      InheritedInit->inheritedFromVBase()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11397\n"; return std::nullopt; }
   const auto *BoundInit = *BaseConstructor->init_begin();
   const auto *TupleConstruction = Check.construction(BoundInit->getInit());
   if (!BoundInit->isMemberInitializer() || BoundInit->getMember() != Storage->BoundArguments ||
       !TupleConstruction || TupleConstruction->getNumArgs() != 1 ||
       TupleConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Tuple->getCanonicalDecl())
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11400\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11403\n"; return std::nullopt; }
   std::vector<const CXXConstructExpr *> Constructions{Construct, TupleConstruction};
   std::vector<const CallExpr *> Forwards{Forward};
   if (!Check.forwarding(TupleConstruction->getArg(0), BaseConstructor->getParamDecl(0),
-                        "__functional/perfect_forward.h", Forward)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11404\n"; return std::nullopt; }
+                        "__functional/perfect_forward.h", Forward)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11407\n"; return std::nullopt; }
   Forwards.push_back(Forward);
   const auto *TupleConstructor = TupleConstruction->getConstructor();
   if (!Check.family(TupleConstructor, {"tuple"}) || TupleConstructor->getNumCtorInitializers() != 1 ||
-      TupleConstructor->getNumParams() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11408\n"; return std::nullopt; }
+      TupleConstructor->getNumParams() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11411\n"; return std::nullopt; }
   const auto *TupleInit = *TupleConstructor->init_begin();
   const auto *ImplConstruction = Check.construction(TupleInit->getInit());
   if (!TupleInit->isMemberInitializer() || TupleInit->getMember() != Storage->TupleBase ||
@@ -11413,34 +11416,34 @@ describeFunctionalNotFnFactorySource(
       ImplConstruction->getConstructor()->getParent()->getCanonicalDecl() !=
           Storage->TupleImplementation->getCanonicalDecl() ||
       !Check.forwarding(ImplConstruction->getArg(4), TupleConstructor->getParamDecl(0), "tuple", Forward))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11416\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11419\n"; return std::nullopt; }
   Constructions.push_back(ImplConstruction); Forwards.push_back(Forward);
   const auto *ImplConstructor = ImplConstruction->getConstructor();
   if (!Check.family(ImplConstructor, {"tuple"}) || ImplConstructor->getNumCtorInitializers() != 1 ||
-      ImplConstructor->getNumParams() != 5) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11420\n"; return std::nullopt; }
+      ImplConstructor->getNumParams() != 5) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11423\n"; return std::nullopt; }
   const auto *ImplInit = *ImplConstructor->init_begin();
   const auto *LeafConstruction = Check.construction(ImplInit->getInit());
   if (!ImplInit->isBaseInitializer() || ImplInit->isBaseVirtual() || !LeafConstruction ||
       LeafConstruction->getNumArgs() != 1 ||
       LeafConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->TupleLeaf->getCanonicalDecl() ||
       !Check.forwarding(LeafConstruction->getArg(0), ImplConstructor->getParamDecl(4), "tuple", Forward))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11427\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11430\n"; return std::nullopt; }
   Constructions.push_back(LeafConstruction); Forwards.push_back(Forward);
   const auto *LeafConstructor = LeafConstruction->getConstructor();
   if (!Check.family(LeafConstructor, {"tuple"}) || LeafConstructor->getNumCtorInitializers() != 1 ||
-      LeafConstructor->getNumParams() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11431\n"; return std::nullopt; }
+      LeafConstructor->getNumParams() != 1) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11434\n"; return std::nullopt; }
   const auto *ValueInit = *LeafConstructor->init_begin();
   if (Storage->Callable.Field ? (!ValueInit->isMemberInitializer() ||
                                  ValueInit->getMember() != Storage->Callable.Field)
-                              : !ValueInit->isBaseInitializer()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11435\n"; return std::nullopt; }
+                              : !ValueInit->isBaseInitializer()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11438\n"; return std::nullopt; }
   const auto *CallableConstruction = Check.construction(ValueInit->getInit());
   const Expr *Forwarded = CallableConstruction && CallableConstruction->getNumArgs() == 1
       ? CallableConstruction->getArg(0) : ValueInit->getInit();
   if (!Check.forwarding(Forwarded, LeafConstructor->getParamDecl(0), "tuple", Forward))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11440\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11443\n"; return std::nullopt; }
   Forwards.push_back(Forward);
   if (CallableConstruction && !Context.hasSameUnqualifiedType(
-          CallableConstruction->getType(), Storage->CallableType)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11443\n"; return std::nullopt; }
+          CallableConstruction->getType(), Storage->CallableType)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11446\n"; return std::nullopt; }
   return FunctionalNotFnFactorySource{*Storage, F, Construct, InheritedInit,
       std::move(Constructions), std::move(Forwards), ValueInit->getInit(), CallableConstruction};
 }
@@ -11456,7 +11459,7 @@ describeFunctionalNotFnCallSource(
       Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() == RQ_None || !S.owns(SM, Call->getExprLoc()))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11459\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11462\n"; return std::nullopt; }
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
   // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
@@ -11465,7 +11468,7 @@ describeFunctionalNotFnCallSource(
   if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
                     Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
       Receiver->path_size() != 1)
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11468\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11471\n"; return std::nullopt; }
   const auto *Object = Receiver->getSubExpr()->IgnoreParens();
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
       Object->getType()->getAsCXXRecordDecl(), Context);
@@ -11475,9 +11478,9 @@ describeFunctionalNotFnCallSource(
       !Check.family(Method, {"__functional/perfect_forward.h"}) ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11478\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11481\n"; return std::nullopt; }
   const bool RValue = Method->getRefQualifier() == RQ_RValue;
-  if (Object->isLValue() == RValue) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11480\n"; return std::nullopt; }
+  if (Object->isLValue() == RValue) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11483\n"; return std::nullopt; }
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
       Check.core(Check.resultSource(Method, Mode)));
   const auto *OperationMethod = Operation
@@ -11488,11 +11491,11 @@ describeFunctionalNotFnCallSource(
       OperationMethod->getNumParams() != Call->getNumArgs() ||
       !OperationMethod->isConst() || OperationMethod->isVolatile() ||
       OperationMethod->isStatic() || OperationMethod->isVariadic() ||
-      !Check.family(OperationMethod, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11491\n"; return std::nullopt; }
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11494\n"; return std::nullopt; }
   const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
   if (!OpConstruction || OpConstruction->getNumArgs() ||
       OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11495\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11498\n"; return std::nullopt; }
   const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
   const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
   const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
@@ -11502,7 +11505,7 @@ describeFunctionalNotFnCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11505\n"; return std::nullopt; }
+      !Check.family(GetFunction, {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11508\n"; return std::nullopt; }
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -11511,7 +11514,7 @@ describeFunctionalNotFnCallSource(
     if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
         Move->getNumArgs() != 1 || !Move->isXValue() ||
         !Check.family(MoveFunction, {"__utility/move.h"}) ||
-        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11514\n"; return std::nullopt; }
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11517\n"; return std::nullopt; }
     Bound = Check.stripped(Move->getArg(0));
   }
   const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
@@ -11523,33 +11526,33 @@ describeFunctionalNotFnCallSource(
       !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
       !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
       !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
-    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11526\n"; return std::nullopt; }
+    { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11529\n"; return std::nullopt; }
   std::vector<const CallExpr *> Forwards;
   const CallExpr *Forward = nullptr;
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
-                          "__functional/perfect_forward.h", Forward)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11531\n"; return std::nullopt; }
+                          "__functional/perfect_forward.h", Forward)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11534\n"; return std::nullopt; }
     Forwards.push_back(Forward);
   }
   const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
   const Expr *InvokeExpression = nullptr;
   if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
-    if (Unary->getOpcode() != UO_LNot) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11537\n"; return std::nullopt; }
+    if (Unary->getOpcode() != UO_LNot) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11540\n"; return std::nullopt; }
     InvokeExpression = Unary->getSubExpr();
   } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
     if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11541\n"; return std::nullopt; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11544\n"; return std::nullopt; }
     InvokeExpression = NegateCall->getArg(0);
-  } else { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11543\n"; return std::nullopt; }
+  } else { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11546\n"; return std::nullopt; }
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
   const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
   if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
       Invoke->getNumArgs() != OperationMethod->getNumParams() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
-      !Check.family(InvokeFunction, {"__functional/invoke.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11549\n"; return std::nullopt; }
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11552\n"; return std::nullopt; }
   for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
     if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
-                          "__functional/not_fn.h", Forward)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11552\n"; return std::nullopt; }
+                          "__functional/not_fn.h", Forward)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11555\n"; return std::nullopt; }
     Forwards.push_back(Forward);
   }
   // A signature-only description never materializes or relies on an invoke
@@ -11561,9 +11564,9 @@ describeFunctionalNotFnCallSource(
     const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
     if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
         !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
-        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11564\n"; return std::nullopt; }
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11567\n"; return std::nullopt; }
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
-    if (!Target) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11566\n"; return std::nullopt; }
+    if (!Target) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11569\n"; return std::nullopt; }
   }
   return FunctionalNotFnCallSource{*Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
@@ -11585,7 +11588,7 @@ describeFunctionalNotFnFactoryTemplateSource(
       Use.Instantiation || Use.Origin || Use.WrittenStorageClass || Use.DefaultsOverflow ||
       !Use.Canonical || !Use.Sugared || Use.Canonical->size() != 2 ||
       Use.Sugared->size() != 2 || Use.Defaults.size() != 1 ||
-      !Use.ParameterTypes.empty()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11588\n"; return std::nullopt; }
+      !Use.ParameterTypes.empty()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11591\n"; return std::nullopt; }
   const auto *Arguments = Function->getTemplateSpecializationArgs();
   const auto *Parameters = Primary->getTemplateParameters();
   const auto *Input = Parameters && Parameters->size() == 2
@@ -11599,7 +11602,7 @@ describeFunctionalNotFnFactoryTemplateSource(
       Input->getIndex() != 0 || Default->getIndex() != 1 ||
       !Check.family(Primary, {"__functional/not_fn.h"}) ||
       !Check.family(Input, {"__functional/not_fn.h"}) ||
-      !Check.family(Default, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11602\n"; return std::nullopt; }
+      !Check.family(Default, {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11605\n"; return std::nullopt; }
   for (unsigned I = 0; I != 2; ++I) {
     const auto &Canonical = Use.Canonical->get(I);
     const auto &Sugared = Use.Sugared->get(I);
@@ -11609,7 +11612,7 @@ describeFunctionalNotFnFactoryTemplateSource(
         Canonical.isInstantiationDependent() || Sugared.isInstantiationDependent() ||
         !Arguments->get(I).structurallyEquals(Canonical) ||
         !Canonical.structurallyEquals(Context.getCanonicalTemplateArgument(Sugared)))
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11612\n"; return std::nullopt; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11615\n"; return std::nullopt; }
   }
   const auto &DefaultUse = Use.Defaults.front();
   if (DefaultUse.Parameter != Default ||
@@ -11619,16 +11622,16 @@ describeFunctionalNotFnFactoryTemplateSource(
       !Context.hasSameType(DefaultUse.Written.getArgument().getAsType(),
                            Use.Sugared->get(1).getAsType()) ||
       !Context.hasSameType(DefaultUse.Converted.getArgument().getAsType(),
-                           Use.Canonical->get(1).getAsType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11622\n"; return std::nullopt; }
+                           Use.Canonical->get(1).getAsType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11625\n"; return std::nullopt; }
   const auto *PrimaryDefault = Default->getDefaultArgument().getTypeSourceInfo();
   const auto *Substituted = DefaultUse.Written.getTypeSourceInfo();
   const auto *Converted = DefaultUse.Converted.getTypeSourceInfo();
-  if (!PrimaryDefault || !Substituted || !Converted) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11626\n"; return std::nullopt; }
+  if (!PrimaryDefault || !Substituted || !Converted) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11629\n"; return std::nullopt; }
   for (const auto *Info : {PrimaryDefault, Substituted, Converted}) {
     const auto Location = Info->getTypeLoc();
     if (Location.isNull() ||
         !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"}) ||
-        !Check.location(Location.getEndLoc(), {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11631\n"; return std::nullopt; }
+        !Check.location(Location.getEndLoc(), {"__functional/not_fn.h"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11634\n"; return std::nullopt; }
   }
   // Sema records Written after SubstDefaultTemplateArgumentIfAvailable, before
   // CheckTemplateArgument adds conversions. It is not the primary's dependent
@@ -11643,11 +11646,11 @@ std::optional<std::vector<FunctionalNotFnTupleTagSource>>
 describeFunctionalNotFnTupleTagSources(
     const State &S, const SourceManager &SM,
     const FunctionalNotFnFactorySource &Factory, const ASTContext &Context) {
-  if (Factory.SelectedConstructions.size() != 4) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11646\n"; return std::nullopt; }
+  if (Factory.SelectedConstructions.size() != 4) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11649\n"; return std::nullopt; }
   const auto *Implementation = Factory.SelectedConstructions[2];
   if (!Implementation || Implementation->getNumArgs() != 5 ||
       Implementation->getConstructor()->getParent()->getCanonicalDecl() !=
-          Factory.Storage.TupleImplementation->getCanonicalDecl()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11650\n"; return std::nullopt; }
+          Factory.Storage.TupleImplementation->getCanonicalDecl()) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11653\n"; return std::nullopt; }
   NotFnSelectedSource Check(S, SM, Context);
   std::vector<FunctionalNotFnTupleTagSource> Result;
   for (unsigned I = 0; I != 4; ++I) {
@@ -11672,16 +11675,16 @@ describeFunctionalNotFnTupleTagSources(
         !Check.family(Constructor, {Path}) ||
         !Check.location(Construction->getExprLoc(), {"tuple"}) ||
         !Check.location(Written->getTypeLoc().getBeginLoc(), {"tuple"}) ||
-        !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11675\n"; return std::nullopt; }
+        !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"})) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11678\n"; return std::nullopt; }
     const auto &Arguments = Record->getTemplateArgs();
     if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Pack ||
-        Arguments[0].pack_size() != (I < 2 ? 1u : 0u)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11678\n"; return std::nullopt; }
+        Arguments[0].pack_size() != (I < 2 ? 1u : 0u)) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11681\n"; return std::nullopt; }
     if (I == 0) {
       const auto &Index = Arguments[0].pack_elements()[0];
       if (Index.getKind() != TemplateArgument::Integral || !Index.getAsIntegral().isZero() ||
-          !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11682\n"; return std::nullopt; }
+          !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11685\n"; return std::nullopt; }
     } else if (I == 1 && !Check.oneTypePack(Arguments[0], Factory.Storage.CallableType))
-      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11684\n"; return std::nullopt; }
+      { llvm::errs() << "NOT_FN_SOURCE_REJECT MathSDK.cpp:11687\n"; return std::nullopt; }
     Result.push_back({Construction, Record, Written});
   }
   // Empty tag layout or a canonical pack is never an alias-source certificate.
