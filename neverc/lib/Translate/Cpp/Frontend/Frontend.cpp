@@ -10122,6 +10122,43 @@ class UtilityPairByteComparisonSources
     return Spelling && Spelling->Root == "libcxx" && Expansion &&
            Expansion->Root == "libcxx";
   }
+  bool stringConstantQuery(CallExpr *Call, const FunctionDecl *Function) {
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    if (!Origin || Origin->Root != "libcxx" || Origin->Path != "string" ||
+        Function->getBuiltinID() != Builtin::BI__builtin_constant_p ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BI__builtin_constant_p ||
+        !Function->isImplicit() || Function->isInvalidDecl() || Function->hasBody() ||
+        Function->getPrimaryTemplate() || Function->getNumParams() ||
+        !Function->isVariadic() || !Prototype || !Prototype->isNothrow() ||
+        !A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy) ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||
+        Reference->getDecl() != Function || Reference->getFoundDecl() != Function ||
+        !Cast->getType()->isFunctionPointerType() ||
+        !A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType()) ||
+        Call->getNumArgs() != 1 || !Call->isPRValue() ||
+        !A.Context.hasSameType(Call->getType(), A.Context.IntTy) ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType()))
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!Declaration->isImplicit() || Declaration->getBuiltinID() != Builtin::BI__builtin_constant_p)
+        return false;
+      if (Declaration->getLocation().isValid()) {
+        const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
+        if (!File || File->Root != "libcxx" ||
+            (File->Path != "string" && File->Path != "__utility/is_valid_range.h"))
+          return false;
+      }
+    }
+    // A compiler proof query in the immutable helper, never an emitted call.
+    // The enclosing visitor still closes the original member/operand sources.
+    return true;
+  }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
@@ -10205,6 +10242,8 @@ public:
     if (!Function)
       return false;
     if (Function->getBuiltinID()) {
+      if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
+        return stringConstantQuery(Call, Function);
       const auto Name = Function->getName();
       return location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
