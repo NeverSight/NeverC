@@ -88771,12 +88771,28 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 435u);
+  // Actual replays of all eight SDK ABIs consume this same pinned set.
+  auto ExpectedSDK = llvm::json::parse(
+      readFile(fixture("algorithm-standard-sdk-dependencies.json")));
+  ASSERT_TRUE(static_cast<bool>(ExpectedSDK))
+      << llvm::toString(ExpectedSDK.takeError()).str().str();
+  const auto *ExpectedDependencies = ExpectedSDK->getAsArray();
+  ASSERT_NE(ExpectedDependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), ExpectedDependencies->size());
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
     EXPECT_NE(Dependency->getString("root"), "platform");
   }
+  auto ActualDependencies = *Dependencies;
+  std::sort(ActualDependencies.begin(), ActualDependencies.end(),
+            [](const llvm::json::Value &Left, const llvm::json::Value &Right) {
+              const auto *L = Left.getAsObject();
+              const auto *R = Right.getAsObject();
+              return std::make_pair(L->getString("root"), L->getString("path")) <
+                     std::make_pair(R->getString("root"), R->getString("path"));
+            });
+  EXPECT_TRUE(ActualDependencies == *ExpectedDependencies);
 
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);

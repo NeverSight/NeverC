@@ -1,0 +1,42 @@
+{
+  "test_name": "CoreV2AlgorithmStandardComparatorOrderedRangesRunAtBothOptimizations",
+  "original_test_name_count": 7493,
+  "original_test_body_sha256": "0a9b7d5b4314b5942fff96e801fb9499e372f0beb2cbe10ef855e3b0fa901e7b",
+  "repaired_test_body_sha256": "6912dffe2c7ff374c367b9ce1674a0fcc30fca5bc63916192b4bc02a863d1691",
+  "original_program_sha256": "965ce7fc980683766335f4b182cc14513e7314f747d3baabe3b0c8baeb0d9f41",
+  "original_fixture_prefix_sha256": "4916af49a035e17534e4d996eb36b1eb13abffd14d783e3044a3f539a3c04105",
+  "source_sha256": {
+    "tests/neverc/TranslateTests.cpp": "e286a0555c8a0ad76818be2eb43e4cd8b61213a2e4a1764e18707830266deac3",
+    "tests/neverc/Inputs/translate/cpp/algorithm-standard-sdk-dependencies.json": "70f2b7b28316247f1b3ae06e4274581e2aa202ad1a6a541aca7f93b740d33ca8",
+    "utils/ci/cpp_diagnostic_gtest.py": "8311ac72785abe3cb6bcedf6a7ff3445c75a5bc709703dd2b43e6a627cdd2029",
+    "utils/ci/check-algorithm-manifest-formal.py": "956be309b332bf71f393260af06345c8ae8fda9155e4f971303fc12d3b9d13f4",
+    ".github/workflows/diagnose-cpp-template-source.yml": "11f1abaaf0c853b139f3bce67ab163e2155e9aef71afff51963b7502f9705748",
+    "tests/neverc/NeverCTestFixture.cpp": "11c9aff152730b069d353baea20d2a47067db8d386f0f751a873caffb4008086",
+    "utils/ci/download-cpp-linux-baseline.py": "21968d9b9b15e0ea3c70b7f995a8e40cdc18a72a9445e38cbc069e9f55ae78a5"
+  },
+  "dependency_fixture": "tests/neverc/Inputs/translate/cpp/algorithm-standard-sdk-dependencies.json",
+  "dependency_fixture_sha256": "70f2b7b28316247f1b3ae06e4274581e2aa202ad1a6a541aca7f93b740d33ca8",
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "actual_eight_abi_manifest_proof": {
+    "commit": "79fc9028a5ab9ea7400c0b3b4712139a954d7aa2",
+    "run_id": 39364785886,
+    "artifact_id": 12238603425,
+    "archive_sha256": "47bd525dcbf9bd50cb62a708e256c44a61ff2d291ecefdb3ad2b7f23dd0b1bf9",
+    "target_manifest_sha256": "ea7c1991e8d33c5fbc515c93726bc66a8bb9358787cc71d445f70517da85f629",
+    "target_dependency_counts": {
+      "x86_64-apple-macosx15.0.0": 447,
+      "arm64-apple-macosx15.0.0": 447,
+      "x86_64-unknown-linux-gnu": 447,
+      "aarch64-unknown-linux-gnu": 447,
+      "i686-unknown-linux-gnu": 447,
+      "x86_64-pc-windows-msvc": 447,
+      "aarch64-pc-windows-msvc": 447,
+      "i686-pc-windows-msvc": 447
+    }
+  },
+  "all_eight_actual_dependency_sets_identical": true,
+  "original_program_zero_platform_assertion_and_optimization_loops_preserved": true,
+  "frontend_execution_timeout_seconds": 60,
+  "compiler_rebuilt": false,
+  "full_124_formal_gate_proved_by_this_one_test": false
+}
