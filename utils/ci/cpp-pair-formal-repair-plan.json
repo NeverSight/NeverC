@@ -52,7 +52,7 @@
     "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
     "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp"
   ],
-  "source_repair_commit": "bb47f9d9614a166312a30397062cbed06a3924fe",
+  "source_repair_commit": "f79488973f19359308ebf15334008cef49f99c14",
   "target_abis": [
     "x86_64-apple-macosx15.0.0",
     "arm64-apple-macosx15.0.0",
@@ -601,7 +601,7 @@
   "full_feature_completion_proved_by_this_job": false,
   "all_five_internal_adapter_consumers_rebuilt": true,
   "original_public_c_entry_abi_unchanged": true,
-  "exact_source_revision": "bb47f9d9614a166312a30397062cbed06a3924fe",
+  "exact_source_revision": "f79488973f19359308ebf15334008cef49f99c14",
   "consumer_record_ownership_source": {
     "commit": "4239be93f596895b8d895290ffc4027c7fe93ad3",
     "parent": "41e83ee4375c6e6f037225099cef25f85845e40e",
@@ -762,5 +762,12 @@
     "run_id": 39464049003,
     "artifact_id": 12285380184,
     "report_sha256": "1322e6df91c21790787a3c42aff0d24427fb7a9bc6b9c06732a24ed456c0c3ef"
+  },
+  "actual_view_alias_rejection_trace": {
+    "commit": "27f88573cf51fb78a1ac712aa12b799338420719",
+    "source_basis": "bb47f9d9614a166312a30397062cbed06a3924fe",
+    "run_id": 39475655278,
+    "artifact_id": 12288224936,
+    "report_sha256": "0245adc3212cf8b106a6878bbf5b2a8c2f2462e1b98e43702f86d7f564928482"
   }
 }
