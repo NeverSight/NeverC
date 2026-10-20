@@ -169,6 +169,7 @@ struct SelectedTemplateCallSource {
   const clang::Expr *Expression;
   const clang::FunctionDecl *Function;
   clang::SourceLocation Location;
+  bool FunctionalNotFnConstraint = false;
 };
 // Each batch is copied before indexing and then remains immutable. Its AST
 // pointers still belong to the same ASTContext; retaining a batch grants no use.
@@ -1818,12 +1819,14 @@ bool approvedFunctionalNotFnPointerFactorySource(const State &S,
     const clang::SourceManager &SM, const clang::ASTContext &Context,
     const FunctionalNotFnFactoryTemplateSource &Factory,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
     const clang::SourceManager &SM, const clang::ASTContext &Context,
     const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 

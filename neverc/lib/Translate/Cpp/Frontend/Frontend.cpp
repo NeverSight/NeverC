@@ -14888,6 +14888,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const Type *, const Decl *, unsigned>;
   std::set<NotFnConstraintKey> NotFnConstraintKeys;
   std::vector<const TemplateUseSource *> NotFnConstraintSources;
+  std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> NotFnSelectedCallSources;
   static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
     return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
             Source.Location.getRawEncoding()};
@@ -22724,6 +22725,7 @@ public:
       }
       for (const auto &Source : Batch.Calls) {
         if (SelectedCallSources.count(Source.Expression) ||
+            NotFnSelectedCallSources.count(Source.Expression) ||
             PairTraitSelections.count(Source.Expression)) {
           A.reject(Source.Location, "repeated late selected source",
                    "A retained late selection needs a fresh exact expression.");
@@ -22748,6 +22750,16 @@ public:
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Source.FunctionalNotFnConstraint) {
+        if (!Selected || Selected != Source.Function ||
+            !retainFunctionalNotFnConstraintRoot(A.S, A.Sources, TemplateSourceKind::Function,
+                Selected->getPrimaryTemplate(), Selected, nullptr, nullptr, Source.Location)) {
+          A.reject(Source.Location, "not_fn selected source", "The exact retained SDK selection is required.");
+          continue;
+        }
+        NotFnSelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
       if (Selected == Source.Function &&
           (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
@@ -25825,8 +25837,11 @@ public:
         for (const auto &[Key, Entries] : FunctionSources)
           for (const auto *Entry : Entries)
             if (!A.S.owns(A.Sources, Entry->Location)) Dependencies.push_back(Entry);
+        std::vector<const SelectedTemplateCallSource *> Selections;
+        for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
+          Selections.insert(Selections.end(), Entries.begin(), Entries.end());
         if (!Source || !approvedFunctionalNotFnPointerFactorySource(
-                A.S, A.Sources, A.Context, *Source, Dependencies,
+                A.S, A.Sources, A.Context, *Source, Dependencies, Selections,
                 A.SpecialMembers, A.OperationTraits)) {
           A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
                    "The selected default, alias, trait and constructor source graph must be complete.");
@@ -25870,8 +25885,11 @@ public:
           Default.Converted.getArgument().getKind() != TemplateArgument::Type) { Source = false; break; }
       // This bounded walker follows actual selected aliases, partials, trait
       // roots and all original declaration chains. No ordinary permission leaks.
+      std::vector<const SelectedTemplateCallSource *> Selections;
+      const auto Found = NotFnSelectedCallSources.find(Call);
+      if (Found != NotFnSelectedCallSources.end()) Selections = Found->second;
       SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
-          A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources,
+          A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
           A.SpecialMembers, A.OperationTraits);
       if (!SelectedDefault) { Source = false; break; }
     }
@@ -30019,7 +30037,9 @@ public:
     if (!S.coreV2() || !Function || !Function->getPrimaryTemplate())
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
-    if ((!S.owns(Sources, Location) &&
+    const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
+        Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
+    if ((!S.owns(Sources, Location) && !NotFn &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
@@ -30028,7 +30048,7 @@ public:
       return;
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
-    SelectedCalls.push_back({Expression, Function, Location});
+    SelectedCalls.push_back({Expression, Function, Location, NotFn});
   }
   void HandleNeverCFunctionTemplateSource(
       FunctionDecl *Function,

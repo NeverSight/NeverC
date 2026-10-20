@@ -32781,6 +32781,8 @@ class FunctionLowering {
     const auto *R = T->getAsCXXRecordDecl();
     if (!A.S.coreV2() || !R || !R->getDefinition())
       return false;
+    if (approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context))
+      return false; // Its source has no direct fields, but its validated base stores the pointer.
     if (R->getDefinition()->field_empty())
       return true;
     const auto Array =

@@ -11942,6 +11942,23 @@ bool retainFunctionalNotFnConstraintRoot(
     const auto *Owner = Function
         ? dyn_cast<ClassTemplateSpecializationDecl>(Function->getParent()) : nullptr;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    if (Function && Owner && Primary && Template == Primary && !Type && !Underlying &&
+        isa<CXXConstructorDecl>(Function) && Owner->getIdentifier() &&
+        Use && Use->Root == "libcxx" &&
+        (Use->Path == "tuple" || Use->Path == "__functional/perfect_forward.h")) {
+      const auto &Arguments = Owner->getTemplateArgs();
+      const auto Name = Owner->getName();
+      bool PointerTuple = false;
+      if (Name == "tuple" && Arguments.size() == 1 && Arguments[0].getKind() == TemplateArgument::Pack &&
+          Arguments[0].pack_size() == 1 && Arguments[0].pack_elements()[0].getKind() == TemplateArgument::Type)
+        PointerTuple = Arguments[0].pack_elements()[0].getAsType()->isFunctionPointerType();
+      else if (Name == "__tuple_impl" && Arguments.size() == 2 && Arguments[1].getKind() == TemplateArgument::Pack &&
+               Arguments[1].pack_size() == 1 && Arguments[1].pack_elements()[0].getKind() == TemplateArgument::Type)
+        PointerTuple = Arguments[1].pack_elements()[0].getAsType()->isFunctionPointerType();
+      else if (Name == "__tuple_leaf" && Arguments.size() == 3 && Arguments[1].getKind() == TemplateArgument::Type)
+        PointerTuple = Arguments[1].getAsType()->isFunctionPointerType();
+      if (PointerTuple) return Check.family(Function, {"tuple"});
+    }
     if (!Function || !Owner || !Primary || Template != Primary || Type || Underlying ||
         !Owner->getIdentifier() || Owner->getName() != "__perfect_forward_impl" ||
         Owner->getTemplateArgs().size() != 3 ||
@@ -12101,6 +12118,7 @@ class NotFnPointerSourceProof {
   NotFnSelectedSource Check;
   UtilityTupleQueryGraph Graph;
   llvm::ArrayRef<const TemplateUseSource *> Sources;
+  llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
 
   static const TemplateSpecializationType *specialization(QualType Type) {
     if (Type.isNull()) return nullptr;
@@ -12259,11 +12277,12 @@ class NotFnPointerSourceProof {
 public:
   NotFnPointerSourceProof(const State &S, const SourceManager &SM,
       const ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+      llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
       const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
       const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits)
       : S(S), SM(SM), Context(Context), Check(S, SM, Context),
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature),
-        Sources(Sources) {}
+        Sources(Sources), Selections(Selections) {}
 
   bool factory(const FunctionalNotFnFactoryTemplateSource &Factory) {
     const auto Pointer = approvedFunctionalNotFnPointerStorage(
@@ -12326,6 +12345,12 @@ public:
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
             Source->Declaration != Constructor) continue;
+        bool Selected = false;
+        for (const auto *Selection : Selections)
+          if (Selection && Selection->FunctionalNotFnConstraint &&
+              Selection->Expression == Construction && Selection->Function == Constructor &&
+              Selection->Location == Source->Location) Selected = true;
+        if (!Selected) continue;
         if (Source->Template != PrimaryTemplate || !arguments(*Source)) return false;
         for (const auto &Default : Source->Defaults) {
           const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
@@ -12350,7 +12375,12 @@ public:
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
-    if (!Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
+    bool Selected = false;
+    for (const auto *Selection : Selections)
+      if (Selection && Selection->FunctionalNotFnConstraint &&
+          Selection->Function == Method && Selection->Location == Use.Location &&
+          isa_and_nonnull<CallExpr>(Selection->Expression)) Selected = true;
+    if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
         Use.Canonical->size() != Arguments->size()) return false;
@@ -12391,18 +12421,20 @@ bool approvedFunctionalNotFnPointerFactorySource(const State &S,
     const SourceManager &SM, const ASTContext &Context,
     const FunctionalNotFnFactoryTemplateSource &Factory,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
-  return NotFnPointerSourceProof(S, SM, Context, Sources, Members, Traits).factory(Factory);
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits).factory(Factory);
 }
 
 bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
     const SourceManager &SM, const ASTContext &Context,
     const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
-  return NotFnPointerSourceProof(S, SM, Context, Sources, Members, Traits).callDefaults(Call, Use);
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits).callDefaults(Call, Use);
 }
 
 bool approvedUtilityTupleCatSignatureQuery(
