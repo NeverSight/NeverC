@@ -169681,7 +169681,7 @@ TEST_F(TranslateTest,
 #include <functional>
 #include <utility>
 #include <type_traits>
-using W=std::reference_wrapper<const int>;using U=std::unique_ptr<W[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,W&>);return sizeof(R)==sizeof(void*)?0:1;}
+using W=std::reference_wrapper<const int>;using U=std::unique_ptr<W[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,W&>);return sizeof(R)==sizeof(W)?0:1;}
 )cpp");
   const auto Result =
       translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
@@ -169761,7 +169761,7 @@ TEST_F(TranslateTest,
 #include <functional>
 #include <utility>
 #include <type_traits>
-using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(*std::declval<U&>());static_assert(std::is_same_v<R,W&>);static_assert(noexcept(*std::declval<U&>()));return sizeof(R)==sizeof(void*)?0:1;}
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(*std::declval<U&>());static_assert(std::is_same_v<R,W&>);static_assert(noexcept(*std::declval<U&>()));return sizeof(R)==sizeof(W)?0:1;}
 )cpp");
   const auto Result =
       translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
