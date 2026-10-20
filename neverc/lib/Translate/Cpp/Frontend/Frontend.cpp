@@ -29843,7 +29843,7 @@ public:
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
-    // Layout preparation precedes moving or indexing any retained Sema
+    // Layout preparation precedes indexing retained Sema
     // events. Completing a layout can produce further substitutions; all of
     // them must reach the same ordinary source checks as the original parse.
     if (S.coreV2()) {
@@ -29936,13 +29936,11 @@ public:
           return;
       }
     }
-    Adapter A(S, C);
+    Adapter A(S, C, OperationTraits, SpecialMembers);
     A.CompleteSDKRecord = [&](QualType Type, SourceLocation Location) {
       return completeSDKType(Type, Location);
     };
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
-    A.OperationTraits = std::move(OperationTraits);
-    A.SpecialMembers = std::move(SpecialMembers);
     try {
       A.run(Directives, StaticDirectives, TemplateUses, Specializations,
             VariableTypes, SelectedCalls, MemberClassDirectives,

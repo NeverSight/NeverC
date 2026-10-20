@@ -2533,8 +2533,10 @@ public:
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
   std::set<const clang::Expr *> SeparateArrayFillers;
-  std::map<const clang::TypeTraitExpr *, OperationTraitSource> OperationTraits;
-  std::map<const clang::CXXMethodDecl *, SpecialMemberSource> SpecialMembers;
+  // Consumer owns callback records until HandleTranslationUnit returns.
+  // Lazy Sema completion must append to the same maps consulted here.
+  std::map<const clang::TypeTraitExpr *, OperationTraitSource> &OperationTraits;
+  std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
   bool CheckingSource = false;
   std::function<bool(clang::QualType, clang::SourceLocation)> CompleteSDKRecord;
   std::set<const clang::CallExpr *> VerifiedTupleFactories;
@@ -2588,8 +2590,11 @@ public:
   std::map<const clang::ArrayInitLoopExpr *, DecompositionArrayCopy> DecompositionArrayCopies;
   std::map<const clang::Expr *, const clang::ArrayInitLoopExpr *> DecompositionArrayNodes;
   std::size_t ExpandedNodes = 0;
-  Adapter(State &S, clang::ASTContext &C)
-      : S(S), Context(C), Sources(C.getSourceManager()) {}
+  Adapter(State &S, clang::ASTContext &C,
+          std::map<const clang::TypeTraitExpr *, OperationTraitSource> &OperationTraits,
+          std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &SpecialMembers)
+      : S(S), Context(C), Sources(C.getSourceManager()),
+        OperationTraits(OperationTraits), SpecialMembers(SpecialMembers) {}
   json::Object loc(clang::SourceLocation L) const;
   void reject(clang::SourceLocation L, llvm::StringRef Construct,
               llvm::StringRef Reason, llvm::StringRef Code = "TR0201");
