@@ -22,7 +22,7 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     args = parser.parse_args()
     root, out, build = args.repo.resolve(), args.output.resolve(), args.build.resolve()
-    out.mkdir(parents=True)
+    out.mkdir(parents=True, exist_ok=True)
     build.mkdir(parents=True)
     r = {'completed': False, 'passed': False, 'commands': [], 'oracle_observations': [],
         'protocol_observations': [], 'crash_observations': [], 'compiler_rebuilt': False,
@@ -88,9 +88,13 @@ def main():
         assert baseline['run_id'] == 39341054945 and baseline['artifact_id'] == 12235108529
         assert baseline['artifact_sha256'] == '995c74533ccaf3aa43111bf07fba09b3fffd15faae908833b5d26ef3ecf1c707'
         compiler = Path(baseline['compiler'])
-        assert sha(compiler) == baseline['compiler_sha256'] == '6bc7ecb33c850467ac90dfa157288002fd0702542acf4cef6fc4689241d38aa1'
+        assert sha(compiler) == baseline['compiler_sha256']
+        assert baseline['equality_to_later_test_binary_established'] is False
+        assert baseline['preinstall_wide_compiler_sha256'] == plan['preinstall_wide_compiler_sha256']
         r['baseline_provenance'] = baseline
         assert run([compiler, '--version'], 'environment/compiler-version') == 0
+        assert run([compiler, '__neverc_cpp_frontend', '--version'], 'environment/private-frontend-version') == 0
+        assert (out / 'environment/private-frontend-version.log').read_text().strip() == plan['expected_frontend_version']
         assert run(['cl.exe'], 'environment/native-msvc') in [0, 2]
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'

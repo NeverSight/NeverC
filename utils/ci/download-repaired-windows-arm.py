@@ -73,6 +73,7 @@ def main():
     parser.add_argument('--run-id', type=int, required=True)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--evidence', type=Path, required=True)
     args = parser.parse_args()
     assert re.fullmatch('[0-9a-f]{40}', args.revision)
     token = os.environ['GITHUB_TOKEN']
@@ -138,10 +139,16 @@ def main():
                 'artifact_sha256': outer_sha, 'package_sha256': sha(package),
                 'compiler': str(compiler), 'compiler_sha256': sha(compiler),
                 'baseline_executed': False}
-    assert evidence['compiler_sha256'] == '6bc7ecb33c850467ac90dfa157288002fd0702542acf4cef6fc4689241d38aa1'
+    evidence['compiler_stage'] = 'installed package before later test-stage relinks'
+    evidence['preinstall_wide_compiler_sha256'] = '6bc7ecb33c850467ac90dfa157288002fd0702542acf4cef6fc4689241d38aa1'
+    evidence['same_as_preinstall_wide_binary'] = evidence['compiler_sha256'] == evidence['preinstall_wide_compiler_sha256']
+    evidence['equality_to_later_test_binary_established'] = False
+    assert re.fullmatch('[0-9a-f]{64}', evidence['compiler_sha256'])
     evidence['pdb_downloaded'] = False
     evidence['whole_source_run_passed'] = False
     (root / 'provenance.json').write_text(json.dumps(evidence, indent=2) + '\n')
+    args.evidence.parent.mkdir(parents=True, exist_ok=True)
+    args.evidence.write_text(json.dumps(evidence, indent=2) + '\n')
     print('Downloaded exact-revision compiler baseline:', args.revision, flush=True)
 
 
