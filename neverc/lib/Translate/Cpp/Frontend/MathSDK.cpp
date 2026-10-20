@@ -9737,6 +9737,67 @@ class UtilityTupleQueryGraph
     return !Failed;
   }
 
+  std::optional<bool> pairViewCountSizeAlias(
+      const TypedefNameDecl *Alias, const CXXRecordDecl *Owner) {
+    if (Mode != UtilityTupleQueryMode::PairConstruction || !PairTraitQuery ||
+        !PairTraitConstruction || !Alias || !Alias->getIdentifier() ||
+        Alias->getName() != "size_type" || !Owner ||
+        !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "string_view"))
+      return std::nullopt;
+    const auto *Constructor = PairTraitConstruction->getConstructor();
+    const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Constructor ? Constructor->getParent() : nullptr);
+    const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
+    if (!Instance || !Instance->getIdentifier() || Instance->getName() != "basic_string_view" ||
+        !Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl())
+      return std::nullopt;
+    // This is only the original alias in the selected retained pointer/count
+    // signature. Its dependent primary is an owner identity, not a layout or
+    // a runtime operation. Every other primary still follows record().
+    const auto *E = PairTraitConstruction;
+    const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+    bool Complete =
+        (PairTraitQuery->getTrait() == TT_IsConstructible ||
+         PairTraitQuery->getTrait() == TT_IsNothrowConstructible) &&
+        PairTraitQuery->getNumArgs() == 3 && Operands.size() == 2 &&
+        Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
+        PairInputRecords.count(Instance->getCanonicalDecl()) &&
+        E->isPRValue() && E->getConstructionKind() == CXXConstructionKind::Complete &&
+        E->getNumArgs() == 2 && Constructor->getNumParams() == 2 &&
+        Constructor->isConstexpr() && !Constructor->getPrimaryTemplate() &&
+        !Constructor->isDeleted() && !Constructor->isInvalidDecl() && !Constructor->isVariadic() &&
+        Constructor->getAccess() == AS_public && Prototype &&
+        Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
+        approvedUtilityStringViewRecord(S, SM, Instance, Context).has_value() &&
+        approvedUtilityStringViewConstruction(S, SM, E, Context) ==
+            UtilityStringViewConstruction::PointerAndSize;
+    const auto *CountSource = Complete ? Constructor->getParamDecl(1)->getTypeSourceInfo() : nullptr;
+    const auto CountSpelling = CountSource
+        ? CountSource->getTypeLoc().getAsAdjusted<TypedefTypeLoc>() : TypedefTypeLoc();
+    Complete = Complete && CountSpelling && CountSpelling.getTypedefNameDecl() == Alias &&
+        cstddefOrigin(S, SM, CountSpelling.getNameLoc(), "libcxx", "string_view") &&
+        Context.hasSameType(Alias->getUnderlyingType(), Context.getSizeType()) &&
+        Alias->getTypeSourceInfo() && family(Alias) && family(Owner) && family(Primary) &&
+        family(Constructor);
+    if (Complete) {
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
+        auto Input = PairTraitQuery->getArg(I + 1)->getType();
+        if (Input->isObjectType() || Input->isFunctionType())
+          Input = Context.getRValueReferenceType(Input);
+        if (!Operand || !Operands.count(Operand) || Operand->getSourceExpr() ||
+            Constructor->getParamDecl(I)->hasDefaultArg() ||
+            !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
+            Operand->getValueKind() != Expr::getValueKindForType(Input)) {
+          Complete = false;
+          break;
+        }
+      }
+    }
+    if (!Complete) Failed = true;
+    return Complete;
+  }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
     const auto *PairTrait = dyn_cast<ClassTemplateSpecializationDecl>(R);
@@ -10006,8 +10067,11 @@ public:
   bool VisitTypedefType(TypedefType *T) {
     const auto *Declaration = T->getDecl();
     if (!family(Declaration)) return false;
-    if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext()))
-      if (!record(Owner)) return false;
+    if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
+      if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
+        if (!*ViewAlias) return false;
+      } else if (!record(Owner)) return false;
+    }
     return Declaration->getTypeSourceInfo() &&
            TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
   }
