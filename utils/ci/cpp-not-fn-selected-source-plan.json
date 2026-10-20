@@ -368,5 +368,313 @@
     "Frontend.cpp": "6596ee6ccb69079daf8034094bacc1bbd3e9553b2f8e434f45b4cfc3478e6137",
     "MathSDK.cpp": "7268a11e319cf7c836bbb12e713bea645595804c55130f974de71346087dc084"
   },
-  "observation_only": true
+  "observation_only": true,
+  "inverse_source_edits": {
+    "MathSDK.cpp": [
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11088\\n\"; return false; }",
+        "original": "return false;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11101\\n\"; return false; }",
+        "original": "return false;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11103\\n\"; return false; }",
+        "original": "return false;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11150\\n\"; return false; }",
+        "original": "return false;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11155\\n\"; return false; }",
+        "original": "return false;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11240\\n\"; return false; }",
+        "original": "return false;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11251\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11258\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11261\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11268\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11272\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11278\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11287\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11295\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11301\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11304\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11308\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11314\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11321\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11324\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11329\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11334\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11339\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11344\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11359\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11367\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11373\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11379\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11382\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11389\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11394\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11400\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11404\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11408\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11416\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11420\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11427\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11431\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11435\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11440\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11443\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11459\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11468\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11478\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11480\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11491\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11495\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11505\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11514\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11526\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11531\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11537\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11541\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11543\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11549\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11552\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11564\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11566\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11588\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11602\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11612\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11622\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11626\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11631\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11646\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11650\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11675\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11678\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11682\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      },
+      {
+        "inserted": "{ llvm::errs() << \"NOT_FN_SOURCE_REJECT MathSDK.cpp:11684\\n\"; return std::nullopt; }",
+        "original": "return std::nullopt;"
+      }
+    ],
+    "Frontend.cpp": [
+      {
+        "inserted": "// Diagnostic only: observe descriptors without granting any operation.\nclass NotFnSelectedSourceObservation\n    : public RecursiveASTVisitor<NotFnSelectedSourceObservation> {\n  Adapter &A;\n  llvm::ArrayRef<TemplateUseSource> Uses;\n  llvm::ArrayRef<SelectedTemplateCallSource> Calls;\npublic:\n  NotFnSelectedSourceObservation(Adapter &A, llvm::ArrayRef<TemplateUseSource> Uses,\n      llvm::ArrayRef<SelectedTemplateCallSource> Calls) : A(A), Uses(Uses), Calls(Calls) {}\n  bool VisitCallExpr(CallExpr *Call) {\n    if (!A.S.owns(A.Sources, Call->getExprLoc())) return true;\n    const auto *Function = Call->getDirectCallee();\n    if (!Function) return true;\n    if (Function->getIdentifier() && Function->getName() == \"not_fn\") {\n      const auto Storage = describeFunctionalNotFnStorage(A.S, A.Sources,\n          Call->getType()->getAsCXXRecordDecl(), A.Context);\n      const auto Factory = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);\n      unsigned Selected = 0, RetainedUses = 0, Bound = 0;\n      for (const auto &Selection : Calls) {\n        if (Selection.Expression != Call || Selection.Function != Function) continue;\n        ++Selected;\n        for (const auto &Use : Uses) {\n          if (Use.Kind != TemplateSourceKind::Function || Use.Declaration != Function) continue;\n          ++RetainedUses;\n          const auto Template = describeFunctionalNotFnFactoryTemplateSource(\n              A.S, A.Sources, Selection, Use, A.Context);\n          Bound += Template.has_value();\n          llvm::errs() << \"NOT_FN_DEFAULTS count=\" << Use.Defaults.size();\n          for (const auto &Default : Use.Defaults)\n            llvm::errs() << \" written=\" << bool(Default.Written.getTypeSourceInfo())\n                         << \" converted=\" << bool(Default.Converted.getTypeSourceInfo());\n          llvm::errs() << \"\\n\";\n        }\n      }\n      const auto Tags = Factory ? describeFunctionalNotFnTupleTagSources(\n          A.S, A.Sources, *Factory, A.Context) : std::nullopt;\n      llvm::errs() << \"NOT_FN_FACTORY storage=\" << bool(Storage)\n          << \" factory=\" << bool(Factory) << \" selected=\" << Selected\n          << \" uses=\" << RetainedUses << \" bound=\" << Bound\n          << \" tags=\" << (Tags ? Tags->size() : 0) << \"\\n\";\n      Function->dump(llvm::errs());\n    }\n    const auto *Method = dyn_cast<CXXMethodDecl>(Function);\n    const auto Origin = A.S.sdkFile(A.Sources, Function->getLocation());\n    if (Method && Method->isOverloadedOperator() &&\n        Method->getOverloadedOperator() == OO_Call && Origin &&\n        Origin->Root == \"libcxx\" && Origin->Path == \"__functional/perfect_forward.h\") {\n      const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,\n          A.Context, FunctionalNotFnSourceMode::Runtime);\n      const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,\n          A.Context, FunctionalNotFnSourceMode::Signature);\n      llvm::errs() << \"NOT_FN_CALL runtime=\" << bool(Runtime)\n                   << \" signature=\" << bool(Signature) << \"\\n\";\n    }\n    return true;\n  }\n};\n\n",
+        "original": ""
+      },
+      {
+        "inserted": "  NotFnSelectedSourceObservation NotFnProbe(*this, TemplateUses, SelectedCalls);\n  llvm::errs() << \"NOT_FN_SNAPSHOT uses=\" << TemplateUses.size()\n               << \" calls=\" << SelectedCalls.size() << \"\\n\";\n  for (auto *Declaration : Context.getTranslationUnitDecl()->decls())\n    if (S.owns(Sources, Declaration->getLocation()))\n      NotFnProbe.TraverseDecl(Declaration);\n",
+        "original": ""
+      },
+      {
+        "inserted": "    llvm::errs() << \"NOT_FN_RETAIN template=\" << TemplateUses.size()\n                 << \" kind=\" << unsigned(Kind) << \" location=\" << Location.getRawEncoding() << \"\\n\";\n",
+        "original": ""
+      },
+      {
+        "inserted": "    llvm::errs() << \"NOT_FN_RETAIN selected=\" << SelectedCalls.size()\n                 << \" function=\" << Function->getQualifiedNameAsString()\n                 << \" location=\" << Location.getRawEncoding() << \"\\n\";\n",
+        "original": ""
+      },
+      {
+        "inserted": "    const auto NotFnUsesBefore = TemplateUses.size(), NotFnCallsBefore = SelectedCalls.size();\n    auto NotFnCompletionObservation = llvm::make_scope_exit([&] {\n      llvm::errs() << \"NOT_FN_COMPLETION uses_before=\" << NotFnUsesBefore\n          << \" uses_after=\" << TemplateUses.size() << \" calls_before=\" << NotFnCallsBefore\n          << \" calls_after=\" << SelectedCalls.size() << \"\\n\";\n    });\n",
+        "original": ""
+      }
+    ]
+  },
+  "not_fn_diagnostic_expected_to_fail": true,
+  "source_probe_reject_sites": 70
 }
