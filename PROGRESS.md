@@ -1,5 +1,57 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-20
+
+- Cutoff: **2026-10-20 01:07 UTC / 09:07 Asia/Shanghai**. Reviewed dev source: [ee83c2e1](https://github.com/NeverSight/NeverC/commit/ee83c2e1916cb640d6791f56648f99af41b681aa), authored October 19 at 10:04:33 UTC.
+- Incoming [ecfd4a0b…ee83c2e1](https://github.com/NeverSight/NeverC/compare/ecfd4a0b72b5dc81a4f95bcdd399c1f3073a9b6d...ee83c2e1916cb640d6791f56648f99af41b681aa): **3 commits / 20 paths**. Excluding the previous progress-only commit dd16d741 and PROGRESS.md, the product delta is **2 implementation commits / 19 paths**. Complete inventory does not mean complete code coverage.
+- **No newly proven source defect, and no source/test repair submitted in this review.** The historical piecewise sampling-order finding remains an unresolved carry-forward item; its earlier publication outcome is not certified here and the uncertain write was not retried.
+- Strict static inspection only. No project execution, repository scripts, builds, tests, benchmarks, dynamic analysis, or manually triggered CI. Author validation statements are not independent validation.
+- Read root AGENTS.md, README contribution guidance, docs/local-dev.md and .github/ci-policy.md. No root CONTRIBUTING.md. Complete non-truncated neverc/tests tree inventories contain no nested AGENTS/CONTRIBUTING files. dev is default, push-enabled and unprotected; the returned ruleset is disabled. Repository execution guidance does not override the static-only restriction.
+
+## Activity and review queue
+
+**9 ordinary open issues / 0 open PRs**, unchanged from the October 19 snapshot. All-state issues returned 18 entries including historical PRs; all-state PRs returned eight; both second pages at 100/page were empty. No opening, closure or merge since October 19 01:02 UTC. Issue comments and PR review comments in that interval were empty. No open PR awaits review. Open roadmap issues #7–#12 and #16–#18 are not evidence of completed implementations.
+
+## Product changes and actual static coverage
+
+The two source commits extend the C++ translation adapter with selected pair factories/reference wrappers and selected default initialization. NeverC remains a C23-only compiler.
+
+- **Frontend.cpp and Frontend.h:** reviewed aggregate changed source/declarations for exact pair-factory selection, selected child construction, SDK source identity, default string/view origin checks and reference-query admission. Traced construction/factory-specific cache keys through source publication and final completion checks: the key includes the public factory call rather than only the shared SDK return construction.
+- **MathSDK.cpp:** selectively reviewed changed pair record/reference admission, selected defaults and selected-copy producers, pinned SDK forwarding checks, default allocator/owner/string query proofs, and make_pair construction/selection entry points. Checked that selected defaults return two nullable child entries after field uniqueness/type checks, and that factory entry points bind their retained SDK construction to the public call. This is a bounded review of changed paths, not an exhaustive audit of the 790-line aggregate change or all query-graph branches.
+- **Lowering.cpp:** reviewed the complete changed hunk: each pair field uses its selected child constructor when a two-entry selection exists and otherwise uses zero initialization. Cross-checked the producer contract and corresponding declaration/caller changes. A full raw-file retrieval was unavailable in this pass, so surrounding unchanged lowering code was not re-audited.
+- **TranslateTests.cpp:** read selected added positive/negative fixture source for owned default fields, scalar/null defaults, repeated factory selections, reference wrappers, custom deleters and source/noexcept provenance rejection. Fixtures were not executed; their presence does not certify behavior.
+- Inventoried all 20 changed paths, including 11 localized translation documents and three frontend documentation files. Those documentation changes, remaining MathSDK query-graph branches, unrelated modules/architectures and full runtime/lifetime behavior are outside the detailed code-review scope.
+
+No minimum, behavior-preserving source repair was established from this bounded inspection. Existing CI failures below are observations, not newly diagnosed source defects.
+
+## Existing CI, pinned to the reviewed source
+
+Sampled October 20 around **01:04–01:06 UTC** for **ee83c2e1916cb640d6791f56648f99af41b681aa**, dev only; there are no open PR heads. Workflow and check collections were completely paginated (second pages empty).
+
+- **20 workflow runs:** 11 successful, 6 failed, 3 cancelled; none queued/running.
+- **34 check runs:** 23 successful, 7 failed, 3 cancelled, 1 skipped. Workflow and job/check counts describe different objects.
+- [Windows ARM64 MSVC](https://github.com/NeverSight/NeverC/actions/runs/39235087725), [job 118002107669](https://github.com/NeverSight/NeverC/actions/runs/39235087725/job/118002107669): the retrieved log ends with **fatal C1053, FunctionLowering::utilityOperation: function too large**, Lowering.cpp line 5646, followed by ninja failure. This confirms the compiler-size blocker at this exact head; no fix or successful rebuild is claimed.
+- [Python bindings](https://github.com/NeverSight/NeverC/actions/runs/39235087723): Linux x64 job 118002568078 failed at “Check plugin global state (Linux)”; Windows ARM64 job 118002568112 failed at the compiler/Python bridge/core-tests/SDK build step. Other six jobs succeeded. Linux job log retrieval failed with a transport error, so the underlying global-state diagnostic is unknown.
+- [Plugin sanitizers](https://github.com/NeverSight/NeverC/actions/runs/39262802594): ASan/UBSan ON job 118094584495 failed at “Run plugin tests under asan-ubsan”; TSan OFF job succeeded. Failed-job log retrieval had a transport error; do not infer a specific memory defect.
+- Other failed workflows: [Linux ARM64](https://github.com/NeverSight/NeverC/actions/runs/39235087653), [macOS ARM64](https://github.com/NeverSight/NeverC/actions/runs/39235087824), [Linux x64](https://github.com/NeverSight/NeverC/actions/runs/39235088050). Their failure causes were not independently diagnosed here.
+- Cancelled: Windows ARM64 clang-LTO, Windows x64 clang-LTO, Windows x64 MSVC. Cancellation is not a successful or failed test result.
+- Compared with yesterday's still-running source-head sample, the new head now has terminal results. Different heads and workflow sets prevent interpreting the count difference as a measured regression rate. The progress-document commit itself is excluded from product progress.
+
+These are read-only GitHub results, not checks executed by this review.
+
+## Recommended priorities
+
+1. **Resolve the MSVC ARM64 oversized-function build blocker.** Dependency: exact failed-head compiler diagnostic and an independently authorized build environment. Acceptance: a minimal, semantics-preserving change with explicit source review and a succeeding MSVC ARM64 build at its own head; no broad refactor is prescribed by this static pass.
+2. **Recover and diagnose the Python global-state and ASan/UBSan logs.** Dependency: accessible failing-job diagnostics and their exact source revisions/configuration. Acceptance: identify the actual failing assertion/symbol/report before proposing a targeted repair, then obtain authorized validation. A failed step alone is insufficient evidence of its cause.
+3. **Close pair-selection and historical piecewise proof gaps.** Dependency: complete producer/caller context, targeted fixture review, and remote confirmation of the earlier piecewise publication state. Acceptance: document exact construction/factory binding and lifetime expectations, resolve whether the historical repair exists before any repeat write, and validate separately under authorized CI.
+
+Priorities are recommendations, not team delivery commitments. No completion percentages or delivery dates are assigned.
+
+<details>
+<summary>Previous snapshots and daily records — preserved verbatim</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-19
 
 - Cutoff: **2026-10-19 01:02 UTC / 09:02 Asia/Shanghai**. Reviewed dev source: [ecfd4a0b](https://github.com/NeverSight/NeverC/commit/ecfd4a0b72b5dc81a4f95bcdd399c1f3073a9b6d), authored October 18 at 23:05:35 UTC.
@@ -1375,3 +1427,9 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Fully paginated activity remains nine open issues / zero PRs, with no interval state changes or active review queue.
 - Read exact-head MSVC ARM64 C1053 evidence; isolated the Python Linux-x64 failed command while retaining its inaccessible-log limitation. Running and queued CI are not passes.
 - Preserved the full previous progress text and human edits. No execution, manual CI, dependencies/security changes, issue mutations, merges or deployments.
+
+</details>
+
+## Daily record — 2026-10-20
+
+Reviewed ecfd4a0b…ee83c2e1 with the bounded pair-adapter scope above; recorded 9 open issues and 0 open PRs with complete pagination, terminal existing CI and its unresolved diagnostics. No new proven source defect or source repair. Updated only this progress document, retaining the prior file verbatim. All validation was static; no tests/builds/scripts/manual CI were run. Snapshot and priority evidence is linked above.
