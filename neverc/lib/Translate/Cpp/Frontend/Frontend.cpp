@@ -10600,13 +10600,14 @@ class UtilityPairPiecewiseOuterSources
     const auto *Builtin = Function->getAttr<BuiltinAttr>();
     const auto *Primary = Function->getPrimaryTemplate();
     const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    const auto Origin = Pattern ? A.S.sdkFile(A.Sources, Pattern->getLocation())
+                                : std::nullopt;
     if (!Bound || !Builtin || !Builtin->isImplicit() ||
         Builtin->getID() != Builtin::BIforward ||
         Function->getBuiltinID() != Builtin::BIforward ||
         Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-        !Pattern || !Pattern->getDefinition() ||
-        !cstddefOrigin(A.S, A.Sources, Pattern->getLocation(),
-                       "libcxx", "__utility/forward.h"))
+        !Pattern || !Pattern->getDefinition() || !Origin ||
+        Origin->Root != "libcxx" || Origin->Path != "__utility/forward.h")
       return false;
     for (const auto *D : Function->redecls())
       if (!declaration(D) || !signature(D))
