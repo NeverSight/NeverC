@@ -11316,8 +11316,21 @@ public:
   bool factoryDefaultSource(const TypeSourceInfo *Info,
                             const TypeSourceInfo *Primary) {
     if (!Info || !Primary) return (std::fprintf(stderr, "NOT_FN_DEFAULT_TOKEN_REJECT line=%u\n", __LINE__), false);
-    const auto Root = Info->getTypeLoc().getAs<TemplateSpecializationTypeLoc>();
-    const auto Original = Primary->getTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+    auto Specialization = [](const TypeSourceInfo *Source) {
+      auto Written = Source->getTypeLoc();
+      // The actual unqualified alias spelling has an implicit elaborated
+      // wrapper. Keep the original TypeSourceInfo as its own obligation;
+      // unwrap only a wrapper adding no written keyword or qualifier.
+      if (const auto Elaborated = Written.getAs<ElaboratedTypeLoc>()) {
+        const auto Named = Elaborated.getNamedTypeLoc();
+        if (Written.getBeginLoc() != Named.getBeginLoc())
+          return TemplateSpecializationTypeLoc();
+        Written = Named;
+      }
+      return Written.getAs<TemplateSpecializationTypeLoc>();
+    };
+    const auto Root = Specialization(Info);
+    const auto Original = Specialization(Primary);
     const auto *Alias = Root.isNull() ? nullptr
         : dyn_cast_or_null<TypeAliasTemplateDecl>(
             Root.getTypePtr()->getTemplateName().getAsTemplateDecl());
