@@ -1,3 +1,4 @@
+#include "llvm/Support/raw_ostream.h"
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -29502,6 +29503,40 @@ class Consumer : public ASTConsumer {
       bool Overflow, const SourceLocation &Location, bool Instantiation = false,
       const TemplateArgumentList *Selection = nullptr,
       bool WrittenStorageClass = false, const NamedDecl *Origin = nullptr) {
+    if (Template && (Template->getNameAsString() == "not_fn" ||
+        Template->getNameAsString() == "__not_fn_t" ||
+        Template->getNameAsString() == "__perfect_forward" ||
+        Template->getNameAsString() == "ordinary_source_default" ||
+        Template->getNameAsString() == "ordinary_source_failed")) {
+      auto &ObservedSources = Template->getASTContext().getSourceManager();
+      llvm::errs() << "ORDINARY_SOURCE_DEFAULTS_BEGIN name=" << Template->getNameAsString()
+                   << " count=" << Count << " defaults=" << DefaultCount
+                   << " types=" << TypeCount << " overflow=" << Overflow << "\n";
+      Location.print(llvm::errs(), ObservedSources);
+      llvm::errs() << "\nPRIMARY\n";
+      Template->dump(llvm::errs());
+      for (unsigned I = 0; I != DefaultCount && I != 64; ++I) {
+        llvm::errs() << "DEFAULT_PARAMETER " << I << "\n";
+        if (DefaultParameters && DefaultParameters[I]) DefaultParameters[I]->dump(llvm::errs());
+        for (unsigned Stage = 0; Stage != 2; ++Stage) {
+          const auto *Arguments = Stage ? ConvertedDefaults : OriginalDefaults;
+          llvm::errs() << (Stage ? "CONVERTED " : "SUBSTITUTED_WRITTEN ") << I
+                       << " present=" << bool(Arguments) << "\n";
+          if (!Arguments) continue;
+          llvm::errs() << "kind=" << unsigned(Arguments[I].getArgument().getKind()) << "\n";
+          if (Arguments[I].getArgument().getKind() == TemplateArgument::Type) {
+            const auto *Info = Arguments[I].getTypeSourceInfo();
+            llvm::errs() << "TSI=" << bool(Info) << "\n";
+            if (Info) {
+              llvm::errs() << Info->getType().getAsString() << "\n";
+              Info->getTypeLoc().getSourceRange().print(llvm::errs(), ObservedSources);
+              llvm::errs() << "\n";
+            }
+          }
+        }
+      }
+      llvm::errs() << "ORDINARY_SOURCE_DEFAULTS_END\n";
+    }
     if (!S.coreV2() || !Template || !S.Diagnostics.empty())
       return;
     auto &Context = Template->getASTContext();
@@ -29827,6 +29862,16 @@ public:
   void HandleNeverCSelectedTemplateCallSource(
       Expr *Expression, FunctionDecl *Function,
       const SourceLocation &Location) override {
+    if (Function && (Function->getNameAsString() == "not_fn" ||
+        Function->getNameAsString() == "ordinary_source_default" ||
+        Function->getNameAsString() == "ordinary_source_failed")) {
+      llvm::errs() << "ORDINARY_SOURCE_SELECTED_BEGIN name=" << Function->getNameAsString() << "\n";
+      Location.print(llvm::errs(), Function->getASTContext().getSourceManager());
+      llvm::errs() << "\n";
+      if (Expression) Expression->dump(llvm::errs(), Function->getASTContext());
+      Function->dump(llvm::errs());
+      llvm::errs() << "ORDINARY_SOURCE_SELECTED_END\n";
+    }
     if (!S.coreV2() || !Function || !Function->getPrimaryTemplate())
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
