@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -22750,6 +22751,33 @@ public:
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Source.FunctionalNotFnConstraint) {
+        const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
+        const auto *InheritedExpression = dyn_cast_or_null<CXXInheritedCtorInitExpr>(Source.Expression);
+        const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
+        const auto *Base = Actual && Actual->isInheritingConstructor()
+            ? Actual->getInheritedConstructor().getConstructor() : nullptr;
+        std::fprintf(stderr, "NOT_FN_SELECTED_BIND_BEGIN expression=%s direct_matches=%u construction=%u inherited_expression=%u actual_inherits=%u inherited_matches=%u inherited_expression_matches=%u retained_primary=%u actual_primary=%u\n",
+            Source.Expression ? Source.Expression->getStmtClassName() : "null",
+            static_cast<unsigned>(Selected == Source.Function),
+            static_cast<unsigned>(Construction != nullptr),
+            static_cast<unsigned>(InheritedExpression != nullptr),
+            static_cast<unsigned>(Actual && Actual->isInheritingConstructor()),
+            static_cast<unsigned>(Base && Base == Source.Function),
+            static_cast<unsigned>(InheritedExpression && InheritedExpression->getConstructor() == Source.Function),
+            static_cast<unsigned>(Source.Function && Source.Function->getPrimaryTemplate()),
+            static_cast<unsigned>(Actual && Actual->getPrimaryTemplate()));
+        std::fprintf(stderr, "NOT_FN_SELECTED_BIND_LOCATION %s\n", Source.Location.printToString(A.Sources).c_str());
+        std::fprintf(stderr, "NOT_FN_SELECTED_EXPRESSION_AST\n");
+        if (Source.Expression) Source.Expression->dump();
+        std::fprintf(stderr, "NOT_FN_RETAINED_FUNCTION_AST\n");
+        if (Source.Function) Source.Function->dump();
+        std::fprintf(stderr, "NOT_FN_ACTUAL_CONSTRUCTOR_AST\n");
+        if (Actual) Actual->dump();
+        std::fprintf(stderr, "NOT_FN_INHERITED_BASE_AST\n");
+        if (Base) Base->dump();
+        std::fprintf(stderr, "NOT_FN_SELECTED_BIND_END\n");
+      }
       if (Source.FunctionalNotFnConstraint) {
         if (!Selected || Selected != Source.Function ||
             !retainFunctionalNotFnConstraintRoot(A.S, A.Sources, TemplateSourceKind::Function,
