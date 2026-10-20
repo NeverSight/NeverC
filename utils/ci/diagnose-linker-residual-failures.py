@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import time
@@ -48,6 +49,10 @@ def main():
 
     save()
     try:
+        release = Path('/etc/os-release').read_text()
+        result['host'] = {'system': platform.system(), 'machine': platform.machine(),
+                          'os_release': release,
+                          'glibc_confstr': os.confstr('CS_GNU_LIBC_VERSION')}
         replay_path = base / 'results.json'
         replay = json.loads(replay_path.read_text())
         assert replay['completed'] and replay['revision']
@@ -126,8 +131,15 @@ def main():
             if label == 'relr':
                 script.write_text('''set pagination off
 set confirm off
+set $relr_main_reached = 0
 break main
+commands
+  silent
+  set $relr_main_reached = 1
+  printf "RELR_MAIN_REACHED\\n"
+end
 run
+if $relr_main_reached
 printf "RELR_VALUES_BASE "
 p/x (void *)&values
 printf "RELR_TABLE_BASE "
@@ -146,11 +158,17 @@ while $index < 200
 end
 printf "RELR_MISMATCH_COUNT %d\\n", $mismatches
 continue
+else
+  printf "RELR_MAIN_NOT_REACHED\\n"
+end
 ''')
             else:
                 script.write_text('''set pagination off
 set confirm off
+set follow-fork-mode child
+set detach-on-fork on
 run
+info inferiors
 info registers
 thread apply all bt 32
 ''')

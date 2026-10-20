@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--clangxx', type=Path, required=True)
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--host-ubuntu-version', choices=['22.04', '24.04'], default='22.04')
     args = parser.parse_args()
     root, output = args.repo.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -64,7 +65,10 @@ def main():
 
     try:
         assert platform.system() == 'Linux' and platform.machine() == 'x86_64'
-        assert 'VERSION_ID="22.04"' in Path('/etc/os-release').read_text()
+        release = Path('/etc/os-release').read_text()
+        assert 'VERSION_ID="' + args.host_ubuntu_version + '"' in release
+        report['actual_host_ubuntu_version'] = args.host_ubuntu_version
+        report['actual_host_os_release'] = release
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         plan = json.loads((root / 'utils/ci/cpp-linker-sdk-replay-plan.json').read_text())
         report['plan'] = plan
