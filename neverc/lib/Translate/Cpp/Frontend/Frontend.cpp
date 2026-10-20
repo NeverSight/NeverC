@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include "llvm/Support/raw_ostream.h"
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -21933,6 +21935,14 @@ public:
       if (DeferredDeclaration || !Source.Written || !Source.Canonical ||
           !Source.Sugared || Source.Canonical->size() != Source.Sugared->size() ||
           Written.size() != Source.Written->NumTemplateArgs) {
+        if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+          llvm::errs() << "PAIR_STRING_TEMPLATE_PACKET "
+                       << unsigned(Source.Kind) << " written=" << bool(Source.Written)
+                       << " canonical=" << bool(Source.Canonical)
+                       << " sugared=" << bool(Source.Sugared) << "\n";
+          Source.Template->dump(llvm::errs());
+          llvm::errs() << "PAIR_STRING_TEMPLATE_PACKET_END\n";
+        }
         A.reject(L, "standard template source",
                  "The approved standard template use is missing its exact "
                  "concrete argument source.");
@@ -22352,10 +22362,14 @@ public:
     const auto Location = Selection.Location;
     const PairConstructorSourceKey Key{Construction, Factory};
     if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
-      return false;
+      return (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
+            ? (llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
+            : false);
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
-        Found == FunctionSources.end() || Found->second.empty()) return false;
+        Found == FunctionSources.end() || Found->second.empty()) return (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
+            ? (llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
+            : false);
     const TemplateUseSource *First = nullptr;
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
@@ -22369,7 +22383,9 @@ public:
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
               Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
-        return false;
+        return (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")
+            ? (llvm::errs() << "PAIR_STRING_FALSE Frontend.cpp:" << __LINE__ << "\n", false)
+            : false);
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
       Members.insert(LocalMembers.begin(), LocalMembers.end());
@@ -28098,6 +28114,11 @@ public:
       if (A.S.coreV2() && UtilityAllocatorAssignment)
         return true;
       if (A.S.coreV2() && F && approvedSDKDeclaration(A.S, A.Sources, F)) {
+        if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+          llvm::errs() << "PAIR_STRING_RUNTIME_CALLEE_BEGIN\n";
+          F->dump(llvm::errs());
+          llvm::errs() << "PAIR_STRING_RUNTIME_CALLEE_END\n";
+        }
         A.reject(S->getBeginLoc(), "standard library runtime call",
                  "Approved SDK declarations may run only through a documented "
                  "direct lowering; this call has none.",
