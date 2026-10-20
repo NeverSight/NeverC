@@ -1,5 +1,6 @@
 #include "Driver/Parallelism.h"
 #include "Linker/MachO/Config.h"
+#include "Linker/MachO/DataConst.h"
 #include "Linker/MachO/Driver.h"
 #include "Linker/MachO/Emit.h"
 #include "Linker/MachO/ICF.h"
@@ -1829,25 +1830,9 @@ bool shouldAdhocSignByDefault(Architecture arch, PlatformType platform) {
 }
 
 bool dataConstDefault() {
-  PlatformType platform = config->platformInfo.target.Platform;
-  if (platform == PLATFORM_MACOS &&
-      config->platformInfo.target.MinDeployment < VersionTuple(10, 15))
-    return false;
-
-  switch (config->outputType) {
-  case MH_EXECUTE:
-    return config->isPic;
-  case MH_BUNDLE:
-    return true;
-  case MH_DYLIB:
-    return true;
-  case MH_OBJECT:
-    return false;
-  default:
-    llvm_unreachable(
-        "unsupported output type for determining data-const default");
-  }
-  return false;
+  return defaultDataConst(config->outputType, config->isPic,
+                          config->platformInfo.target.Platform,
+                          config->platformInfo.target.MinDeployment);
 }
 
 bool shouldEmitChainedFixups(const InputArgList &args) {

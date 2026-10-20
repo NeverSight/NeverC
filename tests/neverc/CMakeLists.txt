@@ -42,6 +42,7 @@ set(NEVERC_TEST_SOURCES
   AndroidKernelRuntimeTests.cpp
   LTOTests.cpp
   LinkerTests.cpp
+  MachODataConstTests.cpp
   OverrideTests.cpp
   ConformanceTests.cpp
   DynCodeTests.cpp
