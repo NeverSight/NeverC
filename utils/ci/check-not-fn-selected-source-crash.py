@@ -165,7 +165,7 @@ def main():
             header = stream.read(64)
         assert header[:6] == b'\x7fELF\x02\x01' and header[18:20] == b'\x3e\x00'
         (out / 'actual-reused-entry-header.bin').write_bytes(header)
-        version = run([binary, '--version'], 'environment/version')
+        version = run([binary, '__neverc_cpp_frontend', '--version'], 'environment/version')
         assert version['returncode'] == 0
         assert (out / version['log']).read_text().strip().endswith(plan['frontend_build_id'])
         run(['gdb', '--version'], 'environment/gdb-version')

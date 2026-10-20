@@ -62,5 +62,14 @@
   "no_neverc_host_rebuild": true,
   "debugger_read_only": true,
   "all_binaries_remote_only": true,
-  "diagnostic_always_unsupported": true
+  "diagnostic_always_unsupported": true,
+  "previous_diagnostic_cli_failure": {
+    "commit": "2951921314bdbd261227aa2d0796e86dfb3afec6",
+    "run_id": 39424318677,
+    "artifact_id": 12267731611,
+    "report_sha256": "44aa7e107aa5357ef6ff192156b68ca754491c825115e332e3fcfce21f24afce",
+    "actual_commands": 1,
+    "actual_gdb_stacks": 0
+  },
+  "version_entry_matches_producer_hidden_frontend_cli": true
 }
