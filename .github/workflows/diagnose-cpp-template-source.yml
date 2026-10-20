@@ -913,12 +913,13 @@ jobs:
         sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap/dependencies.log"
 
         '
-    - name: Recompile all five actual bridge units audit member replacement and trace original source rejection
+    - name: Verify clean source on eight ABIs and ten unchanged original guards
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: "python3 utils/ci/replay-private-cpp-component.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-pair-source-replay-plan.json\
-        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-source-replay\" \\\n  --build \"$RUNNER_TEMP/cpp-pair-source-rebuild\"\n"
-    - name: Verify clean source on eight ABIs and ten unchanged original guards
+      run: "python3 utils/ci/replay-cpp-pair-intrinsic-forward.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-pair-intrinsic-forward-plan.json\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-intrinsic-forward\" \\\n  --build \"$RUNNER_TEMP/cpp-pair-intrinsic-forward-rebuild\"\
+        \n"
+    - name: Upload small actual source and request evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
@@ -930,9 +931,6 @@ jobs:
           '
         if-no-files-found: error
         retention-days: 14
-      run: "python3 utils/ci/replay-cpp-pair-intrinsic-forward.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-pair-intrinsic-forward-plan.json\
-        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-intrinsic-forward\" \\\n  --build \"$RUNNER_TEMP/cpp-pair-intrinsic-forward-rebuild\"\
-        \n"
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
