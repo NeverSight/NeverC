@@ -49,5 +49,15 @@
   ],
   "compiler_rebuilt": false,
   "all_binaries_remote_only": true,
-  "not_full_ci_or_current_production_compiler_proof": true
+  "not_full_ci_or_current_production_compiler_proof": true,
+  "previous_bootstrap_failure": {
+    "commit": "c1a48a81ca22a2a551f6be0a9e22fdbd10d086cd",
+    "run_id": 39409694902,
+    "job_id": 118584132308,
+    "full_log_sha256": "3925dc6f09488359f1a019050e92eba16a2359911ef9396b229c42f041453f1e",
+    "actual_native_runs": 0,
+    "actual_translated_runs": 0,
+    "formal_xml": 0,
+    "failure": "Downloader CLI requires --evidence; workflow omitted it before any compiler download or fixture execution."
+  }
 }

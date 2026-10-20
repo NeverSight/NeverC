@@ -861,7 +861,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: 'python utils/ci/download-repaired-windows-arm.py --run-id 39341054945 --revision 43c7c0c55874c8b3ebfd4c1c39096189741f9616
-        --output "$env:RUNNER_TEMP/cpp-cookie-compiler"
+        --output "$env:RUNNER_TEMP/cpp-cookie-compiler" --evidence "$env:RUNNER_TEMP/cpp-cookie-escaping-oracle/baseline-provenance.json"
 
         '
     - name: Verify allocation escape with original O0 O2 flags and assertions
