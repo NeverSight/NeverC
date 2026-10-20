@@ -10208,6 +10208,39 @@ public:
         PairTraitQuery->getNumArgs() == 3 && Operands.size() == 2 &&
         Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
         PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) &&
+        approvedUtilityStringViewRecord(S, SM, Constructor->getParent(), Context)) {
+      // This exact retained pointer/count root is a signature query. The
+      // enclosing graph still checks both original opaque operands and casts;
+      // runtime view construction keeps its body and borrowed-lifetime proof.
+      const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+      if (!E->isPRValue() || !Constructor->isConstexpr() ||
+          Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||
+          Constructor->isInvalidDecl() || Constructor->getAccess() != AS_public ||
+          !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+          Prototype->getNoexceptExpr() ||
+          approvedUtilityStringViewConstruction(S, SM, E, Context) !=
+              UtilityStringViewConstruction::PointerAndSize)
+        return false;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
+        auto Input = PairTraitQuery->getArg(I + 1)->getType();
+        if (Input->isObjectType() || Input->isFunctionType())
+          Input = Context.getRValueReferenceType(Input);
+        if (!Operand || !Operands.count(Operand) || Operand->getSourceExpr() ||
+            Constructor->getParamDecl(I)->hasDefaultArg() ||
+            !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
+            Operand->getValueKind() != Expr::getValueKindForType(Input))
+          return false;
+      }
+      return function(Constructor) && !Failed;
+    }
+    if (Mode == UtilityTupleQueryMode::PairConstruction &&
+        E == PairTraitConstruction && PairTraitQuery && Constructor &&
+        (PairTraitQuery->getTrait() == TT_IsConstructible ||
+         PairTraitQuery->getTrait() == TT_IsNothrowConstructible) &&
+        PairTraitQuery->getNumArgs() == 3 && Operands.size() == 2 &&
+        Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) &&
+        PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) &&
         approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context)) {
       // Sema's retained count/character construction is a signature query,
       // not a copy/move special member. Runtime fill keeps its separate body
@@ -16899,12 +16932,53 @@ approvedUtilityPairComparisonChildOperation(
       !Function->isInlined() || Function->getNumParams() != 2 ||
       !Reference || Reference->getDecl() != Function ||
       !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__utility/pair.h") ||
-      !Primary || !Pattern || !Pattern->hasBody() || !Prototype || !Prototype->isNothrow() ||
+      !Primary || !Pattern || !Pattern->hasBody() || !Prototype ||
       !Context.hasSameType(Function->getReturnType(), Context.BoolTy) ||
       !Context.hasSameType(Call->getType(), Context.BoolTy) ||
       (Call->getOperator() != OO_EqualEqual && Call->getOperator() != OO_Less) ||
       Function->getOverloadedOperator() != Call->getOperator())
     return std::nullopt;
+  const auto LeftOwner = approvedUtilityUniquePtrRecord(
+      S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto RightOwner = approvedUtilityUniquePtrRecord(
+      S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (LeftOwner || RightOwner) {
+    // C++17 owner comparisons have their original potentially-throwing
+    // signature. Their SDK body, pointer ordering and selected get() sources
+    // remain mandatory in utilityUniquePtrOwnerComparisonSource.
+    if (!LeftOwner || !RightOwner ||
+        Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+        LeftOwner->Deleter.Array != RightOwner->Deleter.Array ||
+        (Call->getOperator() == OO_Less &&
+         (LeftOwner->ElementType->isIncompleteType() || RightOwner->ElementType->isIncompleteType())) ||
+        (LeftOwner->Record->getCanonicalDecl() != RightOwner->Record->getCanonicalDecl() &&
+         !utilityPointerConversion(Context, LeftOwner->PointerType, RightOwner->PointerType) &&
+         !utilityPointerConversion(Context, RightOwner->PointerType, LeftOwner->PointerType)))
+      return std::nullopt;
+    for (const auto *Declaration : Function->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h"))
+        return std::nullopt;
+    for (const auto *Declaration : Primary->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !approvedStandardSDKDeclaration(S, SM, Declaration->getTemplatedDecl()) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
+          !cstddefOrigin(S, SM, Declaration->getTemplatedDecl()->getLocation(), "libcxx", "__memory/unique_ptr.h"))
+        return std::nullopt;
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto &Owner = I ? *RightOwner : *LeftOwner;
+      const auto Type = Context.getRecordType(Owner.Record);
+      if (!Call->getArg(I)->isGLValue() ||
+          !Context.hasSameType(Function->getParamDecl(I)->getType(),
+                               Context.getLValueReferenceType(Type.withConst())) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(), Type))
+        return std::nullopt;
+    }
+    return Call->getOperator() == OO_EqualEqual ? UtilityOperation::MemoryUniquePtrEqual
+                                               : UtilityOperation::MemoryUniquePtrLess;
+  }
+  // The preexisting string/view paths retain their original noexcept rule.
+  if (!Prototype->isNothrow()) return std::nullopt;
   const auto LeftView = approvedUtilityStringViewRecord(
       S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
   const auto RightView = approvedUtilityStringViewRecord(

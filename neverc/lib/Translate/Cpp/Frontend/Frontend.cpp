@@ -9600,7 +9600,9 @@ static bool utilityUniquePtrOwnerComparisonSource(Adapter &A,
   default:
     return false;
   }
-  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected)
+  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected &&
+      approvedUtilityPairComparisonChildOperation(A.S, A.Sources,
+          dyn_cast<CXXOperatorCallExpr>(Call), A.Context) != Expected)
     return false;
   const auto Left = utilityUniquePtrSource(
       A, Call->getArg(0)->getType()->getAsCXXRecordDecl());
