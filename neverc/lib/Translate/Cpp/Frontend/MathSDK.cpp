@@ -10095,6 +10095,17 @@ public:
     // These nodes can occur only in the exact retained hypothetical graph;
     // caller arguments never enter this SDK metadata walker.
     const auto *Constructor = E->getConstructor();
+    if (Mode == UtilityTupleQueryMode::PairConstruction && Constructor &&
+        Constructor->getParent()->getIdentifier() &&
+        Constructor->getParent()->getName() == "basic_string" &&
+        std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+      llvm::errs() << "PAIR_STRING_CONSTRUCT_BEGIN root=" << (E == PairTraitConstruction)
+                   << " query=" << bool(PairTraitQuery) << "\n";
+      E->dump(llvm::errs());
+      Constructor->dump(llvm::errs());
+      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs());
+      llvm::errs() << "PAIR_STRING_CONSTRUCT_END\n";
+    }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         E == PairTraitConstruction && PairTraitQuery && Constructor &&
         (PairTraitQuery->getTrait() == TT_IsConstructible ||
