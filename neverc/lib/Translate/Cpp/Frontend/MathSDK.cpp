@@ -13846,8 +13846,14 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       uint64_t(TopLayout.getAlignment().getQuantity()) * 8 != ValueAlign)
     return std::nullopt;
 
+  // MS ABI's two proven empty SFINAE bases occupy storage after Main.
+  // Include Main's intervening tail padding in the byte carrier so its
+  // natural placement follows the value and engagement flag exactly.
+  const uint64_t TailPaddingBytes = SFINAEStorageBits
+      ? (ExpectedTopBits - ValueBits - BoolBits) / Context.getCharWidth()
+      : 0;
   return UtilityOptionalRecord{Specialization, Storage, Destruct,
-                               Value,          Engaged, Element};
+                               Value, Engaged, Element, TailPaddingBytes};
 }
 
 static const CXXRecordDecl *approvedNulloptRecord(const State &S,
