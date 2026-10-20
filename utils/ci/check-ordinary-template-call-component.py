@@ -1,6 +1,7 @@
 """Build the real isolated frontend component and replay actual protocol calls."""
 from pathlib import Path
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -94,6 +95,22 @@ def main():
         # its embedded runtimes. It enforces the real LLVM20 pin and isolation.
         run(['cmake', '--build', build, '--target', 'nevercCppFrontendBuild',
              '--parallel', '2'], 'build/actual-private-component', 7200)
+        isolated_source = build / '_deps/neverc-cpp-src/clang/lib/Sema/SemaExpr.cpp'
+        actual_source = isolated_source.read_bytes()
+        probe = build / 'ordinary-call-reapply-source.cpp'
+        probe.write_bytes(actual_source)
+        source_module = ast.parse((frontend / 'IsolateSymbols.py').read_text())
+        owned = next(node for node in source_module.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'preserve_ordinary_template_call_source')
+        namespace = {'Path': Path, 're': re}
+        exec(compile(ast.Module(body=[owned], type_ignores=[]), '<actual-produced-source-text>', 'exec'), namespace)
+        namespace['preserve_ordinary_template_call_source'](probe)
+        assert probe.read_bytes() == actual_source
+        namespace['preserve_ordinary_template_call_source'](probe)
+        assert probe.read_bytes() == actual_source and isolated_source.read_bytes() == actual_source
+        report['ordinary_patch_reapplication_verified_on_actual_produced_source'] = True
+        report['actual_produced_semaexpr_sha256'] = sha(isolated_source)
+        save()
         private = build / '_deps/neverc-cpp-build'
         archive = private / 'lib/Release/libnevercCppFrontend.a'
         assert archive.is_file()

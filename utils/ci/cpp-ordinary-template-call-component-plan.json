@@ -1,5 +1,5 @@
 {
-  "source_basis": "17986df9c997d8a1e4108b7be8423e084e4e26cf",
+  "source_basis": "fc7f6c943e12d82a5b5413dc2aa582cecfee5787",
   "original_probe_commit": "94c37826c14cb8e027f61c7ca5caa8d4ff3c71d5",
   "cases": [
     {
@@ -243,6 +243,21 @@
     "local_checks_are_python_string_transforms_only": true,
     "compiler_executed_locally": false,
     "ordinary_call_runtime_verified": false,
+    "private_not_fn_support_complete": false
+  },
+  "composed_patch_source_text_proof": {
+    "upstream_source_sha256": "1f3ba9d4dbeb2cc3a4aeb0c98fe8314ca1ade07396b4f4d67f1458dbd4e1c278",
+    "ordinary_once_sha256": "45b49aa0a3f671edd2e098fc2a5d939f57ed881267964102cdff8d857a8cd47b",
+    "composed_patch_sha256": "a4283376245f538080ef5ae7914a77afdf7e55ca47c72254625d794520cd0943",
+    "composed_second_application_equal": true,
+    "all_source_text_changes_owned_by_exact_replacement_blocks": true,
+    "negative_cases_rejected_without_mutation": [
+      "missing-header",
+      "duplicate-call-marker",
+      "duplicate-original-anchor"
+    ],
+    "local_cpp_compilation_or_syntax_run": false,
+    "actual_cpp_hook_execution_verified": false,
     "private_not_fn_support_complete": false
   }
 }
