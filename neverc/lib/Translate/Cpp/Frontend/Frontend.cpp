@@ -10737,6 +10737,11 @@ public:
     return step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
            location(Type.getEndLoc());
   }
+  bool VisitTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc Type) {
+    const auto *Template = Type.getTypePtr()->getTemplateName().getAsTemplateDecl();
+    return location(Type.getTemplateNameLoc()) && Template &&
+           declaration(Template) && declaration(Template->getTemplatedDecl());
+  }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!location(Reference->getLocation()))
       return false;
@@ -10759,8 +10764,17 @@ public:
   bool TraverseCXXConstructExpr(CXXConstructExpr *Construction) {
     if (BoundChildren.count(Construction))
       return true; // The caller separately completes this exact child operation.
-    if (Construction == Piecewise.Delegation)
-      return family(Construction->getConstructor());
+    if (Construction == Piecewise.Delegation) {
+      if (!family(Construction->getConstructor()))
+        return false;
+      // The selected private body does not contain the public delegation's
+      // written index factories. Preserve their TypeLocs and template names,
+      // including macro spelling, before erasing the empty index arguments.
+      for (const auto *Argument : Construction->arguments())
+        if (!TraverseStmt(const_cast<Expr *>(Argument)))
+          return false;
+      return !Failed;
+    }
     return erasedConstruction(Construction) &&
         RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseCXXConstructExpr(Construction);
   }
