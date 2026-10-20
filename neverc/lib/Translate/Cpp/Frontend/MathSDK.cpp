@@ -7715,10 +7715,11 @@ class UtilityTupleQueryGraph
             Origin->Path == "string" || Origin->Path == "string_view" ||
             llvm::StringRef(Origin->Path).starts_with("__fwd/") ||
             // Only this retained, independently bound count/char signature
-            // consumes allocator_traits' actual size_type alias dependencies.
-            // This metadata walker grants no allocator operation or body.
+            // consumes allocator_traits' size_type and difference_type sources.
+            // Original alias TypeLocs are traversed; no allocator body is granted.
             ((Origin->Path == "__memory/allocator_traits.h" ||
-              Origin->Path == "__memory/allocator.h") && pairStringFillTraitRoot()));
+              Origin->Path == "__memory/allocator.h" ||
+              Origin->Path == "__cstddef/ptrdiff_t.h") && pairStringFillTraitRoot()));
   }
   bool family(const Decl *D) {
     bool Complete = false;
