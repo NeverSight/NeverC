@@ -14877,6 +14877,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   // Consumer vectors may grow inside RequireCompleteType. Only immutable
   // batches owned here supply indexed addresses after the initial snapshots.
   std::deque<TemplateSourceEventBatch> LateTemplateSourceEvents;
+  using NotFnConstraintKey = std::tuple<TemplateSourceKind, const NamedDecl *,
+      const Type *, const Decl *, unsigned>;
+  std::set<NotFnConstraintKey> NotFnConstraintKeys;
+  std::vector<const TemplateUseSource *> NotFnConstraintSources;
+  static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
+    return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
+            Source.Location.getRawEncoding()};
+  }
   std::size_t TemplateUseCursor = 0, SelectedCallCursor = 0;
   bool SourceEventsReady = false, SourceEventsSealed = false,
        IndexingSourceEvents = false;
@@ -22626,6 +22634,8 @@ public:
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
+    if (Source.FunctionalNotFnConstraint)
+      return !NotFnConstraintKeys.count(notFnConstraintKey(Source));
     // A previously checked key cannot acquire an untraversed alternative after
     // its source result was cached. Repeated late keys need a separate complete
     // traversal; this boundary rejects them rather than invalidating a cache
@@ -23212,6 +23222,13 @@ public:
       return;
     for (const auto &Source : Sources) {
       A.chargeExpansion(1, Source.Location);
+      if (Source.FunctionalNotFnConstraint) {
+        // These addresses have the same initial snapshot/owned-batch lifetime
+        // as every other retained event. No ordinary permission index sees them.
+        NotFnConstraintKeys.insert(notFnConstraintKey(Source));
+        NotFnConstraintSources.push_back(&Source);
+        continue;
+      }
       switch (Source.Kind) {
       case TemplateSourceKind::Type:
         if (Source.Template && Source.Template->getIdentifier() &&
@@ -29550,7 +29567,9 @@ class Consumer : public ASTConsumer {
       return;
     auto &Context = Template->getASTContext();
     auto &Sources = Context.getSourceManager();
-    if (!S.owns(Sources, Location) &&
+    const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
+        S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
+    if (!S.owns(Sources, Location) && !NotFnConstraint &&
         !(Kind == TemplateSourceKind::Function &&
           (tupleFactorySelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)) ||
@@ -29618,6 +29637,7 @@ class Consumer : public ASTConsumer {
         TemplateArgumentList::CreateCopy(Context, llvm::ArrayRef<TemplateArgument>(Sugared, Count)),
         {}, {}, Location, Overflow, Instantiation, Selection, WrittenStorageClass};
     Source.Origin = Origin;
+    Source.FunctionalNotFnConstraint = NotFnConstraint;
     Source.Defaults.reserve(DefaultCount);
     for (unsigned I = 0; I < DefaultCount; ++I)
       Source.Defaults.push_back({DefaultParameters[I], OriginalDefaults[I], ConvertedDefaults[I]});

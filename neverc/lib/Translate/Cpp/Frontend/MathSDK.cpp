@@ -11911,6 +11911,37 @@ describeFunctionalNotFnFactoryTemplateSource(
 }
 
 
+
+bool retainFunctionalNotFnConstraintRoot(
+    const State &S, const SourceManager &SM, TemplateSourceKind Kind,
+    const NamedDecl *Template, const Decl *Declaration, const Type *Type,
+    const TypeSourceInfo *Underlying, SourceLocation Location) {
+  if (!S.coreV2() || !Template || !Template->getIdentifier() ||
+      S.owns(SM, Location)) return false;
+  const auto Use = S.sdkFile(SM, Location);
+  if (!Use || Use->Root != "libcxx" || Use->Path != "__functional/not_fn.h")
+    return false;
+  llvm::StringRef Path;
+  const auto Name = Template->getName();
+  if (Kind == TemplateSourceKind::Type) {
+    if (!isa<TypeAliasTemplateDecl>(Template) || Declaration || !Type || !Underlying)
+      return false;
+    if (Name == "enable_if_t") Path = "__type_traits/enable_if.h";
+    else if (Name == "decay_t") Path = "__type_traits/decay.h";
+    else return false;
+  } else if (Kind == TemplateSourceKind::VariableUse) {
+    const auto *Primary = dyn_cast<VarTemplateDecl>(Template);
+    const auto *Selected = dyn_cast_or_null<VarTemplateSpecializationDecl>(Declaration);
+    if (!Primary || !Selected || Selected->getSpecializedTemplate() != Primary ||
+        Type || Underlying ||
+        (Name != "is_constructible_v" && Name != "is_move_constructible_v"))
+      return false;
+    Path = "__type_traits/is_constructible.h";
+  } else return false;
+  NotFnSelectedSource Check(S, SM, Template->getASTContext());
+  return Check.family(Template, {Path});
+}
+
 std::optional<std::vector<FunctionalNotFnTupleTagSource>>
 describeFunctionalNotFnTupleTagSources(
     const State &S, const SourceManager &SM,
