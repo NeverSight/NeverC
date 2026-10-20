@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -23227,6 +23228,8 @@ public:
         // as every other retained event. No ordinary permission index sees them.
         NotFnConstraintKeys.insert(notFnConstraintKey(Source));
         NotFnConstraintSources.push_back(&Source);
+        std::fprintf(stderr, "NOT_FN_CONSTRAINT_INERT_INDEX name=%s kind=%u\n",
+            Source.Template->getNameAsString().c_str(), static_cast<unsigned>(Source.Kind));
         continue;
       }
       switch (Source.Kind) {
@@ -29644,6 +29647,17 @@ class Consumer : public ASTConsumer {
     Source.ParameterTypes.reserve(TypeCount);
     for (unsigned I = 0; I < TypeCount; ++I)
       Source.ParameterTypes.push_back({TypeParameters[I], ParameterTypes[I], PackIndices[I]});
+
+    // Observe collection itself, including callbacks from later completion.
+    if (Source.FunctionalNotFnConstraint) {
+        const auto File = S.sdkFile(Sources, Source.Location);
+        std::fprintf(stderr, "NOT_FN_CONSTRAINT_PACKET name=%s kind=%u sdk_not_fn=%u owned=%u canonical=%u defaults=%zu types=%zu\n",
+            Source.Template->getNameAsString().c_str(), static_cast<unsigned>(Source.Kind),
+            static_cast<unsigned>(File && File->Root == "libcxx" && File->Path == "__functional/not_fn.h"),
+            static_cast<unsigned>(S.owns(Sources, Source.Location)),
+            Source.Canonical ? Source.Canonical->size() : 0,
+            Source.Defaults.size(), Source.ParameterTypes.size());
+    }
     TemplateUses.push_back(std::move(Source));
   }
 
@@ -30264,6 +30278,61 @@ public:
         }
         if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
           return;
+      }
+    }
+
+    // Read immutable copies of the actual selected/default packets. These
+    // descriptions never admit a call or complete a lazy type through Sema.
+    {
+      auto &Context = CI.getASTContext();
+      auto &SM = Context.getSourceManager();
+      const auto Calls = SelectedCalls;
+      const auto Uses = TemplateUses;
+      for (const auto &Selection : Calls) {
+        const auto *F = Selection.Function;
+        if (!F || !F->getIdentifier() || F->getName() != "not_fn" ||
+            !S.owns(SM, Selection.Location)) continue;
+        for (const auto &Use : Uses) {
+          if (Use.Kind != TemplateSourceKind::Function || Use.Declaration != F ||
+              Use.Location != Selection.Location) continue;
+          const auto Factory = describeFunctionalNotFnFactorySource(
+              S, SM, dyn_cast_or_null<CallExpr>(Selection.Expression), Context);
+          const auto Default = describeFunctionalNotFnFactoryTemplateSource(
+              S, SM, Selection, Use, Context);
+          std::fprintf(stderr, "NOT_FN_FACTORY_DEFAULT_BEGIN factory=%u bound=%u defaults=%zu\n",
+              static_cast<unsigned>(Factory.has_value()),
+              static_cast<unsigned>(Default.has_value()), Use.Defaults.size());
+          auto Info = [&](const char *Role, const TypeSourceInfo *TSI) {
+            std::fprintf(stderr, "DEFAULT_ROLE role=%s present=%u\n", Role, static_cast<unsigned>(TSI != nullptr));
+            if (!TSI) return;
+            const auto TL = TSI->getTypeLoc();
+            std::fprintf(stderr, "DEFAULT_TYPE role=%s type=%s\n", Role, TSI->getType().getAsString().c_str());
+            for (const auto L : {TL.getBeginLoc(), TL.getEndLoc()}) {
+              if (L.isInvalid()) {
+                std::fprintf(stderr, "DEFAULT_LOCATION role=%s invalid=1\n", Role);
+                continue;
+              }
+              const auto Spell = SM.getSpellingLoc(L);
+              const auto Expansion = SM.getExpansionLoc(L);
+              const auto SF = S.sdkFile(SM, Spell);
+              const auto EF = S.sdkFile(SM, Expansion);
+              std::fprintf(stderr, "DEFAULT_LOCATION role=%s macro=%u scratch=%u spelling_sdk=%u expansion_sdk=%u location=%s spelling=%s expansion=%s\n",
+                  Role, static_cast<unsigned>(L.isMacroID()),
+                  static_cast<unsigned>(SM.isWrittenInScratchSpace(Spell)),
+                  static_cast<unsigned>(SF && SF->Root == "libcxx"),
+                  static_cast<unsigned>(EF && EF->Root == "libcxx"),
+                  L.printToString(SM).c_str(), Spell.printToString(SM).c_str(), Expansion.printToString(SM).c_str());
+            }
+          };
+          if (Use.Defaults.size() == 1) {
+            const auto &D = Use.Defaults.front();
+            const auto *P = dyn_cast_or_null<TemplateTypeParmDecl>(D.Parameter);
+            Info("primary", P && P->hasDefaultArgument() ? P->getDefaultArgument().getTypeSourceInfo() : nullptr);
+            Info("substituted-written", D.Written.getArgument().getKind() == TemplateArgument::Type ? D.Written.getTypeSourceInfo() : nullptr);
+            Info("converted", D.Converted.getArgument().getKind() == TemplateArgument::Type ? D.Converted.getTypeSourceInfo() : nullptr);
+          }
+          std::fprintf(stderr, "NOT_FN_FACTORY_DEFAULT_END\n");
+        }
       }
     }
     Adapter A(S, C, OperationTraits, SpecialMembers);
