@@ -704,6 +704,33 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
         compression-level: 0
+    - name: Retain actual isolated component archive headers and compile contract remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-private-frontend-components-remote-only-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend.a
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/NeverCCppPrivatePrefix.h
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/include
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/tools/clang/include
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/bin/llvm-nm
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/bin/llvm-config
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-src/llvm/include
+
+          ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-src/clang/include
+
+          ${{ runner.temp }}/cpp-private-frontend-build/private-component-reproducer
+
+          '
+        if-no-files-found: warn
+        retention-days: 7
+        compression-level: 1
 'on':
   workflow_dispatch:
     inputs:

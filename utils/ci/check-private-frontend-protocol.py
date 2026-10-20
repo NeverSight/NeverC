@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import shlex
 import subprocess
 import time
@@ -97,12 +98,51 @@ def main():
         archive = private / 'lib/Release/libnevercCppFrontend.a'
         assert archive.is_file()
         report['actual_private_archive_sha256'] = sha(archive)
+        # Preserve real build inputs remotely even if later linking/requests fail.
+        # The small evidence artifact never contains this archive or executables.
+        _, command_log = run(['ninja', '-C', private, '-t', 'compdb'],
+                             'build/private-compile-commands')
+        compile_commands = json.loads(command_log.read_text())
+        bridge_commands = [entry for entry in compile_commands
+            if str(frontend) + '/' in entry['file'] and entry['file'].endswith('.cpp')]
+        expected_sources = {str(frontend / name) for name in
+            ['Frontend.cpp', 'Lowering.cpp', 'Project.cpp', 'MathSDK.cpp', 'RandomSDK.cpp']}
+        assert {entry['file'] for entry in bridge_commands} == expected_sources
+        assert len(bridge_commands) == 5
+        report['actual_private_bridge_compile_commands'] = bridge_commands
+        reproducer = build / 'private-component-reproducer'
+        reproducer.mkdir()
+        generated = [path for path in private.rglob('BuildID.h')
+                     if '#define NEVERC_CPP_BUILD_ID ' in path.read_text()]
+        assert len(generated) == 1
+        for name in ['BuildID.h', 'BuiltinCppSdkData.h']:
+            shutil.copyfile(generated[0].parent / name, reproducer / name)
+        producer = {'producer_revision': report['revision'],
+            'exact_private_input_sha256': report['exact_private_input_sha256'],
+            'actual_private_archive_sha256': report['actual_private_archive_sha256'],
+            'sdk_catalog_sha256': report['sdk_catalog_sha256'],
+            'llvm_pin': '20.1.8', 'llvm_source_archive_sha256':
+                '6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d',
+            'bridge_compile_commands': bridge_commands,
+            'generated_header_sha256': {name: sha(reproducer / name)
+                for name in ['BuildID.h', 'BuiltinCppSdkData.h']},
+            'actual_prefix_sha256': sha(private / 'NeverCCppPrivatePrefix.h'),
+            'host_compiler_version_log_sha256': sha(out / 'environment/host-compiler.log'),
+            'archive_and_header_artifact_remote_only': True,
+            'must_not_download_archive_or_binaries_to_user_host': True,
+            'incremental_source_change_requires_new_build_id_all_five_bridge_units_and_archive_audit': True,
+            'source_isolation_or_upstream_abi_change_requires_fresh_private_dependency_build': True}
+        manifest = reproducer / 'producer.json'
+        manifest.write_text(json.dumps(producer, indent=2) + '\n')
+        shutil.copyfile(manifest, out / 'private-component-producer.json')
+        report['remote_component_producer_manifest_sha256'] = sha(manifest)
+        save()
         run(['cmake', '--build', private, '--target', 'llvm-config', '--parallel', '2'],
             'build/actual-private-config-tool', 1800)
         tool = private / 'bin/llvm-config'
         _, log = run([tool, '--version'], 'build/private-tool-version')
         assert log.read_text().strip() == '20.1.8'
-        _, log = run([tool, '--system-libs', '--link-static'], 'build/private-system-libraries')
+        _, log = run([tool, '--system-libs', '--link-static', 'support'], 'build/private-system-libraries')
         system_libraries = shlex.split(log.read_text())
         binary = build / 'private-frontend-protocol'
         run(['/usr/bin/clang++-22', '-std=c++17', '-O2', '-fno-fast-math', '-ffp-contract=off',
