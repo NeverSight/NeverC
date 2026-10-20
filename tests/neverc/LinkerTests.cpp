@@ -270,7 +270,17 @@ protected:
           {"returncode", Result.exitCode}, {"stdout", Result.out},
           {"stderr", Result.err}});
       Stream.flush();
-      writeFile(Directory / (std::to_string(ReplayCommandIndex++) + ".json"), Text);
+      const fs::path Record = Directory / (std::to_string(ReplayCommandIndex++) + ".json");
+      std::error_code Error;
+      llvm::raw_fd_ostream File(Record.string(), Error);
+      EXPECT_FALSE(Error) << "could not open replay evidence " << Error.message();
+      if (!Error) {
+        File << Text;
+        File.close();
+        const bool Failed = File.has_error();
+        File.clear_error();
+        EXPECT_FALSE(Failed) << "could not write replay evidence " << Record.string();
+      }
     }
     return Result;
   }
