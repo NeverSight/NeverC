@@ -197,8 +197,6 @@ def preserve_explicit_function_instantiation_source(source_root):
              '        Filler = ElementInit.getAs<Expr>();\n      }\n\n      // An unknown outer bound uses one sentinel to build its loop filler;\n      // it is not an omitted element that can be expanded into the prefix.\n      if (!hadError && !VerifyOnly && !FillWithNoInit &&\n          !Entity.isVariableLengthArrayNew() &&\n          ElementEntity.getKind() == InitializedEntity::EK_ArrayElement) {\n        using NeverCFillerAction = ASTConsumer::NeverCArrayFillerAction;\n        auto NeverCAction = NeverCSeparateArrayFillers\n            ? NeverCFillerAction::Separate\n            : SemaRef.getASTConsumer().HandleNeverCArrayFiller(\n                  SemaRef.Context, Filler, NumElements - Init, NumElements);\n        if (NeverCAction == NeverCFillerAction::Invalid) {\n          hadError = true;\n          return;\n        }\n        if (NeverCAction == NeverCFillerAction::Separate) {\n          if (!NeverCSeparateArrayFillers) {\n            // The requesting consumer bounds this size before narrowing it.\n            ILE->resizeInits(SemaRef.Context, unsigned(NumElements));\n            NumInits = ILE->getNumInits();\n            NeverCSeparateArrayFillers = true;\n            RequiresSecondPass = true;\n          }\n          // Keep this first result; each later empty slot gets its own\n          // PerformEmptyInit with the actual element entity and index.\n          ILE->setInit(Init, Filler);\n          SemaRef.getASTConsumer().HandleNeverCArrayFillerElement(Filler);\n          continue;\n        }\n      }\n\n      if (hadError) {\n        // Do nothing\n      } else if (VerifyOnly) {'),
         )),
         ('clang/lib/Sema/SemaExpr.cpp', (
-            ('#include "clang/AST/ASTContext.h"',
-             '#include "clang/AST/ASTConsumer.h"\n#include "clang/AST/ASTContext.h"'),
             ('  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);',
              '  auto NeverCOrdinaryCallResult =\n      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);\n  if (!NeverCOrdinaryCallResult.isInvalid() && FDecl &&\n      FDecl->getPrimaryTemplate() &&\n      getASTConsumer().wantsNeverCTemplateSource())\n    getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n        TheCall, FDecl, TheCall->getExprLoc());\n  return NeverCOrdinaryCallResult;'),
         )),
@@ -228,6 +226,14 @@ def preserve_explicit_function_instantiation_source(source_root):
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
             raise SystemExit(message) from error
+        # This pinned source already includes ASTConsumer. Treating that
+        # existing include as an insertion makes pristine and patched states
+        # disagree before the ordinary call hook can be installed.
+        if relative == "clang/lib/Sema/SemaExpr.cpp" and any(
+                text.count(header) != 1 for header in (
+                    '#include "clang/AST/ASTConsumer.h"',
+                    '#include "clang/AST/ASTContext.h"')):
+            raise SystemExit(message)
         # Some rewritten blocks contain the original anchor as a prefix. Count
         # pristine anchors only after removing each complete rewritten block.
         counts = [(text.replace(after, "").count(before), text.count(after))
