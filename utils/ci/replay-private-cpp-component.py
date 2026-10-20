@@ -174,7 +174,7 @@ def main():
         assert len(inputs) == 19
         current = {name: sha(root / PREFIX / name) for name in inputs}
         changed = sorted(name for name in current if current[name] != inputs[name])
-        assert changed == plan['allowed_bridge_source_changes'] == ['Frontend.cpp', 'MathSDK.cpp']
+        assert changed == plan['allowed_bridge_source_changes'] == ['Frontend.cpp', 'Frontend.h', 'MathSDK.cpp']
         report['exact_private_input_sha256'] = current
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'

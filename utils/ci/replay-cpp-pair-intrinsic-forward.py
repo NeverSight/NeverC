@@ -174,7 +174,7 @@ def main():
         assert len(inputs) == 19
         current = {name: sha(root / PREFIX / name) for name in inputs}
         changed = sorted(name for name in current if current[name] != inputs[name])
-        assert changed == plan['allowed_bridge_source_changes'] == ['MathSDK.cpp']
+        assert changed == plan['allowed_bridge_source_changes'] == ['Frontend.cpp', 'Frontend.h', 'MathSDK.cpp']
         report['exact_private_input_sha256'] = current
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
@@ -290,6 +290,8 @@ def main():
         system = prior_path.parent / 'build/private-system-libraries.log'
         assert sha(system) == prior_commands['build/private-system-libraries.log']['log_sha256']
         assert prior_commands['build/private-system-libraries.log']['command'][1:] == ['--system-libs', '--link-static', 'support']
+        report['authenticated_system_libraries'] = system.read_text()
+        report['authenticated_system_libraries_sha256'] = sha(system)
         executable = restored / 'private-frontend-source-replay'
         run(['/usr/bin/clang++-22', '-std=c++17', '-O2', '-fno-fast-math', '-ffp-contract=off',
              root / 'utils/ci/FrontendProtocolDriver.cpp', '-I' + str(root / PREFIX),

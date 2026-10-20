@@ -36,6 +36,8 @@
   },
   "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
   "allowed_bridge_source_changes": [
+    "Frontend.cpp",
+    "Frontend.h",
     "MathSDK.cpp"
   ],
   "candidate_source_paths": [
@@ -44,9 +46,11 @@
     ".github/workflows/diagnose-cpp-template-source.yml",
     "tests/neverc/TranslateTests.cpp",
     "utils/ci/FrontendProtocolDriver.cpp",
-    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp"
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h"
   ],
-  "source_repair_commit": "41e83ee4375c6e6f037225099cef25f85845e40e",
+  "source_repair_commit": "84fb4701d411b8ee23889a3908b9289cbb589e64",
   "target_abis": [
     "x86_64-apple-macosx15.0.0",
     "arm64-apple-macosx15.0.0",
@@ -255,5 +259,270 @@
   },
   "source_trace_included": false,
   "all_binaries_remote_only": true,
-  "full_feature_completion_proved_by_this_job": false
+  "full_feature_completion_proved_by_this_job": false,
+  "all_five_internal_adapter_consumers_rebuilt": true,
+  "original_public_c_entry_abi_unchanged": true,
+  "exact_source_revision": "84fb4701d411b8ee23889a3908b9289cbb589e64",
+  "outer_source_trace_evidence": {
+    "passed": false,
+    "actual_source_trace_authenticated": true,
+    "commit": "840fc246bfd1bbb83388d779e98fd8b04087d96a",
+    "run_id": 39374376966,
+    "artifact_id": 12243019961,
+    "archive_sha256": "f14bb1fd5e0a41b10cb8e460bf64a7602722030e6a96568ceab6c9c9deea9b09",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-source-replay-ci-artifact-12243019961/unpacked/cpp-pair-source-replay/results.json",
+    "report_sha256": "85a2bc7eebbee4a1aac9f1c624194e03e334ea58d6600b3d56fdbc4837eb76ee",
+    "bridge_units_recompiled": 5,
+    "actual_requests": 3,
+    "accepted_controls": 2,
+    "reproduced_pair_rejections": 1,
+    "source_trace": [
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10627,
+        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10511,
+        "source": "      return observed((false), __LINE__);"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10706,
+        "source": "           location(Type.getEndLoc())), __LINE__);"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10608,
+        "source": "      return observed((false), __LINE__);"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10573,
+        "source": "        return observed((false), __LINE__);"
+      },
+      {
+        "case": "pair-piecewise-scalars",
+        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+        "line": 10758,
+        "source": "      return observed((false), __LINE__);"
+      }
+    ],
+    "member_replacement_ledger_sha256": "2d374782187dc34f89b52d655de41b2d3b21e74df3494da49f36ea22699e8e9e",
+    "private_feature_fixed": false,
+    "descriptor_root_ast_authenticated": false,
+    "outer_source_trace_authenticated": true,
+    "unchanged_source_basis": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
+    "upstream_dependency_rebuilt": false,
+    "host_neverc_rebuilt": false,
+    "all_binaries_remote_only": true,
+    "whole_ci_passed": false,
+    "published_to_dev": false,
+    "goal_complete": false
+  },
+  "consumer_record_ownership_source": {
+    "commit": "4239be93f596895b8d895290ffc4027c7fe93ad3",
+    "parent": "41e83ee4375c6e6f037225099cef25f85845e40e",
+    "branch": "codex/cpp-stl-consumer-record-ownership",
+    "changed_files": [
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.h"
+    ],
+    "source_sha256": {
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp": "0efecbc8f39a52b621d36cd81f2ea06460bb24b0dbdfd71c400686f5de301b37",
+      "neverc/lib/Translate/Cpp/Frontend/Frontend.h": "95dcf9e55ab7102099db154beed75a5dfc00d807ae2d50aee8dee82a72784bff"
+    },
+    "port_of_ownership_only_diff": "8f4ba90d..0cafc88a",
+    "not_fn_metadata_or_permission_added": false,
+    "source_record_owner": "Consumer",
+    "adapter_borrows_live_maps": true,
+    "template_event_vector_stability_implemented": false,
+    "incremental_source_event_indexing_implemented": false,
+    "current_sources_compiled_or_executed": false,
+    "late_sema_callback_runtime_regression_verified": false,
+    "work_branch_pushed": true,
+    "published_to_dev": false,
+    "full_ci_passed": false,
+    "goal_complete": false,
+    "push_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/consumer-record-ownership-push-1792473131654838000.log"
+  },
+  "actual_previous_104_request_evidence": {
+    "passed": false,
+    "actual_execution_evidence_authenticated": true,
+    "commit": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
+    "production_source_repair_commit": "41e83ee4375c6e6f037225099cef25f85845e40e",
+    "run_id": 39371411233,
+    "artifact_id": 12241678552,
+    "archive_sha256": "a274c264b66d32185037c7995fd45dc6247e5460a6cc72a74cbaa7b072bea786",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/pair-intrinsic-forward-ci-ci-artifact-12241678552/unpacked/cpp-pair-intrinsic-forward/results.json",
+    "report_sha256": "3fbb14ebbeefeed9063424905c697d525549b5d95e58564e95d144f2874f6018",
+    "bridge_units_recompiled": 5,
+    "target_abis": [
+      "x86_64-apple-macosx15.0.0",
+      "arm64-apple-macosx15.0.0",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "i686-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "i686-pc-windows-msvc"
+    ],
+    "actual_requests": 104,
+    "accepted_positive_requests": 16,
+    "original_source_guard_rejections": 80,
+    "failed_expectations": [
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-piecewise-scalars",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 31,
+            "construct": "pair piecewise outer source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 3,
+            "reason": "Both selected constructor layers and every get/forward require original SDK sources."
+          }
+        ]
+      }
+    ],
+    "all_private_sources_identical_to_production_candidate": true,
+    "source_trace_included": false,
+    "sdk_files_verified": 665,
+    "member_replacement_ledger_sha256": "ce678b295703d9d4d55bfd476af430189d17b4c75184a8c2afc8d38e39601baf",
+    "all_binaries_remote_only": true,
+    "native_generated_programs_executed": false,
+    "formal_xml_cases_executed": 0,
+    "full_ci_passed": false,
+    "published_to_dev": false,
+    "goal_complete": false
+  }
 }

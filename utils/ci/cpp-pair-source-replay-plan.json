@@ -36,10 +36,12 @@
   },
   "allowed_bridge_source_changes": [
     "Frontend.cpp",
+    "Frontend.h",
     "MathSDK.cpp"
   ],
   "candidate_source_paths": [
     "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
     "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
     "utils/ci/replay-private-cpp-component.py",
     "utils/ci/cpp-pair-source-replay-plan.json",
@@ -56,17 +58,17 @@
   "feature_admission_or_guard_relaxed": false,
   "all_binaries_remote_only": true,
   "outer_source_trace": true,
-  "trace_source_basis": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
-  "outer_source_original_sha256": "554cd75569a4e69b0ea1ef89fd5decbe8c7c5f4365ca0f9ad925c017563b237c",
-  "outer_source_observed_sha256": "d8deb8ed4bab465e384fa19f876db8b65188fb2b33213c886f079d79f8c63efa",
-  "outer_source_boolean_returns_observed": 53,
+  "trace_source_basis": "c41d9e4c6ebfe4ea4656b9f32bffe7b8beaf3230",
+  "outer_source_original_sha256": "0c1194e2b023771ed5d4bc857468d59511b2df828447f45208cff8f68492bea9",
+  "outer_source_observed_sha256": "4958a85fb68884876738c2fe3560d4a738eba526c95105d8d8d05c1cab77a825",
+  "outer_source_boolean_returns_observed": 58,
   "outer_source_inverse_restores_original": true,
   "actual_parent_request_evidence": {
-    "commit": "d7d992dbcec314ae44ac4daa152f55182d2104ef",
-    "run_id": 39371411233,
-    "artifact_id": 12241678552,
-    "archive_sha256": "a274c264b66d32185037c7995fd45dc6247e5460a6cc72a74cbaa7b072bea786",
-    "report_sha256": "3fbb14ebbeefeed9063424905c697d525549b5d95e58564e95d144f2874f6018",
+    "commit": "c41d9e4c6ebfe4ea4656b9f32bffe7b8beaf3230",
+    "run_id": 39377120422,
+    "artifact_id": 12243719619,
+    "archive_sha256": "7902750dbe88a45bf54ca2bee30e7c83f7a2b88d5e64dadfc0aa38b12385955d",
+    "report_sha256": "de6fc4d19573411aeb3d751ec132e1945e7c6d6d998afc3c6492acb1d518ad82",
     "actual_requests": 104,
     "accepted_positive_requests": 16,
     "original_source_guard_rejections": 80,
@@ -214,49 +216,7 @@
     "signature": "e0b92b24b417199f64fff89bbdabf2c95ecba846edfb41d177c4552cd39fefd9",
     "type_location": "52c28b55115b1e3fb9fbc4870b22fd508ca5b0567cd606cc9f1e2ff67860a556"
   },
-  "actual_outer_type_location_failure_evidence": {
-    "commit": "cabeed6035e15380af2283dff8dfe2d9dea68399",
-    "run_id": 39373233023,
-    "artifact_id": 12242279411,
-    "archive_sha256": "35a7dab788dd9b6e6b3088da47a011fb4786208b30658689038e3769cf634006",
-    "report_sha256": "e9fa35d2d3c4f45481abbb9cf9577ff8d780b870970e8e4450b902258f69e1c4",
-    "source_trace": [
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10622,
-        "source": "  bool shouldWalkTypesOfTypeLocs() const { return observed((false), __LINE__); }"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10511,
-        "source": "      return observed((false), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10691,
-        "source": "           location(Type.getEndLoc())), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10603,
-        "source": "      return observed((false), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10573,
-        "source": "        return observed((false), __LINE__);"
-      },
-      {
-        "case": "pair-piecewise-scalars",
-        "file": "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
-        "line": 10743,
-        "source": "      return observed((false), __LINE__);"
-      }
-    ]
-  }
+  "actual_parent_validation_sha256": "fe1c5a44b1b12e8d6f185f617d4fbd3eca546fe4924cca9e027e75cecf0a2997",
+  "unwritten_constructor_return_fix_retained": true,
+  "consumer_record_ownership_fix_retained": true
 }
