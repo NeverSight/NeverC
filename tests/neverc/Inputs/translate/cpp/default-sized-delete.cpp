@@ -47,7 +47,7 @@ Size recordCookie() {
 #endif
 }
 Size trivialCookie() {
-#if defined(_MSC_VER)
+#if defined(_WIN32)
   return 0;
 #elif defined(__APPLE__) && defined(__aarch64__)
   return 2 * sizeof(Size);
