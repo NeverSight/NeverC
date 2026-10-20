@@ -1,0 +1,191 @@
+{
+  "source_revision": "2061b89507bc54a83b3713beecaa6f496975996d",
+  "source_paths": [
+    "utils/ci/check-arm-current-component.py",
+    "utils/ci/ArmCurrentFrontendDriver.cpp",
+    "utils/ci/cpp-arm-current-component-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml"
+  ],
+  "current_private_input_sha256": {
+    "Frontend.cpp": "71c8aae8ddb8c9b89e34e0034d38b500b863e9b2fd2b80d55cc3cf42b8978a9a",
+    "Lowering.cpp": "3c9e34f87636423a66c234f02e6d85ab0456585d88cffe87d1a74c3db0371db3",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "a8cc821daaeafc3ecf9533c53cc46774e2c95b6e5f815b5cb996c40c9109ef07",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "a419e34da0610a8710cedd23b1023a961e48dc76ab429a163893fe922942c986",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "baseline_private_input_sha256": {
+    "Frontend.cpp": "71c8aae8ddb8c9b89e34e0034d38b500b863e9b2fd2b80d55cc3cf42b8978a9a",
+    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "a8cc821daaeafc3ecf9533c53cc46774e2c95b6e5f815b5cb996c40c9109ef07",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "a419e34da0610a8710cedd23b1023a961e48dc76ab429a163893fe922942c986",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "current_build_id": "cpp-frontend-1-5dddf1ac580853897f22f6bba04060d7cf2293a3f35f416646fdb0d8a36fd8d7",
+  "baseline_build_id": "cpp-frontend-1-cdbbe36a2bf324b826307d2afce9b96fbb354163c1e611e4878f154c71d1220f",
+  "controlled_lowering_change": {
+    "offset": 1169563,
+    "baseline_text": "assign(dereference(\n                     binary(\"+\", json::Object(Data),\n                            cast(binary(\"+\", json::Object(Offset),\n                                        json::Object(LeftSize), SizeType, L),\n                                ",
+    "repaired_text": "// The source operand below moves Offset. Form its destination copy\n          // first so either assign argument evaluation order keeps both trees.\n          auto DestinationOffset = binary(\"+\", json::Object(Offset),\n                                          json::Object(LeftSize), SizeType, L);\n          assign(dereference(\n                     binary(\"+\", json::Object(Data),\n                            cast(std::move(DestinationOffset),",
+    "baseline_sha256": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "repaired_sha256": "3c9e34f87636423a66c234f02e6d85ab0456585d88cffe87d1a74c3db0371db3"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "llvm_pin": "20.1.8",
+  "llvm_source_archive_sha256": "6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d",
+  "production_cmake_owner": "nevercCppFrontendBuild",
+  "host_msvc_required": "19.51",
+  "string_case": {
+    "name": "CoreV2StringConcatRvalueRun",
+    "source": "\nusing Size = decltype(sizeof(0));\nextern \"C\" void *malloc(Size);\nextern \"C\" void free(void *);\nint allocations;\nint releases;\nvoid *operator new(Size n) { ++allocations; return malloc(n); }\nvoid operator delete(void *p) noexcept { ++releases; free(p); }\n#include <string>\nint main() {\n  const std::string head(\"PQ\");\n  const std::string tail(\"XY\");\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    Size capacity = source.capacity();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + tail;\n    if (result != \"abcdefghijklmnopqrstuvwxyzXY\" || result.data() != data ||\n        result.capacity() != capacity || !source.empty() ||\n        allocations != before)\n      return 1;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    Size capacity = source.capacity();\n    int before = allocations;\n    std::string result = head + static_cast<std::string &&>(source);\n    if (result != \"PQabcdefghijklmnopqrstuvwxyz\" || result.data() != data ||\n        result.capacity() != capacity || !source.empty() ||\n        allocations != before)\n      return 2;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    std::string other(\"ABCDEFGHIJKLMNOPQRSTUVWXYZ\");\n    source.reserve(80);\n    const char *data = source.data();\n    Size capacity = source.capacity();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) +\n                         static_cast<std::string &&>(other);\n    if (result.size() != 52 || result[0] != 'a' || result[25] != 'z' ||\n        result[26] != 'A' || result[51] != 'Z' || result.data() != data ||\n        result.capacity() != capacity || !source.empty() ||\n        other.size() != 26 || other[0] != 'A' || allocations != before)\n      return 3;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = \"PQ\" + static_cast<std::string &&>(source);\n    if (result != \"PQabcdefghijklmnopqrstuvwxyz\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 4;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = 'Q' + static_cast<std::string &&>(source);\n    if (result != \"Qabcdefghijklmnopqrstuvwxyz\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 5;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + \"PQ\";\n    if (result != \"abcdefghijklmnopqrstuvwxyzPQ\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 6;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + 'Q';\n    if (result != \"abcdefghijklmnopqrstuvwxyzQ\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 7;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    const std::string suffix(\"ABCDEFGHIJKLMNOPQRSTUVWXYZ\");\n    const char *old_data = source.data();\n    Size old_capacity = source.capacity();\n    int before = allocations, freed = releases;\n    std::string result = static_cast<std::string &&>(source) + suffix;\n    Size desired = 2 * old_capacity;\n    if (desired < result.size()) desired = result.size();\n    Size expected_capacity = ((desired + 8) / 8) * 8 - 1;\n    if (result.size() != 52 || result.data() == old_data ||\n        result.capacity() != expected_capacity || !source.empty() ||\n        allocations != before + 1 || releases != freed + 1)\n      return 8;\n  }\n  {\n    std::string source(\"ab\");\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + 'c';\n    if (result != \"abc\" || !source.empty() || allocations != before)\n      return 9;\n  }\n  {\n    std::string source(\"ab\");\n    int before = allocations;\n    std::string result = '!' + static_cast<std::string &&>(source);\n    if (result != \"!ab\" || !source.empty() || allocations != before)\n      return 19;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuv\");\n    Size short_capacity = source.capacity();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + 'w';\n    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;\n    if (result.size() != 23 || result.capacity() != expected_capacity ||\n        result[22] != 'w' || !source.empty() || allocations != before + 1)\n      return 16;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuv\");\n    Size short_capacity = source.capacity();\n    int before = allocations;\n    std::string result = 'w' + static_cast<std::string &&>(source);\n    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;\n    if (result.size() != 23 || result.capacity() != expected_capacity ||\n        result[0] != 'w' || result[22] != 'v' || !source.empty() ||\n        allocations != before + 1)\n      return 17;\n  }\n  {\n    const char raw[] = {'X', 0, 'Y'};\n    const std::string suffix(raw, 3);\n    std::string source(\"ab\");\n    std::string result = static_cast<std::string &&>(source) + suffix;\n    if (result.size() != 5 || result[2] != 'X' || result[3] != 0 ||\n        result[4] != 'Y' || !source.empty())\n      return 10;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = source + static_cast<std::string &&>(source);\n    if (result.size() != 52 || result.data() != data || result[0] != 'a' ||\n        result[25] != 'z' || result[26] != 'a' || result[51] != 'z' ||\n        !source.empty() || allocations != before)\n      return 11;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = source.c_str() + static_cast<std::string &&>(source);\n    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||\n        result[51] != 'z' || !source.empty() || allocations != before)\n      return 12;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = (source.c_str() + 3) +\n                         static_cast<std::string &&>(source);\n    if (result.size() != 49 || result.data() != data || result[0] != 'd' ||\n        result[22] != 'z' || result[23] != 'a' || result[48] != 'z' ||\n        !source.empty() || allocations != before)\n      return 18;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + source;\n    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||\n        result[51] != 'z' || !source.empty() || allocations != before)\n      return 13;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + source.c_str();\n    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||\n        result[51] != 'z' || !source.empty() || allocations != before)\n      return 14;\n  }\n  return allocations == releases ? 0 : 15;\n}\n",
+    "source_sha256": "7bf58530192ef60fba5feecfc571728a20b584d8e744307be752c330088e2e3c",
+    "original_test_body_sha256": "5124b6b3625e622bdbf6c66f59f5f6ddd9671ba8f207fd241d19da9d1677e3b3",
+    "expected": "accept"
+  },
+  "optional_case": {
+    "name": "CoreV2ReferenceWrapperOptionalDirectEmplaceArgumentOnce",
+    "source": "#include <functional>\n#include <optional>\n#include <utility>\nusing W=std::reference_wrapper<int>;\nint x=3,effects;int& pick(){++effects;return x;}int main(){std::optional<W> o;W& r=o.emplace(pick());return effects==1&&&r==&*o&&&r.get()==&x?0:1;}\n",
+    "source_sha256": "5799f1340d3f2bf46fdafc52251c006b3eacd905b28d89a5951b89950179bc98",
+    "original_test_body_sha256": "71b530500ea938e7d1980a0365bc4358637918669cec30dd256bbc16aa1abe24",
+    "expected": "accept"
+  },
+  "pair_cases": [
+    {
+      "name": "cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "expected": "accept"
+    },
+    {
+      "name": "tuple-get",
+      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
+      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-forward-identity",
+      "source": "#include <type_traits>\n#define forward forward\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "ee79736239a21609dd6df9d29d2ab6dfbc5de3c9b488e8118b7845adf13c772f",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-get-identity",
+      "source": "#include <type_traits>\n#define get get\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "6be6dd84bf2bbdc5083cdc7696d4142ad476ddc7cb31aac27195777b4acabb76",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-piecewise-construct-t-identity",
+      "source": "#include <type_traits>\n#define piecewise_construct_t piecewise_construct_t\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "b07495511aeebb541a8a008c210ca2916dc26891c54d5a42c243d723bc1d36ee",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-tuple-identity",
+      "source": "#include <type_traits>\n#define tuple tuple\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "7de4fe4121cf28e3a9b342a5581afd8c79f23946dddec9d4b897133376118f27",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-tuple-indices-identity",
+      "source": "#include <type_traits>\n#define __tuple_indices __tuple_indices\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "9b490191449a702561eaa5c44b1330aa7ca9f0b791c1f7199e42d4a7f6430bb9",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-make-tuple-indices-identity",
+      "source": "#include <type_traits>\n#define __make_tuple_indices __make_tuple_indices\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "c5aacec2fea376481f525d557c32bfca73d1139a05607460b688e31b59382cc4",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-is-nothrow-constructible-identity",
+      "source": "#include <type_traits>\n#define is_nothrow_constructible is_nothrow_constructible\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "8faa79522a35358c38bcdaa23be466b69885c4f895d0e5aabf2e8b0161fa27b7",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-tuple-selected-get",
+      "source": "#include <tuple>\n#include <utility>\nnamespace std{inline namespace __1{template<>int& get<0,int>(tuple<int>& t)noexcept{static int n=3;return n;}}}\nvoid use(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}int main(){return 0;}\n",
+      "source_sha256": "c081e2557c0e0f5a5c5342b22f3301453ab69461e3114aadb32c21acd491be06",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-standalone-tag",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::piecewise_construct_t tag{};std::pair<int,int> p(tag,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "c99f14b5377a77d14597eda849f540198931a09da04d3648dd1d98430e13f6fa",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-reference-to-value-parameter",
+      "source": "#include <tuple>\n#include <utility>\nvoid use(){std::pair<int&&,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}\nint main(){use();return 0;}\n",
+      "source_sha256": "6c025eda7bb57b96c6889a43e40d59765f3ecf211c7487d72c0fa4caeac9f162",
+      "expected": "reject"
+    }
+  ],
+  "target_abis": [
+    "x86_64-apple-macosx15.0.0",
+    "arm64-apple-macosx15.0.0",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "i686-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "i686-pc-windows-msvc"
+  ],
+  "original_project_script_sha256": "fd6f4c5dfd305e7dbee249ddf8d90a305f00dd79916f15fbc4eccdc7fb7b7a67",
+  "actual_prior_arm_crash": {
+    "receipt_sha256": "8799a713ae99e53dee7bdc28f8b7a5d19908940a2dc6d5b9719c4402c3dfe99a",
+    "run_id": 39384308723,
+    "artifact_id": 12246719243
+  },
+  "actual_prior_pair104": {
+    "receipt_sha256": "b19ea056b8312ef484c5c5f8b27a3d32572c1779e3c3999de1f3f5d703cbda5b",
+    "run_id": 39383666022,
+    "artifact_id": 12247545155
+  },
+  "required_controlled_baseline_requests": 3,
+  "required_current_requests": 115,
+  "required_guard_rejections": 80,
+  "required_current_acceptances": 35,
+  "all_original_sources_retained": true,
+  "frontend_execution_timeout_seconds": 60,
+  "actual_translate_verifier_execution_in_this_job": false,
+  "native_product_execution_in_this_job": false,
+  "formal_xml_in_this_job": 0,
+  "all_binaries_remote_only": true,
+  "full_feature_completion_proved_by_this_job": false
+}
