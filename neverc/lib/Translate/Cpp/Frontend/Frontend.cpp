@@ -10737,6 +10737,11 @@ public:
     return step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
            location(Type.getEndLoc());
   }
+  bool VisitTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc Type) {
+    const auto *Template = Type.getTypePtr()->getTemplateName().getAsTemplateDecl();
+    return location(Type.getTemplateNameLoc()) && Template &&
+           declaration(Template) && declaration(Template->getTemplatedDecl());
+  }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!location(Reference->getLocation()))
       return false;
@@ -10759,8 +10764,17 @@ public:
   bool TraverseCXXConstructExpr(CXXConstructExpr *Construction) {
     if (BoundChildren.count(Construction))
       return true; // The caller separately completes this exact child operation.
-    if (Construction == Piecewise.Delegation)
-      return family(Construction->getConstructor());
+    if (Construction == Piecewise.Delegation) {
+      if (!family(Construction->getConstructor()))
+        return false;
+      // The selected private body does not contain the public delegation's
+      // written index factories. Preserve their TypeLocs and template names,
+      // including macro spelling, before erasing the empty index arguments.
+      for (const auto *Argument : Construction->arguments())
+        if (!TraverseStmt(const_cast<Expr *>(Argument)))
+          return false;
+      return !Failed;
+    }
     return erasedConstruction(Construction) &&
         RecursiveASTVisitor<UtilityPairPiecewiseOuterSources>::TraverseCXXConstructExpr(Construction);
   }
@@ -13938,6 +13952,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
       Args.push_back(zero(Optional->Engaged->getType(), L));
+      if (Optional->TailPaddingBytes)
+        Args.push_back(zero(Context.getConstantArrayType(
+                                Context.UnsignedCharTy,
+                                llvm::APInt(64, Optional->TailPaddingBytes),
+                                nullptr, ArraySizeModifier::Normal, 0),
+                            L));
     } else {
       if (const auto *Base = emptyBase(R))
         Args.push_back(zero(Context.getRecordType(Base->Base), L));
@@ -28724,6 +28744,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
         Fields.push_back(json::Object{
             {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+      if (UtilityOptional->TailPaddingBytes)
+        Fields.push_back(json::Object{
+            {"name", "nct_optional_tail_storage"},
+            {"type", "arr:" + std::to_string(UtilityOptional->TailPaddingBytes) +
+                         ":u8"}});
     } else {
       for (const auto *F : R->fields())
         Fields.push_back(json::Object{
@@ -28779,6 +28804,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         const auto &StorageLayout =
             Context.getASTRecordLayout(UtilityOptional->DestructBase);
         Offsets.push_back(StorageLayout.getFieldOffset(1));
+        if (UtilityOptional->TailPaddingBytes)
+          Offsets.push_back(StorageLayout.getFieldOffset(1) +
+                           Context.getTypeSize(UtilityOptional->Engaged->getType()));
       } else {
         for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
           Offsets.push_back(Layout.getFieldOffset(I));

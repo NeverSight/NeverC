@@ -24265,11 +24265,13 @@ class FunctionLowering {
           label(ShiftByte, L);
           auto Offset = binary("-", json::Object(TargetSize),
                                json::Object(ShiftIndex), SizeType, L);
+          // The source operand below moves Offset. Form its destination copy
+          // first so either assign argument evaluation order keeps both trees.
+          auto DestinationOffset = binary("+", json::Object(Offset),
+                                          json::Object(LeftSize), SizeType, L);
           assign(dereference(
                      binary("+", json::Object(Data),
-                            cast(binary("+", json::Object(Offset),
-                                        json::Object(LeftSize), SizeType, L),
-                                 DifferenceType, L),
+                            cast(std::move(DestinationOffset), DifferenceType, L),
                             PointerType, L),
                      L),
                  dereference(binary("+", json::Object(Data),

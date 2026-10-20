@@ -2110,6 +2110,7 @@ struct UtilityOptionalRecord {
   const clang::CXXRecordDecl *StorageBase, *DestructBase;
   const clang::FieldDecl *Value, *Engaged;
   clang::QualType ElementType;
+  uint64_t TailPaddingBytes = 0;
 };
 std::optional<FunctionalReferenceRecord>
 approvedUtilityOptionalReferenceEmplace(const State &S,
