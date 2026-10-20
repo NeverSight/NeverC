@@ -93,7 +93,7 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
       != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group
       != 'session-cache-ownership' && inputs.fixture_group != 'macho-data-const' && inputs.fixture_group
-      != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest' }}
+      != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest' && inputs.fixture_group != 'algorithm-sdk-abi-manifest' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -801,6 +801,32 @@ jobs:
         path: ${{ runner.temp }}/cpp-algorithm-sdk-programs
         if-no-files-found: warn
         retention-days: 7
+  inspect-algorithm-sdk-abi-manifest:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'algorithm-sdk-abi-manifest' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Replay actual SDK source across eight ABIs with unchanged authenticated Sema
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        python3 utils/ci/check-algorithm-sdk-abi-manifest.py --repo "$GITHUB_WORKSPACE" \
+          --plan utils/ci/cpp-algorithm-sdk-abi-plan.json \
+          --output "$RUNNER_TEMP/cpp-algorithm-sdk-abi-manifest" \
+          --build "$RUNNER_TEMP/cpp-algorithm-sdk-abi-reuse"
+    - name: Upload small eight-ABI source request response and exact manifest evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-algorithm-sdk-abi-manifest-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-algorithm-sdk-abi-manifest
+        if-no-files-found: warn
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -818,6 +844,7 @@ jobs:
         - macho-data-const
         - macho-image-backend
         - algorithm-sdk-manifest
+        - algorithm-sdk-abi-manifest
   push:
     branches:
     - dev
