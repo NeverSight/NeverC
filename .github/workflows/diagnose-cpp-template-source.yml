@@ -1500,10 +1500,10 @@ jobs:
     - name: Observe actual retained constructor and inherited selection identities
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: "python3 utils/ci/check-cpp-not-fn-pointer-selection-trace.py --repo \"\
-        $GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-not-fn-pointer-selection-trace-plan.json\
-        \ \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-pointer-selection-trace\" \\\n\
-        \  --build \"$RUNNER_TEMP/cpp-not-fn-pointer-selection-trace-rebuild\"\n"
+      run: "python3 utils/ci/check-cpp-not-fn-pointer-selection.py --repo \"$GITHUB_WORKSPACE\"\
+        \ \\\n  --plan utils/ci/cpp-not-fn-pointer-selection-plan.json \\\n  --output\
+        \ \"$RUNNER_TEMP/cpp-not-fn-pointer-selection-trace\" \\\n  --build \"$RUNNER_TEMP/cpp-not-fn-pointer-selection-trace-rebuild\"\
+        \n"
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
