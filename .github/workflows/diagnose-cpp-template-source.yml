@@ -93,7 +93,7 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
       != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group
       != 'session-cache-ownership' && inputs.fixture_group != 'macho-data-const' && inputs.fixture_group
-      != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest' && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' }}
+      != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest' && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' && inputs.fixture_group != 'pair-intrinsic-forward' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -880,6 +880,68 @@ jobs:
           '
         if-no-files-found: error
         retention-days: 14
+  inspect-pair-intrinsic-forward:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'pair-intrinsic-forward' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare isolated frontend bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install matching host compiler and archive reader
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)''
+        | tee "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-pair-intrinsic-forward-bootstrap/dependencies.log"
+
+        '
+    - name: Recompile all five actual bridge units audit member replacement and trace original source rejection
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/replay-private-cpp-component.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-pair-source-replay-plan.json\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-source-replay\" \\\n  --build \"$RUNNER_TEMP/cpp-pair-source-rebuild\"\n"
+    - name: Verify clean source on eight ABIs and ten unchanged original guards
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-pair-intrinsic-forward-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-pair-intrinsic-forward
+
+          ${{ runner.temp }}/cpp-pair-intrinsic-forward-bootstrap
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+      run: "python3 utils/ci/replay-cpp-pair-intrinsic-forward.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-pair-intrinsic-forward-plan.json\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-intrinsic-forward\" \\\n  --build \"$RUNNER_TEMP/cpp-pair-intrinsic-forward-rebuild\"\
+        \n"
+    - name: Keep new actual source binary remotely for further diagnosis
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-pair-intrinsic-forward-binary-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 7
 'on':
   workflow_dispatch:
     inputs:
@@ -899,6 +961,7 @@ jobs:
         - algorithm-sdk-manifest
         - algorithm-sdk-abi-manifest
         - algorithm-manifest-formal
+        - pair-intrinsic-forward
   push:
     branches:
     - dev
