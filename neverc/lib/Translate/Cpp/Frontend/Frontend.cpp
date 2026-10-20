@@ -10598,6 +10598,11 @@ class UtilityPairPiecewiseOuterSources
     return observed((Complete), __LINE__);
   }
   bool signature(const FunctionDecl *Function) {
+    if (Function && std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+      llvm::errs() << "PAIR_OUTER_SIGNATURE_BEGIN\n";
+      Function->dump(llvm::errs());
+      llvm::errs() << "PAIR_OUTER_SIGNATURE_END\n";
+    }
     const auto *Info = Function->getTypeSourceInfo();
     if (!Info || !TraverseTypeLoc(Info->getTypeLoc()))
       return observed((false), __LINE__);
@@ -10687,6 +10692,16 @@ public:
            location(Statement->getBeginLoc()) && location(Statement->getEndLoc())), __LINE__);
   }
   bool VisitTypeLoc(TypeLoc Type) {
+    if ((Type.getBeginLoc().isInvalid() || Type.getEndLoc().isInvalid()) &&
+        std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+      llvm::errs() << "PAIR_OUTER_TYPELOC_BEGIN\n";
+      llvm::errs() << "class=" << Type.getType()->getTypeClassName()
+                   << " type=" << Type.getType().getAsString() << " begin=";
+      Type.getBeginLoc().print(llvm::errs(), A.Sources);
+      llvm::errs() << " end=";
+      Type.getEndLoc().print(llvm::errs(), A.Sources);
+      llvm::errs() << "\nPAIR_OUTER_TYPELOC_END\n";
+    }
     return observed((step(Type.getBeginLoc()) && location(Type.getBeginLoc()) &&
            location(Type.getEndLoc())), __LINE__);
   }
