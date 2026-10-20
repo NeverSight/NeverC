@@ -6,6 +6,12 @@ static bool pairStringFrontendObserved(bool Value, unsigned Line) {
   return Value;
 }
 
+static bool pairStringDependencyPredicate(bool Value, const char *Function, unsigned Atom) {
+  if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE"))
+    llvm::errs() << "PAIR_STRING_PREDICATE " << Function << ":" << Atom << "=" << Value << "\n";
+  return Value;
+}
+
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -10130,6 +10136,36 @@ class UtilityPairByteComparisonSources
     return pairStringFrontendObserved((Spelling && Spelling->Root == "libcxx" && Expansion &&
            Expansion->Root == "libcxx"), __LINE__);
   }
+  bool stringConstantQuery(CallExpr *Call, const FunctionDecl *Function) {
+      if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
+        llvm::errs() << "PAIR_STRING_BYTE_BUILTIN_BEGIN __builtin_constant_p\n";
+        Call->dump(llvm::errs(), A.Context);
+        Function->dump(llvm::errs());
+        llvm::errs() << "PAIR_STRING_BYTE_BUILTIN_END\n";
+      }
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    if (pairStringDependencyPredicate((!Origin), "stringConstantQuery.guard", 0) || pairStringDependencyPredicate((Origin->Root != "libcxx"), "stringConstantQuery.guard", 1) || pairStringDependencyPredicate((Origin->Path != "string"), "stringConstantQuery.guard", 2) || pairStringDependencyPredicate((Function->getBuiltinID() != Builtin::BI__builtin_constant_p), "stringConstantQuery.guard", 3) || pairStringDependencyPredicate((!Builtin), "stringConstantQuery.guard", 4) || pairStringDependencyPredicate((!Builtin->isImplicit()), "stringConstantQuery.guard", 5) || pairStringDependencyPredicate((Builtin->getID() != Builtin::BI__builtin_constant_p), "stringConstantQuery.guard", 6) || pairStringDependencyPredicate((!Function->isImplicit()), "stringConstantQuery.guard", 7) || pairStringDependencyPredicate((Function->isInvalidDecl()), "stringConstantQuery.guard", 8) || pairStringDependencyPredicate((Function->hasBody()), "stringConstantQuery.guard", 9) || pairStringDependencyPredicate((Function->getPrimaryTemplate()), "stringConstantQuery.guard", 10) || pairStringDependencyPredicate((Function->getNumParams()), "stringConstantQuery.guard", 11) || pairStringDependencyPredicate((!Function->isVariadic()), "stringConstantQuery.guard", 12) || pairStringDependencyPredicate((!Prototype), "stringConstantQuery.guard", 13) || pairStringDependencyPredicate((!Prototype->isNothrow()), "stringConstantQuery.guard", 14) || pairStringDependencyPredicate((!A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy)), "stringConstantQuery.guard", 15) || pairStringDependencyPredicate((!Cast), "stringConstantQuery.guard", 16) || pairStringDependencyPredicate((Cast->getCastKind() != CK_BuiltinFnToFnPtr), "stringConstantQuery.guard", 17) || pairStringDependencyPredicate((!Reference), "stringConstantQuery.guard", 18) || pairStringDependencyPredicate((Reference->getDecl() != Function), "stringConstantQuery.guard", 19) || pairStringDependencyPredicate((Reference->getFoundDecl() != Function), "stringConstantQuery.guard", 20) || pairStringDependencyPredicate((!Cast->getType()->isFunctionPointerType()), "stringConstantQuery.guard", 21) || pairStringDependencyPredicate((!A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType())), "stringConstantQuery.guard", 22) || pairStringDependencyPredicate((Call->getNumArgs() != 1), "stringConstantQuery.guard", 23) || pairStringDependencyPredicate((!Call->isPRValue()), "stringConstantQuery.guard", 24) || pairStringDependencyPredicate((!A.Context.hasSameType(Call->getType(), A.Context.IntTy)), "stringConstantQuery.guard", 25) || pairStringDependencyPredicate((!A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())), "stringConstantQuery.guard", 26))
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!Declaration->isImplicit() || Declaration->getBuiltinID() != Builtin::BI__builtin_constant_p)
+        return false;
+      if (Declaration->getLocation().isValid()) {
+        const auto File = A.S.sdkFile(A.Sources, Declaration->getLocation());
+        if (!File || File->Root != "libcxx" ||
+            (File->Path != "string" && File->Path != "__utility/is_valid_range.h"))
+          return false;
+      }
+    }
+    // A compiler proof query in the immutable helper, never an emitted call.
+    // The enclosing visitor still closes the original member/operand sources.
+    return true;
+  }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
@@ -10213,6 +10249,8 @@ public:
     if (!Function)
       return pairStringFrontendObserved((false), __LINE__);
     if (Function->getBuiltinID()) {
+      if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
+        return stringConstantQuery(Call, Function);
       const auto Name = Function->getName();
       if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE")) {
         llvm::errs() << "PAIR_STRING_BYTE_BUILTIN_BEGIN " << Name << "\n";

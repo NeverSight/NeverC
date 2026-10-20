@@ -44,7 +44,7 @@
   "feature_admission_or_guard_relaxed": false,
   "all_binaries_remote_only": true,
   "trace_preserves_false_return_values": true,
-  "trace_source_basis": "a9b2cdbc7aba1ed0564349f7ad560c0b5fb61112",
+  "trace_source_basis": "76955e4dc9b421f9fa078955eb120609a6d2de32",
   "cases": [
     {
       "name": "cstddef-predefines",
@@ -85,8 +85,8 @@
         {
           "begin": "class UtilityTupleQueryGraph\n",
           "end": "\nstatic const DeclRefExpr *approvedUtilityReference(",
-          "original_sha256": "d2121bfa41c77c295cfe82c9b5a55a4391750868ac641ccc1df280c422c93505",
-          "false_count": 419,
+          "original_sha256": "4ae7ab763e09859ffd6e857166057ecb04e941a9a0710e676e507d261d01c80c",
+          "false_count": 420,
           "empty_count": 5
         },
         {
@@ -97,22 +97,68 @@
           "empty_count": 7
         }
       ],
-      "helper": "static bool pairStringTraceFalse(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE MathSDK.cpp:\" << Line << \"\\n\";\n  return false;\n}\nstatic std::nullopt_t pairStringTraceEmpty(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_EMPTY MathSDK.cpp:\" << Line << \"\\n\";\n  return std::nullopt;\n}\n\n",
+      "helper": "static bool pairStringTraceFalse(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE MathSDK.cpp:\" << Line << \"\\n\";\n  return false;\n}\nstatic std::nullopt_t pairStringTraceEmpty(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_EMPTY MathSDK.cpp:\" << Line << \"\\n\";\n  return std::nullopt;\n}\n\nstatic bool pairStringDependencyPredicate(bool Value, const char *Function, unsigned Atom) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_PREDICATE \" << Function << \":\" << Atom << \"=\" << Value << \"\\n\";\n  return Value;\n}\n\n",
       "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
       "inserts": [
         "    if (PairTraitQuery && PairTraitQuery->getNumArgs() && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      const auto *Owner = PairTraitQuery->getArg(0)->getType()->getAsCXXRecordDecl();\n      if (Owner && Owner->getIdentifier() && Owner->getName() == \"basic_string\") {\n        llvm::errs() << \"PAIR_STRING_ROOT_BEGIN\\n\";\n        Source.Root->dump(llvm::errs(), Context);\n        PairTraitQuery->dump(llvm::errs(), Context);\n        llvm::errs() << \"PAIR_STRING_ROOT_END\\n\";\n      }\n    }\n",
         "    if (Mode == UtilityTupleQueryMode::PairConstruction && Constructor &&\n        Constructor->getParent()->getIdentifier() &&\n        Constructor->getParent()->getName() == \"basic_string\" &&\n        std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_BEGIN root=\" << (E == PairTraitConstruction)\n                   << \" query=\" << bool(PairTraitQuery) << \"\\n\";\n      E->dump(llvm::errs(), Context);\n      Constructor->dump(llvm::errs());\n      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_END\\n\";\n    }\n",
         "      if (D && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_REJECTED_DECL_BEGIN\\n\";\n        D->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_REJECTED_DECL_END\\n\";\n      }\n"
+      ],
+      "predicate_rewrites": [
+        {
+          "before": "Mode != UtilityTupleQueryMode::PairConstruction || !PairTraitQuery ||\n        !Constructor ||\n        (PairTraitQuery->getTrait() != TT_IsConstructible &&\n         PairTraitQuery->getTrait() != TT_IsNothrowConstructible) ||\n        PairTraitQuery->getNumArgs() != 3 || Operands.size() != 2 ||\n        !Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) ||\n        !PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) ||\n        !E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||\n        E->getNumArgs() != 2 || Constructor->getNumParams() != 2 ||\n        Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||\n        Constructor->isInvalidDecl() || Constructor->isVariadic() ||\n        Constructor->getAccess() != AS_public ||\n        !cstddefOrigin(S, SM, Constructor->getLocation(), \"libcxx\", \"string\")",
+          "after": "pairStringDependencyPredicate((Mode != UtilityTupleQueryMode::PairConstruction), \"pairStringFillTraitRoot.guard\", 0) || pairStringDependencyPredicate((!PairTraitQuery), \"pairStringFillTraitRoot.guard\", 1) || pairStringDependencyPredicate((!Constructor), \"pairStringFillTraitRoot.guard\", 2) || pairStringDependencyPredicate(((PairTraitQuery->getTrait() != TT_IsConstructible &&\n         PairTraitQuery->getTrait() != TT_IsNothrowConstructible)), \"pairStringFillTraitRoot.guard\", 3) || pairStringDependencyPredicate((PairTraitQuery->getNumArgs() != 3), \"pairStringFillTraitRoot.guard\", 4) || pairStringDependencyPredicate((Operands.size() != 2), \"pairStringFillTraitRoot.guard\", 5) || pairStringDependencyPredicate((!Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType())), \"pairStringFillTraitRoot.guard\", 6) || pairStringDependencyPredicate((!PairInputRecords.count(Constructor->getParent()->getCanonicalDecl())), \"pairStringFillTraitRoot.guard\", 7) || pairStringDependencyPredicate((!E->isPRValue()), \"pairStringFillTraitRoot.guard\", 8) || pairStringDependencyPredicate((E->getConstructionKind() != CXXConstructionKind::Complete), \"pairStringFillTraitRoot.guard\", 9) || pairStringDependencyPredicate((E->getNumArgs() != 2), \"pairStringFillTraitRoot.guard\", 10) || pairStringDependencyPredicate((Constructor->getNumParams() != 2), \"pairStringFillTraitRoot.guard\", 11) || pairStringDependencyPredicate((Constructor->getPrimaryTemplate()), \"pairStringFillTraitRoot.guard\", 12) || pairStringDependencyPredicate((Constructor->isDeleted()), \"pairStringFillTraitRoot.guard\", 13) || pairStringDependencyPredicate((Constructor->isInvalidDecl()), \"pairStringFillTraitRoot.guard\", 14) || pairStringDependencyPredicate((Constructor->isVariadic()), \"pairStringFillTraitRoot.guard\", 15) || pairStringDependencyPredicate((Constructor->getAccess() != AS_public), \"pairStringFillTraitRoot.guard\", 16) || pairStringDependencyPredicate((!cstddefOrigin(S, SM, Constructor->getLocation(), \"libcxx\", \"string\")), \"pairStringFillTraitRoot.guard\", 17)",
+          "label": "pairStringFillTraitRoot.guard",
+          "operator": "||",
+          "atoms": [
+            "Mode != UtilityTupleQueryMode::PairConstruction",
+            "!PairTraitQuery",
+            "!Constructor",
+            "(PairTraitQuery->getTrait() != TT_IsConstructible &&\n         PairTraitQuery->getTrait() != TT_IsNothrowConstructible)",
+            "PairTraitQuery->getNumArgs() != 3",
+            "Operands.size() != 2",
+            "!Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType())",
+            "!PairInputRecords.count(Constructor->getParent()->getCanonicalDecl())",
+            "!E->isPRValue()",
+            "E->getConstructionKind() != CXXConstructionKind::Complete",
+            "E->getNumArgs() != 2",
+            "Constructor->getNumParams() != 2",
+            "Constructor->getPrimaryTemplate()",
+            "Constructor->isDeleted()",
+            "Constructor->isInvalidDecl()",
+            "Constructor->isVariadic()",
+            "Constructor->getAccess() != AS_public",
+            "!cstddefOrigin(S, SM, Constructor->getLocation(), \"libcxx\", \"string\")"
+          ]
+        },
+        {
+          "before": "Prototype && Prototype->getExceptionSpecType() == EST_None &&\n        !Prototype->getNoexceptExpr() &&\n        Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType()) &&\n        Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy) &&\n        Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType()) &&\n        Context.hasSameType(E->getArg(1)->getType(), Context.CharTy) &&\n        !Constructor->getParamDecl(0)->hasDefaultArg() &&\n        !Constructor->getParamDecl(1)->hasDefaultArg() &&\n        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()",
+          "after": "pairStringDependencyPredicate((Prototype), \"pairStringFillTraitRoot.signature\", 0) && pairStringDependencyPredicate((Prototype->getExceptionSpecType() == EST_None), \"pairStringFillTraitRoot.signature\", 1) && pairStringDependencyPredicate((!Prototype->getNoexceptExpr()), \"pairStringFillTraitRoot.signature\", 2) && pairStringDependencyPredicate((Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())), \"pairStringFillTraitRoot.signature\", 3) && pairStringDependencyPredicate((Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy)), \"pairStringFillTraitRoot.signature\", 4) && pairStringDependencyPredicate((Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType())), \"pairStringFillTraitRoot.signature\", 5) && pairStringDependencyPredicate((Context.hasSameType(E->getArg(1)->getType(), Context.CharTy)), \"pairStringFillTraitRoot.signature\", 6) && pairStringDependencyPredicate((!Constructor->getParamDecl(0)->hasDefaultArg()), \"pairStringFillTraitRoot.signature\", 7) && pairStringDependencyPredicate((!Constructor->getParamDecl(1)->hasDefaultArg()), \"pairStringFillTraitRoot.signature\", 8) && pairStringDependencyPredicate((approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()), \"pairStringFillTraitRoot.signature\", 9)",
+          "label": "pairStringFillTraitRoot.signature",
+          "operator": "&&",
+          "atoms": [
+            "Prototype",
+            "Prototype->getExceptionSpecType() == EST_None",
+            "!Prototype->getNoexceptExpr()",
+            "Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())",
+            "Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy)",
+            "Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType())",
+            "Context.hasSameType(E->getArg(1)->getType(), Context.CharTy)",
+            "!Constructor->getParamDecl(0)->hasDefaultArg()",
+            "!Constructor->getParamDecl(1)->hasDefaultArg()",
+            "approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()"
+          ]
+        }
       ]
     },
     "Frontend.cpp": {
       "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
-      "helper": "static bool pairStringFrontendObserved(bool Value, unsigned Line) {\n  if (!Value && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE Frontend.cpp:\" << Line << \"\\n\";\n  return Value;\n}\n\n",
+      "helper": "static bool pairStringFrontendObserved(bool Value, unsigned Line) {\n  if (!Value && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE Frontend.cpp:\" << Line << \"\\n\";\n  return Value;\n}\n\nstatic bool pairStringDependencyPredicate(bool Value, const char *Function, unsigned Atom) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_PREDICATE \" << Function << \":\" << Atom << \"=\" << Value << \"\\n\";\n  return Value;\n}\n\n",
       "regions": [
         {
           "begin": "class UtilityPairByteComparisonSources\n",
           "end": "\nstatic bool utilityStringDestructionSource(",
-          "original_sha256": "a85e84be8475102287c38c241347ba6b104fdd060a7c13f60823e40302851a32",
+          "original_sha256": "50927abf9fbfad367d17cf98ff10215ce4a331b36df18318f06c236e40145f49",
           "return_rewrites": [
             {
               "before": "return true;",
@@ -179,9 +225,47 @@
       ],
       "false_return": "return pairStringFrontendObserved(false, __LINE__);",
       "inserts": [
-        "      if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_BEGIN \" << Name << \"\\n\";\n        Call->dump(llvm::errs(), A.Context);\n        Function->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_END\\n\";\n      }\n"
+        "      if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_BEGIN \" << Name << \"\\n\";\n        Call->dump(llvm::errs(), A.Context);\n        Function->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_END\\n\";\n      }\n",
+        "      if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_BEGIN __builtin_constant_p\\n\";\n        Call->dump(llvm::errs(), A.Context);\n        Function->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_END\\n\";\n      }\n"
       ],
-      "false_count": 3
+      "false_count": 3,
+      "predicate_rewrites": [
+        {
+          "before": "!Origin || Origin->Root != \"libcxx\" || Origin->Path != \"string\" ||\n        Function->getBuiltinID() != Builtin::BI__builtin_constant_p ||\n        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BI__builtin_constant_p ||\n        !Function->isImplicit() || Function->isInvalidDecl() || Function->hasBody() ||\n        Function->getPrimaryTemplate() || Function->getNumParams() ||\n        !Function->isVariadic() || !Prototype || !Prototype->isNothrow() ||\n        !A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy) ||\n        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||\n        Reference->getDecl() != Function || Reference->getFoundDecl() != Function ||\n        !Cast->getType()->isFunctionPointerType() ||\n        !A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType()) ||\n        Call->getNumArgs() != 1 || !Call->isPRValue() ||\n        !A.Context.hasSameType(Call->getType(), A.Context.IntTy) ||\n        !A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())",
+          "after": "pairStringDependencyPredicate((!Origin), \"stringConstantQuery.guard\", 0) || pairStringDependencyPredicate((Origin->Root != \"libcxx\"), \"stringConstantQuery.guard\", 1) || pairStringDependencyPredicate((Origin->Path != \"string\"), \"stringConstantQuery.guard\", 2) || pairStringDependencyPredicate((Function->getBuiltinID() != Builtin::BI__builtin_constant_p), \"stringConstantQuery.guard\", 3) || pairStringDependencyPredicate((!Builtin), \"stringConstantQuery.guard\", 4) || pairStringDependencyPredicate((!Builtin->isImplicit()), \"stringConstantQuery.guard\", 5) || pairStringDependencyPredicate((Builtin->getID() != Builtin::BI__builtin_constant_p), \"stringConstantQuery.guard\", 6) || pairStringDependencyPredicate((!Function->isImplicit()), \"stringConstantQuery.guard\", 7) || pairStringDependencyPredicate((Function->isInvalidDecl()), \"stringConstantQuery.guard\", 8) || pairStringDependencyPredicate((Function->hasBody()), \"stringConstantQuery.guard\", 9) || pairStringDependencyPredicate((Function->getPrimaryTemplate()), \"stringConstantQuery.guard\", 10) || pairStringDependencyPredicate((Function->getNumParams()), \"stringConstantQuery.guard\", 11) || pairStringDependencyPredicate((!Function->isVariadic()), \"stringConstantQuery.guard\", 12) || pairStringDependencyPredicate((!Prototype), \"stringConstantQuery.guard\", 13) || pairStringDependencyPredicate((!Prototype->isNothrow()), \"stringConstantQuery.guard\", 14) || pairStringDependencyPredicate((!A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy)), \"stringConstantQuery.guard\", 15) || pairStringDependencyPredicate((!Cast), \"stringConstantQuery.guard\", 16) || pairStringDependencyPredicate((Cast->getCastKind() != CK_BuiltinFnToFnPtr), \"stringConstantQuery.guard\", 17) || pairStringDependencyPredicate((!Reference), \"stringConstantQuery.guard\", 18) || pairStringDependencyPredicate((Reference->getDecl() != Function), \"stringConstantQuery.guard\", 19) || pairStringDependencyPredicate((Reference->getFoundDecl() != Function), \"stringConstantQuery.guard\", 20) || pairStringDependencyPredicate((!Cast->getType()->isFunctionPointerType()), \"stringConstantQuery.guard\", 21) || pairStringDependencyPredicate((!A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType())), \"stringConstantQuery.guard\", 22) || pairStringDependencyPredicate((Call->getNumArgs() != 1), \"stringConstantQuery.guard\", 23) || pairStringDependencyPredicate((!Call->isPRValue()), \"stringConstantQuery.guard\", 24) || pairStringDependencyPredicate((!A.Context.hasSameType(Call->getType(), A.Context.IntTy)), \"stringConstantQuery.guard\", 25) || pairStringDependencyPredicate((!A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())), \"stringConstantQuery.guard\", 26)",
+          "label": "stringConstantQuery.guard",
+          "operator": "||",
+          "atoms": [
+            "!Origin",
+            "Origin->Root != \"libcxx\"",
+            "Origin->Path != \"string\"",
+            "Function->getBuiltinID() != Builtin::BI__builtin_constant_p",
+            "!Builtin",
+            "!Builtin->isImplicit()",
+            "Builtin->getID() != Builtin::BI__builtin_constant_p",
+            "!Function->isImplicit()",
+            "Function->isInvalidDecl()",
+            "Function->hasBody()",
+            "Function->getPrimaryTemplate()",
+            "Function->getNumParams()",
+            "!Function->isVariadic()",
+            "!Prototype",
+            "!Prototype->isNothrow()",
+            "!A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy)",
+            "!Cast",
+            "Cast->getCastKind() != CK_BuiltinFnToFnPtr",
+            "!Reference",
+            "Reference->getDecl() != Function",
+            "Reference->getFoundDecl() != Function",
+            "!Cast->getType()->isFunctionPointerType()",
+            "!A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType())",
+            "Call->getNumArgs() != 1",
+            "!Call->isPRValue()",
+            "!A.Context.hasSameType(Call->getType(), A.Context.IntTy)",
+            "!A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())"
+          ]
+        }
+      ]
     }
   },
   "source_trace_preserves_all_returns": true,
@@ -232,10 +316,10 @@
     "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp"
   ],
   "actual_previous_source_execution_failure": {
-    "commit": "973a78acc610a21b2449e7b752607939af309948",
-    "run_id": 39397474584,
-    "artifact_id": 12252692204,
-    "report_sha256": "eb3c8034ccd683a4ba6aacbe4f8cfffe2990d4d1e186e6c255c791f2cf6efb22",
+    "commit": "0acc34f233c19f4b425b41009544f57a654aea02",
+    "run_id": 39408349176,
+    "artifact_id": 12257904555,
+    "report_sha256": "463bafa2eaa3df089de4c3725ed99a6ae78040e2215be57291b357be8adb82e9",
     "actual_requests": 120,
     "accepted_positive_requests": 24,
     "original_source_guard_rejections": 80,
@@ -520,6 +604,15 @@
     "run_id": 39401988046,
     "artifact_id": 12256641933,
     "report_sha256": "153259eb746778f952395625d1d6b112f6b322ede0dca4c7de1b449c41d3e520",
+    "actual_requests": 4,
+    "accepted_controls": 2,
+    "reproduced_pair_rejections": 2
+  },
+  "actual_previous_dependency_identity_trace": {
+    "commit": "e274b44cab764c322edeb6eb58f6edf4ee6c3094",
+    "run_id": 39405037064,
+    "artifact_id": 12257265769,
+    "report_sha256": "b3599ddedf8649872f31d68562db14a2eb1cd084b44f4c8424ab46d82eebdb09",
     "actual_requests": 4,
     "accepted_controls": 2,
     "reproduced_pair_rejections": 2

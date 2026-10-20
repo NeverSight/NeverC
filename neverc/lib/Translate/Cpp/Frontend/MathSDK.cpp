@@ -11,6 +11,12 @@ static std::nullopt_t pairStringTraceEmpty(unsigned Line) {
   return std::nullopt;
 }
 
+static bool pairStringDependencyPredicate(bool Value, const char *Function, unsigned Atom) {
+  if (std::getenv("NEVERC_CPP_PAIR_SOURCE_TRACE"))
+    llvm::errs() << "PAIR_STRING_PREDICATE " << Function << ":" << Atom << "=" << Value << "\n";
+  return Value;
+}
+
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -7679,6 +7685,15 @@ class UtilityTupleQueryGraph
     }
     return true;
   }
+  bool pairStringFillTraitRoot() const {
+    const auto *E = PairTraitConstruction;
+    const auto *Constructor = E ? E->getConstructor() : nullptr;
+    if (pairStringDependencyPredicate((Mode != UtilityTupleQueryMode::PairConstruction), "pairStringFillTraitRoot.guard", 0) || pairStringDependencyPredicate((!PairTraitQuery), "pairStringFillTraitRoot.guard", 1) || pairStringDependencyPredicate((!Constructor), "pairStringFillTraitRoot.guard", 2) || pairStringDependencyPredicate(((PairTraitQuery->getTrait() != TT_IsConstructible &&
+         PairTraitQuery->getTrait() != TT_IsNothrowConstructible)), "pairStringFillTraitRoot.guard", 3) || pairStringDependencyPredicate((PairTraitQuery->getNumArgs() != 3), "pairStringFillTraitRoot.guard", 4) || pairStringDependencyPredicate((Operands.size() != 2), "pairStringFillTraitRoot.guard", 5) || pairStringDependencyPredicate((!Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType())), "pairStringFillTraitRoot.guard", 6) || pairStringDependencyPredicate((!PairInputRecords.count(Constructor->getParent()->getCanonicalDecl())), "pairStringFillTraitRoot.guard", 7) || pairStringDependencyPredicate((!E->isPRValue()), "pairStringFillTraitRoot.guard", 8) || pairStringDependencyPredicate((E->getConstructionKind() != CXXConstructionKind::Complete), "pairStringFillTraitRoot.guard", 9) || pairStringDependencyPredicate((E->getNumArgs() != 2), "pairStringFillTraitRoot.guard", 10) || pairStringDependencyPredicate((Constructor->getNumParams() != 2), "pairStringFillTraitRoot.guard", 11) || pairStringDependencyPredicate((Constructor->getPrimaryTemplate()), "pairStringFillTraitRoot.guard", 12) || pairStringDependencyPredicate((Constructor->isDeleted()), "pairStringFillTraitRoot.guard", 13) || pairStringDependencyPredicate((Constructor->isInvalidDecl()), "pairStringFillTraitRoot.guard", 14) || pairStringDependencyPredicate((Constructor->isVariadic()), "pairStringFillTraitRoot.guard", 15) || pairStringDependencyPredicate((Constructor->getAccess() != AS_public), "pairStringFillTraitRoot.guard", 16) || pairStringDependencyPredicate((!cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string")), "pairStringFillTraitRoot.guard", 17))
+      return false;
+    const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+    return pairStringDependencyPredicate((Prototype), "pairStringFillTraitRoot.signature", 0) && pairStringDependencyPredicate((Prototype->getExceptionSpecType() == EST_None), "pairStringFillTraitRoot.signature", 1) && pairStringDependencyPredicate((!Prototype->getNoexceptExpr()), "pairStringFillTraitRoot.signature", 2) && pairStringDependencyPredicate((Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())), "pairStringFillTraitRoot.signature", 3) && pairStringDependencyPredicate((Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy)), "pairStringFillTraitRoot.signature", 4) && pairStringDependencyPredicate((Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType())), "pairStringFillTraitRoot.signature", 5) && pairStringDependencyPredicate((Context.hasSameType(E->getArg(1)->getType(), Context.CharTy)), "pairStringFillTraitRoot.signature", 6) && pairStringDependencyPredicate((!Constructor->getParamDecl(0)->hasDefaultArg()), "pairStringFillTraitRoot.signature", 7) && pairStringDependencyPredicate((!Constructor->getParamDecl(1)->hasDefaultArg()), "pairStringFillTraitRoot.signature", 8) && pairStringDependencyPredicate((approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()), "pairStringFillTraitRoot.signature", 9);
+  }
   bool pinned(const Decl *D) {
     if (!D || !step() || D->isInvalidDecl() ||
         !approvedStandardSDKDeclaration(S, SM, D))
@@ -7698,7 +7713,12 @@ class UtilityTupleQueryGraph
               Origin->Path == "__utility/integer_sequence.h" ||
               Origin->Path == "__memory/unique_ptr.h")) ||
             Origin->Path == "string" || Origin->Path == "string_view" ||
-            llvm::StringRef(Origin->Path).starts_with("__fwd/"));
+            llvm::StringRef(Origin->Path).starts_with("__fwd/") ||
+            // Only this retained, independently bound count/char signature
+            // consumes allocator_traits' actual size_type alias dependencies.
+            // This metadata walker grants no allocator operation or body.
+            ((Origin->Path == "__memory/allocator_traits.h" ||
+              Origin->Path == "__memory/allocator.h") && pairStringFillTraitRoot()));
   }
   bool family(const Decl *D) {
     bool Complete = false;
