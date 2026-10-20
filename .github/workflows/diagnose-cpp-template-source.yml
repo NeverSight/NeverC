@@ -93,7 +93,7 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
       != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group
       != 'session-cache-ownership' && inputs.fixture_group != 'macho-data-const' && inputs.fixture_group
-      != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest' && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' }}
+      != 'macho-image-backend' && inputs.fixture_group != 'algorithm-sdk-manifest' && inputs.fixture_group != 'algorithm-sdk-abi-manifest' && inputs.fixture_group != 'algorithm-manifest-formal' && inputs.fixture_group != 'arm-abi-oracles' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -880,6 +880,54 @@ jobs:
           '
         if-no-files-found: error
         retention-days: 14
+  inspect-arm-abi-oracles:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'arm-abi-oracles' }}
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    env:
+      NEVERC_PCG_STRICT: '1'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up native pinned Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+        architecture: arm64
+    - name: Set up actual ARM64 MSVC reference compiler
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
+    - name: Authenticate existing repaired compiler on Actions only
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: 'python utils/ci/download-repaired-windows-arm.py --run-id 39341054945 --revision 43c7c0c55874c8b3ebfd4c1c39096189741f9616
+        --output "$env:RUNNER_TEMP/cpp-arm-abi-compiler"
+
+        '
+    - name: Verify ABI oracles and retain actual remaining frontend layout and crash failures
+      shell: pwsh
+      run: 'python utils/ci/check-arm-abi-oracles.py --repo "$env:GITHUB_WORKSPACE" --plan utils/ci/cpp-arm-abi-oracles-plan.json
+        --baseline "$env:RUNNER_TEMP/cpp-arm-abi-compiler/provenance.json" --output "$env:RUNNER_TEMP/cpp-arm-abi-oracles" --build
+        "$env:RUNNER_TEMP/cpp-arm-abi-programs"
+
+        '
+    - name: Upload only small original sources requests responses generated NC and raw results
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-arm-abi-oracles-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-arm-abi-oracles
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain actual native programs remotely
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-arm-abi-programs-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-arm-abi-programs
+        if-no-files-found: warn
+        retention-days: 7
 'on':
   workflow_dispatch:
     inputs:
@@ -899,6 +947,7 @@ jobs:
         - algorithm-sdk-manifest
         - algorithm-sdk-abi-manifest
         - algorithm-manifest-formal
+        - arm-abi-oracles
   push:
     branches:
     - dev
