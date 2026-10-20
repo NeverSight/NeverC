@@ -12155,7 +12155,7 @@ class NotFnPointerSourceProof {
           Source->Template != Template || Source->Location != Root.getTemplateNameLoc()) continue;
       if (!Source->FunctionalNotFnConstraint || !Source->Underlying ||
           Source->Declaration || !Source->Type || !Source->Written ||
-          Source->Written->size() != Root.getNumArgs() || !arguments(*Source)) return nullptr;
+          Source->Written->getNumTemplateArgs() != Root.getNumArgs() || !arguments(*Source)) return nullptr;
       for (unsigned I = 0; I < Root.getNumArgs(); ++I) {
         const auto &Written = Source->Written->arguments()[I];
         const auto Actual = Root.getArgLoc(I);
@@ -12197,8 +12197,9 @@ class NotFnPointerSourceProof {
     // Original, substituted and converted void spellings are inspected as
     // independent source nodes. The canonical void result is insufficient.
     const auto *Original = Default->getDefaultArgument().getTypeSourceInfo();
-    for (const auto *Info : {Original, Use.Written.getTypeSourceInfo(),
-                             Use.Converted.getTypeSourceInfo()})
+    const TypeSourceInfo *Spellings[] = {Original,
+        Use.Written.getTypeSourceInfo(), Use.Converted.getTypeSourceInfo()};
+    for (const auto *Info : Spellings)
       if (!Info || !Info->getType()->isVoidType() ||
           !Info->getTypeLoc().getAs<BuiltinTypeLoc>() ||
           !Check.location(Info->getTypeLoc().getBeginLoc(), {"__type_traits/enable_if.h"}) ||
