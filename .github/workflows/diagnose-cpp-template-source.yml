@@ -91,7 +91,7 @@ jobs:
         \  if [ \"$result\" -ne 10 ]; then\n    status=1\n  fi\ndone\nexit \"$status\"\n"
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group
       != 'windows-arm-source-repair' && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group
-      != 'session-cache-ownership' }}
+      != 'session-cache-ownership' && inputs.fixture_group != 'private-frontend-protocol' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -649,6 +649,61 @@ jobs:
           '
         if-no-files-found: error
         retention-days: 14
+  inspect-private-frontend-protocol:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'private-frontend-protocol'
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare isolated frontend bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-private-frontend-evidence/bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-private-frontend-evidence/bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-private-frontend-evidence/bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install matching host compiler and archive reader
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest);
+        print(sys.version)'' | tee "$RUNNER_TEMP/cpp-private-frontend-evidence/bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-private-frontend-evidence/bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-private-frontend-evidence/bootstrap/dependencies.log"
+
+        '
+    - name: Build actual isolated frontend and replay unmodified project tests and SDK requests
+      run: "python3 utils/ci/check-private-frontend-protocol.py --repo \"$GITHUB_WORKSPACE\" \\\n  --output\
+        \ \"$RUNNER_TEMP/cpp-private-frontend-evidence\" \\\n  --build \"$RUNNER_TEMP/cpp-private-frontend-build\"\
+        \n"
+    - name: Upload actual protocol evidence without compiler binaries
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-private-frontend-protocol-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-evidence
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain actual frontend binary remotely for source diagnosis
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-private-frontend-binary-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-protocol
+        if-no-files-found: warn
+        retention-days: 7
+        compression-level: 0
 'on':
   workflow_dispatch:
     inputs:
@@ -663,6 +718,7 @@ jobs:
         - windows-arm-source-repair
         - fastlink-request-ownership
         - session-cache-ownership
+        - private-frontend-protocol
   push:
     branches:
     - dev
