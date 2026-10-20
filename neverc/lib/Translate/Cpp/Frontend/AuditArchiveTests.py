@@ -1497,8 +1497,21 @@ public:
       } else if (FirstInstantiation) {
 // After variable instantiation.
 '''
-        files['clang/lib/Sema/SemaExpr.cpp'] = (full_initializer_original +
-                                             deduced_variable_original)
+        # Independent ordinary-call source, matching the pinned SemaExpr headers.
+        ordinary_call_headers = ('#include "clang/AST/ASTConsumer.h"\n'
+                                 '#include "clang/AST/ASTContext.h"\n')
+        ordinary_call_original = '  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);\n'
+        ordinary_call_expected = '''  auto NeverCOrdinaryCallResult =
+      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);
+  if (!NeverCOrdinaryCallResult.isInvalid() && FDecl &&
+      FDecl->getPrimaryTemplate() &&
+      getASTConsumer().wantsNeverCTemplateSource())
+    getASTConsumer().HandleNeverCSelectedTemplateCallSource(
+        TheCall, FDecl, TheCall->getExprLoc());
+  return NeverCOrdinaryCallResult;
+'''
+        files['clang/lib/Sema/SemaExpr.cpp'] = (ordinary_call_headers + ordinary_call_original +
+                                             full_initializer_original + deduced_variable_original)
 
         # Independent explicit-instantiation source callback fixtures.
         explicit_header_original = '// Independent template-source contract fixture.\n  class ASTContext;\n  class CXXRecordDecl;\n  class VarDecl;\n  class FunctionDecl;\n  class ImportDecl;\n// Unchanged between source anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n// Unchanged between source anchors.\n  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n// End source contract fixture.\n'
@@ -1667,6 +1680,7 @@ public:
             self.assertEqual(argument_reference_path.read_text(encoding="utf-8"), argument_reference_expected + call_overload_expected)
             full_initializer_path = source / "clang/lib/Sema/SemaExpr.cpp"
             self.assertEqual(full_initializer_path.read_text(encoding="utf-8"),
+                             ordinary_call_headers + ordinary_call_expected +
                              full_initializer_expected + deduced_variable_expected)
             # All callback files must match the independently written contract.
             explicit_paths = [
@@ -1903,7 +1917,8 @@ public:
             }
             for state, contents in full_initializer_states.items():
                 with self.subTest(copied_full_initializer_state=state):
-                    full_initializer_path.write_text(contents + deduced_variable_expected,
+                    full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                                     contents + deduced_variable_expected,
                                                      encoding="utf-8")
                     untouched = snapshot_all_files()
                     run_script(False, "Unexpected pinned Clang copied full initializer source in " +
@@ -1914,7 +1929,8 @@ public:
             run_script(False, "Unexpected pinned Clang copied full initializer source in " +
                        str(full_initializer_path))
             self.assertEqual(snapshot_all_files(), untouched)
-            full_initializer_path.write_text(full_initializer_original + deduced_variable_original,
+            full_initializer_path.write_text(ordinary_call_headers + ordinary_call_original +
+                                             full_initializer_original + deduced_variable_original,
                                              encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
@@ -1940,13 +1956,55 @@ public:
             }
             for state, contents in deduced_variable_states.items():
                 with self.subTest(deduced_variable_state=state):
-                    full_initializer_path.write_text(full_initializer_expected + contents,
+                    full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                                     full_initializer_expected + contents,
                                                      encoding="utf-8")
                     untouched = snapshot_all_files()
                     run_script(False, "Unexpected pinned Clang deduced variable source in " +
                                str(full_initializer_path))
                     self.assertEqual(snapshot_all_files(), untouched, state)
-            full_initializer_path.write_text(full_initializer_expected + deduced_variable_original,
+            full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                             full_initializer_expected + deduced_variable_original,
+                                             encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            ordinary_call_states = {
+                "missing source": "",
+                "duplicate original": ordinary_call_original * 2,
+                "duplicate rewritten": ordinary_call_expected * 2,
+                "mixed blocks": ordinary_call_original + ordinary_call_expected,
+                "removed primary guard": ordinary_call_expected.replace(
+                    "FDecl->getPrimaryTemplate() &&", "true &&", 1),
+                "removed consumer guard": ordinary_call_expected.replace(
+                    "getASTConsumer().wantsNeverCTemplateSource()", "true", 1),
+                "orphan marker": ordinary_call_original + "bool NeverCOrdinaryCallResult;\n",
+            }
+            for state, contents in ordinary_call_states.items():
+                with self.subTest(ordinary_call_state=state):
+                    full_initializer_path.write_text(ordinary_call_headers + contents +
+                                                     full_initializer_expected + deduced_variable_expected,
+                                                     encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang ordinary template-call source in " +
+                               str(full_initializer_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            for state, headers in {
+                    "missing consumer header": ordinary_call_headers.replace(
+                        '#include "clang/AST/ASTConsumer.h"\n', ''),
+                    "duplicate context header": ordinary_call_headers +
+                        '#include "clang/AST/ASTContext.h"\n'}.items():
+                with self.subTest(ordinary_call_header_state=state):
+                    full_initializer_path.write_text(headers + ordinary_call_expected +
+                                                     full_initializer_expected + deduced_variable_expected,
+                                                     encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang ordinary template-call source in " +
+                               str(full_initializer_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                             full_initializer_expected + deduced_variable_expected,
                                              encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
