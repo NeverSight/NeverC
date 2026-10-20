@@ -30299,7 +30299,7 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                              {"version", "20.1.8"},
                                              {"build", NEVERC_CPP_BUILD_ID}}}};
   bool Valid = request(S, Request);
-  if (Valid && S.sdk() && !isolateProjectEnvironment()) {
+  if (Valid && (S.project() || S.sdk()) && !isolateProjectEnvironment()) {
     S.diagnose(
         "TR0101", "frontend environment",
         "Cannot isolate implicit compiler configuration from the environment.",
