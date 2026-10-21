@@ -15,6 +15,7 @@ on:
       - "tests/neverc/**"
       - "docs/plugin-api/**"
       - "utils/ci/check-python-plugin-artifacts.py"
+      - "utils/ci/test-python-plugin-artifacts-policy.py"
       - "utils/plugin-api/**"
       - "utils/release/**"
       - ".github/scripts/configure-apt-ubuntu.sh"
@@ -30,6 +31,7 @@ on:
       - "tests/neverc/**"
       - "docs/plugin-api/**"
       - "utils/ci/check-python-plugin-artifacts.py"
+      - "utils/ci/test-python-plugin-artifacts-policy.py"
       - "utils/plugin-api/**"
       - "utils/release/**"
       - ".github/scripts/configure-apt-ubuntu.sh"
@@ -50,6 +52,9 @@ jobs:
 
       - name: Check every compiler artifact producer
         run: python3 utils/ci/check-python-plugin-artifacts.py
+
+      - name: Check archive policy rejection boundaries
+        run: python3 utils/ci/test-python-plugin-artifacts-policy.py
 
       - name: Check managed CPython artifact map
         run: cmake -P neverc/cmake/tests/ManagedCPythonContract.cmake

@@ -1,0 +1,817 @@
+{
+  "fixture_group": "ordinary-selected-call-replay",
+  "producer_commit": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+  "producer_run_id": 39523812510,
+  "producer_small_artifact": {
+    "id": 12313907123,
+    "name": "cpp-not-fn-operator-component-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:0a8bd33fa518f0fe6940c8ca129385980283b266f2fd96566fa918acf0cf941e"
+  },
+  "producer_components_artifact": {
+    "id": 12313187412,
+    "name": "cpp-not-fn-operator-components-remote-only-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:9edf4623b5f8535b68b1b64865e6a71f5003bf03c3ba5b62b049a7069428a0d7"
+  },
+  "producer_report_sha256": "0d82c9f8adaab735c8cb59c16350a9aac20f842d56e065f00cd0942c1746b22a",
+  "producer_manifest_sha256": "18eb72d30afc3c44c68abfd1020f0f664de3263c25187028982470988610c151",
+  "producer_private_input_sha256": {
+    "Frontend.cpp": "d5e4732cf9499501d124ea5adbcaf192a7b6ec39915c8662cd69e331e6ddb7f6",
+    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "cb678512a78a9dcc8229202c3a5b0b95e35e4f8a1d693ffdc97db707327a1248",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "ee5b66d539d1fff7542a156575d62145d504a2832ed334647616e58963808e7f",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "allowed_bridge_source_changes": [
+    "Frontend.h",
+    "MathSDK.cpp"
+  ],
+  "candidate_source_paths": [
+    "utils/ci/replay-cpp-ordinary-selected-call.py",
+    "utils/ci/cpp-ordinary-selected-call-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "utils/ci/FrontendProtocolDriver.cpp",
+    "tests/neverc/TranslateTests.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/IsolateSymbols.py",
+    "neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py"
+  ],
+  "source_repair_commit": "ec5776a78d9e89b07f18d8eb5bdb180db060b2e8",
+  "target_abis": [
+    "x86_64-apple-macosx15.0.0",
+    "arm64-apple-macosx15.0.0",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "i686-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "i686-pc-windows-msvc"
+  ],
+  "cases": [
+    {
+      "name": "cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept"
+    },
+    {
+      "name": "tuple-get",
+      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
+      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-direct",
+      "source": "#include <memory>\n#include <utility>\nint main(){std::unique_ptr<int> a(new int(41));int* raw=a.get();\n std::pair<std::unique_ptr<int>,int> p(std::move(a),7);\n return a.get()!=nullptr||p.first.get()!=raw||*p.first!=41||p.second!=7;}\n",
+      "source_sha256": "558bd1077d838df1f531bea2673cd884bf2513da6345a67e19849055ac0b0cfe",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-whole-converting",
+      "source": "#include <memory>\n#include <utility>\nint main(){using P=std::pair<std::unique_ptr<int>,int>;\n std::unique_ptr<int> a(new int(43));P p(std::move(a),9);int* raw=p.first.get();\n P q(std::move(p));std::pair<std::unique_ptr<int>,long> z(std::move(q));\n return p.first.get()!=nullptr||q.first.get()!=nullptr||z.first.get()!=raw||\n        *z.first!=43||z.second!=9;}\n",
+      "source_sha256": "e805c7b85606b60d6b62734f0b18e2a298dc5fc22d164c53594e3d61f17ef936",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-repeated-move",
+      "source": "#include <memory>\n#include <utility>\nint main(){using P=std::pair<std::unique_ptr<int>,int>;\n std::unique_ptr<int> a(new int(47));int* raw=a.get();\n P p(std::move(a),1);P q(std::move(a),2);P z(std::move(p));P w(std::move(p));\n return a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=nullptr||\n        w.first.get()!=nullptr||z.first.get()!=raw||*z.first!=47;}\n",
+      "source_sha256": "44c04fbfa626cba5e20e72345443e0684cbbc952a20bce69a23fa1f67c1ab3b1",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-return-ignore",
+      "source": "#include <memory>\n#include <utility>\nint deleted;\nstruct Item{int value;Item(int n):value(n){}~Item(){++deleted;}};\nusing P=std::pair<std::unique_ptr<Item>,int>;\nP make(int n){std::unique_ptr<Item> a(new Item(n));return P(std::move(a),n);}\nint main(){{P p=make(5);if(p.first->value!=5||p.second!=5||deleted)return 1;}\n if(deleted!=1)return 2;make(7);return deleted!=2;}\n",
+      "source_sha256": "f6da8c4961e8f0a834a2ab13d090390f2861e303aab2671ffda014027e6aba8d",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-array",
+      "source": "#include <memory>\n#include <utility>\nint deleted;\nstruct Item{int value;Item():value(3){}~Item(){++deleted;}};\nint main(){{std::unique_ptr<Item[]> a(new Item[3]);Item* raw=a.get();\n std::pair<std::unique_ptr<Item[]>,int> p(std::move(a),3);\n std::pair<std::unique_ptr<Item[]>,int> q(std::move(p));\n if(a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=raw||\n    q.first[2].value!=3||deleted)return 1;}\n return deleted!=3;}\n",
+      "source_sha256": "a9fdd8050b22fb755a46d547a9c97e535ca288115ec810324a5f16e2c4b9125f",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-empty-deleter",
+      "source": "#include <memory>\n#include <utility>\nint deleted;\nstruct D{void operator()(int* p)const noexcept{++deleted;delete p;}};\nint main(){{using U=std::unique_ptr<int,D>;U a(new int(53));int* raw=a.get();\n std::pair<U,int> p(std::move(a),4);std::pair<U,long> q(std::move(p));\n if(a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=raw||\n    *q.first!=53||deleted)return 1;}return deleted!=1;}\n",
+      "source_sha256": "abe0069d8deea5ad41d44e733b400de4726622952452d6663f49ff025b5903e2",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-argument-effects",
+      "source": "#include <memory>\n#include <utility>\nusing U=std::unique_ptr<int>;\nint calls;\nU& source(U& value){++calls;return value;}\nint scalar(){++calls;return 9;}\nint main(){U a(new int(59));std::pair<U,int> p(std::move(source(a)),scalar());\n if(calls!=2||a.get()!=nullptr||*p.first!=59||p.second!=9)return 1;\n U b(new int(61));std::pair<U,U> q(std::move(source(b)),std::move(source(b)));\n return calls!=4||b.get()!=nullptr||*q.first!=61||q.second.get()!=nullptr;}\n",
+      "source_sha256": "7d96e2d871c52e0f000283e4814a64bd95cf8d316d7258599f7c092f7ef68075",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-second-slot",
+      "source": "#include <memory>\n#include <utility>\nint deleted,wrong;\nconst void* expected;\nstruct D{void operator()(int* p)const noexcept{if(static_cast<const void*>(this)!=expected)++wrong;++deleted;delete p;}};\nusing U=std::unique_ptr<int,D>;using P=std::pair<int,U>;\nint main(){{U a(new int(67));P p(7,std::forward<U>(a));int* raw=p.second.get();\n std::pair<long,U> q(std::move(p));expected=static_cast<const void*>(&q.second.get_deleter());\n if(a.get()!=nullptr||p.second.get()!=nullptr||q.second.get()!=raw||*q.second!=67||q.first!=7||deleted)return 1;}\n return deleted!=1||wrong;}\n",
+      "source_sha256": "0801ce5f26aa18925ae37bbada47ed9163f328468f48d58c9e7ba9b921077eb1",
+      "original_test": "CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-source-records-order",
+      "source": "#include <tuple>\n#include <utility>\nint trace,destroyed;struct X{int value;X(int a,int b):value(a+b){trace=trace*10+1;}~X(){++destroyed;}};struct Y{int value;explicit Y(int n):value(n){trace=trace*10+2;}~Y(){++destroyed;}};\nint main(){{std::pair<X,Y> p(std::piecewise_construct,std::tuple<int,int>(3,4),std::tuple<int>(9));if(p.first.value!=7||p.second.value!=9||trace!=12||destroyed)return 1;}return destroyed!=2;}\n",
+      "source_sha256": "0c9dbc43fa0178e27dee2f8912f644159897e454feb9e8124bc96d0bdb452c36",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-string-fill",
+      "source": "#include <string>\n#include <tuple>\n#include <utility>\nint main(){std::pair<std::string,int> p(std::piecewise_construct,std::forward_as_tuple(3,'x'),std::forward_as_tuple(7));return p.first.size()!=3||p.first[0]!='x'||p.first[2]!='x'||p.second!=7;}\n",
+      "source_sha256": "7ad8e18df32e6b2f25ce1c8e5aa358acb2df5335929dcde1dc3ec729a4aacd4d",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-owner-pointer",
+      "source": "#include <memory>\n#include <tuple>\n#include <utility>\nint destroyed;struct X{int value;~X(){++destroyed;}};\nint main(){{X* raw=new X{17};std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::forward_as_tuple(raw),std::forward_as_tuple(9));if(p.first.get()!=raw||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}\n",
+      "source_sha256": "f2b331bd6907d1f6d20831164c387dcf2d5a1842b5c359bc75cf12874ec27e78",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-reference-bindings",
+      "source": "#include <tuple>\n#include <utility>\nint main(){int x=3,y=9;std::pair<int&,int&> p(std::piecewise_construct,std::forward_as_tuple(x),std::forward_as_tuple(y));p.first=7;p.second=11;return &p.first!=&x||&p.second!=&y||x!=7||y!=11;}\n",
+      "source_sha256": "8262e44047a4710378248d9068322535ac93cb0347563802a0002cc8c5feeab5",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-empty-defaults",
+      "source": "#include <memory>\n#include <string>\n#include <tuple>\n#include <utility>\nint main(){std::pair<std::string,std::unique_ptr<int>> p(std::piecewise_construct,std::tuple<>(),std::tuple<>());return !p.first.empty()||p.second.get()!=nullptr;}\n",
+      "source_sha256": "153a3e24302b7daf10dec263d42ceab1b01fc106ff69bc913323b757bc1cf273",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-value-tuple-isolation",
+      "source": "#include <tuple>\n#include <utility>\nstruct X{int value;explicit X(int&& n):value(n){n=7;}};\nint main(){std::tuple<int> input(3);std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));return p.first.value!=3||p.second!=9||std::get<0>(input)!=3;}\n",
+      "source_sha256": "7cf05ce7dfa879c1db872318313cb803a7ee5770c8d628af72d801c90ffffd96",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-value-tuple-cleanup",
+      "source": "#include <tuple>\n#include <utility>\nint live,copies,destroyed;struct Token{int value;explicit Token(int n):value(n){++live;}Token(const Token& t):value(t.value){++live;++copies;}~Token(){--live;++destroyed;}};\nstruct X{int value;explicit X(Token&& t):value(t.value){if(live!=2)value=-1;t.value=7;}};\nint main(){auto input=std::make_tuple(Token(3));if(live!=1)return 1;copies=0;destroyed=0;{std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));if(p.first.value!=3||p.second!=9||std::get<0>(input).value!=3||copies!=1||live!=1||destroyed!=1)return 2;}return live!=1||destroyed!=1;}\n",
+      "source_sha256": "1cab6c3eaaddee21ad79c0cb13e1691de193ee721870140fab8396743949c7d5",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-forwarded-owner-tuple",
+      "source": "#include <memory>\n#include <tuple>\n#include <utility>\nint destroyed;struct X{int value;~X(){++destroyed;}};\nint main(){{std::tuple<std::unique_ptr<X>> input(std::unique_ptr<X>(new X{17}));std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::move(input),std::tuple<int>(9));if(std::get<0>(input).get()!=nullptr||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}\n",
+      "source_sha256": "90df36ad7130f48a5a844aa57c8b37c52946d193d757a6f30b4d07674381acc9",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-first-before-second-binding",
+      "source": "#include <tuple>\n#include <utility>\nint trace;struct X{int value;explicit X(int& n):value(n){trace=trace*10+1;n=7;}};struct Y{int value;explicit Y(int& n):value(n){trace=trace*10+2;n=11;}};\nint main(){int n=3;std::pair<X,Y> p(std::piecewise_construct,std::forward_as_tuple(n),std::forward_as_tuple(n));return p.first.value!=3||p.second.value!=7||n!=11||trace!=12;}\n",
+      "source_sha256": "8b02f409c90cc28e1be2813bc640ee47be90d04909dbec43002dc6c6a7c5c1c1",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-source-trailing-default",
+      "source": "#include <tuple>\n#include <utility>\nint defaults,destroyed;struct Default{Default(){++defaults;}~Default(){++destroyed;}};struct X{int value;explicit X(int n,const Default& d=Default()):value(n){}};\nint main(){std::pair<X,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first.value!=3||p.second!=9||defaults!=1||destroyed!=1;}\n",
+      "source_sha256": "285f115d5a5d32ad209874f5b598fc10a7d550900b35744f3dd4eb30054277c4",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-source-default-full-expression",
+      "source": "#include <tuple>\n#include <utility>\nint trace;struct Default{Default(){trace=trace*10+1;}~Default(){trace=trace*10+3;}};struct X{int value;explicit X(int n,const Default& d=Default()):value(n){trace=trace*10+2;}};struct Y{int value;explicit Y(int n):value(n){trace=trace*10+4;}};\nint main(){std::pair<X,Y> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first.value!=3||p.second.value!=9||trace!=1234;}\n",
+      "source_sha256": "c2f3d4e8c48eedb6c8ee66161fbe285edb108b77de4878d71905fa405d00f824",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-caller-argument-effects",
+      "source": "#include <tuple>\n#include <utility>\nint first_calls,second_calls;std::tuple<int> first(){++first_calls;return std::tuple<int>(3);}std::tuple<int> second(){++second_calls;return std::tuple<int>(9);}\nint main(){std::pair<int,int> p(std::piecewise_construct,first(),second());return p.first!=3||p.second!=9||first_calls!=1||second_calls!=1;}\n",
+      "source_sha256": "4b81c9e5e70109c950db80fe0c9969458c903219bf288fa45f59776b1800345b",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-mixed-reference-values",
+      "source": "#include <string_view>\n#include <tuple>\n#include <utility>\nint main(){int n=3;std::pair<int&,std::string_view> p(std::piecewise_construct,std::forward_as_tuple(n),std::forward_as_tuple(\"abc\",3));p.first=7;return &p.first!=&n||n!=7||p.second.size()!=3||p.second[2]!='c';}\n",
+      "source_sha256": "cd2e902c6ab3696c2d68a668a66fd48b34624a138819ffd393095e5116e32e79",
+      "original_test": "CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-comparison-embedded-zero",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;\nint check(const P& a,const P& b){return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}\nint main(){P a(std::string(\"a\\0x\",3),9),b(std::string(\"a\\0y\",3),1);if(check(a,b))return 1;b.first=a.first;b.second=a.second;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}\n",
+      "source_sha256": "aa5bc57185c1389a95d6809b2413a386f9b90929bbe5593e3a8c30cbf60e7860",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-comparison-prefix-and-second",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<int,std::string>;\nint main(){P a(7,std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\")),b(7,std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789z\"));if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;a.first=8;return !(a>b)||a<b||a<=b||!(a>=b);}\n",
+      "source_sha256": "95999196d0384b3c429ea6e7ec056b2fc04128f04e015296c7ff478115fa70a2",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-view-comparison-live-buffers",
+      "source": "#include <string_view>\n#include <utility>\nusing P=std::pair<std::string_view,int>;\nint main(){char x[3]={'a',0,'x'},y[3]={'a',0,'y'};P a(std::string_view(x,3),9),b(std::string_view(y,3),1);if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;x[2]='z';return !(a>b)||a<b||a<=b||!(a>=b);}\n",
+      "source_sha256": "af7c07d018cddd7a7b94422facd967ac4f99e331c3257de3abf9615cf1c2b985",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-reference-comparison-effects",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string&,int&>;\nint observed;P& observe(P& p){++observed;return p;}\nint main(){std::string s=\"abc\",t=\"abd\";int x=9,y=1;P a(s,x),b(t,y);bool less=observe(a)<observe(b);if(!less||observed!=2||a==b||!(a!=b)||a>b||!(a<=b)||a>=b)return 1;s[2]='z';return !(a>b)||a<b||a<=b||!(a>=b)||&a.first!=&s||&b.second!=&y;}\n",
+      "source_sha256": "d55594deccf8f2b1179f970ccc234d7b5b64f556b1e7e0259d70b2e2156f9b0c",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-heterogeneous-comparison",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;using Q=std::pair<std::string,long>;\nint main(){P a(std::string(\"same\"),3);Q b(std::string(\"same\"),9);if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;b.second=3;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}\n",
+      "source_sha256": "b0740b4387f10c1eb8958a22021c937e2654dadcd4dd47e482196b89ec7b246c",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-comparison-pointer-order",
+      "source": "#include <memory>\n#include <functional>\n#include <utility>\nusing U=std::unique_ptr<int>;using P=std::pair<U,int>;\nint main(){P a(U(new int(17)),3),b(U(new int(29)),9);std::less<int*> less;bool expected=less(a.first.get(),b.first.get());if(a==b||!(a!=b)||(a<b)!=expected||(a>b)==expected||(a<=b)!=expected||(a>=b)==expected)return 1;a.first.reset();b.first.reset();return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}\n",
+      "source_sha256": "d3ace6548cf190593056595c0015c00333a9cecce214a9ca1c335c4a00cc5691",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-view-comparison-empty-high-bit",
+      "source": "#include <string_view>\n#include <utility>\nusing P=std::pair<std::string_view,int>;\nint main(){P a(std::string_view(),3),b(std::string_view(),9);if(a==b||!(a<b))return 1;char x[2]={static_cast<char>(0x80),0},y[2]={static_cast<char>(0x7f),0};a.first=std::string_view(x,1);b.first=std::string_view(y,1);return !(a>b)||a<b||a<=b||!(a>=b);}\n",
+      "source_sha256": "c50afae9666b20ae1895ad4499a731aa20eee0605555af44cab60f7ed076d5b8",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-comparison-unsigned-bytes",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;\nint main(){char x[2]={static_cast<char>(0x80),0},y[2]={static_cast<char>(0x7f),0};P a(std::string(x,1),3),b(std::string(y,1),9);if(a==b||!(a!=b)||!(a>b)||a<b||a<=b||!(a>=b))return 1;a.first.clear();b.first.clear();return !(a<b)||a==b;}\n",
+      "source_sha256": "1b0781ffd18331e0a6b2bac7f51f641b2036145b7068142a3c52a048ae9c2917",
+      "original_test": "CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-copy-assignment",
+      "source": "#include <string>\n#include <utility>\nint main(){using P=std::pair<std::string,int>;P a(std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"),3),b(std::string(\"xyz\"),9);P* returned=&(b=a);a.first[0]='Z';return returned!=&b||b.first[0]!='a'||b.first.size()!=62||b.second!=3||a.first[0]!='Z';}\n",
+      "source_sha256": "8b6d309a599e8460c36bc9f4cf49ef4c45e55bb8f1dc9e0512692585b185e47b",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-move-assignment",
+      "source": "#include <memory>\n#include <utility>\nint deleted;struct Item{int value;~Item(){++deleted;}};\nint main(){{using U=std::unique_ptr<Item>;using P=std::pair<U,int>;P a(U(new Item{11}),3),b(U(new Item{22}),7);Item* raw=a.first.get();P* returned=&(b=std::move(a));if(returned!=&b||a.first.get()!=nullptr||b.first.get()!=raw||b.first->value!=11||b.second!=3||deleted!=1)return 1;}return deleted!=2;}\n",
+      "source_sha256": "c0ea635dece5ea7e97415a7e8f05ada9b24f1635cab1a801b463d1ae6dc492b0",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-member-free-swap",
+      "source": "#include <string>\n#include <utility>\nint main(){using P=std::pair<std::string,int>;P a(std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"),3),b(std::string(\"secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"),9);a.swap(b);if(a.first.size()!=68||b.first.size()!=62||a.second!=9||b.second!=3)return 1;std::swap(a,b);return a.first[0]!='a'||b.first[0]!='s'||a.second!=3||b.second!=9;}\n",
+      "source_sha256": "081c717e0c2349c6a8c538f58eedfec0851180f309a8da7c479ca29e090290ed",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-member-free-swap",
+      "source": "#include <memory>\n#include <utility>\nint main(){using U=std::unique_ptr<int>;using P=std::pair<U,int>;P a(U(new int(17)),3),b(U(new int(29)),9);int* x=a.first.get();int* y=b.first.get();a.swap(b);if(a.first.get()!=y||b.first.get()!=x||a.second!=9||b.second!=3)return 1;std::swap(a,b);return a.first.get()!=x||b.first.get()!=y||*a.first!=17||*b.first!=29;}\n",
+      "source_sha256": "12355471b257aa5e400f818b95aeef968985e55d66a586c009d875b29912f76c",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-view-assignment-swap",
+      "source": "#include <string_view>\n#include <utility>\nint main(){char x[3]={'a','b',0},y[3]={'c','d',0};using P=std::pair<int,std::string_view>;P a(3,std::string_view(x,2)),b(9,std::string_view(y,2));P* returned=&(b=a);x[0]='Z';if(returned!=&b||b.second.data()!=x||b.second[0]!='Z'||b.first!=3)return 1;b.second=std::string_view(y,2);a.swap(b);if(a.second.data()!=y||b.second.data()!=x)return 2;std::swap(a,b);return a.second.data()!=x||b.second.data()!=y;}\n",
+      "source_sha256": "f9d141d2cc0eaa0cacf66a217f51466b46c48b1ae9b0a113eef0a3b1b388387b",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-move-self-assignment",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;\nP& copy(P& p,const P& q){return p=q;}\nP& move(P& p,P& q){return p=std::move(q);}\nint main(){P a(std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"),3),b(std::string(\"xyz\"),9);if(&copy(a,a)!=&a||a.first.size()!=62||a.second!=3)return 1;if(&move(b,a)!=&b||b.first.size()!=62||b.first[0]!='a'||b.second!=3)return 2;return &copy(b,b)!=&b||b.first.size()!=62;}\n",
+      "source_sha256": "2db17643742ccabebb3a948522310e5ed07dc36ea3ca2473d768969df4038d30",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-double-string-assignment-swap",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,std::string>;\nint main(){P a(std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"),std::string(\"secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\")),b(std::string(\"x\"),std::string(\"y\"));b=a;a.first[0]='Z';a.second[0]='Q';if(b.first[0]!='a'||b.second[0]!='s'||b.first.size()!=62||b.second.size()!=68)return 1;a.swap(b);if(a.first[0]!='a'||a.second[0]!='s'||b.first[0]!='Z'||b.second[0]!='Q')return 2;std::swap(a,b);return a.first[0]!='Z'||a.second[0]!='Q'||b.first[0]!='a'||b.second[0]!='s';}\n",
+      "source_sha256": "7ea1caf619eb14025bc3d307b9c4af230e37bfadeecfca44ebdd32c307062d43",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-array-owner-assignment-swap",
+      "source": "#include <memory>\n#include <utility>\nint destroyed;\nstruct Item{int value=7;~Item(){++destroyed;}};\nusing U=std::unique_ptr<Item[]>;using P=std::pair<U,int>;\nint main(){{P a(U(new Item[3]),3),b(U(new Item[2]),9);Item* raw=a.first.get();P* returned=&(b=std::move(a));if(returned!=&b||a.first.get()!=nullptr||b.first.get()!=raw||b.first[2].value!=7||b.second!=3||destroyed!=2)return 1;P c(U(new Item[1]),11);Item* other=c.first.get();b.swap(c);if(b.first.get()!=other||c.first.get()!=raw||b.second!=11||c.second!=3||destroyed!=2)return 2;std::swap(b,c);if(b.first.get()!=raw||c.first.get()!=other||destroyed!=2)return 3;}return destroyed!=6;}\n",
+      "source_sha256": "107326982bca47b1eb03ceae579c1a0862b9b28c8f5be226c3634b88d4de88d9",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-custom-owner-assignment-swap",
+      "source": "#include <memory>\n#include <utility>\nint destroyed,calls;\nstruct Item{int value;~Item(){++destroyed;}};\nstruct D{void operator()(Item* p)const noexcept{++calls;delete p;}};\nusing U=std::unique_ptr<Item,D>;using P=std::pair<int,U>;\nint main(){{P a(3,U(new Item{17})),b(9,U(new Item{29}));Item* raw=a.second.get();P* returned=&(b=std::move(a));if(returned!=&b||a.second.get()!=nullptr||b.second.get()!=raw||b.second->value!=17||b.first!=3||destroyed!=1||calls!=1)return 1;P c(11,U(new Item{31}));Item* other=c.second.get();b.swap(c);if(b.second.get()!=other||c.second.get()!=raw||b.first!=11||c.first!=3||calls!=1)return 2;std::swap(b,c);if(b.second.get()!=raw||c.second.get()!=other||calls!=1)return 3;}return destroyed!=3||calls!=3;}\n",
+      "source_sha256": "7e54219504ec24a67a6cc240a7ee4a38ebadd4233a54d0b76ce3154362443bc1",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-reference-string-assignment",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string&,int&>;\nint main(){std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\",t=\"xyz\";int x=3,y=9;P a(s,x),b(t,y);P* result=&(b=a);s[0]='Z';return result!=&b||&b.first!=&t||&b.second!=&y||t[0]!='a'||t.size()!=62||y!=3||s[0]!='Z';}\n",
+      "source_sha256": "e816b7262f93aa03502a4bfc2d8d4a7817718769234a0b9766a8cf5dc5e00276",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-reference-string-alias-swap",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string&,std::string&>;\nint main(){std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\",t=\"secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";P a(s,s),b(t,t);a.swap(b);if(s.size()!=62||t.size()!=68||s[0]!='a'||t[0]!='s')return 1;std::swap(a,b);return s.size()!=62||t.size()!=68||&a.first!=&s||&b.second!=&t;}\n",
+      "source_sha256": "52f1c63f8b51b6d6674dd4dc1b1841ebfacd868d3be0a0d35da21818c1024525",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-self-move-assignment",
+      "source": "#include <memory>\n#include <utility>\nint destroyed;struct Item{int value;~Item(){++destroyed;}};using U=std::unique_ptr<Item>;using P=std::pair<U,int>;P& move(P& a,P& b){return a=std::move(b);}\nint main(){{P a(U(new Item{17}),3);Item* raw=a.first.get();if(&move(a,a)!=&a||a.first.get()!=raw||a.first->value!=17||a.second!=3||destroyed)return 1;}return destroyed!=1;}\n",
+      "source_sha256": "fa2e53d5db47fcb4de43ce6f3169aa6a89e73b425cd376887199c60aa2b38bfb",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-string-converting-assignment",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;using Q=std::pair<std::string,long>;\nint main(){P a(std::string(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"),3);Q b(std::string(\"xyz\"),9);Q* result=&(b=a);a.first[0]='Z';return result!=&b||b.first.size()!=62||b.first[0]!='a'||b.second!=3||a.first[0]!='Z';}\n",
+      "source_sha256": "92455c23e22f8442884c139bf5264c874156954ca5da7b3d161460f64baf67e3",
+      "original_test": "CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-string-copy-move",
+      "source": "#include <string>\n#include <string_view>\n#include <functional>\n#include <utility>\nint main(){std::string a=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\",b=a;auto p=std::make_pair(a,std::move(b));a[0]='X';return p.first[0]!='a'||p.second.size()!=62||!b.empty();}\n",
+      "source_sha256": "c4011d730ba1734d5a2aeb65e7565bd4571269b360cf503e19d6e5a1b5e3f122",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-string-view",
+      "source": "#include <string>\n#include <string_view>\n#include <functional>\n#include <utility>\nint main(){char data[4]={'a','b','c',0};std::string a=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";std::string_view v(data,3);auto p=std::make_pair(a,v);a[0]='X';data[0]='Y';return p.first[0]!='a'||p.second.data()!=data||p.second[0]!='Y';}\n",
+      "source_sha256": "d5fc29da2b6a9b06d78249dce142e84eb3be8b43fbad0bc725b5434e2bb9f68c",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-repeat-shared-selection",
+      "source": "#include <string>\n#include <string_view>\n#include <functional>\n#include <utility>\nint main(){std::string a=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\",b=\"secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";auto p=std::make_pair(a,7);auto q=std::make_pair(b,9);a[0]='X';b[0]='Y';p.first[1]='Z';return p.first[0]!='a'||q.first[0]!='s'||q.first[1]!='e'||p.second!=7||q.second!=9;}\n",
+      "source_sha256": "d3b03f546a074c2314438e711df736b71e8ad86b48d6a2e6471be2b164dbd3aa",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-view",
+      "source": "#include <string>\n#include <string_view>\n#include <functional>\n#include <utility>\nint main(){char data[4]={'a','b','c',0};std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";std::string_view v(data,3);auto p=std::make_pair(std::ref(s),v);p.first[0]='X';data[0]='Y';return &p.first!=&s||s[0]!='X'||p.second.data()!=data||p.second[0]!='Y';}\n",
+      "source_sha256": "bd206f9ec65fb24b3a8dde8c497aadd9b3f9a225f07401fff16eca03128ce5e3",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-return-ignore",
+      "source": "#include <string>\n#include <string_view>\n#include <functional>\n#include <utility>\nusing P=std::pair<std::string,std::string>;P make(){std::string a=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\",b=\"secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";return std::make_pair(std::move(a),std::move(b));}int main(){{P p=make();if(p.first.size()!=62||p.second.size()!=68)return 1;}make();return 0;}\n",
+      "source_sha256": "1877bd370c1d9c3c9eab9012fffe5d3387b8c4c1fd336d1f0ae49041d3d6fac5",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-owner-repeat",
+      "source": "#include <memory>\n#include <utility>\n\nint main(){using U=std::unique_ptr<int>;U a(new int(31));int* raw=a.get();\n auto p=std::make_pair(std::move(a),std::move(a));\n auto q=std::make_pair(std::move(a),std::move(a));\n return a.get()!=nullptr||p.first.get()!=raw||p.second.get()!=nullptr||\n q.first.get()!=nullptr||q.second.get()!=nullptr||*p.first!=31;}\n",
+      "source_sha256": "bac9e84077c39154e316a4582b1640bbe507250502e26138a27d11cf75f31a6f",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-owner-array",
+      "source": "#include <memory>\n#include <utility>\n\nint destroyed;struct Item{int value;~Item(){++destroyed;}};\nint main(){{using U=std::unique_ptr<Item[]>;U a(new Item[3]);a[2].value=43;\n Item* raw=a.get();auto p=std::make_pair(std::move(a),7);\n if(a.get()!=nullptr||p.first.get()!=raw||p.first[2].value!=43||p.second!=7||destroyed)return 1;\n }return destroyed!=3;}\n",
+      "source_sha256": "e58ca66b05eb58dd9ab5ebd590b3941a63ca25fa5a79c81d04fa048049b1def9",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-owner-deleter",
+      "source": "#include <memory>\n#include <utility>\n\nint deleted;struct D{void operator()(int* p)const noexcept{++deleted;delete p;}};\nint main(){{using U=std::unique_ptr<int,D>;U a(new int(53));int* raw=a.get();\n auto p=std::make_pair(std::move(a),4);auto q=std::make_pair(std::move(p.first),9);\n if(a.get()!=nullptr||p.first.get()!=nullptr||q.first.get()!=raw||*q.first!=53||deleted)return 1;\n }return deleted!=1;}\n",
+      "source_sha256": "5305b52e066f607ebb0e323d274dc4ab867d21e3d1b94c6b142238fd345f321d",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-owner-second-slot",
+      "source": "#include <memory>\n#include <utility>\n\nconst void* expected;int deleted;int wrong;\nstruct D{void operator()(int* p)const noexcept{wrong+=this!=expected;++deleted;delete p;}};\nint main(){{using U=std::unique_ptr<int,D>;U a(new int(67));int* raw=a.get();\n auto p=std::make_pair(5,std::forward<U>(a));expected=&p.second.get_deleter();\n if(a.get()!=nullptr||p.first!=5||p.second.get()!=raw||*p.second!=67||deleted)return 1;\n }return deleted!=1||wrong;}\n",
+      "source_sha256": "83ac64a94b25201d7931671b8c7eab7ffbb17e79d20a117cae5b26a0991a47ce",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "make-pair-string",
+      "source": "#include <string>\n#include <utility>\nint main(){std::string s=\"abc\";auto p=std::make_pair(s,7);return p.first!=\"abc\"||p.second!=7;}\n",
+      "source_sha256": "ed71af5db8607321154330c258112aaffea4ef1226c975d3e54b781a4a9ee38e",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "make-pair-view",
+      "source": "#include <string_view>\n#include <utility>\nint main(){char a[4]={'a','b','c',0};std::string_view s(a,3);auto p=std::make_pair(s,7);return p.first.data()!=a||p.first.size()!=3||p.second!=7;}\n",
+      "source_sha256": "521c8888340d0c965a8b636ed95215307ea933b580d4f3af491ae5280c06bc28",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-const-string",
+      "source": "#include <string>\n#include <functional>\n#include <utility>\nint main(){const std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";\n std::string b=s;auto p=std::make_pair(std::cref(s),std::move(b));\n return &p.first!=&s||p.first.data()!=s.data()||p.second.size()!=62||!b.empty();}\n",
+      "source_sha256": "01db0d6a426a60312c83491ea321b36164c6d734a4e96a0ed46480ea63a08ae3",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-owner-view",
+      "source": "#include <memory>\n#include <string_view>\n#include <functional>\n#include <utility>\nint deleted;struct D{void operator()(int*p)const noexcept{++deleted;delete p;}};\nint main(){{using U=std::unique_ptr<int,D>;U a(new int(71));char data[3]={'a','b',0};\n std::string_view v(data,2);{auto p=std::make_pair(std::ref(a),v);\n if(&p.first!=&a||p.second.data()!=data||deleted)return 1;*p.first=83;data[0]='X';\n if(*a!=83||p.second[0]!='X')return 2;}if(deleted)return 3;}return deleted!=1;}\n",
+      "source_sha256": "f66442a3cf3746cbd7f43649af5c3c8220a218df05e458855da1fdcf5b8766a7",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-owner-factory",
+      "source": "#include <memory>\n#include <utility>\nint main(){std::unique_ptr<int> a(new int(3));\n auto p=std::make_pair(std::move(a),7);return a.get()!=nullptr||*p.first!=3;}\n",
+      "source_sha256": "f4628511a6f9953bd8a0ba6b1b6ff87eae4ef7d58af9746ba3d4d9097089940a",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-view-referent",
+      "source": "#include <string>\n#include <string_view>\n#include <functional>\n#include <utility>\nint main(){char b[3]={'a','b',0};std::string_view v(b,2);std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";auto p=std::make_pair(std::ref(v),std::move(s));if(&p.first!=&v||p.first.data()!=b||p.second.size()!=62||!s.empty())return 1;v=std::string_view(b,1);return p.first.size()!=1;}\n",
+      "source_sha256": "3fb8b1b2c2ffd650d31e5a0a1ff80836835a69f8aa5f0b6e1c05761c885cbacd",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-second-string",
+      "source": "#include <string>\n#include <functional>\n#include <utility>\nint main(){std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";auto w=std::ref(s);const auto c=w;auto p=std::make_pair(7,c);p.second[0]='X';return &p.second!=&s||s[0]!='X'||p.first!=7;}\n",
+      "source_sha256": "2950eb86422c0588ea302084aa6049da07b69bb7bdcf39b8d08bf8260d7f02dc",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-both-borrowed",
+      "source": "#include <memory>\n#include <string>\n#include <functional>\n#include <utility>\nint main(){std::unique_ptr<int> u(new int(31));std::string s=\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";auto p=std::make_pair(std::ref(u),std::ref(s));*p.first=43;p.second[0]='X';return &p.first!=&u||&p.second!=&s||*u!=43||s[0]!='X';}\n",
+      "source_sha256": "e0eb1b4bfaa476cafdb808304696d275e58a2cbc77d130b3138f7efbd029d9fd",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-owner-const",
+      "source": "#include <memory>\n#include <string_view>\n#include <functional>\n#include <utility>\nint main(){const std::unique_ptr<int> u(new int(59));auto w=std::cref(u);auto p=std::make_pair(std::string_view(\"abc\"),std::move(w));return &p.second!=&u||*p.second!=59||p.first.size()!=3;}\n",
+      "source_sha256": "4312f37d846dba4f36e4acb5d9b32b5323cf7973a944f52fca76a4f3a552155c",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-view-const",
+      "source": "#include <string_view>\n#include <functional>\n#include <utility>\nint main(){char b[3]={'a','b',0};const std::string_view v(b,2);auto p=std::make_pair(std::cref(v),9);b[0]='X';return &p.first!=&v||p.first.data()!=b||p.first[0]!='X'||p.second!=9;}\n",
+      "source_sha256": "8d68bdbb4ce9f1c17ea1330a7fd90b3b3165db5b3e22c8cc5bffa794b39b2c79",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-factory-wrapper-repeat-binding",
+      "source": "#include <string>\n#include <functional>\n#include <utility>\nint main(){std::string a=\"first\",b=\"second\";auto wa=std::ref(a),wb=std::ref(b);auto p=std::make_pair(wa,7);auto q=std::make_pair(wb,9);p.first[0]='X';q.first[0]='Y';return &p.first!=&a||&q.first!=&b||a[0]!='X'||b[0]!='Y'||p.second!=7||q.second!=9;}\n",
+      "source_sha256": "7f3f8bb4d8f66e536a45a3c4b570c0d09c00639fcbda23a238dab8b6da233c70",
+      "original_test": "CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations",
+      "expected": "accept"
+    },
+    {
+      "name": "pair-piecewise-forward-identity",
+      "source": "#include <type_traits>\n#define forward forward\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "ee79736239a21609dd6df9d29d2ab6dfbc5de3c9b488e8118b7845adf13c772f",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-get-identity",
+      "source": "#include <type_traits>\n#define get get\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "6be6dd84bf2bbdc5083cdc7696d4142ad476ddc7cb31aac27195777b4acabb76",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-piecewise-construct-t-identity",
+      "source": "#include <type_traits>\n#define piecewise_construct_t piecewise_construct_t\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "b07495511aeebb541a8a008c210ca2916dc26891c54d5a42c243d723bc1d36ee",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-tuple-identity",
+      "source": "#include <type_traits>\n#define tuple tuple\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "7de4fe4121cf28e3a9b342a5581afd8c79f23946dddec9d4b897133376118f27",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-tuple-indices-identity",
+      "source": "#include <type_traits>\n#define __tuple_indices __tuple_indices\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "9b490191449a702561eaa5c44b1330aa7ca9f0b791c1f7199e42d4a7f6430bb9",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-make-tuple-indices-identity",
+      "source": "#include <type_traits>\n#define __make_tuple_indices __make_tuple_indices\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "c5aacec2fea376481f525d557c32bfca73d1139a05607460b688e31b59382cc4",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-is-nothrow-constructible-identity",
+      "source": "#include <type_traits>\n#define is_nothrow_constructible is_nothrow_constructible\n#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "8faa79522a35358c38bcdaa23be466b69885c4f895d0e5aabf2e8b0161fa27b7",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-tuple-selected-get",
+      "source": "#include <tuple>\n#include <utility>\nnamespace std{inline namespace __1{template<>int& get<0,int>(tuple<int>& t)noexcept{static int n=3;return n;}}}\nvoid use(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}int main(){return 0;}\n",
+      "source_sha256": "c081e2557c0e0f5a5c5342b22f3301453ab69461e3114aadb32c21acd491be06",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-standalone-tag",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::piecewise_construct_t tag{};std::pair<int,int> p(tag,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "c99f14b5377a77d14597eda849f540198931a09da04d3648dd1d98430e13f6fa",
+      "expected": "reject"
+    },
+    {
+      "name": "pair-piecewise-reference-to-value-parameter",
+      "source": "#include <tuple>\n#include <utility>\nvoid use(){std::pair<int&&,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}\nint main(){use();return 0;}\n",
+      "source_sha256": "6c025eda7bb57b96c6889a43e40d59765f3ecf211c7487d72c0fa4caeac9f162",
+      "expected": "reject"
+    },
+    {
+      "name": "ordinary-source-cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept",
+      "original_name": "cstddef-predefines"
+    },
+    {
+      "name": "ordinary-source-pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "expected": "accept",
+      "original_name": "pair-piecewise-scalars"
+    },
+    {
+      "name": "ordinary-source-tuple-get",
+      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
+      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
+      "expected": "accept",
+      "original_name": "tuple-get"
+    },
+    {
+      "name": "ordinary-source-not-fn-function-pointer",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || f(7) || calls != 3;\n}\n",
+      "source_sha256": "ce1ac4c7924c372992ca2c0a78575abf2961643a1324838d0558cdb8eadf71a3",
+      "expected": "reject",
+      "original_name": "not-fn-function-pointer"
+    },
+    {
+      "name": "ordinary-source-not-fn-copied-state",
+      "category": "runtime",
+      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { ++calls; state += x; return state > 5; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
+      "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
+      "expected": "reject",
+      "original_name": "not-fn-copied-state"
+    },
+    {
+      "name": "ordinary-source-not-fn-four-cvref-calls",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <utility>\nint path;\nstruct P {\n  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }\n  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }\n  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }\n  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }\n};\nint main() {\n  auto a = std::not_fn(P{});\n  const auto b = std::not_fn(P{});\n  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;\n  return path != 1234;\n}\n",
+      "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
+      "expected": "reject",
+      "original_name": "not-fn-four-cvref-calls"
+    },
+    {
+      "name": "ordinary-source-not-fn-reference-wrapper",
+      "category": "runtime",
+      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x) { value += x; return value > 4; }\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
+      "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
+      "expected": "reject",
+      "original_name": "not-fn-reference-wrapper"
+    },
+    {
+      "name": "ordinary-source-not-fn-custom-negation-result",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
+      "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
+      "expected": "reject",
+      "original_name": "not-fn-custom-negation-result"
+    },
+    {
+      "name": "ordinary-source-not-fn-reference-arguments",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nbool update(int &x, const int &y) { ++calls; x += y; return x != 0; }\nint main() {\n  auto f = std::not_fn(&update);\n  int x = -3, y = 3;\n  if (!f(x,y) || x != 0 || calls != 1) return 1;\n  if (f(x,y) || x != 3 || calls != 2) return 2;\n  return 0;\n}\n",
+      "source_sha256": "1d5fed7302c89abf23b882a064afce68f4c65bf7cf92118313f28b4499260dbc",
+      "expected": "reject",
+      "original_name": "not-fn-reference-arguments"
+    },
+    {
+      "name": "ordinary-source-not-fn-move-only-cleanup",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <utility>\nint moves, live, destroyed;\nstruct P {\n  int value;\n  P(int x) : value(x) { ++live; }\n  P(const P &) = delete;\n  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }\n  ~P() { --live; ++destroyed; }\n  bool operator()(int x) { return value == x; }\n};\nint main() {\n  {\n    P source(5);\n    auto f = std::not_fn(std::move(source));\n    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;\n  }\n  return live != 0 || destroyed != 2;\n}\n",
+      "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
+      "expected": "reject",
+      "original_name": "not-fn-move-only-cleanup"
+    },
+    {
+      "name": "ordinary-source-not-fn-nested-adapters",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nint value(int x) { ++calls; return x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(&value));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
+      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
+      "expected": "reject",
+      "original_name": "not-fn-nested-adapters"
+    },
+    {
+      "name": "ordinary-source-not-fn-factory-effects",
+      "category": "runtime",
+      "source": "#include <functional>\nint builds, calls, destroyed;\nstruct P {\n  int value;\n  bool operator()(int x) { ++calls; return x == value; }\n  ~P() { ++destroyed; }\n};\nP make(int &n) { ++n; ++builds; return P{n}; }\nint main() {\n  int n = 3;\n  {\n    auto f = std::not_fn(make(n));\n    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;\n    if (destroyed != 1) return 2;\n  }\n  return destroyed != 2;\n}\n",
+      "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
+      "expected": "reject",
+      "original_name": "not-fn-factory-effects"
+    },
+    {
+      "name": "ordinary-source-not-fn-signature-queries",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nbool value(int x) noexcept { return x > 0; }\nint main() {\n  auto f = std::not_fn(&value);\n  using F = decltype(f);\n  static_assert(std::is_same<decltype(f(1)), bool>::value, \"negation result\");\n  static_assert(std::is_nothrow_invocable<F &,int>::value, \"mutable lvalue\");\n  static_assert(std::is_nothrow_invocable<const F &,int>::value, \"const lvalue\");\n  static_assert(std::is_nothrow_invocable<F &&,int>::value, \"mutable rvalue\");\n  static_assert(std::is_nothrow_invocable<const F &&,int>::value, \"const rvalue\");\n  static_assert(!noexcept(std::not_fn(&value)), \"factory exception signature\");\n  if (f(1) || !f(0)) return 1;\n  return 0;\n}\n",
+      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
+      "expected": "reject",
+      "original_name": "not-fn-signature-queries"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-factory-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class Enable> auto not_fn(F&&);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "d4980d6869d0881646c06ea6ea8cf5155ee0c77bc51d7f2abc11ef96c60c7de6",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-factory-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-carrier-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F> struct __not_fn_t;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "dacfeb6dc00f1224b5d0a92dccc727d528239d0be826f191fdd166fa46062a4a",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-carrier-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-forwarder-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class Op, class Indices, class... Bound> struct __perfect_forward_impl;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "ef47d33af1be1f2eb373fb832b74954b886732579ac66f3fa7e9fde7e51ef5ff",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-forwarder-primary-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-operation-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct __not_fn_op;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "0c361602607eaf4ef1e0ac164ffa00f65fdcc8d22611e9886a00bdf21b96f708",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-operation-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-tuple-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class... T> class tuple;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "875434ee3e6fe376ff75bcb1837dd23b02284b14b4e2660ee0ff17ad7cd85212",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-tuple-primary-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-tuple-leaf-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class T, bool Empty> class __tuple_leaf;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "7e8f593431b392e3a8ba089d543426a3bc355db4039cf3ebd518856edbd8463b",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-tuple-leaf-primary-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-forward-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr T&& forward(__libcpp_remove_reference_t<T>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "e365699a77c6f9f464a0bd8fa83c53307da7eb9c2da2e2391644cbbb046c41f6",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-forward-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-move-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr __libcpp_remove_reference_t<T>&& move(T&&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return std::move(f)(3) || !std::move(f)(4) || calls != 2;\n}\n",
+      "source_sha256": "c6f713bbf8e2fd75b9ea4b5d44e6f2b26992c868cc933b30d4f2091c967f3210",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-move-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-get-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class... T> constexpr typename tuple_element<I, tuple<T...>>::type& get(tuple<T...>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "92724d22d5ee6d91147511efe4c808379777a6031e0b5e5ad4f38a7709eb831e",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-get-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-invoke-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class... A> invoke_result_t<F,A...> invoke(F&&,A&&...) noexcept(is_nothrow_invocable_v<F,A...>);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "963411ddb31c1a2bd86e25f6569990d93b0fa2a08604c71ca5b0ba065f30bf88",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-invoke-redeclaration"
+    },
+    {
+      "name": "ordinary-source-ordinary-default-source",
+      "expected": "accept",
+      "source": "template<class T, class U=T> int ordinary_source_default(T x){return x;}\nint main(){return ordinary_source_default(3)!=3;}\n",
+      "source_sha256": "d2b7aec9ecd08dd8a677077837ca635e57212bc431ba07d75f91748c8f7e6ac9",
+      "original_name": "ordinary-default-source",
+      "sdk_dependencies_may_be_empty": true
+    },
+    {
+      "name": "ordinary-source-ordinary-failed-source",
+      "expected": "invalid",
+      "source": "template<class T> int ordinary_source_failed(T){return 0;}\nint main(){return ordinary_source_failed();}\n",
+      "source_sha256": "50fb246eb58b5b57ade4e9dcf58c6e81677cac1e4e823ec45b369c133bd9647b",
+      "original_name": "ordinary-failed-source"
+    }
+  ],
+  "original_pair_component_commit": "f7f0bfec9885e5eea79faa2a5243d207b2eef3bc",
+  "original_pair_report_sha256": "48dbee2debc2aa113e275cfafe778527cf473166b05ff3f12faa4ab2f406d8d1",
+  "original_ordinary_component_commit": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+  "original_ordinary_report_sha256": "0d82c9f8adaab735c8cb59c16350a9aac20f842d56e065f00cd0942c1746b22a",
+  "required_requests": 800,
+  "original_pair_requests": 600,
+  "original_pair_positive_acceptances": 520,
+  "original_pair_guard_rejections": 80,
+  "not_fn_source_requests": 200,
+  "required_acceptances": 552,
+  "required_sdk_guard_rejections": 160,
+  "required_unimplemented_not_fn_runtime_refusals": 80,
+  "required_failed_substitutions": 8,
+  "ordinary_default_positive_strengthened": true,
+  "all_100_original_input_sources_preserved": true,
+  "source_trace_included": false,
+  "original_guards_modified": false,
+  "private_not_fn_admission_implemented": true,
+  "not_fn_lowering_implemented": true,
+  "original_public_c_entry_abi_unchanged": true,
+  "frontend_execution_timeout_seconds": 60,
+  "all_binaries_and_full_archives_remote_only": true,
+  "producer_actual_job": 118973689496,
+  "producer_attempt": 1,
+  "not_fn_private_support_complete": false,
+  "required_positive_not_fn_tests_still_failing": 2,
+  "delivery_check_scope": "Original 800-request regression contract; the two required not_fn positives remain unproved.",
+  "earlier_800_candidate": "d8e62323e2c2d6c41e91728a0f7d6e50897e6532",
+  "no_expectations_changed_from_original_800": true
+}
