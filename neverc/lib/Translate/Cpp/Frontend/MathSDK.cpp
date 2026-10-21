@@ -7602,6 +7602,7 @@ class UtilityTupleQueryGraph
   const UtilityTupleQueryMode Mode;
   const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
+  const CXXRecordDecl *NotFnOperationRecord = nullptr;
   const CXXConstructorDecl *PairConstructor = nullptr;
   std::set<const Type *> PairInputTypes;
   std::set<const CXXRecordDecl *> PairInputRecords;
@@ -9893,6 +9894,19 @@ class UtilityTupleQueryGraph
       return approvedUtilityStringRecord(S, SM, R, Context).has_value() ||
              approvedUtilityStringViewRecord(S, SM, R, Context).has_value();
     }
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnOperationRecord &&
+        R->getCanonicalDecl() == NotFnOperationRecord) {
+      // This is the operation identity in the independently authenticated
+      // pointer wrapper, consumed as a constraint type only. Its actual call,
+      // forwarding, negation and exception bodies still close separately.
+      const auto *Definition = R->getDefinition();
+      return Definition && family(R) && family(Definition) &&
+          Definition->getCanonicalDecl() == NotFnOperationRecord &&
+          !Definition->isUnion() && !Definition->isDynamicClass() &&
+          !Definition->getNumBases() && Definition->field_empty() &&
+          Definition->hasTrivialDefaultConstructor() &&
+          Definition->hasTrivialDestructor();
+    }
     if (!family(R)) return false;
     if (!Records.insert(R).second) return true;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
@@ -9963,6 +9977,15 @@ public:
                         const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
                         UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
       : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+  bool bindNotFnOperation(const FunctionalNotFnStorage &Storage) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
+      return false;
+    const auto Pointer = approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
+    if (!Pointer || Pointer->Operation != Storage.Operation ||
+        !Context.hasSameType(Pointer->CallableType, Storage.CallableType)) return false;
+    NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
+    return true;
+  }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
         NotFnConstraintVariableSource || !Source) return false;
@@ -12397,6 +12420,10 @@ class NotFnPointerSourceProof {
         !Variable->isConstexpr() || !Variable->getType()->isBooleanType() ||
         !Variable->hasInit() ||
         !Check.family(Primary, {"__type_traits/is_constructible.h"})) return false;
+    // The observed traits instantiate their SDK primary. A user partial
+    // selection cannot inherit that primary's source certificate.
+    if (Variable->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary)
+      return false;
     for (const auto *Redeclaration : Variable->redecls())
       if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) return false;
     const auto &Arguments = Variable->getTemplateArgs();
@@ -12461,7 +12488,8 @@ public:
     const auto Pointer = approvedFunctionalNotFnPointerStorage(
         S, SM, Factory.Selected.Storage.Record, Context);
     if (!Pointer || Factory.Selected.CallableConstruction ||
-        !Graph.bindNotFnFactoryDefaults(Factory)) return false;
+        !Graph.bindNotFnFactoryDefaults(Factory) ||
+        !Graph.bindNotFnOperation(Factory.Selected.Storage)) return false;
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no
@@ -12570,6 +12598,7 @@ public:
     return true;
   }
   bool callDefaults(const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use) {
+    if (!Graph.bindNotFnOperation(Call.Storage)) return false;
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
