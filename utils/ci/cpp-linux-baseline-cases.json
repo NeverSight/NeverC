@@ -1,0 +1,523 @@
+{
+  "baseline_revision": "1617f18ead74a8fa719e3d1bd02f9c84a10de551",
+  "full_candidate_revision": "89574033312b3bf5946cecf4a3d59903792c99d5",
+  "full_ci_passed": false,
+  "private_frontend_changed": false,
+  "suites": [
+    {
+      "test": "CoreV2PiecewiseLinearPreservesBitsStateAndOwnership",
+      "actual_baseline_undefined_symbols": [
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-piecewise-linear",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear.cpp",
+          "source_sha256": "6e6502c183de2c5f5b45c00b5ae614f9c2421d50e7b6387bc28595cfef235fa1"
+        },
+        {
+          "name": "random-piecewise-linear-api",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-api.cpp",
+          "source_sha256": "d643f2c9621e23fb1aa89811266d3ee939cbf1676c86d268e067feecd00cc7e6"
+        },
+        {
+          "name": "random-piecewise-linear-api-double",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-api-double.cpp",
+          "source_sha256": "2d01455dabbbd152a36478c56029835469e22713b20e536258397953d374c67a"
+        },
+        {
+          "name": "random-piecewise-linear-wrappers",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-wrappers.cpp",
+          "source_sha256": "e269221fa93c229bbedea406300b0531edde1a5946b1d29ed71f5c10b4bf8784"
+        }
+      ],
+      "former_source_sha256": "35929a2e752357481158948a4f3f0e38671c71f93908a241e681f4a1514e6cdb"
+    },
+    {
+      "test": "CoreV2PiecewiseLinearCallbacksPreserveBoundaryReferences",
+      "actual_baseline_undefined_symbols": [
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-piecewise-linear-count-weights",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-count-weights.cpp",
+          "source_sha256": "a87de9d7578bd1f613ebca771d78457ead0fe4623f0a44588726588342bcd50f"
+        },
+        {
+          "name": "random-piecewise-linear-list-weights",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-list-weights.cpp",
+          "source_sha256": "2767838267bd52f1f1ddfde3d8bafc92e53518d2639f5b09228aa559a5c8bb84"
+        },
+        {
+          "name": "random-piecewise-linear-ref-weights-float",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-ref-weights-float.cpp",
+          "source_sha256": "c6d5873c934d6227849c5603c654130f5eb9981c4b97d68cf57892cd16df619d"
+        },
+        {
+          "name": "random-piecewise-linear-ref-weights-double",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-ref-weights-double.cpp",
+          "source_sha256": "64a6625b74d36dc854e6c0f5e3ed6c6f609330dde1ac90bb419df36b83a9bb47"
+        }
+      ],
+      "former_source_sha256": "f84e7951c3abc792a1fecc812602bb44fc2d04b242e3b19430014a84aef23d5c"
+    },
+    {
+      "test": "CoreV2PiecewiseLinearObjectsPreserveCopiedLifetimes",
+      "actual_baseline_undefined_symbols": [
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-piecewise-linear-objects-float",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-objects-float.cpp",
+          "source_sha256": "edba87244f5ed05862171e9aac2db072f758bfc41ca411f0580bba5dc39b31ec"
+        },
+        {
+          "name": "random-piecewise-linear-objects-double",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-objects-double.cpp",
+          "source_sha256": "ac5d25809e12fdab2fc066f0b7cd038ba62c71fe12ee22514d44b5ee9c620502"
+        },
+        {
+          "name": "random-piecewise-linear-callback-timing",
+          "source": "tests/neverc/Inputs/translate/cpp/random-piecewise-linear-callback-timing.cpp",
+          "source_sha256": "430de29f8efe3f07101ee56bdd696dc8184a86276279e18d54bc0e2a06626065"
+        }
+      ],
+      "former_source_sha256": "4e758a87b03891f7d347ebc2108ed3976b8190cf589d68d55762f6ac5f611845"
+    },
+    {
+      "test": "CoreV2ExponentialPreservesParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf"
+      ],
+      "cases": [
+        {
+          "name": "random-exponential-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-exponential-source.cpp",
+          "source_sha256": "20025f14967f1a7607198c8c46403a4e465df74bac5b769321d19a3fbecded21"
+        },
+        {
+          "name": "random-exponential-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-exponential-minstd.cpp",
+          "source_sha256": "201b8d928e50fee66fdb688694ee076ce32ae7b83730ffda9fa2c11a49474366"
+        },
+        {
+          "name": "random-exponential-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-exponential-mt64.cpp",
+          "source_sha256": "aee32d67444452dc263dc50618836a433077264367279df88effd1ffc0bbabc9"
+        },
+        {
+          "name": "random-exponential-zero",
+          "source": "tests/neverc/Inputs/translate/cpp/random-exponential-zero.cpp",
+          "source_sha256": "84193536608478fb970b76ebcf978c5df8dad49a0c434d47ecd86a1279fd367a"
+        }
+      ],
+      "former_source_sha256": "085b6bf6f26939d6bc84e92a4bcc2b03398183da9c6ea4075b29aef67493e6fa"
+    },
+    {
+      "test": "CoreV2ExtremeValuePreservesParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf"
+      ],
+      "cases": [
+        {
+          "name": "random-extreme-value-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-extreme-value-source.cpp",
+          "source_sha256": "edbb01131cb655d9a5aadde238595b5648ce2c3a9553ea9d67e8c56e7dd74203"
+        },
+        {
+          "name": "random-extreme-value-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-extreme-value-minstd.cpp",
+          "source_sha256": "e03ed796ca0f54218e07a96f1773ad37240c599c72480103220de828824ebdfe"
+        },
+        {
+          "name": "random-extreme-value-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-extreme-value-mt64.cpp",
+          "source_sha256": "85f640806f105a9ab503bf197a2c77c863103a0eceea97835f13169d198662c2"
+        },
+        {
+          "name": "random-extreme-value-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-extreme-value-edges.cpp",
+          "source_sha256": "c6de9ff8f729e2acb1f3ab5e6294e2b8b8760d6947f30ed35e4d9e75c6174083"
+        }
+      ],
+      "former_source_sha256": "b1146e7e6eebe968fe033a5195779c2f4355fa5f1a73dd4a39525bf7bb87b2c7"
+    },
+    {
+      "test": "CoreV2NormalPreservesCachedStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf",
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-normal-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-normal-source.cpp",
+          "source_sha256": "0db31c90c7d6e416c5fd0841322f0bc001af35c3d7f29d74687c682dba989f35"
+        },
+        {
+          "name": "random-normal-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-normal-minstd.cpp",
+          "source_sha256": "6ea44632f279c5cbd93c417c945e2c9a425aff7b6ec88505c39eeb5daf64731b"
+        },
+        {
+          "name": "random-normal-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-normal-mt64.cpp",
+          "source_sha256": "39854f822259bafd50e5eb0664bae54e901480e65efedc5c19392067e55b2999"
+        },
+        {
+          "name": "random-normal-cache",
+          "source": "tests/neverc/Inputs/translate/cpp/random-normal-cache.cpp",
+          "source_sha256": "0cbc48596fd61ee40f74f51ae288f8209044939681af6f0bc392e0ece38a179c"
+        }
+      ],
+      "former_source_sha256": "16dd0d3c60350065d691fb91ab98c65933b05e133ab4af99f3e71c2987dd6cc4"
+    },
+    {
+      "test": "CoreV2LognormalPreservesCachedStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "exp",
+        "expf",
+        "log",
+        "logf",
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-lognormal-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-lognormal-source.cpp",
+          "source_sha256": "9c9f255a005a6358690f885b2baab87966e4ced55ea30fc8179b20b3ade51abf"
+        },
+        {
+          "name": "random-lognormal-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-lognormal-minstd.cpp",
+          "source_sha256": "ffcf7e04195c85cbafa7229763ab1605489e8df8afafb4e9c03d0c0131bbcb61"
+        },
+        {
+          "name": "random-lognormal-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-lognormal-mt64.cpp",
+          "source_sha256": "3167a6f44ba7087aa278822695829fc7955c5efac380aa50b7059a00ccd5afb4"
+        },
+        {
+          "name": "random-lognormal-cache",
+          "source": "tests/neverc/Inputs/translate/cpp/random-lognormal-cache.cpp",
+          "source_sha256": "475400786462d87a34bdeb907a224586464526c23db28f1569005b5bd8e94a8f"
+        }
+      ],
+      "former_source_sha256": "aa4b80346939c8f1593114538bf51dbf795c7fdec7babc483ad798875a0a149d"
+    },
+    {
+      "test": "CoreV2WeibullPreservesParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf",
+        "pow",
+        "powf"
+      ],
+      "cases": [
+        {
+          "name": "random-weibull-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-weibull-source.cpp",
+          "source_sha256": "9f7085f664663c5b29f0625b7b3f320739a5f5542e47617ac37d603203faec7e"
+        },
+        {
+          "name": "random-weibull-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-weibull-minstd.cpp",
+          "source_sha256": "4f79a2813de2b97e1bb2f00da555c63e195869bbf64893f11e162295309e79da"
+        },
+        {
+          "name": "random-weibull-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-weibull-mt64.cpp",
+          "source_sha256": "67a0b9aeec42c3ab52e2e4eaa45950669abf586c8e3dab46dd14f0a683ce1a10"
+        },
+        {
+          "name": "random-weibull-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-weibull-edges.cpp",
+          "source_sha256": "ceb1b61f9f5b182c1909ae6dba7bf23d4fee16b548751d1cfe0f2f80bbaa11e9"
+        }
+      ],
+      "former_source_sha256": "da5a5ca60ba0349daf881afd6949e591e938aec6c9b5a4c6ba3566deb0132498"
+    },
+    {
+      "test": "CoreV2GammaPreservesParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf",
+        "pow",
+        "powf",
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-gamma-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-gamma-source.cpp",
+          "source_sha256": "21ed515375020a7627fe03d70499ae4032f8fdf37c4b3f5b0b989fc3099457fb"
+        },
+        {
+          "name": "random-gamma-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-gamma-minstd.cpp",
+          "source_sha256": "2aa61d8cc615e44f26b2fff33db0e1a0d63f9e392bb34b5479f2e92639f09584"
+        },
+        {
+          "name": "random-gamma-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-gamma-mt64.cpp",
+          "source_sha256": "20df90ecb0c8ff061abe4fabbc5f5184265ebca64ea9d9399311eb51f928b1ab"
+        },
+        {
+          "name": "random-gamma-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-gamma-edges.cpp",
+          "source_sha256": "e701dde093a80b71718bc2b7707fc5173d8034d2da3b3a97082c0784a6ad15ff"
+        }
+      ],
+      "former_source_sha256": "e52f83faab12aa70e3d4e094b8b8872f24d03c15d8d08e6077b739585712c479"
+    },
+    {
+      "test": "CoreV2ChiSquaredPreservesParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf",
+        "pow",
+        "powf",
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-chi-squared-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-chi-squared-source.cpp",
+          "source_sha256": "658201a7f3d29a59c531d537076659cf151537333088545472441d14451d5f71"
+        },
+        {
+          "name": "random-chi-squared-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-chi-squared-minstd.cpp",
+          "source_sha256": "5caf3cc004a256cea6e615c3fcf9adcc13b894266e4a6794cbf87b095d5180a3"
+        },
+        {
+          "name": "random-chi-squared-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-chi-squared-mt64.cpp",
+          "source_sha256": "24b0bee57398c0fea47657c76a0f4c73205a8b1bba72164f76f0a0d0f64c7701"
+        },
+        {
+          "name": "random-chi-squared-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-chi-squared-edges.cpp",
+          "source_sha256": "99e5f7a9f538ade48de10f3520b95cd881c000c32f03c0f11e9e37811b68d813"
+        }
+      ],
+      "former_source_sha256": "cac5abefefd2b0f3bff8654c7c4d0cb6b32efd79b90f1e3c659cd969708a582b"
+    },
+    {
+      "test": "CoreV2FisherFPreservesParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf",
+        "pow",
+        "powf",
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-fisher-f-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-fisher-f-source.cpp",
+          "source_sha256": "24a236ddc58723fe6c50b41a61a1a75c42ceb1905d220ca43878684f4c25d4ca"
+        },
+        {
+          "name": "random-fisher-f-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-fisher-f-minstd.cpp",
+          "source_sha256": "a87cdacefae27353d84af97966b304e92290a0955587be7786f63c993b314c7f"
+        },
+        {
+          "name": "random-fisher-f-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-fisher-f-mt64.cpp",
+          "source_sha256": "1c89d2941106a719a908db88e0ef458bd946dd18fbbcc972e732375c5d9e4665"
+        },
+        {
+          "name": "random-fisher-f-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-fisher-f-edges.cpp",
+          "source_sha256": "76432cc6993ea495cbcb4f5606d68fafdc9ac24d6d99d3ef6d7c95c1326798de"
+        }
+      ],
+      "former_source_sha256": "2820c5fb3bb30158d34205a7766a53ba0e74b9a7d5941c6fcd67c8f5f5c6fcee"
+    },
+    {
+      "test": "CoreV2StudentTPreservesCacheParametersStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "log",
+        "logf",
+        "pow",
+        "powf",
+        "sqrt",
+        "sqrtf"
+      ],
+      "cases": [
+        {
+          "name": "random-student-t-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-student-t-source.cpp",
+          "source_sha256": "64ef108a42803bfc8f425358a617ec63e4520215f1e63513336c7dc1a75648a2"
+        },
+        {
+          "name": "random-student-t-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-student-t-minstd.cpp",
+          "source_sha256": "daf0f904d3ef466875f22eb46464b17d5c64663f03a0003a3ef809b501f685b0"
+        },
+        {
+          "name": "random-student-t-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-student-t-mt64.cpp",
+          "source_sha256": "2f3909dbb7daa033f87a34fb2e1035fd96edfd0ea52f5aba05414650e0a35b04"
+        },
+        {
+          "name": "random-student-t-cache",
+          "source": "tests/neverc/Inputs/translate/cpp/random-student-t-cache.cpp",
+          "source_sha256": "2b0f88e5afe4f7e447f6f65b27397d2e856249a6565e527f668f23f21e8b7cfe"
+        }
+      ],
+      "former_source_sha256": "8dc907eb4be5d6463ea83e42ed60f6a4c5471e18979e7c1175ae9d0ed966d7b5"
+    },
+    {
+      "test": "CoreV2CauchyPreservesDoublePrecisionAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "tan"
+      ],
+      "cases": [
+        {
+          "name": "random-cauchy-source",
+          "source": "tests/neverc/Inputs/translate/cpp/random-cauchy-source.cpp",
+          "source_sha256": "cea548b1499f650d72a4d99c3926a5f8dd531d9e8cf1a41993bc45f1c34e0da7"
+        },
+        {
+          "name": "random-cauchy-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-cauchy-minstd.cpp",
+          "source_sha256": "47f384486fde5a043fec4d01ffc6940ca3cdd95b2a0da228698290d217a927bf"
+        },
+        {
+          "name": "random-cauchy-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-cauchy-mt64.cpp",
+          "source_sha256": "0aadd49b94e92bcfef0525b675e9618ec26979b63b31067a917b7930a478c292"
+        },
+        {
+          "name": "random-cauchy-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-cauchy-edges.cpp",
+          "source_sha256": "df8dea23eea6ac0ab7ba2b6768e813dd8c6d9f0b7738b7b18664056fb73c8c3e"
+        }
+      ],
+      "former_source_sha256": "06373a4194590b613914d6592b9b30cc5f8f1fc830f8ae70869cfc50c5235daf"
+    },
+    {
+      "test": "CoreV2PoissonPreservesIntegerStateParametersAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "exp",
+        "log",
+        "pow",
+        "sqrt",
+        "trunc"
+      ],
+      "cases": [
+        {
+          "name": "random-poisson-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-poisson-minstd.cpp",
+          "source_sha256": "e697e8d1040902e8657f6c6c0cf79b37bafc201a3555cc693157612e63fc35d2"
+        },
+        {
+          "name": "random-poisson-mt32",
+          "source": "tests/neverc/Inputs/translate/cpp/random-poisson-mt32.cpp",
+          "source_sha256": "2d335498b9bc83a9049dad8ec24fbc59826f0e94c589d06fea8406e7738e9d57"
+        },
+        {
+          "name": "random-poisson-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-poisson-mt64.cpp",
+          "source_sha256": "381d5de06351cef9090cab8eea18342654cabd0307b2e44378ad3a15dd2f3895"
+        },
+        {
+          "name": "random-poisson-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-poisson-edges.cpp",
+          "source_sha256": "53faee4151ef83420c0818129ce4681ac0197362fe6475ef97e0eb61e0b3a81b"
+        }
+      ],
+      "former_source_sha256": "55c8eb8b51eab3b88a7a1357dbd81e5cd4f24141a14c45743234c8a49d9434b9"
+    },
+    {
+      "test": "CoreV2NegativeBinomialAndGeometricPreserveMixtureStateAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "exp",
+        "log",
+        "pow",
+        "sqrt",
+        "trunc"
+      ],
+      "cases": [
+        {
+          "name": "random-negative-binomial-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-negative-binomial-minstd.cpp",
+          "source_sha256": "de65b33124b5f18c44d7026c3cf53e3e3973349f1bd041005ed532e508bb96c2"
+        },
+        {
+          "name": "random-negative-binomial-mt32",
+          "source": "tests/neverc/Inputs/translate/cpp/random-negative-binomial-mt32.cpp",
+          "source_sha256": "03fdf3072b8b328b21deb9f40d067650d2c32208363fe038f23829af5af4f543"
+        },
+        {
+          "name": "random-negative-binomial-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-negative-binomial-mt64.cpp",
+          "source_sha256": "3851b86705a982f4735ba75f3d2297f11e817843038cfe41a553ac23e5d23a34"
+        },
+        {
+          "name": "random-negative-binomial-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-negative-binomial-edges.cpp",
+          "source_sha256": "8f595704c324d9462bbcf31ff94d6d14054340b700101500e2e37951b1fc6d64"
+        }
+      ],
+      "former_source_sha256": "870cfbfe6bc9b79808da3596382f20b98ad43d5f2a4636ee7d7fe6088974205c"
+    },
+    {
+      "test": "CoreV2BinomialPreservesModalParametersEndpointsAndSamples",
+      "actual_baseline_undefined_symbols": [
+        "exp",
+        "lgamma_r",
+        "log"
+      ],
+      "cases": [
+        {
+          "name": "random-binomial-minstd",
+          "source": "tests/neverc/Inputs/translate/cpp/random-binomial-minstd.cpp",
+          "source_sha256": "fb8b8133ad65236ea37b18a861346cc08439d2cd795ec2af0a365b8fae4e4630"
+        },
+        {
+          "name": "random-binomial-mt32",
+          "source": "tests/neverc/Inputs/translate/cpp/random-binomial-mt32.cpp",
+          "source_sha256": "88ad3ca5ec12b8b5a781e13204757930d41d2fbc8e11c1d19eae39590509c056"
+        },
+        {
+          "name": "random-binomial-mt64",
+          "source": "tests/neverc/Inputs/translate/cpp/random-binomial-mt64.cpp",
+          "source_sha256": "a0725eee425d33c56c7a766b714e19affe6e48402c9becbcf7324a06ce86891e"
+        },
+        {
+          "name": "random-binomial-edges",
+          "source": "tests/neverc/Inputs/translate/cpp/random-binomial-edges.cpp",
+          "source_sha256": "dbf00bd87380750db84810aac911e2624b68eb7053bcc3546df414eb4fccfd4d"
+        }
+      ],
+      "former_source_sha256": "6caed73c7b736b178f5b0dc78403e2e18e641fda67395c27de120268d650120c"
+    }
+  ],
+  "corrected_tests_sha256": "88560ac1a1f1e39cc404a77a5a29abac5a1330bb0f59b9421f7adf38f5f90ca2",
+  "former_tests_sha256": "f27573e9d2c141a18bc8f2aef397ac2700752d63ea0bcd54b7527b4c685ba66b",
+  "boundary_source_sha256": {
+    "neverc/lib/Invoke/ToolChains/Gnu.cpp": "5d935aba902f26732899dabf54dc0886242848e73d88b48e6af92f8daaa051c4",
+    "docs/translate.md": "dc80f9a2def41773972a58d70a16ac1fa8237edf77c6b0d41702347482f3cd69",
+    "tests/neverc/standards/test_c_stdlib_patterns.c": "3e5460d08c158d2be9e709583558413c19f9eff70c8379107c9eaee9d9d39624",
+    "tests/neverc/HostTests.cpp": "e9631192735bfd693b035d042312daa635a2028b95043ae161f7d8675b26e553",
+    "tests/neverc/NeverCTestFixture.cpp": "11c9aff152730b069d353baea20d2a47067db8d386f0f751a873caffb4008086"
+  },
+  "baseline_log_sha256": "e64a119642fd3d36e8bb093b9c560165aff093e3a925524e6c3574c5dfb86d41",
+  "baseline_failure_count": 61
+}

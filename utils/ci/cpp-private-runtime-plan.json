@@ -1,0 +1,120 @@
+{
+  "component_commit": "e288a14477c18d63f5a58962a838535e348d7cbc",
+  "component_run_id": 39555090393,
+  "component_actual_job": 119072905309,
+  "component_attempt": 1,
+  "component_small_artifact": {
+    "id": 12325682804,
+    "name": "cpp-ordinary-selected-call-replay-e288a14477c18d63f5a58962a838535e348d7cbc",
+    "digest": "sha256:11314f583afdd2d927dd3e2c88b7101ec9674f04be34c3381d95014d8ad58f6e"
+  },
+  "component_archive_artifact": {
+    "id": 12325722847,
+    "name": "cpp-current-private-archive-remote-only-e288a14477c18d63f5a58962a838535e348d7cbc",
+    "digest": "sha256:7fd1695a2fcf19dae70169981e40b7419f3daf0f827a72c1ad7154ddba0ff1b7"
+  },
+  "component_report_sha256": "b0bec7220f0054d8b695260f65b36cb79e8b6f21cfe5ef264e3679d3691f5a33",
+  "private_archive_sha256": "98d4460ab5a3525dd4a91c9f199148e876e5d67821ae3e07b1accfe0c3eba8cf",
+  "frontend_build_id": "cpp-frontend-1-09bf6de54b1622f8abc83df0a32837cf27243338115bd7a5a6c3c1c6dbe6f0c0",
+  "exact_private_input_sha256": {
+    "Frontend.cpp": "d5e4732cf9499501d124ea5adbcaf192a7b6ec39915c8662cd69e331e6ddb7f6",
+    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "f2e7e32268a2de6a0554fc83b4b65c3f960f88035eb1ad94f5770414e9698674",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "f77ec41465dcda0bc84ad5ead774c9295d57f811065281fed439f1e5b2641d82",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "dependency_producer_components_artifact": {
+    "id": 12313187412,
+    "name": "cpp-not-fn-operator-components-remote-only-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:9edf4623b5f8535b68b1b64865e6a71f5003bf03c3ba5b62b049a7069428a0d7"
+  },
+  "dependency_producer_commit": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+  "dependency_producer_run_id": 39523812510,
+  "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
+  "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
+  "original_tests_file_sha256": "0099922e5f92464dde0ea0c4d9cd0359d0659eeb886a099d6f558c17ef8e70b5",
+  "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
+  "required_actual_original_gtest_xml": 124,
+  "original_gtest_bodies_modified": false,
+  "post_assertion_product_retention_only": true,
+  "source_paths": [
+    "utils/ci/extract_cpp_gtests.py",
+    "utils/ci/PrivateFrontendRuntimeDriver.cpp",
+    "utils/ci/cpp_private_runtime_gtest.py",
+    "utils/ci/check-private-frontend-runtime.py",
+    "utils/ci/download-private-runtime-component.py",
+    "utils/ci/run-private-runtime-ci.py",
+    "utils/ci/download-cpp-linux-baseline.py",
+    "utils/ci/cpp-private-runtime-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml"
+  ],
+  "frontend_execution_timeout_seconds": 60,
+  "c23_backend_rebuilt": false,
+  "actual_current_translate_owners_required": true,
+  "actual_fresh_host_private_abi_audit_required": true,
+  "scope": "Current private C entry and current Translate with authenticated existing C23 backend; not a fresh full compiler/platform matrix",
+  "full_ci_passed": false,
+  "published_to_dev": false,
+  "goal_complete": false,
+  "actual_previous_bootstrap_failure": {
+    "revision": "d4ede4b4cb759c5675674fcbdadc60901efa0343",
+    "run_id": 39385924733,
+    "job_id": 118505632994,
+    "full_log_sha256": "5567e69f030935bc866a1ac5b263efa56ca015cda8979b7c71118369ca5bcf04",
+    "artifact_id": 12247469012,
+    "actual_formal_xml": 0,
+    "actual_component_download_attempts": 0,
+    "failure": "A bootstrap directory created by the workflow must be reused for authenticated evidence."
+  },
+  "required_host_abi_audit_before_gtest": true,
+  "actual_previous_runtime_failure": {
+    "commit": "fca2aba3aac09922deb87b027bcbad8bf9d000b9",
+    "run_id": 39387668889,
+    "artifact_id": 12249526104,
+    "full_log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/pair-ci-failure-39387668889-job-118511320313.log",
+    "full_log_sha256": "7911c121c6e880ceee994a574fe3125aaee31540ab2b09ab7292cbab737d3a24",
+    "proof_sha256": "8c83f4023bee1b3c8bc7435153ae4a226bdea579c7be69193cec9217602c1f4e",
+    "report_sha256": "4c5b9d65648967b9e1f00720a41f4f084ac2dd0e9e20d243dc75ca9b27b7ff99",
+    "actual_original_formal_xml": 124,
+    "actual_original_formal_passed": 122,
+    "actual_formal_failed": [
+      "TranslateTest.CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations"
+    ],
+    "actual_formal_skipped": [],
+    "actual_host_abi_audit_verified": false,
+    "cause": "The project include expanded Python3_EXECUTABLE before the Python package was found; the generated PRE_LINK command was omitted.",
+    "fix": "Resolve the real pinned Python before constructing PRE_LINK and require actual command and audit success evidence before running tests.",
+    "known_pair_failures_not_fixed_by_this_harness_change": true
+  },
+  "actual_previous_verified_source_rejections": {
+    "commit": "67219ee16d42a706691392ac397c1cc3a8f11c3d",
+    "run_id": 39450797344,
+    "artifact_id": 12280120383,
+    "actual_host_abi_audit_verified": true,
+    "actual_original_formal_xml": 124,
+    "actual_original_formal_passed": 119,
+    "actual_formal_failed": [
+      "TranslateTest.CoreV2PairSelectedOwnerMovesRunAtBothOptimizations",
+      "TranslateTest.CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations",
+      "TranslateTest.CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations"
+    ],
+    "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
+  }
+}
