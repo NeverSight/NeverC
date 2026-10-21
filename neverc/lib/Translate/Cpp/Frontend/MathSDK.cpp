@@ -12004,6 +12004,11 @@ bool functionalNotFnFactorySplitTypeEnd(
     SourceLocation End) {
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Function = Factory.Selected.Factory;
+  const auto *Call = dyn_cast_or_null<CallExpr>(Factory.Selection.Expression);
+  if (!Call || Call->getDirectCallee() != Function ||
+      Factory.Selection.Function != Function ||
+      Factory.Selection.Location != Factory.Use.Location ||
+      !S.owns(SM, Factory.Selection.Location)) return false;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
   const auto *Parameter = Parameters && Parameters->size() == 2
@@ -12013,7 +12018,7 @@ bool functionalNotFnFactorySplitTypeEnd(
       Parameter->getDefaultArgument().getTypeSourceInfo() != Factory.PrimaryDefault ||
       Factory.Use.Template != Primary || Factory.Use.Declaration != Function ||
       Factory.Use.Kind != TemplateSourceKind::Function ||
-      !Factory.Use.FunctionalNotFnConstraint || Factory.Use.DefaultsOverflow ||
+      Factory.Use.DefaultsOverflow ||
       Factory.Use.Defaults.size() != 1 ||
       Factory.Use.Defaults.front().Parameter != Parameter ||
       Factory.Use.Defaults.front().Written.getArgument().getKind() != TemplateArgument::Type ||

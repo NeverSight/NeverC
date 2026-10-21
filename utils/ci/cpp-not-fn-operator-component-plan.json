@@ -1,5 +1,5 @@
 {
-  "source_basis": "1ee0d3340895e8b660c221df816e5caea8917a3d",
+  "source_basis": "0958574a6d723bf205b748a96434466c4e51cb88",
   "original_probe_commit": "c0bba9767cd2a4bcd86c46f8e17341b67cd48d4a",
   "original_probe_plan": "utils/ci/cpp-not-fn-pointer-inherited-replay-plan.json",
   "cases": [
