@@ -54,7 +54,7 @@
     "neverc/lib/Translate/Cpp/Frontend/IsolateSymbols.py",
     "neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py"
   ],
-  "source_repair_commit": "a0128dc4b450e62be9622fa9bfd528a320e7e458",
+  "source_repair_commit": "3fe1ee41308641f9c87f77e7b57996bbe9062b56",
   "target_abis": [
     "x86_64-unknown-linux-gnu"
   ],
@@ -207,6 +207,14 @@
         {
           "before": "  bool dataTraverseStmtPre(Stmt *) {\n    ++Depth;\n    if (step()) return true;\n    --Depth;\n    { if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) std::fprintf(stderr, \"NOT_FN_EDGE scope=GRAPH line=10277\\n\"); return false; } // RAV skips this subtree; Failed still rejects the whole proof.\n  }\n  bool dataTraverseStmtPost(Stmt *) { --Depth; return true; }",
           "after": "  bool dataTraverseStmtPre(Stmt *ObservedExpression) {\n    NotFnObservedRAVPathSizes.push_back(NotFnObservedGraphPath.size());\n    if ((Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) && NotFnObservedGraphPath.size() < 512)\n      NotFnObservedGraphPath.push_back({\"RAVExpr\", nullptr, {}, ObservedExpression});\n    ++Depth;\n    if (step()) return true;\n    --Depth;\n    NotFnObservedGraphPath.resize(NotFnObservedRAVPathSizes.back());\n    NotFnObservedRAVPathSizes.pop_back();\n    { if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) std::fprintf(stderr, \"NOT_FN_EDGE scope=GRAPH line=10277\\n\"); return false; } // RAV skips this subtree; Failed still rejects the whole proof.\n  }\n  bool dataTraverseStmtPost(Stmt *) {\n    --Depth;\n    if (!NotFnObservedRAVPathSizes.empty()) {\n      NotFnObservedGraphPath.resize(NotFnObservedRAVPathSizes.back());\n      NotFnObservedRAVPathSizes.pop_back();\n    }\n    return true;\n  }"
+        },
+        {
+          "before": "            [this, Callable, Input](const DeclRefExpr *Reference) {\n",
+          "after": "            [this, Callable, Input](const DeclRefExpr *Reference) {\n              if (Reference) {\n                const auto *ObservedVariable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());\n                unsigned ObservedPackets = 0;\n                for (const auto *Packet : Sources) {\n                  if (!Packet || !ObservedVariable || Packet->Declaration != ObservedVariable) continue;\n                  ++ObservedPackets;\n                  std::fprintf(stderr, \"NOT_FN_CTOR_VARIABLE_PACKET kind=%u retained=%u same_location=%u template=%u canonical=%u sugared=%u defaults=%zu params=%zu location=%s\\n\",\n                      static_cast<unsigned>(Packet->Kind), static_cast<unsigned>(Packet->FunctionalNotFnConstraint),\n                      static_cast<unsigned>(Packet->Location == Reference->getExprLoc()), static_cast<unsigned>(Packet->Template != nullptr),\n                      static_cast<unsigned>(Packet->Canonical != nullptr), static_cast<unsigned>(Packet->Sugared != nullptr),\n                      Packet->Defaults.size(), Packet->ParameterTypes.size(), Packet->Location.printToString(SM).c_str());\n                }\n                std::fprintf(stderr, \"NOT_FN_CTOR_VARIABLE_ROOT matches=%u location=%s\\n\", ObservedPackets, Reference->getExprLoc().printToString(SM).c_str());\n                Reference->dump();\n              }\n"
+        },
+        {
+          "before": "    if (!Tuple)\n      { if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) std::fprintf(stderr, \"NOT_FN_EDGE scope=GRAPH line=8876\\n\"); return false; }",
+          "after": "    if (!Tuple) {\n      if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation)\n        std::fprintf(stderr, \"NOT_FN_CARRIER_REFUSAL mode=%u nesting=%u type=%s bound_callable=%s\\n\",\n            static_cast<unsigned>(Mode), Nesting, T.getAsString().c_str(),\n            NotFnCallableType.isNull() ? \"<none>\" : NotFnCallableType.getAsString().c_str());\n      { if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) std::fprintf(stderr, \"NOT_FN_EDGE scope=GRAPH line=8876\\n\"); return false; }\n    }"
         }
       ],
       "original_sha256": "789c4597fb8c0b0409ddb99c048775b143290b20094137f027e00f8a5f6fdd21"
@@ -238,5 +246,6 @@
   "graph_budget_observation_only": true,
   "unchanged_graph_node_limit": 200000,
   "unchanged_graph_depth_limit": 64,
-  "actual_parent_observation_report_sha256": "bd225c1487035aab39bafadcca8876d30cc36b227ab930f4aaf599c338f6109c"
+  "actual_parent_observation_report_sha256": "bd225c1487035aab39bafadcca8876d30cc36b227ab930f4aaf599c338f6109c",
+  "actual_constructor_root_packet_observation": true
 }
