@@ -7614,6 +7614,7 @@ class UtilityTupleQueryGraph
   std::set<const CallExpr *> NotFnInvokeUses;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
   const FunctionDecl *NotFnInvokeSignature = nullptr;
+  const FunctionDecl *NotFnInvokeWrittenPattern = nullptr;
   const CallExpr *NotFnInvokeReturn = nullptr, *NotFnInvokeException = nullptr;
   const CXXRecordDecl *NotFnConstraintBaseOwner = nullptr;
   const CXXBaseSpecifier *NotFnConstraintBase = nullptr;
@@ -7718,10 +7719,15 @@ class UtilityTupleQueryGraph
   }
   bool notFnInvokeParameter(const ParmVarDecl *Parameter) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
-        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg() ||
-        Parameter->getDeclContext() != NotFnInvokeSignature) return false;
+        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return false;
+    const auto *Owner = dyn_cast<FunctionDecl>(Parameter->getDeclContext());
+    if (Owner != NotFnInvokeSignature) {
+      const auto *Primary = NotFnInvokeSignature->getPrimaryTemplate();
+      if (!NotFnInvokeWrittenPattern || Owner != NotFnInvokeWrittenPattern ||
+          !Primary || Primary->getTemplatedDecl() != Owner) return false;
+    }
     bool Found = false;
-    for (const auto *Actual : NotFnInvokeSignature->parameters()) Found |= Actual == Parameter;
+    for (const auto *Actual : Owner->parameters()) Found |= Actual == Parameter;
     return Found && family(Parameter) && TraverseType(Parameter->getType());
   }
   bool notFnInvokeForwardedCall(const CallExpr *Expression) {
@@ -10304,7 +10310,7 @@ public:
     const auto *Method = NotFnInvocation ? NotFnInvocation->Method : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
-        NotFnInvokeSignature || !NotFnInvokeUses.empty() ||
+        NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
         !CompletedNotFnInvokeSignatures.empty() || Arguments->size() != 2 ||
         Arguments->get(0).getKind() != TemplateArgument::Pack) return false;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
@@ -10402,14 +10408,24 @@ public:
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
-      NotFnInvokeSignature = nullptr;
+      NotFnInvokeSignature = NotFnInvokeWrittenPattern = nullptr;
       NotFnInvokeReturn = NotFnInvokeException = nullptr;
     });
     NotFnInvokeSignature = F;
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
-    if (!notFnIndirectSignature(ReturnCall) || !notFnInvokeForwardedCall(ExceptionCall) ||
-        !TraverseTypeLoc(Info->getTypeLoc()) || !function(F)) return false;
+    if (!notFnIndirectSignature(ReturnCall) || !notFnInvokeForwardedCall(ExceptionCall))
+      return false;
+    {
+      // The selected instance's written type preserves primary-template
+      // parameter references. Bind only that exact primary while walking
+      // this original TypeSourceInfo; the concrete exception above and the
+      // independent primary signature below retain their own full proofs.
+      NotFnInvokeWrittenPattern = Pattern;
+      auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+    }
+    if (!function(F)) return false;
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
