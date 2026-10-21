@@ -9993,7 +9993,10 @@ class UtilityTupleQueryGraph
             Reference->getDecl() == V && NotFnConstraintVariableSource &&
             NotFnConstraintVariableSource(Reference);
       }
-      if (!V->isConstexpr()) return false;
+      if (!V->isConstexpr())
+        return Mode == UtilityTupleQueryMode::NotFnSignature && Reference &&
+            Reference->getDecl() == V && NotFnConstraintVariableSource &&
+            NotFnConstraintVariableSource(Reference);
       const VarDecl *Holder = nullptr;
       const auto *Initializer = V->getAnyInitializer(Holder);
       return Initializer && Holder && family(Holder) &&
@@ -12423,6 +12426,7 @@ class NotFnPointerSourceProof {
   llvm::ArrayRef<const TemplateUseSource *> Sources;
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
   std::set<const DeclRefExpr *> InvocableVariableChildren;
+  std::map<const DeclRefExpr *, const ClassTemplateSpecializationDecl *> InvocableValueReferences;
 
   static const TemplateSpecializationType *specialization(QualType Type) {
     if (Type.isNull()) return nullptr;
@@ -12562,8 +12566,27 @@ class NotFnPointerSourceProof {
     // selected class/base/trait), not its folded true value alone.
     return Found && Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
   }
+  bool invocationValueUse(const DeclRefExpr *Reference) {
+    const auto Found = InvocableValueReferences.find(Reference);
+    if (Found == InvocableValueReferences.end()) return false;
+    const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+    const auto *Owner = Found->second;
+    if (!Variable || Variable->getDeclContext() != Owner ||
+        Variable->getName() != "value" || !Variable->isStaticDataMember() ||
+        !Variable->getType().isConstQualified() || !Variable->getType()->isBooleanType() ||
+        !Variable->isUsableInConstantExpressions(Context) ||
+        !Check.family(Variable, {"__type_traits/invoke.h"}) ||
+        !Check.family(Owner, {"__type_traits/invoke.h"})) return false;
+    const VarDecl *Holder = nullptr;
+    const auto *Initializer = Variable->getAnyInitializer(Holder);
+    return Initializer && Holder &&
+        Holder->getCanonicalDecl() == Variable->getCanonicalDecl() &&
+        Check.family(Holder, {"__type_traits/invoke.h"}) &&
+        Graph.TraverseStmt(const_cast<Expr *>(Initializer));
+  }
   bool invocationVariableUse(const DeclRefExpr *Reference,
       const FunctionalNotFnCallSource &Call) {
+    if (InvocableValueReferences.count(Reference)) return invocationValueUse(Reference);
     const auto *Variable = Reference
         ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
     const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
@@ -12638,8 +12661,37 @@ class NotFnPointerSourceProof {
       auto Restore = llvm::make_scope_exit([&] { InvocableVariableChildren.erase(Child); });
       return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
     }
-    // Never use the folded true result in place of the selected class/alias,
-    // overload and initializer source graph.
+    const auto *Load = dyn_cast<ImplicitCastExpr>(Variable->getInit());
+    const auto *Value = Load && Load->getCastKind() == CK_LValueToRValue
+        ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
+    const auto *Member = Value ? dyn_cast<VarDecl>(Value->getDecl()) : nullptr;
+    const auto *Owner = Member
+        ? dyn_cast<ClassTemplateSpecializationDecl>(Member->getDeclContext()) : nullptr;
+    const auto *OwnerPrimary = Owner ? Owner->getSpecializedTemplate() : nullptr;
+    if (!Owner || !OwnerPrimary || !OwnerPrimary->getIdentifier() ||
+        OwnerPrimary->getName() != "__invokable_r" || Member->getName() != "value" ||
+        !Member->isStaticDataMember() ||
+        Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != OwnerPrimary ||
+        !Check.family(Owner, {"__type_traits/invoke.h"}) ||
+        !Check.family(Member, {"__type_traits/invoke.h"}) ||
+        Owner->getTemplateArgs().size() != 3 ||
+        Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+        !Owner->getTemplateArgs()[0].getAsType()->isVoidType() ||
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Arguments[0].getAsType()) ||
+        Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
+        Owner->getTemplateArgs()[2].pack_size() != Pack.size()) return false;
+    const auto ActualPack = Owner->getTemplateArgs()[2].pack_elements();
+    for (unsigned I = 0; I < Pack.size(); ++I)
+      if (ActualPack[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(ActualPack[I].getAsType(), Pack[I].getAsType())) return false;
+    // The actual __is_invocable alias keeps its written void return argument.
+    // Closing that TypeLoc is independent of its canonical void value.
+    const auto Qualifier = Value->getQualifierLoc();
+    if (!Qualifier || !Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) ||
+        !InvocableValueReferences.emplace(Value, Owner).second) return false;
+    auto Restore = llvm::make_scope_exit([&] { InvocableValueReferences.erase(Value); });
     return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
   }
   bool decay(TemplateSpecializationTypeLoc Root, QualType Input, QualType Output) {
