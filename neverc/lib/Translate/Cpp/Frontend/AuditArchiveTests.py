@@ -2029,14 +2029,14 @@ public:
             }
             for state, contents in object_call_states.items():
                 with self.subTest(object_call_state=state):
-                    argument_reference_path.write_text(contents + call_overload_expected +
-                        argument_reference_expected, encoding="utf-8")
+                    argument_reference_path.write_text(argument_reference_expected + call_overload_expected +
+                        contents, encoding="utf-8")
                     untouched = snapshot_all_files()
-                    run_script(False, "Unexpected pinned Clang object template-call source in " +
+                    run_script(False, "Unexpected pinned Clang explicit-instantiation source in " +
                                str(argument_reference_path))
                     self.assertEqual(snapshot_all_files(), untouched, state)
-            argument_reference_path.write_text(object_call_expected + call_overload_expected +
-                argument_reference_expected, encoding="utf-8")
+            argument_reference_path.write_text(argument_reference_expected + call_overload_expected +
+                object_call_expected, encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
