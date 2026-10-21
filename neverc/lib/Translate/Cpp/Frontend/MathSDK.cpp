@@ -7603,6 +7603,8 @@ class UtilityTupleQueryGraph
   const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
+  std::map<const CXXRecordDecl *, std::pair<const TemplateSpecializationType *, unsigned>>
+      NotFnTupleTagSlices;
   const CXXConstructorDecl *PairConstructor = nullptr;
   std::set<const Type *> PairInputTypes;
   std::set<const CXXRecordDecl *> PairInputRecords;
@@ -9399,8 +9401,10 @@ class UtilityTupleQueryGraph
           !Argument.getAsIntegral().isNegative() &&
           Argument.getAsIntegral().getLimitedValue(N + 1) == N;
     };
+    const auto NotFnSlice = NotFnTupleTagSlices.find(Instance->getCanonicalDecl());
+    const unsigned Start = NotFnSlice == NotFnTupleTagSlices.end() ? 0U : NotFnSlice->second.second;
     if (!Integral(1, Context.getSizeType(), Tuple->size()) ||
-        !Integral(2, Context.getSizeType(), 0) ||
+        !Integral(2, Context.getSizeType(), Start) ||
         !Integral(3, Context.BoolTy, 1)) return false;
     const auto Default = [](const NonTypeTemplateParmDecl *P) -> const Expr * {
       const auto &A = P->getDefaultArgument().getArgument();
@@ -9977,6 +9981,76 @@ public:
                         const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
                         UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
       : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+  bool bindNotFnTupleTagSlices(const FunctionalNotFnFactorySource &Factory,
+      llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags) {
+    if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
+        Tags.size() != 4 || Factory.SelectedConstructions.size() != 4) return false;
+    const auto Pointer = approvedFunctionalNotFnPointerStorage(S, SM, Factory.Storage.Record, Context);
+    const auto *TupleInstance = Pointer ? dyn_cast<ClassTemplateSpecializationDecl>(Pointer->Tuple) : nullptr;
+    const auto *Construction = Factory.SelectedConstructions[1];
+    const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+    const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+    const auto *Arguments = Constructor ? Constructor->getTemplateSpecializationArgs() : nullptr;
+    if (!Pointer || !TupleInstance || Pointer->Tuple != Factory.Storage.Tuple || !Constructor || !Primary ||
+        !Arguments || Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
+        Arguments->get(0).pack_size() != 1 || Construction->getNumArgs() != 1 ||
+        Constructor->getParent()->getCanonicalDecl() != Pointer->Tuple->getCanonicalDecl() ||
+        !family(Constructor)) return false;
+    std::set<const NamedDecl *> InputPacks, StoredPacks;
+    std::set<const FunctionTemplateDecl *> Seen;
+    for (const auto *Current = Primary; Current;) {
+      if (!step() || !Seen.insert(Current).second || !family(Current) ||
+          !Current->getTemplateParameters()->size()) return false;
+      const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      InputPacks.insert(Pack);
+      Current = Current->getInstantiatedFromMemberTemplate();
+    }
+    for (const auto *Template : TupleInstance->getSpecializedTemplate()->redecls()) {
+      if (!step() || !family(Template) || Template->getTemplateParameters()->size() != 1)
+        return false;
+      const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Template->getTemplateParameters()->getParam(0));
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      StoredPacks.insert(Pack);
+    }
+    for (unsigned I : {1U, 3U}) {
+      const auto &Tag = Tags[I];
+      if (!Tag.Written || !Tag.Construction ||
+          Tag.Construction->getConstructor()->getParent()->getCanonicalDecl() !=
+              Tag.Record->getCanonicalDecl()) return false;
+      const auto Written = Tag.Written->getTypeLoc().getAs<ElaboratedTypeLoc>();
+      const auto Qualifier = Written.isNull() ? NestedNameSpecifierLoc() : Written.getQualifierLoc();
+      const auto Location = Qualifier ? Qualifier.getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
+                                      : TemplateSpecializationTypeLoc();
+      const auto *Use = Location.isNull() ? nullptr : Location.getTypePtr();
+      const auto *Template = Use ? Use->getTemplateName().getAsTemplateDecl() : nullptr;
+      const auto *Instance = Use ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(Use->getAsCXXRecordDecl()) : nullptr;
+      const auto Count = I == 1 ? 2U : 3U;
+      if (!Use || !Template || !Instance || !Template->getIdentifier() ||
+          Template->getName() != "__make_tuple_types" || !family(Template) ||
+          Location.getNumArgs() != Count || Use->template_arguments().size() != Count ||
+          Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
+                               Context.getRecordType(Pointer->Tuple)) ||
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
+      for (unsigned J = 1; J != Count; ++J) {
+        const auto Argument = Location.getArgLoc(J);
+        const auto Kind = Argument.getArgument().getKind();
+        const Expr *Expression = Kind == TemplateArgument::Expression ? Argument.getSourceExpression()
+            : Kind == TemplateArgument::Integral ? Argument.getSourceIntegralExpression() : nullptr;
+        const auto *Pack = Expression ? dyn_cast<SizeOfPackExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+        const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
+        if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != 1 ||
+            !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
+      }
+      // Both actual ranges end at this independently described one-element
+      // storage. The fourth tag's explicit start is one, so its slice is empty.
+      if (!NotFnTupleTagSlices.emplace(Instance->getCanonicalDecl(),
+              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return false;
+    }
+    return true;
+  }
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
       return false;
@@ -10153,9 +10227,15 @@ public:
           !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
       return TraverseType(T->getAliasedType());
     }
-    if (Template->getName() == "__make_tuple_types" && !T->isDependentType() &&
-        (T->template_arguments().size() != 1 ||
-         T->template_arguments()[0].getKind() != TemplateArgument::Type)) return false;
+    if (Template->getName() == "__make_tuple_types" && !T->isDependentType()) {
+      const auto *Instance = T->getAsCXXRecordDecl();
+      const auto Bound = Instance ? NotFnTupleTagSlices.find(Instance->getCanonicalDecl())
+                                  : NotFnTupleTagSlices.end();
+      const bool NotFnTag = Mode == UtilityTupleQueryMode::CatSignature &&
+          Bound != NotFnTupleTagSlices.end() && Bound->second.first == T;
+      if (!NotFnTag && (T->template_arguments().size() != 1 ||
+          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return false;
+    }
     return T->isDependentType() || record(T->getAsCXXRecordDecl());
   }
   bool VisitDeclRefExpr(DeclRefExpr *E) {
@@ -12548,6 +12628,7 @@ public:
     if (!Tags || Tags->size() != 4) return false;
     UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
                                 UtilityTupleQueryMode::CatSignature);
+    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags)) return false;
     for (const auto &Tag : *Tags)
       if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
     // Every selected construction keeps its actual signature. The exact
