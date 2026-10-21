@@ -22767,6 +22767,22 @@ public:
         SelectedCallSources[Source.Expression].push_back(&Source);
         continue;
       }
+      if (const auto *Call = dyn_cast_or_null<CallExpr>(Source.Expression);
+          Call && !isa<CXXMemberCallExpr>(Call)) {
+        // Ordinary and operator hooks also report unevaluated SDK calls.
+        // Their exact selection is inert evidence: lexical query signatures
+        // and runtime callees still pass their separate original checkers.
+        // Do not apply member-name/body admission while building this index.
+        if (!Selected || Selected != Source.Function ||
+            !Selected->getPrimaryTemplate() || Selected->isInvalidDecl() ||
+            !A.S.owns(A.Sources, Source.Location)) {
+          A.reject(Source.Location, "ordinary selected template identity",
+                   "Retained evidence must name its actual direct selected call.");
+          continue;
+        }
+        SelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
       const auto *Construction =
           dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
       const auto *UtilityCall = dyn_cast_or_null<CallExpr>(Source.Expression);
