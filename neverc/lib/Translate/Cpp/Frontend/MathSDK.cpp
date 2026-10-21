@@ -7613,6 +7613,7 @@ class UtilityTupleQueryGraph
   std::set<const CallExpr *> NotFnSignatureDeclvals;
   std::set<const CallExpr *> NotFnInvokeUses;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
+  std::map<const CallExpr *, const FunctionDecl *> NotFnTryResultUses;
   const FunctionDecl *NotFnInvokeSignature = nullptr;
   const FunctionDecl *NotFnInvokeWrittenPattern = nullptr;
   const CallExpr *NotFnInvokeReturn = nullptr, *NotFnInvokeException = nullptr;
@@ -10292,7 +10293,8 @@ public:
   bool withNotFnInvocation(const FunctionalNotFnCallSource &Call,
                            std::function<bool()> Proof) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnInvocation ||
-        !NotFnSignatureDeclvals.empty() || !Proof || !Call.Method || !Call.SourceCall ||
+        !NotFnSignatureDeclvals.empty() || !NotFnTryResultUses.empty() ||
+        !Proof || !Call.Method || !Call.SourceCall ||
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
         !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return false;
@@ -10302,6 +10304,7 @@ public:
       NotFnSignatureDeclvals.clear();
       NotFnInvokeUses.clear();
       CompletedNotFnInvokeSignatures.clear();
+      NotFnTryResultUses.clear();
     });
     return Proof() && !Failed;
   }
@@ -10438,6 +10441,148 @@ public:
     CompletedNotFnInvokeSignatures.insert(F);
     NotFnInvokeUses = std::move(Uses);
     return !Failed;
+  }
+  bool prepareNotFnTryResultSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
+      llvm::ArrayRef<const SelectedTemplateCallSource *> Selections) {
+    const auto *Method = NotFnInvocation ? NotFnInvocation->Method : nullptr;
+    const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
+        Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
+        CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
+        !NotFnTryResultUses.empty()) return false;
+    auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
+    if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    const auto Pack = Arguments->get(0).pack_elements();
+    auto BoundArguments = [&](const TemplateArgumentList *Types) {
+      if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
+          Types->get(1).getKind() != TemplateArgument::Pack ||
+          Types->get(1).pack_size() != Pack.size()) return false;
+      const auto Actual = Types->get(1).pack_elements();
+      for (unsigned I = 0; I < Pack.size(); ++I)
+        if (Pack[I].getKind() != TemplateArgument::Type ||
+            Actual[I].getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+      return true;
+    };
+    std::set<const FunctionDecl *> Functions;
+    std::map<const CallExpr *, const FunctionDecl *> Uses;
+    for (const auto *Source : Sources) {
+      if (!step()) return false;
+      const auto *F = Source ? dyn_cast_or_null<CXXMethodDecl>(Source->Declaration) : nullptr;
+      if (!F || !F->getIdentifier() || F->getName() != "__try_call" ||
+          !BoundArguments(F->getTemplateSpecializationArgs()) || F->isVariadic() ||
+          F->getNumParams() != 1 || !Context.hasSameType(F->getParamDecl(0)->getType(), Context.IntTy))
+        continue; // The unselected ellipsis overload grants no certificate.
+      const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(F->getParent());
+      const auto *OwnerPrimary = Owner ? Owner->getSpecializedTemplate() : nullptr;
+      const auto *Primary = F->getPrimaryTemplate();
+      if (!Owner || !OwnerPrimary || !Owner->getIdentifier() ||
+          Owner->getName() != "__invokable_r" ||
+          Owner->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplatePartialSpecializationDecl *>() ||
+          Owner->getTemplateArgs().size() != 3 ||
+          Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+          !Owner->getTemplateArgs()[0].getAsType()->isVoidType() ||
+          Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Bound) ||
+          Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
+          Owner->getTemplateArgs()[2].pack_size() != Pack.size() || !Primary ||
+          !F->isStatic() || F->isInvalidDecl() || F->isDeleted() || F->hasBody() ||
+          F->getParamDecl(0)->hasDefaultArg() ||
+          F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          Source->Kind != TemplateSourceKind::Function || Source->Template != Primary ||
+          !Source->FunctionalNotFnConstraint || Source->Type || Source->Underlying || Source->Written ||
+          Source->DefaultsOverflow || !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
+          Source->Instantiation || Source->Origin || Source->WrittenStorageClass || Source->Selection ||
+          !Source->Canonical || !Source->Sugared || !BoundArguments(Source->Canonical) ||
+          !BoundArguments(Source->Sugared) || !family(F) || !family(Owner) || !family(OwnerPrimary) ||
+          !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+      const auto OwnerPack = Owner->getTemplateArgs()[2].pack_elements();
+      for (unsigned I = 0; I < Pack.size(); ++I)
+        if (OwnerPack[I].getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return false;
+      for (unsigned I = 0; I < Source->Canonical->size(); ++I)
+        if (!Source->Canonical->get(I).structurallyEquals(F->getTemplateSpecializationArgs()->get(I)) ||
+            !Source->Canonical->get(I).structurallyEquals(
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
+      const auto *Definition = Owner->getDefinition();
+      if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
+          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return false;
+      const TypeAliasDecl *Result = nullptr;
+      for (const auto *Declaration : Definition->decls()) {
+        if (!step()) return false;
+        const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
+        if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
+        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return false;
+        Result = Alias;
+      }
+      const auto *ResultType = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
+      const auto *E = ResultType ? dyn_cast<CallExpr>(ResultType->getUnderlyingExpr()->IgnoreParens()) : nullptr;
+      const auto *Cast = E ? dyn_cast<ImplicitCastExpr>(E->getCallee()) : nullptr;
+      const auto *Reference = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+      const auto *Zero = E && E->getNumArgs() == 1 ? dyn_cast<IntegerLiteral>(E->getArg(0)) : nullptr;
+      if (!E || !Cast || Cast->getCastKind() != CK_FunctionToPointerDecay || !Reference ||
+          Reference->getDecl() != F || E->getDirectCallee() != F || !Zero ||
+          !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
+          E->isTypeDependent() || E->isValueDependent() ||
+          Reference->getExprLoc() != Source->Location ||
+          !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
+          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+      bool Selected = false;
+      for (const auto *Selection : Selections) {
+        if (!step()) return false;
+        if (Selection && Selection->Function == F && Selection->Expression == E &&
+            Selection->Location == Source->Location && Selection->FunctionalNotFnConstraint &&
+            matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
+      }
+      if (!Selected) return false;
+      const auto *Return = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
+      const auto *Invoke = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
+      if (!Invoke || !NotFnInvokeUses.count(Invoke) ||
+          !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())) return false;
+      // This declaration-only probe is used solely by the actual _Result
+      // decltype. Close every real signature and member-template ancestor;
+      // no runtime body is supplied or approved. The original class arguments
+      // and their written void/aliases still traverse in the root proof.
+      for (const auto *Template = Primary; Template;
+           Template = Template->getInstantiatedFromMemberTemplate()) {
+        if (!step() || !family(Template) ||
+            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return false;
+        const auto *Parameters = Template->getTemplateParameters();
+        const auto *First = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+        const auto *Rest = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+        const auto *Pattern = dyn_cast<CXXMethodDecl>(Template->getTemplatedDecl());
+        if (!First || !Rest || First->isParameterPack() || !Rest->isParameterPack() ||
+            First->getIndex() != 0 || Rest->getIndex() != 1 || First->hasDefaultArgument() ||
+            Rest->hasDefaultArgument() || !family(First) || !family(Rest) || !Pattern ||
+            (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
+            !Pattern->isStatic() || Pattern->getNumParams() != 1 || Pattern->isVariadic() ||
+            Pattern->hasBody() || Pattern->getParamDecl(0)->hasDefaultArg() ||
+            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
+        for (const auto *Declaration : Pattern->redecls()) {
+          const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+          if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
+              Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+              !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
+              !function(Declaration)) return false;
+        }
+      }
+      for (const auto *Declaration : F->redecls()) {
+        const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+        if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
+            Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
+            !function(Declaration)) return false;
+      }
+      Uses.emplace(E, F);
+      Functions.insert(F);
+    }
+    if (Functions.size() != 1 || Uses.empty() || Failed) return false;
+    NotFnTryResultUses = std::move(Uses);
+    return true;
   }
   bool withNotFnConstructorQuery(const DeclRefExpr *Reference,
       const FunctionalNotFnStorage &Storage, std::function<bool()> Proof) {
@@ -10783,6 +10928,10 @@ public:
         NotFnInvokeUses.count(E) && CompletedNotFnInvokeSignatures.count(F)) return family(F);
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation &&
         NotFnSignatureDeclvals.count(E)) return family(F);
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation) {
+      const auto Found = NotFnTryResultUses.find(E);
+      if (Found != NotFnTryResultUses.end() && Found->second == F) return family(F);
+    }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairHelper(F))
       return true;
     return family(F) && F->getIdentifier() &&
@@ -13567,7 +13716,8 @@ public:
     for (unsigned I = 0; I < Arguments->size(); ++I)
       if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
     return Graph.withNotFnInvocation(Call, [&] {
-    if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections)) return false;
+    if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections) ||
+        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) return false;
     // Close the concrete inner invoke result before the outer operator's
     // constraint reaches it. Use this SAME graph and its original cumulative
     // node/depth limits; only a fully successful dependency may be cached.
