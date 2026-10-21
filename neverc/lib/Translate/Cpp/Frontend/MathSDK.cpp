@@ -8895,8 +8895,13 @@ class UtilityTupleQueryGraph
         approvedUtilityStringViewRecord(S, SM, R, Context))
       return true;
     const auto Tuple = utilityTupleStorageRecord(S, SM, R, Context, Nesting);
-    if (!Tuple)
+    if (!Tuple) {
+      if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation)
+        std::fprintf(stderr, "NOT_FN_CARRIER_REFUSAL mode=%u nesting=%u type=%s bound_callable=%s\n",
+            static_cast<unsigned>(Mode), Nesting, T.getAsString().c_str(),
+            NotFnCallableType.isNull() ? "<none>" : NotFnCallableType.getAsString().c_str());
       { if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=8876\n"); return false; }
+    }
     for (const auto &E : Tuple->Elements)
       if (!carrier(E.getType(), Nesting + 1)) { if (Mode == UtilityTupleQueryMode::NotFnSignature || NotFnTagObservation) std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=8878\n"); return false; }
     return true;
@@ -12986,6 +12991,21 @@ public:
         !Context.hasSameType(Decayed, Callable)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12871\n"); return false; }
     if (!Graph.bindNotFnConstraintVariables(
             [this, Callable, Input](const DeclRefExpr *Reference) {
+              if (Reference) {
+                const auto *ObservedVariable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
+                unsigned ObservedPackets = 0;
+                for (const auto *Packet : Sources) {
+                  if (!Packet || !ObservedVariable || Packet->Declaration != ObservedVariable) continue;
+                  ++ObservedPackets;
+                  std::fprintf(stderr, "NOT_FN_CTOR_VARIABLE_PACKET kind=%u retained=%u same_location=%u template=%u canonical=%u sugared=%u defaults=%zu params=%zu location=%s\n",
+                      static_cast<unsigned>(Packet->Kind), static_cast<unsigned>(Packet->FunctionalNotFnConstraint),
+                      static_cast<unsigned>(Packet->Location == Reference->getExprLoc()), static_cast<unsigned>(Packet->Template != nullptr),
+                      static_cast<unsigned>(Packet->Canonical != nullptr), static_cast<unsigned>(Packet->Sugared != nullptr),
+                      Packet->Defaults.size(), Packet->ParameterTypes.size(), Packet->Location.printToString(SM).c_str());
+                }
+                std::fprintf(stderr, "NOT_FN_CTOR_VARIABLE_ROOT matches=%u location=%s\n", ObservedPackets, Reference->getExprLoc().printToString(SM).c_str());
+                Reference->dump();
+              }
               if (!Reference || !Check.location(Reference->getExprLoc(),
                       {"__functional/not_fn.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12875\n"); return false; }
               const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
