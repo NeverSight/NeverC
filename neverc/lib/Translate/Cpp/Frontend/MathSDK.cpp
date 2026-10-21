@@ -12492,6 +12492,9 @@ class NotFnPointerSourceProof {
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
   std::set<const DeclRefExpr *> InvocableVariableChildren;
   std::map<const DeclRefExpr *, const ClassTemplateSpecializationDecl *> InvocableValueReferences;
+  const CXXConstructorDecl *ConstructorDefaultOwner = nullptr;
+  const TemplateUseSource *ConstructorDefaultSource = nullptr;
+  const TypeSourceInfo *ConstructorDefaultSpelling = nullptr;
 
   static const TemplateSpecializationType *specialization(QualType Type) {
     if (Type.isNull()) return nullptr;
@@ -12592,6 +12595,60 @@ class NotFnPointerSourceProof {
     // selected SDK declaration chain and its real operation-query roots.
     return Graph.TraverseType(Info->getType()) &&
            Graph.TraverseTypeLoc(Source->Underlying->getTypeLoc());
+  }
+  bool constructorVariableUse(const DeclRefExpr *Reference,
+      const FunctionalNotFnStorage &Storage) {
+    const auto *Constructor = ConstructorDefaultOwner;
+    const auto *Source = ConstructorDefaultSource;
+    const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+    const auto *Arguments = Constructor ? Constructor->getTemplateSpecializationArgs() : nullptr;
+    if (!Reference || !Constructor || !Source || !Primary || !Arguments ||
+        !ConstructorDefaultSpelling || Constructor->getNumParams() != 1 ||
+        Constructor->getParent()->getCanonicalDecl() != Storage.Forwarder->getCanonicalDecl() ||
+        !Check.family(Constructor, {"__functional/perfect_forward.h"}) ||
+        !Check.location(Reference->getExprLoc(), {"__functional/perfect_forward.h"}) ||
+        Source->Kind != TemplateSourceKind::Function || !Source->FunctionalNotFnConstraint ||
+        Source->Declaration != Constructor || Source->Template != Primary || !arguments(*Source) ||
+        Source->Canonical->size() != Arguments->size()) return false;
+    for (unsigned I = 0; I < Arguments->size(); ++I)
+      if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
+    bool Spelling = false;
+    for (const auto &Default : Source->Defaults) {
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
+      if (!Parameter || !Parameter->hasDefaultArgument() ||
+          Default.Written.getArgument().getKind() != TemplateArgument::Type ||
+          Default.Converted.getArgument().getKind() != TemplateArgument::Type) continue;
+      Spelling |= Default.Written.getTypeSourceInfo() == ConstructorDefaultSpelling ||
+                  Default.Converted.getTypeSourceInfo() == ConstructorDefaultSpelling;
+    }
+    const auto Root = specialization(ConstructorDefaultSpelling);
+    if (!Spelling || Root.isNull() || Root.getNumArgs() != 1) return false;
+    const auto Argument = Root.getArgLoc(0);
+    const auto Kind = Argument.getArgument().getKind();
+    const Expr *Condition = Kind == TemplateArgument::Expression ? Argument.getSourceExpression()
+        : Kind == TemplateArgument::Integral ? Argument.getSourceIntegralExpression() : nullptr;
+    if (!Condition) return false;
+    // The reference must be an original child of this particular written or
+    // converted constructor default. A same-location sibling is insufficient.
+    std::vector<const Stmt *> Pending{Condition};
+    std::set<const Stmt *> Seen;
+    bool Found = false;
+    while (!Pending.empty()) {
+      const auto *Node = Pending.back();
+      Pending.pop_back();
+      if (!Node || !Seen.insert(Node).second) continue;
+      if (Seen.size() > 4096) return false;
+      Found |= Node == Reference;
+      for (const auto *Child : Node->children()) Pending.push_back(Child);
+    }
+    const auto Input = Constructor->getParamDecl(0)->getType();
+    if (!Found || !Input->isReferenceType() ||
+        !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(),
+                             Storage.CallableType)) return false;
+    // Reuse the complete real packet, primary/redeclaration, exact argument
+    // pack and initializer proof. The storage tuple is not the factory input.
+    return variableUse(Reference, "is_constructible_v",
+                       Context.getRecordType(Storage.Tuple), Input);
   }
   bool variableUse(const DeclRefExpr *Reference, llvm::StringRef Name,
                    QualType Callable, QualType Input) {
@@ -12870,9 +12927,10 @@ public:
     if ((!InputValue->isFunctionPointerType() && !InputValue->isFunctionType()) ||
         !Context.hasSameType(Decayed, Callable)) return false;
     if (!Graph.bindNotFnConstraintVariables(
-            [this, Callable, Input](const DeclRefExpr *Reference) {
-              if (!Reference || !Check.location(Reference->getExprLoc(),
-                      {"__functional/not_fn.h"})) return false;
+            [this, Callable, Input, Storage = *Pointer](const DeclRefExpr *Reference) {
+              if (!Reference) return false;
+              if (!Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}))
+                return constructorVariableUse(Reference, Storage);
               const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
               const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
               if (!Primary || !Primary->getIdentifier() ||
@@ -12955,9 +13013,23 @@ public:
             if (!Parameter->hasDefaultArgument() ||
                 Default.Written.getArgument().getKind() != TemplateArgument::Type ||
                 Default.Converted.getArgument().getKind() != TemplateArgument::Type ||
-                !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
-                !constraintType(Default.Written.getTypeSourceInfo()) ||
-                !constraintType(Default.Converted.getTypeSourceInfo())) return false;
+                !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()))
+              return false;
+            const auto *SavedOwner = ConstructorDefaultOwner;
+            const auto *SavedSource = ConstructorDefaultSource;
+            const auto *SavedSpelling = ConstructorDefaultSpelling;
+            auto RestoreConstructor = llvm::make_scope_exit([&] {
+              ConstructorDefaultOwner = SavedOwner;
+              ConstructorDefaultSource = SavedSource;
+              ConstructorDefaultSpelling = SavedSpelling;
+            });
+            ConstructorDefaultOwner = Constructor;
+            ConstructorDefaultSource = Source;
+            for (const auto *Spelling : {Default.Written.getTypeSourceInfo(),
+                                        Default.Converted.getTypeSourceInfo()}) {
+              ConstructorDefaultSpelling = Spelling;
+              if (!constraintType(Spelling)) return false;
+            }
           } else if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
                      !Graph.TraverseTemplateArgumentLoc(Default.Converted)) return false;
         }
