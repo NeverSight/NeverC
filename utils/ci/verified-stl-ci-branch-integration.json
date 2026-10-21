@@ -1,0 +1,28 @@
+{
+  "branches": [
+    {
+      "branch": "codex/cpp-stl-macho-data-const-default",
+      "commit": "5711009a2a6581ad24d47b6ae9a378291cddcc11",
+      "proof": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/dev-pr-integration/branch-test-header-target-ci-artifact-validation.json",
+      "proof_sha256": "6b495e07a74938f9f969eecbadc66ab109ec4f0bd3e0269a9f9824c27d48d8ec",
+      "run_id": 39590107698,
+      "artifact_id": 12342512551,
+      "report_sha256": "5fcf2b84427a965b32282734c24d5efad08eef66fca4b86f5fdaf415c40aeb87"
+    },
+    {
+      "branch": "codex/cpp-stl-private-runtime-formal-ci",
+      "commit": "3a575a08e8f0b5f325383bc8aaa4e66f22c1d96b",
+      "proof": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/dev-pr-integration/inert-call-runtime-artifact-validation.json",
+      "proof_sha256": "a27b7207613c593b583753b7ff4fcb9ebfa4a2354149d154d69d315d568fe939",
+      "run_id": 39572751240,
+      "artifact_id": 12334525214,
+      "report_sha256": "51359769643d2f485d364bf81111fc060c867ed73e4abdcfd9716207821ad438"
+    }
+  ],
+  "conflict_resolution": "Preserve fresh dev source, test bodies, header fix, all existing diagnostic files and unrelated workflow jobs; import only the exact successful jobs and their tools.",
+  "original_149_branch_heads_preserved": true,
+  "private_translate_and_original_test_sources_unchanged": true,
+  "new_cpp_execution_claimed": false,
+  "full_ci_passed": false,
+  "full_stl_complete": false
+}
