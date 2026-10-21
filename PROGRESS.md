@@ -1,5 +1,50 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-21
+
+- Cutoff: **2026-10-21T01:08:00Z**. Current dev: [6a3c501e](https://github.com/NeverSight/NeverC/commit/6a3c501ea92bbfb1ae7e8783769ec5f817fe1818); last implementation source remains [ee83c2e1](https://github.com/NeverSight/NeverC/commit/ee83c2e1916cb640d6791f56648f99af41b681aa).
+- The complete [ee83c2e1…6a3c501e comparison](https://github.com/NeverSight/NeverC/compare/ee83c2e1916cb640d6791f56648f99af41b681aa...6a3c501ea92bbfb1ae7e8783769ec5f817fe1818) contains **2 documentation-only commits / 1 path (PROGRESS.md)**. There is **no new implementation delta**; report maintenance is not product progress.
+- **No newly proven source defect and no source/test repair submitted.** Rotated the bounded static review into plugin output publication and VFS validation rather than claiming another full repository scan.
+- Read root AGENTS.md, README contribution guidance, docs/local-dev.md and .github/ci-policy.md. Root inventory contains no CONTRIBUTING.md; complete neverc and tests subtree inventories contain no nested AGENTS/CONTRIBUTING files. dev remains default, push-enabled and unprotected; the returned ruleset remains disabled.
+- Strict static-only scope overrides repository execution guidance: no project execution, builds, tests, benchmarks, repository scripts, dynamic analysis or manually triggered CI. Existing CI below is external evidence, not validation run by this review.
+
+## Activity and review queue
+
+**9 ordinary open issues / 0 open PRs**, unchanged. All-state issues and PR inventories were fully paginated (18 issue entries including historical PRs; 8 PRs; empty second pages). No issue/PR opening, closure or merge after the previous cutoff, **2026-10-20T01:07:00Z**. Repository issue comments and PR review-comment collections since that cutoff were empty. There is no open PR awaiting review. Roadmap issues #7–#12 and #16–#18 remain plans, not implementation completion.
+
+## Actual static coverage and limits
+
+Reviewed unchanged source pinned to the current dev tree:
+
+- **neverc/lib/Plugin/IO/OutputSink.cpp and OutputSink.h:** read sink creation, task/scope and handle validation, byte/name/metadata validation, caller-record capacity handling, finish/seal creation, host-only commit/abort, publication-summary translation and task-end abort path. Traced the state adapter to OutputTransaction declarations/implementation.
+- **neverc/lib/Foundation/Core/OutputTransaction.cpp and its public header:** read write/writeAt/truncate budget checks, state transitions, staging write/flush error handling, sync failures and abort, publication/keep failure branches, durability flags, idempotent commit and memory snapshot gating. No execution or cross-platform durability guarantee established.
+- **neverc/lib/Plugin/IO/PluginFileSystem.cpp and header:** selectively inspected route recursion/depth guards, provider status/header validation, open-read buffer copying and length/type agreement, directory result validation and error propagation. Remaining VFS methods, callback concurrency and all backing-platform implementations are not exhaustively audited.
+- **tests/neverc/PluginOutputSinkTests.cpp:** read selected fixture source for finish-without-publication, exactly-once host commit, random-access/truncate/abort, file publication, task/path aliases, cancellation and injected staging/sync/cleanup failures. Fixtures were not run and do not prove runtime behavior.
+- A complete Lowering.cpp read again could not be obtained: the contents call returned an empty body with blob metadata and the raw fallback failed. The historical piecewise publication outcome remains unresolved; no old uncertain write was retried and no repair is claimed.
+- The stream adapter's unconditional success after generic stream write/flush deserves a focused contract review with concrete bound-stream types and failure evidence. This is an **unconfirmed concern**, not a diagnosed bug; no speculative change was made.
+- Unrelated compiler, translation, ABI, runtime, linker and target modules remain outside this pass. Absence of a proven defect in this sample is not a repository-wide correctness finding.
+
+## Existing CI, separated by exact head
+
+Sampled **2026-10-21T01:06:47Z–2026-10-21T01:07:34Z**, using existing GitHub records only.
+
+- At current documentation head **6a3c501ea92bbfb1ae7e8783769ec5f817fe1818**, the complete workflow inventory has **9 completed runs: 8 success / 1 failure**; the complete check inventory has **10 checks: 9 success / 1 failure**. Both second pages are empty.
+- The failed [plugin-sanitizers run 39418328613](https://github.com/NeverSight/NeverC/actions/runs/39418328613), [ASan/UBSan job 118612714104](https://github.com/NeverSight/NeverC/actions/runs/39418328613/job/118612714104), built the plugin tests successfully and failed at “Run plugin tests under asan-ubsan”; resource-budget/fuzzer steps were skipped. Its TSan OFF job succeeded. Full failing-log retrieval returned a transport error; no specific assertion, memory defect or root cause is inferred.
+- The other eight current-head runs cover plugin/merge/TLS/network fuzzing, protocol interoperability and GKI checks. Their success is not a native compiler build result.
+- At unchanged last implementation head **ee83c2e1916cb640d6791f56648f99af41b681aa**, the fully paginated workflow inventory remains **20 completed runs: 11 success / 6 failure / 3 cancelled**. Earlier exact-head MSVC ARM64 C1053 and Python global-state diagnostics remain historical evidence, not newly reproduced findings. No implementation change or passing native rebuild has closed those gaps.
+- The two heads have different triggered workflow sets; comparing raw totals does not measure improvement. Documentation-only pushes skip platform builds under current CI policy. This document's subsequent commit is not included in the source-head sample.
+
+## Suggested priorities (not delivery commitments)
+
+1. **Diagnose the current ASan/UBSan failure from the exact job log.** Dependency: accessible diagnostics for job 118612714104 and its configuration. Acceptance: identify the actual failing test/assertion/report before proposing a minimal repair; obtain separately authorized runtime validation afterward.
+2. **Resolve the retained MSVC ARM64 compiler-size blocker.** Dependency: exact implementation-head C1053 context and authorized build validation. Acceptance: minimal semantics-preserving change plus a successful MSVC ARM64 build at that change's own head; no broad refactor is prescribed here.
+3. **Close bounded output/translation proof gaps.** Dependency: concrete stream error contract and a complete Lowering.cpp/producer/caller read, including confirmation of the earlier piecewise publication state. Acceptance: classify each concern with evidence and avoid duplicate or speculative patches.
+
+<details>
+<summary>Previous progress snapshots and daily records (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-20
 
 - Cutoff: **2026-10-20T01:07:00Z**. Reviewed dev source: [ee83c2e1](https://github.com/NeverSight/NeverC/commit/ee83c2e1916cb640d6791f56648f99af41b681aa), authored October 19 at 10:04:33 UTC.
@@ -1433,3 +1478,9 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 ## Daily record — 2026-10-20
 
 Reviewed ecfd4a0b…ee83c2e1 with the bounded pair-adapter scope above; recorded 9 open issues and 0 open PRs with complete pagination, terminal existing CI and its unresolved diagnostics. No new proven source defect or source repair. Updated only this progress document, retaining the prior file verbatim. All validation was static; no tests/builds/scripts/manual CI were run. Snapshot and priority evidence is linked above.
+
+</details>
+
+## Daily record — 2026-10-21
+
+No implementation changes since ee83c2e1; two progress-only commits excluded from product progress. Recorded 9 open issues and no open PRs with complete pagination. Rotated static review to plugin output/VFS boundaries and selected fixture source; no newly proven defect or source repair. Current-head scheduled sanitizer failure remains undiagnosed because its full log could not be retrieved. Preserved all prior progress text and human edits. No builds/tests/scripts/manual CI, issue mutations, merges or deployments.
