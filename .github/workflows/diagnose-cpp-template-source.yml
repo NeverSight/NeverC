@@ -1130,6 +1130,62 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
         compression-level: 0
+  inspect-python-sdk-dependent-snapshots:
+    name: Python SDK snapshot consistency (${{ matrix.host }})
+    if: ${{ github.event.inputs.fixture_group == 'python-sdk-dependent-snapshots'
+      }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+        - host: linux-x64
+          runner: ubuntu-22.04
+          python: '3.10'
+          arch: x64
+        - host: linux-arm64
+          runner: ubuntu-22.04-arm
+          python: 3.12.10
+          arch: arm64
+    steps:
+    - name: Checkout exact candidate
+      uses: actions/checkout@v4
+    - name: Set up original build-tool Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: ${{ matrix.python }}
+        architecture: ${{ matrix.arch }}
+    - name: Install the original Clang22 metadata parser
+      shell: bash
+      run: 'set -euo pipefail
+
+        bash .github/scripts/configure-apt-ubuntu.sh
+
+        sudo apt-get update
+
+        wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+
+        chmod +x "$RUNNER_TEMP/llvm.sh"
+
+        sudo "$RUNNER_TEMP/llvm.sh" 22
+
+        '
+    - name: Run original generator and Python SDK consistency checks
+      shell: bash
+      env:
+        NEVERC_SNAPSHOT_HOST: ${{ matrix.host }}
+        NEVERC_CLANG: /usr/bin/clang-22
+      run: python3 utils/ci/check-python-sdk-dependent-snapshots.py --out "$RUNNER_TEMP/python-sdk-dependent-snapshots"
+    - name: Retain complete small snapshot evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-sdk-dependent-snapshots-${{ matrix.host }}-${{ github.sha }}
+        path: ${{ runner.temp }}/python-sdk-dependent-snapshots
+        if-no-files-found: error
+        retention-days: 14
 'on':
   workflow_dispatch:
     inputs:
@@ -1152,6 +1208,7 @@ jobs:
         - artifact-policy
         - branch-test-header
         - private-frontend-runtime
+        - python-sdk-dependent-snapshots
   push:
     branches:
     - dev
