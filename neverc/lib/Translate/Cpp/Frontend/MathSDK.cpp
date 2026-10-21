@@ -7616,6 +7616,8 @@ class UtilityTupleQueryGraph
   std::map<const CallExpr *, const FunctionDecl *> NotFnTryResultUses;
   std::map<const TypeAliasDecl *, const CXXRecordDecl *> NotFnResultSentinels;
   const CXXRecordDecl *NotFnResultComparisonRecord = nullptr;
+  const TypeSourceInfo *NotFnResultWrittenArgument = nullptr;
+  const CXXRecordDecl *NotFnResultWrittenSentinel = nullptr;
   const FunctionDecl *NotFnInvokeSignature = nullptr;
   const FunctionDecl *NotFnInvokeWrittenPattern = nullptr;
   const CallExpr *NotFnInvokeReturn = nullptr, *NotFnInvokeException = nullptr;
@@ -10310,6 +10312,7 @@ public:
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnInvocation ||
         !NotFnSignatureDeclvals.empty() || !NotFnTryResultUses.empty() ||
         !NotFnResultSentinels.empty() || NotFnResultComparisonRecord ||
+        NotFnResultWrittenArgument || NotFnResultWrittenSentinel ||
         !Proof || !Call.Method || !Call.SourceCall ||
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
@@ -10323,6 +10326,8 @@ public:
       NotFnTryResultUses.clear();
       NotFnResultSentinels.clear();
       NotFnResultComparisonRecord = nullptr;
+      NotFnResultWrittenArgument = nullptr;
+      NotFnResultWrittenSentinel = nullptr;
     });
     return Proof() && !Failed;
   }
@@ -10529,6 +10534,39 @@ public:
     if (Found == NotFnResultSentinels.end() || !Sentinel ||
         Sentinel->getCanonicalDecl() != Found->second || !family(Result)) return nullptr;
     return Found->second;
+  }
+  const CXXRecordDecl *notFnResultSentinelAlias(const TemplateSpecializationType *T) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
+        !T || !T->isTypeAlias()) return nullptr;
+    const auto *Alias = dyn_cast_or_null<TypeAliasTemplateDecl>(T->getTemplateName().getAsTemplateDecl());
+    const auto Arguments = T->template_arguments();
+    if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_IsNotSame" ||
+        !family(Alias) || Arguments.size() != 2 ||
+        Arguments[0].getKind() != TemplateArgument::Type || Arguments[1].getKind() != TemplateArgument::Type ||
+        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h")) return nullptr;
+    const auto *Expansion = dyn_cast<ElaboratedType>(T->getAliasedType().getTypePtr());
+    const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
+    const auto *ConstantAlias = Constant
+        ? dyn_cast_or_null<TypeAliasTemplateDecl>(Constant->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!ConstantAlias || !ConstantAlias->getIdentifier() || ConstantAlias->getName() != "_BoolConstant" ||
+        !family(ConstantAlias) || Constant->template_arguments().size() != 1 ||
+        Constant->template_arguments()[0].getKind() != TemplateArgument::Expression ||
+        !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return nullptr;
+    const Expr *Expression = Constant->template_arguments()[0].getAsExpr();
+    if (const auto *Value = dyn_cast<ConstantExpr>(Expression)) Expression = Value->getSubExpr();
+    const auto *Negation = dyn_cast<UnaryOperator>(Expression->IgnoreParenImpCasts());
+    const auto *Query = Negation && Negation->getOpcode() == UO_LNot
+        ? dyn_cast<TypeTraitExpr>(Negation->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Sentinel = notFnResultSentinelArgument(Query);
+    if (!Sentinel) return nullptr;
+    const auto *First = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(0)->getType().getTypePtr());
+    const auto *Second = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(1)->getType().getTypePtr());
+    if (!First || !Second || First->getAssociatedDecl() != Alias || Second->getAssociatedDecl() != Alias ||
+        First->getReplacementType() != Arguments[0].getAsType() ||
+        Second->getReplacementType() != Arguments[1].getAsType()) return nullptr;
+    // Do not consume a folded boolean as a source witness. This is the actual
+    // negated builtin and its exact two substitutions inside the real alias.
+    return Sentinel;
   }
   bool prepareNotFnTryResultSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections) {
@@ -10837,6 +10875,30 @@ public:
     return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateSpecializationType(T);
   }
   bool TraverseTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc Location) {
+    const auto *SavedArgument = NotFnResultWrittenArgument;
+    const auto *SavedSentinel = NotFnResultWrittenSentinel;
+    auto RestoreWrittenSentinel = llvm::make_scope_exit([&] {
+      NotFnResultWrittenArgument = SavedArgument;
+      NotFnResultWrittenSentinel = SavedSentinel;
+    });
+    if (const auto *Sentinel = notFnResultSentinelAlias(Location.getTypePtr())) {
+      if (Location.getNumArgs() != 2 ||
+          Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return false;
+      const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
+      const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
+      const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
+      if (!First || !Second || !Record ||
+          First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
+          Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
+          Record->getCanonicalDecl() != Sentinel) return false;
+      for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
+                              First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
+                              Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+      NotFnResultWrittenArgument = Second;
+      NotFnResultWrittenSentinel = Sentinel;
+    }
     if (isa_and_nonnull<BuiltinTemplateDecl>(Location.getTypePtr()->getTemplateName().getAsTemplateDecl())) {
       // Only an authenticated original projection may supply a builtin token.
       // Concrete generated projections are checked as types, without claiming
@@ -10930,6 +10992,18 @@ public:
   }
   bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &Location) {
     const auto &Argument = Location.getArgument();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation &&
+        NotFnResultWrittenArgument && NotFnResultWrittenSentinel &&
+        Argument.getKind() == TemplateArgument::Type &&
+        Location.getTypeSourceInfo() == NotFnResultWrittenArgument &&
+        Argument.getAsType() == NotFnResultWrittenArgument->getType()) {
+      const auto *SavedSentinel = NotFnResultComparisonRecord;
+      NotFnResultComparisonRecord = NotFnResultWrittenSentinel;
+      auto RestoreWrittenArgument = llvm::make_scope_exit([&] { NotFnResultComparisonRecord = SavedSentinel; });
+      // Keep the original TypeLoc traversal and every source check. Only this
+      // exact second argument's TSI can use its independently closed sentinel.
+      return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateArgumentLoc(Location);
+    }
     const Expr *Written = nullptr;
     switch (Argument.getKind()) {
     case TemplateArgument::Integral: Written = Location.getSourceIntegralExpression(); break;
