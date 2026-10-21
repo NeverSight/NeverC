@@ -12542,15 +12542,18 @@ public:
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     const auto *SourceCall = Call.SourceCall;
-    if (!SourceCall || SourceCall->getOperator() != OO_Call ||
+    const auto *Reference = SourceCall
+        ? dyn_cast<DeclRefExpr>(SourceCall->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    if (!SourceCall || !Reference || Reference->getDecl() != Method ||
+        SourceCall->getOperator() != OO_Call ||
         SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
-        !S.owns(SM, SourceCall->getOperatorLoc()) || !S.owns(SM, Use.Location)) return false;
+        !S.owns(SM, Reference->getExprLoc()) || !S.owns(SM, Use.Location)) return false;
     bool Selected = false;
     for (const auto *Selection : Selections)
       if (Selection && Selection->FunctionalNotFnConstraint &&
           Selection->Expression == SourceCall && Selection->Function == Method &&
-          Selection->Location == SourceCall->getOperatorLoc() &&
+          Selection->Location == Reference->getExprLoc() &&
           matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
     // Deduction/default packets belong to this exact instantiated method and
     // canonical/sugared arguments below. Repeated uses retain their own call
