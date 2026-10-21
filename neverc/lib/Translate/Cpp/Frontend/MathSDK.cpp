@@ -7604,6 +7604,8 @@ class UtilityTupleQueryGraph
   TypeLoc NotFnConstructorReturn;
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
+  const CXXRecordDecl *NotFnTupleLeafRecord = nullptr;
+  const FieldDecl *NotFnTupleLeafValue = nullptr;
   QualType NotFnCallableType;
   const TypeTraitExpr *NotFnConstructorQuery = nullptr;
   const CXXConstructExpr *NotFnConstructorRoot = nullptr;
@@ -10011,6 +10013,19 @@ class UtilityTupleQueryGraph
           Context.hasSameType(Element.getAsType(), NotFnTupleTagStorage->CallableType) &&
           TraverseType(Element.getAsType());
     }
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnTupleLeafRecord &&
+        R->getCanonicalDecl() == NotFnTupleLeafRecord) {
+      // The actual is_same operand names the leaf already certified by this
+      // wrapper's storage descriptor. Close its real field type, without
+      // turning function-pointer tuples into general metadata carriers.
+      const auto *Definition = R->getDefinition();
+      if (!Definition || !NotFnTupleLeafValue || !family(R) || !family(Definition) ||
+          Definition->getNumBases() || Definition->isUnion() || Definition->isDynamicClass() ||
+          std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
+          *Definition->field_begin() != NotFnTupleLeafValue || !family(NotFnTupleLeafValue) ||
+          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return false;
+      return TraverseType(NotFnTupleLeafValue->getType());
+    }
     if (carrier(Context.getRecordType(R))) {
       if (Mode != UtilityTupleQueryMode::CatSignature) return true;
       if (!family(R)) return false;
@@ -10206,7 +10221,12 @@ public:
     const auto Pointer = approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
     if (!Pointer || Pointer->Operation != Storage.Operation ||
         !Context.hasSameType(Pointer->CallableType, Storage.CallableType)) return false;
+    if (!Pointer->TupleLeaf || !Pointer->Callable.Field || Pointer->Callable.EmptyBase ||
+        Pointer->Callable.Field->getParent()->getCanonicalDecl() !=
+            Pointer->TupleLeaf->getCanonicalDecl()) return false;
     NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
+    NotFnTupleLeafRecord = Pointer->TupleLeaf->getCanonicalDecl();
+    NotFnTupleLeafValue = Pointer->Callable.Field;
     NotFnCallableType = Pointer->CallableType;
     return true;
   }
@@ -12340,6 +12360,59 @@ bool retainFunctionalNotFnConstraintRoot(
     return false;
   NotFnSelectedSource Check(S, SM, Template->getASTContext());
   if (Kind == TemplateSourceKind::Function) {
+    const auto *Helper = dyn_cast_or_null<FunctionDecl>(Declaration);
+    const auto *HelperPrimary = Helper ? Helper->getPrimaryTemplate() : nullptr;
+    const auto *HelperArguments = Helper ? Helper->getTemplateSpecializationArgs() : nullptr;
+    if (Helper && HelperPrimary && Template == HelperPrimary && !Type && !Underlying &&
+        Helper->getIdentifier() && !Helper->isInvalidDecl() && !Helper->isDeleted() &&
+        Helper->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
+        Use && Use->Root == "libcxx" && Use->Path == "__type_traits/invoke.h" &&
+        (Helper->getName() == "__invoke" || Helper->getName() == "__try_call")) {
+      auto Pointer = [](QualType T) {
+        return !T.isNull() && T.getNonReferenceType()->isFunctionPointerType();
+      };
+      auto Operation = [&](QualType T) {
+        const auto *R = T.isNull() ? nullptr : T.getNonReferenceType()->getAsCXXRecordDecl();
+        return R && R->getIdentifier() && R->getName() == "__not_fn_op" &&
+            Check.family(R, {"__functional/not_fn.h"});
+      };
+      bool Bound = false;
+      if (Helper->getName() == "__invoke" && !isa<CXXMethodDecl>(Helper) &&
+          HelperArguments && HelperArguments->size() == 2 &&
+          HelperArguments->get(0).getKind() == TemplateArgument::Type &&
+          HelperArguments->get(1).getKind() == TemplateArgument::Pack) {
+        const auto Callable = HelperArguments->get(0).getAsType();
+        const auto Pack = HelperArguments->get(1).pack_elements();
+        Bound = Pointer(Callable) ||
+            (Operation(Callable) && !Pack.empty() && Pack[0].getKind() == TemplateArgument::Type &&
+             Pointer(Pack[0].getAsType()));
+      } else if (Helper->getName() == "__try_call") {
+        const auto *Method = dyn_cast<CXXMethodDecl>(Helper);
+        const auto *Owner = Method
+            ? dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent()) : nullptr;
+        if (Owner && Method->isStatic() && Owner->getIdentifier() &&
+            Owner->getName() == "__invokable_r" &&
+            Owner->getSpecializationKind() == TSK_ImplicitInstantiation &&
+            Check.family(Owner, {"__type_traits/invoke.h"})) {
+          const auto &Arguments = Owner->getTemplateArgs();
+          if (Arguments.size() == 3 && Arguments[0].getKind() == TemplateArgument::Type &&
+              Arguments[0].getAsType()->isVoidType() &&
+              Arguments[1].getKind() == TemplateArgument::Type &&
+              Arguments[2].getKind() == TemplateArgument::Pack) {
+            const auto Callable = Arguments[1].getAsType();
+            const auto Pack = Arguments[2].pack_elements();
+            Bound = Pointer(Callable) ||
+                (Operation(Callable) && !Pack.empty() && Pack[0].getKind() == TemplateArgument::Type &&
+                 Pointer(Pack[0].getAsType()));
+          }
+        }
+      }
+      // These genuine producer callbacks were observed before the old filter.
+      // Preserve their original defaults/parameter spellings in inert owned
+      // storage. Consumption still needs this call's exact helper identity,
+      // primary, selected arguments, source, exception and body certificates.
+      if (Bound && Check.family(Helper, {"__type_traits/invoke.h"})) return true;
+    }
     const auto *Function = dyn_cast_or_null<CXXMethodDecl>(Declaration);
     const auto *Owner = Function
         ? dyn_cast<ClassTemplateSpecializationDecl>(Function->getParent()) : nullptr;
