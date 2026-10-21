@@ -7605,6 +7605,8 @@ class UtilityTupleQueryGraph
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
   QualType NotFnCallableType;
+  const TypeTraitExpr *NotFnConstructorQuery = nullptr;
+  const CXXConstructExpr *NotFnConstructorRoot = nullptr;
   const CXXRecordDecl *NotFnConstraintBaseOwner = nullptr;
   const CXXBaseSpecifier *NotFnConstraintBase = nullptr;
   std::map<const CXXRecordDecl *, std::pair<const TemplateSpecializationType *, unsigned>>
@@ -10117,6 +10119,54 @@ public:
     NotFnCallableType = Pointer->CallableType;
     return true;
   }
+  bool withNotFnConstructorQuery(const DeclRefExpr *Reference,
+      const FunctionalNotFnStorage &Storage, std::function<bool()> Proof) {
+    const auto *Variable = Reference
+        ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
+    const auto *Query = Variable && Variable->hasInit()
+        ? dyn_cast<TypeTraitExpr>(Variable->getInit()->IgnoreParenImpCasts()) : nullptr;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnFactoryDefaults ||
+        NotFnConstructorQuery || NotFnConstructorRoot || !Proof || !Query ||
+        Query->getTrait() != TT_IsConstructible || Query->getNumArgs() != 2 ||
+        Query->isTypeDependent() || Query->isValueDependent() || Query->isInstantiationDependent() ||
+        Storage.Record != NotFnFactoryDefaults->Selected.Storage.Record ||
+        Storage.Tuple != NotFnFactoryDefaults->Selected.Storage.Tuple ||
+        !Context.hasSameType(Storage.CallableType, NotFnCallableType) ||
+        !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
+      return false;
+    const auto Input = Query->getArg(1)->getType();
+    if (!Input->isRValueReferenceType() ||
+        !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return false;
+    const auto Found = OperationTraits.find(Query);
+    if (Found == OperationTraits.end()) return false;
+    const auto &Source = Found->second;
+    const auto *Root = Source.Root
+        ? dyn_cast<CXXConstructExpr>(Source.Root->IgnoreParenImpCasts()) : nullptr;
+    if (!Source.Attempted || !Source.Complete || !Root || Source.Operands.size() != 1 ||
+        Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
+        Source.DestructionExceptionAttempted ||
+        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return false;
+    const auto *Constructor = Root->getConstructor();
+    bool Selected = false;
+    for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
+      if (Construction && Construction->getConstructor() == Constructor &&
+          Constructor->getParent()->getCanonicalDecl() == Storage.Tuple->getCanonicalDecl())
+        Selected = true;
+    if (!Selected || Constructor->getNumParams() != 1 ||
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return false;
+    // This is the actual retained query for an already described runtime
+    // construction, not a copy/move special member or a generic SDK grant.
+    // The callback still authenticates the original variable packet before
+    // traversing its initializer. Every constructor/default/body obligation
+    // in the enclosing factory proof remains mandatory.
+    NotFnConstructorQuery = Query;
+    NotFnConstructorRoot = Root;
+    auto Restore = llvm::make_scope_exit([&] {
+      NotFnConstructorQuery = nullptr;
+      NotFnConstructorRoot = nullptr;
+    });
+    return Proof() && !Failed;
+  }
   bool TraverseNotFnConstructorSignature(const CXXConstructorDecl *Constructor,
       const TypeSourceInfo *Written) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnFactoryDefaults ||
@@ -10415,6 +10465,23 @@ public:
     // These nodes can occur only in the exact retained hypothetical graph;
     // caller arguments never enter this SDK metadata walker.
     const auto *Constructor = E->getConstructor();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && E == NotFnConstructorRoot) {
+      const auto *Query = NotFnConstructorQuery;
+      const auto *Operand = E->getNumArgs() == 1
+          ? dyn_cast<OpaqueValueExpr>(E->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+      if (!Query || !Constructor || !E->isPRValue() ||
+          E->getConstructionKind() != CXXConstructionKind::Complete ||
+          !Constructor->getPrimaryTemplate() || !Constructor->isConstexpr() ||
+          Constructor->isDeleted() || Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+          Constructor->getAccess() != AS_public || Constructor->getNumParams() != 1 ||
+          Constructor->getParamDecl(0)->hasDefaultArg() || !Operand ||
+          Operand->getSourceExpr() || !Operands.count(Operand) ||
+          !Context.hasSameType(Operand->getType(),
+              Query->getArg(1)->getType().getNonLValueExprType(Context)) ||
+          Operand->getValueKind() != Expr::getValueKindForType(Query->getArg(1)->getType()))
+        return false;
+      return function(Constructor) && !Failed;
+    }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         E == PairTraitConstruction && PairTraitQuery && Constructor &&
         (PairTraitQuery->getTrait() == TT_IsConstructible ||
@@ -12647,8 +12714,10 @@ class NotFnPointerSourceProof {
                              Storage.CallableType)) return false;
     // Reuse the complete real packet, primary/redeclaration, exact argument
     // pack and initializer proof. The storage tuple is not the factory input.
-    return variableUse(Reference, "is_constructible_v",
-                       Context.getRecordType(Storage.Tuple), Input);
+    return Graph.withNotFnConstructorQuery(Reference, Storage, [&] {
+      return variableUse(Reference, "is_constructible_v",
+                         Context.getRecordType(Storage.Tuple), Input);
+    });
   }
   bool variableUse(const DeclRefExpr *Reference, llvm::StringRef Name,
                    QualType Callable, QualType Input) {
@@ -13071,6 +13140,27 @@ public:
         Use.Canonical->size() != Arguments->size()) return false;
     for (unsigned I = 0; I < Arguments->size(); ++I)
       if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
+    // Close the concrete inner invoke result before the outer operator's
+    // constraint reaches it. Use this SAME graph and its original cumulative
+    // node/depth limits; only a fully successful dependency may be cached.
+    // All original primary, Written and Converted roles still traverse below.
+    const auto *Invoke = Call.InvokeCall;
+    const auto *Callee = Invoke ? Invoke->getDirectCallee() : nullptr;
+    const auto *Info = Callee ? Callee->getTypeSourceInfo() : nullptr;
+    const auto Prototype = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>()
+                                : FunctionProtoTypeLoc();
+    const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
+    const auto *Result = Return ? specialization(Return.getType()) : nullptr;
+    const auto *Alias = Result ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        Result->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Invoke || !Callee || !Callee->getIdentifier() || Callee->getName() != "invoke" ||
+        !Callee->getPrimaryTemplate() || !Check.family(Callee, {"__functional/invoke.h"}) ||
+        !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
+        Invoke->getNumArgs() != Callee->getNumParams() ||
+        !Alias || Alias->getName() != "invoke_result_t" ||
+        !Check.family(Alias, {"__type_traits/invoke.h"}) ||
+        !Context.hasSameType(Return.getType(), Callee->getReturnType()) ||
+        !Graph.TraverseTypeLoc(Return)) return false;
     const auto &Default = Use.Defaults.front();
     const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
     if (!Parameter || !Parameter->hasDefaultArgument() ||
