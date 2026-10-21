@@ -181,6 +181,8 @@ def preserve_explicit_function_instantiation_source(source_root):
              '    ICS.UserDefined.FoundConversionFunction = Best->FoundDecl;\n    ICS.UserDefined.EllipsisConversion = false;\n    if (S.getASTConsumer().wantsNeverCTemplateSource() &&\n        Best->Function->getPrimaryTemplate())\n      ICS.NeverCTemplateDeductionLocation = CandidateSet.getLocation();'),
             ('  if (Result.isInvalid())\n    return true;\n  // Record usage of conversion in an implicit cast.',
              '  if (Result.isInvalid())\n    return true;\n  if (Conversion->getPrimaryTemplate() &&\n      SemaRef.getASTConsumer().wantsNeverCTemplateSource())\n    SemaRef.getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n        Result.get(), Conversion, Loc);\n  // Record usage of conversion in an implicit cast.'),
+            ('  if (CheckCallReturnType(Method->getReturnType(), LParenLoc, TheCall, Method))\n    return true;\n\n  if (CheckFunctionCall(Method, TheCall, Proto))\n    return true;\n\n  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), Method);',
+             '  if (CheckCallReturnType(Method->getReturnType(), LParenLoc, TheCall, Method))\n    return true;\n\n  if (CheckFunctionCall(Method, TheCall, Proto))\n    return true;\n\n  auto NeverCObjectCallResult =\n      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), Method);\n  if (!NeverCObjectCallResult.isInvalid() && Method->getPrimaryTemplate() &&\n      getASTConsumer().wantsNeverCTemplateSource())\n    getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n        TheCall, Method, CandidateSet.getLocation());\n  return NeverCObjectCallResult;'),
         )),
         ('clang/lib/Sema/SemaInit.cpp', (
             ('#include "clang/AST/ASTContext.h"',
@@ -235,7 +237,7 @@ def preserve_explicit_function_instantiation_source(source_root):
         remainder = text
         for pair in replacements:
             remainder = remainder.replace(pair[state], "", 1)
-        if re.search(r"\b(?:NeverCAllocationResult|NeverCArrayFillerAction|HandleNeverCArrayFiller|HandleNeverCArrayFillerElement|NeverCSeparateArrayFillers|NeverCFillerAction|NeverCAction|NeverCStaticMemberInitializer|NeverCIncomingFriendFunction|NeverCGrantingClass|HandleNeverCFriendFunctionSource|HandleNeverCFriendDeclarationSource|NeverCCompatibleFunctionTemplate|HandleNeverCFriendClassTemplateSource|HandleNeverCFriendFunctionTemplateSource|HandleNeverCFunctionTemplateBodySource|HandleNeverCExplicitMemberClassInstantiation|HandleNeverCClassFullDeclarationSource|HandleNeverCPartialDeclarationSource|NeverCMemberVariable|NeverCVariableFull|HandleNeverCSelectedTemplateCallSource|NeverCTemplateDeductionLocation|NeverCTemplateLocation|NeverCSelectedFunction|NeverCConversionName|HandleNeverCVariableTemplateSource|HandleNeverCVariablePartialSource|HandleNeverCVariableTypeSource|NeverCRetainVariable|NeverCVariablePartial|NeverCRetainVariablePartial|HandleNeverCClassPartialSource|NeverCPartial|NeverCRetainPartial|HandleNeverCExplicitFunctionInstantiation|HandleNeverCExplicitStaticDataInstantiation|HandleNeverCScalarTemplateDefault|NeverCWrittenAttributes|NeverCWrittenDefault|NeverCParameter|wantsNeverCTemplateSource|HandleNeverCTemplateTypeSource|HandleNeverCFunctionTemplateSource|HandleNeverCClassTemplateSource|HandleNeverCFunctionSpecializationSource|NeverCAliasSource|NeverCTypeResult|NeverCDefaultParameters|NeverCWrittenDefaults|NeverCConvertedDefaults|NeverCDefaultsOverflow|NeverCAliasSource|NeverCConvertedDefaults|NeverCDefaultParameters|NeverCDefaultsOverflow|NeverCEmptyParameterSource|NeverCExplicitPackIndices|NeverCExplicitParameterTypes|NeverCExplicitSourceOverflow|NeverCExplicitSourceTemplate|NeverCExplicitTypeParameters|NeverCParameter|NeverCParameterPackIndices|NeverCParameterTypeSource|NeverCParameterTypes|NeverCPattern|NeverCPatternLoc|NeverCTypeParameters|NeverCTypeResult|NeverCWrittenAttributes|NeverCWrittenDefault|NeverCWrittenDefaults|NeverCExplicitParameter|clearNeverCExplicitSource|retainNeverCDefault|retainNeverCParameterType)\b", remainder):
+        if re.search(r"\b(?:NeverCObjectCallResult|NeverCAllocationResult|NeverCArrayFillerAction|HandleNeverCArrayFiller|HandleNeverCArrayFillerElement|NeverCSeparateArrayFillers|NeverCFillerAction|NeverCAction|NeverCStaticMemberInitializer|NeverCIncomingFriendFunction|NeverCGrantingClass|HandleNeverCFriendFunctionSource|HandleNeverCFriendDeclarationSource|NeverCCompatibleFunctionTemplate|HandleNeverCFriendClassTemplateSource|HandleNeverCFriendFunctionTemplateSource|HandleNeverCFunctionTemplateBodySource|HandleNeverCExplicitMemberClassInstantiation|HandleNeverCClassFullDeclarationSource|HandleNeverCPartialDeclarationSource|NeverCMemberVariable|NeverCVariableFull|HandleNeverCSelectedTemplateCallSource|NeverCTemplateDeductionLocation|NeverCTemplateLocation|NeverCSelectedFunction|NeverCConversionName|HandleNeverCVariableTemplateSource|HandleNeverCVariablePartialSource|HandleNeverCVariableTypeSource|NeverCRetainVariable|NeverCVariablePartial|NeverCRetainVariablePartial|HandleNeverCClassPartialSource|NeverCPartial|NeverCRetainPartial|HandleNeverCExplicitFunctionInstantiation|HandleNeverCExplicitStaticDataInstantiation|HandleNeverCScalarTemplateDefault|NeverCWrittenAttributes|NeverCWrittenDefault|NeverCParameter|wantsNeverCTemplateSource|HandleNeverCTemplateTypeSource|HandleNeverCFunctionTemplateSource|HandleNeverCClassTemplateSource|HandleNeverCFunctionSpecializationSource|NeverCAliasSource|NeverCTypeResult|NeverCDefaultParameters|NeverCWrittenDefaults|NeverCConvertedDefaults|NeverCDefaultsOverflow|NeverCAliasSource|NeverCConvertedDefaults|NeverCDefaultParameters|NeverCDefaultsOverflow|NeverCEmptyParameterSource|NeverCExplicitPackIndices|NeverCExplicitParameterTypes|NeverCExplicitSourceOverflow|NeverCExplicitSourceTemplate|NeverCExplicitTypeParameters|NeverCParameter|NeverCParameterPackIndices|NeverCParameterTypeSource|NeverCParameterTypes|NeverCPattern|NeverCPatternLoc|NeverCTypeParameters|NeverCTypeResult|NeverCWrittenAttributes|NeverCWrittenDefault|NeverCWrittenDefaults|NeverCExplicitParameter|clearNeverCExplicitSource|retainNeverCDefault|retainNeverCParameterType)\b", remainder):
             raise SystemExit(message)
         states.append(state)
         if state == 0:
@@ -394,6 +396,32 @@ def fix_visible_friend_instantiation_context(path):
     remainder = text.replace((before, after)[state], "", 1)
     if "NeverCFriendContext" in remainder or "NeverC visible friend bodies" in remainder:
         raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
+def preserve_ordinary_template_call_source(path):
+    before = '  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);'
+    after = '  auto NeverCOrdinaryCallResult =\n      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);\n  if (!NeverCOrdinaryCallResult.isInvalid() && FDecl &&\n      FDecl->getPrimaryTemplate() &&\n      getASTConsumer().wantsNeverCTemplateSource())\n    getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n        TheCall, FDecl, TheCall->getExprLoc());\n  return NeverCOrdinaryCallResult;'
+    message = "Unexpected pinned Clang ordinary template-call source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(message) from error
+    if any(text.count(header) != 1 for header in (
+            '#include "clang/AST/ASTConsumer.h"',
+            '#include "clang/AST/ASTContext.h"')):
+        raise SystemExit(message)
+    counts = (text.replace(after, "").count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if re.search(r"\b(?:NeverCOrdinaryCallResult|HandleNeverCSelectedTemplateCallSource)\b", remainder):
+        raise SystemExit(message)
     if state == 0:
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
@@ -1527,6 +1555,7 @@ fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")
 fix_deduced_variable_instantiations(args.source / "clang/lib/Sema/SemaExpr.cpp")
+preserve_ordinary_template_call_source(args.source / "clang/lib/Sema/SemaExpr.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [

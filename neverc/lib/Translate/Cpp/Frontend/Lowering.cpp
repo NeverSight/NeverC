@@ -28622,6 +28622,37 @@ class FunctionLowering {
     auto *Callee = Call->getDirectCallee();
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
     if (A.S.coreV2()) {
+      if (const auto Factory = A.VerifiedNotFnFactories.find(Call);
+          Factory != A.VerifiedNotFnFactories.end()) {
+        const auto &Storage = Factory->second.Storage;
+        auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        Expression Member{{"kind", "member"}, {"type", type(Storage.CallableType, L)},
+            {"name", "nct_not_fn_callable"}, {"args", json::Array{json::Object(Result)}},
+            {"loc", A.loc(L)}};
+        // Snapshot before storing: a pointer-producing factory argument and
+        // every source cleanup run once, regardless of the destination form.
+        auto Callable = snapshot(Call->getArg(0)->getType()->isFunctionType()
+            ? functionValue(Call->getArg(0)) : expression(Call->getArg(0)), L);
+        assign(std::move(Member), std::move(Callable), L);
+        return Result;
+      }
+      if (const auto Invocation = A.VerifiedNotFnCalls.find(Call);
+          Invocation != A.VerifiedNotFnCalls.end()) {
+        const auto &Source = Invocation->second;
+        auto Object = lvalue(Source.Object);
+        Expression Member{{"kind", "member"}, {"type", type(Source.Storage.CallableType, L)},
+            {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Object)}},
+            {"loc", A.loc(L)}};
+        auto Callable = snapshot(std::move(Member), L);
+        const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+        json::Array Args;
+        for (unsigned I = 0; I < Prototype->getNumParams(); ++I)
+          Args.push_back(argument(Call->getArg(I + 1), Prototype->getParamType(I)));
+        auto Value = emitIndirectCall(std::move(Callable), std::move(Args),
+                                      Prototype->getReturnType(), L);
+        return Expression{{"kind", "unary"}, {"type", "bool"},
+            {"operator", "!"}, {"args", json::Array{std::move(Value)}}, {"loc", A.loc(L)}};
+      }
       if (auto Info = approvedNativeMemberPointerCall(
               A.S, A.Sources, Call, A.Context))
         return memberPointerCall(Call, *Info, 0, std::move(Destination));
@@ -32750,6 +32781,8 @@ class FunctionLowering {
     const auto *R = T->getAsCXXRecordDecl();
     if (!A.S.coreV2() || !R || !R->getDefinition())
       return false;
+    if (approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context))
+      return false; // Its source has no direct fields, but its validated base stores the pointer.
     if (R->getDefinition()->field_empty())
       return true;
     const auto Array =

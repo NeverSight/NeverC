@@ -1497,8 +1497,21 @@ public:
       } else if (FirstInstantiation) {
 // After variable instantiation.
 '''
-        files['clang/lib/Sema/SemaExpr.cpp'] = (full_initializer_original +
-                                             deduced_variable_original)
+        # Independent ordinary-call source, matching the pinned SemaExpr headers.
+        ordinary_call_headers = ('#include "clang/AST/ASTConsumer.h"\n'
+                                 '#include "clang/AST/ASTContext.h"\n')
+        ordinary_call_original = '  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);\n'
+        ordinary_call_expected = '''  auto NeverCOrdinaryCallResult =
+      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), FDecl);
+  if (!NeverCOrdinaryCallResult.isInvalid() && FDecl &&
+      FDecl->getPrimaryTemplate() &&
+      getASTConsumer().wantsNeverCTemplateSource())
+    getASTConsumer().HandleNeverCSelectedTemplateCallSource(
+        TheCall, FDecl, TheCall->getExprLoc());
+  return NeverCOrdinaryCallResult;
+'''
+        files['clang/lib/Sema/SemaExpr.cpp'] = (ordinary_call_headers + ordinary_call_original +
+                                             full_initializer_original + deduced_variable_original)
 
         # Independent explicit-instantiation source callback fixtures.
         explicit_header_original = '// Independent template-source contract fixture.\n  class ASTContext;\n  class CXXRecordDecl;\n  class VarDecl;\n  class FunctionDecl;\n  class ImportDecl;\n// Unchanged between source anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n// Unchanged between source anchors.\n  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n// End source contract fixture.\n'
@@ -1583,6 +1596,8 @@ public:
         files["clang/lib/Sema/SemaInit.cpp"] = reference_original
         argument_reference_original = "// Before reference argument.\n    else\n      Conv = cast<CXXConversionDecl>(D);\n\n    if (AllowRvalues) {\n      // If we are initializing an rvalue reference, don't permit conversion\n      // functions that return lvalues.\n// After reference argument.\n"
         argument_reference_expected = "// Before reference argument.\n    else\n      Conv = cast<CXXConversionDecl>(D);\n\n    // NeverC reference-argument deduction precedes result-type filtering.\n    if (!ConvTemplate && S.getLangOpts().CPlusPlus14 &&\n        Conv->getConversionType()->isUndeducedType()) {\n      QualType NeverCArgumentResult = Conv->getConversionType();\n      const auto *NeverCAuto = NeverCArgumentResult->getAs<AutoType>();\n      const auto *NeverCRValue = NeverCArgumentResult->getAs<RValueReferenceType>();\n      const auto *NeverCLValue = NeverCArgumentResult->getAs<LValueReferenceType>();\n      bool NeverCCanBeLValue =\n          (NeverCAuto && NeverCAuto->isDecltypeAuto()) ||\n          (NeverCRValue && !NeverCRValue->getPointeeType().hasQualifiers() &&\n           NeverCRValue->getPointeeType()->getAs<AutoType>());\n      // Preserve the definite lvalue exclusion before touching a lazy body.\n      bool NeverCExcludedLValue = DeclType->isRValueReferenceType() &&\n          NeverCLValue && !NeverCLValue->getPointeeType()->isFunctionType();\n      bool NeverCNeedsResult = AllowRvalues ? !NeverCExcludedLValue\n                                          : NeverCCanBeLValue;\n      if (NeverCNeedsResult && S.DeduceReturnType(Conv, Init->getExprLoc()))\n        continue;\n    }\n\n    if (AllowRvalues) {\n      // If we are initializing an rvalue reference, don't permit conversion\n      // functions that return lvalues.\n// After reference argument.\n"
+        object_call_original = '  if (CheckCallReturnType(Method->getReturnType(), LParenLoc, TheCall, Method))\n    return true;\n\n  if (CheckFunctionCall(Method, TheCall, Proto))\n    return true;\n\n  return CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), Method);\n'
+        object_call_expected = '  if (CheckCallReturnType(Method->getReturnType(), LParenLoc, TheCall, Method))\n    return true;\n\n  if (CheckFunctionCall(Method, TheCall, Proto))\n    return true;\n\n  auto NeverCObjectCallResult =\n      CheckForImmediateInvocation(MaybeBindToTemporary(TheCall), Method);\n  if (!NeverCObjectCallResult.isInvalid() && Method->getPrimaryTemplate() &&\n      getASTConsumer().wantsNeverCTemplateSource())\n    getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n        TheCall, Method, CandidateSet.getLocation());\n  return NeverCObjectCallResult;\n'
         files["clang/lib/Sema/SemaOverload.cpp"] = argument_reference_original
         files.update(math_sources)
         for name in notice_names:
@@ -1598,7 +1613,7 @@ public:
         call_expr_cxx_original = '#include "clang/AST/ASTContext.h"\n// Conversion builder signature.\n                                       bool HadMultipleCandidates,\n                                       Expr *From) {\n  switch (Kind) {\n// Constructed result before temporary binding.\n    if (Result.isInvalid())\n      return ExprError();\n\n    return S.MaybeBindToTemporary(Result.getAs<Expr>());\n  }\n\n  case CK_UserDefinedConversion:\n// Conversion result before cast wrapper.\n    if (Result.isInvalid())\n      return ExprError();\n    // Record usage of conversion in an implicit cast.\n// Standard conversion result.\n    From = Res.get();\n    break;\n  }\n\n  case ImplicitConversionSequence::UserDefinedConversion:\n// Conversion builder invocation.\n          ICS.UserDefined.HadMultipleCandidates, From);\n// Final allocation expression.\n  return CXXNewExpr::Create(Context, UseGlobal, OperatorNew, OperatorDelete,\n                            PassAlignment, UsualArrayDeleteWantsSize,\n                            PlacementArgs, TypeIdParens, ArraySize, InitStyle,\n                            Initializer, ResultType, AllocTypeInfo, Range,\n                            DirectInitRange);\n'
         call_expr_cxx_expected = '#include "clang/AST/ASTConsumer.h"\n#include "clang/AST/ASTContext.h"\n// Conversion builder signature.\n                                       bool HadMultipleCandidates,\n                                       Expr *From,\n                                       SourceLocation NeverCTemplateLocation) {\n  switch (Kind) {\n// Constructed result before temporary binding.\n    if (Result.isInvalid())\n      return ExprError();\n\n    if (Constructor->getPrimaryTemplate() &&\n        S.getASTConsumer().wantsNeverCTemplateSource())\n      S.getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n          Result.get(), Constructor, NeverCTemplateLocation);\n    return S.MaybeBindToTemporary(Result.getAs<Expr>());\n  }\n\n  case CK_UserDefinedConversion:\n// Conversion result before cast wrapper.\n    if (Result.isInvalid())\n      return ExprError();\n    if (Conv->getPrimaryTemplate() &&\n        S.getASTConsumer().wantsNeverCTemplateSource())\n      S.getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n          Result.get(), Conv, NeverCTemplateLocation);\n    // Record usage of conversion in an implicit cast.\n// Standard conversion result.\n    if (ICS.Standard.CopyConstructor &&\n        ICS.Standard.CopyConstructor->getPrimaryTemplate() &&\n        getASTConsumer().wantsNeverCTemplateSource())\n      getASTConsumer().HandleNeverCSelectedTemplateCallSource(\n          Res.get(), ICS.Standard.CopyConstructor,\n          ICS.NeverCTemplateDeductionLocation);\n    From = Res.get();\n    break;\n  }\n\n  case ImplicitConversionSequence::UserDefinedConversion:\n// Conversion builder invocation.\n          ICS.UserDefined.HadMultipleCandidates, From,\n          ICS.NeverCTemplateDeductionLocation);\n// Final allocation expression.\n  auto *NeverCAllocationResult = CXXNewExpr::Create(\n      Context, UseGlobal, OperatorNew, OperatorDelete, PassAlignment,\n      UsualArrayDeleteWantsSize, PlacementArgs, TypeIdParens, ArraySize,\n      InitStyle, Initializer, ResultType, AllocTypeInfo, Range, DirectInitRange);\n  if (Consumer.wantsNeverCTemplateSource() && OperatorNew &&\n      OperatorNew->getPrimaryTemplate())\n    Consumer.HandleNeverCSelectedTemplateCallSource(\n        NeverCAllocationResult, OperatorNew, StartLoc);\n  return NeverCAllocationResult;\n'
         files['clang/include/clang/Sema/Overload.h'] = call_overload_header_original
-        files['clang/lib/Sema/SemaOverload.cpp'] = argument_reference_original + call_overload_original
+        files['clang/lib/Sema/SemaOverload.cpp'] = argument_reference_original + (call_overload_original + object_call_original)
         files['clang/lib/Sema/SemaInit.cpp'] = reference_original + call_init_original
         # This independently tested patch group stays complete while the
         # following test varies the older callback-source group in the same file.
@@ -1664,9 +1679,10 @@ public:
             reference_path = source / "clang/lib/Sema/SemaInit.cpp"
             self.assertEqual(reference_path.read_text(encoding="utf-8"), reference_expected + call_init_expected)
             argument_reference_path = source / "clang/lib/Sema/SemaOverload.cpp"
-            self.assertEqual(argument_reference_path.read_text(encoding="utf-8"), argument_reference_expected + call_overload_expected)
+            self.assertEqual(argument_reference_path.read_text(encoding="utf-8"), argument_reference_expected + (call_overload_expected + object_call_expected))
             full_initializer_path = source / "clang/lib/Sema/SemaExpr.cpp"
             self.assertEqual(full_initializer_path.read_text(encoding="utf-8"),
+                             ordinary_call_headers + ordinary_call_expected +
                              full_initializer_expected + deduced_variable_expected)
             # All callback files must match the independently written contract.
             explicit_paths = [
@@ -1681,8 +1697,8 @@ public:
                 source / 'clang/lib/Sema/SemaInit.cpp',
                 source / 'clang/lib/Sema/SemaExprCXX.cpp',
             ]
-            explicit_original = [explicit_header_original, explicit_source_original, explicit_deduction_original, explicit_sema_original, explicit_deduction_info_original, explicit_instantiate_original, call_overload_header_original, argument_reference_expected + call_overload_original, reference_expected + call_init_original, call_expr_cxx_original]
-            explicit_expected = [explicit_header_expected, explicit_source_expected, explicit_deduction_expected, explicit_sema_expected, explicit_deduction_info_expected, explicit_instantiate_expected, call_overload_header_expected, argument_reference_expected + call_overload_expected, reference_expected + call_init_expected, call_expr_cxx_expected]
+            explicit_original = [explicit_header_original, explicit_source_original, explicit_deduction_original, explicit_sema_original, explicit_deduction_info_original, explicit_instantiate_original, call_overload_header_original, argument_reference_expected + (call_overload_original + object_call_original), reference_expected + call_init_original, call_expr_cxx_original]
+            explicit_expected = [explicit_header_expected, explicit_source_expected, explicit_deduction_expected, explicit_sema_expected, explicit_deduction_info_expected, explicit_instantiate_expected, call_overload_header_expected, argument_reference_expected + (call_overload_expected + object_call_expected), reference_expected + call_init_expected, call_expr_cxx_expected]
             for path, expected in zip(explicit_paths, explicit_expected):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
             # A correct text rewrite must also declare every callback type.
@@ -1797,7 +1813,7 @@ public:
             }
             for label, bad in argument_reference_bad.items():
                 with self.subTest(reference_argument_source=label):
-                    argument_reference_path.write_text(bad + call_overload_expected, encoding="utf-8")
+                    argument_reference_path.write_text(bad + (call_overload_expected + object_call_expected), encoding="utf-8")
                     untouched = snapshot_all_files()
                     run_script(False, "Unexpected pinned Clang reference-argument source")
                     self.assertEqual(snapshot_all_files(), untouched)
@@ -1805,7 +1821,7 @@ public:
             untouched = snapshot_all_files()
             run_script(False, "Unexpected pinned Clang explicit-instantiation source in " + str(argument_reference_path))
             self.assertEqual(snapshot_all_files(), untouched)
-            argument_reference_path.write_text(argument_reference_expected + call_overload_expected, encoding="utf-8")
+            argument_reference_path.write_text(argument_reference_expected + (call_overload_expected + object_call_expected), encoding="utf-8")
 
             anchor = ("_COM_SMARTPTR_TYPEDEF(ISetupInstance2, "
                       "__uuidof(ISetupInstance2));\n")
@@ -1903,7 +1919,8 @@ public:
             }
             for state, contents in full_initializer_states.items():
                 with self.subTest(copied_full_initializer_state=state):
-                    full_initializer_path.write_text(contents + deduced_variable_expected,
+                    full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                                     contents + deduced_variable_expected,
                                                      encoding="utf-8")
                     untouched = snapshot_all_files()
                     run_script(False, "Unexpected pinned Clang copied full initializer source in " +
@@ -1914,7 +1931,8 @@ public:
             run_script(False, "Unexpected pinned Clang copied full initializer source in " +
                        str(full_initializer_path))
             self.assertEqual(snapshot_all_files(), untouched)
-            full_initializer_path.write_text(full_initializer_original + deduced_variable_original,
+            full_initializer_path.write_text(ordinary_call_headers + ordinary_call_original +
+                                             full_initializer_original + deduced_variable_original,
                                              encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
@@ -1940,14 +1958,85 @@ public:
             }
             for state, contents in deduced_variable_states.items():
                 with self.subTest(deduced_variable_state=state):
-                    full_initializer_path.write_text(full_initializer_expected + contents,
+                    full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                                     full_initializer_expected + contents,
                                                      encoding="utf-8")
                     untouched = snapshot_all_files()
                     run_script(False, "Unexpected pinned Clang deduced variable source in " +
                                str(full_initializer_path))
                     self.assertEqual(snapshot_all_files(), untouched, state)
-            full_initializer_path.write_text(full_initializer_expected + deduced_variable_original,
+            full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                             full_initializer_expected + deduced_variable_original,
                                              encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            ordinary_call_states = {
+                "missing source": "",
+                "duplicate original": ordinary_call_original * 2,
+                "duplicate rewritten": ordinary_call_expected * 2,
+                "mixed blocks": ordinary_call_original + ordinary_call_expected,
+                "removed primary guard": ordinary_call_expected.replace(
+                    "FDecl->getPrimaryTemplate() &&", "true &&", 1),
+                "removed consumer guard": ordinary_call_expected.replace(
+                    "getASTConsumer().wantsNeverCTemplateSource()", "true", 1),
+                "orphan marker": ordinary_call_original + "bool NeverCOrdinaryCallResult;\n",
+            }
+            for state, contents in ordinary_call_states.items():
+                with self.subTest(ordinary_call_state=state):
+                    full_initializer_path.write_text(ordinary_call_headers + contents +
+                                                     full_initializer_expected + deduced_variable_expected,
+                                                     encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang ordinary template-call source in " +
+                               str(full_initializer_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            for state, headers in {
+                    "missing consumer header": ordinary_call_headers.replace(
+                        '#include "clang/AST/ASTConsumer.h"\n', ''),
+                    "duplicate context header": ordinary_call_headers +
+                        '#include "clang/AST/ASTContext.h"\n'}.items():
+                with self.subTest(ordinary_call_header_state=state):
+                    full_initializer_path.write_text(headers + ordinary_call_expected +
+                                                     full_initializer_expected + deduced_variable_expected,
+                                                     encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang ordinary template-call source in " +
+                               str(full_initializer_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            full_initializer_path.write_text(ordinary_call_headers + ordinary_call_expected +
+                                             full_initializer_expected + deduced_variable_expected,
+                                             encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            object_call_states = {
+                "missing": "",
+                "duplicate original": object_call_original * 2,
+                "duplicate rewritten": object_call_expected * 2,
+                "mixed": object_call_original + object_call_expected,
+                "missing primary guard": object_call_expected.replace(
+                    "Method->getPrimaryTemplate()", "true", 1),
+                "missing consumer guard": object_call_expected.replace(
+                    "getASTConsumer().wantsNeverCTemplateSource()", "true", 1),
+                "missing success guard": object_call_expected.replace(
+                    "!NeverCObjectCallResult.isInvalid()", "true", 1),
+                "wrong source location": object_call_expected.replace(
+                    "CandidateSet.getLocation()", "TheCall->getExprLoc()", 1),
+                "orphan marker": object_call_original + "bool NeverCObjectCallResult;\n",
+            }
+            for state, contents in object_call_states.items():
+                with self.subTest(object_call_state=state):
+                    argument_reference_path.write_text(argument_reference_expected + call_overload_expected +
+                        contents, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang explicit-instantiation source in " +
+                               str(argument_reference_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            argument_reference_path.write_text(argument_reference_expected + call_overload_expected +
+                object_call_expected, encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
@@ -2154,22 +2243,22 @@ public:
                 (6, 'selected call overload_header lost statement 4', call_overload_header_expected.replace('          NeverCTemplateDeductionLocation(Other.NeverCTemplateDeductionLocation) {', "// Missing selected call statement.", 1)),
                 (6, 'selected call overload_header lost statement 5', call_overload_header_expected.replace('      NeverCTemplateDeductionLocation = {};', "// Missing selected call statement.", 1)),
                 (6, 'selected call orphan overload_header', call_overload_header_expected + "// HandleNeverCSelectedTemplateCallSource\n"),
-                (7, 'selected call duplicate overload original', argument_reference_expected + call_overload_original * 2),
-                (7, 'selected call duplicate overload expected', argument_reference_expected + call_overload_expected * 2),
-                (7, 'selected call overload lost statement 0', argument_reference_expected + call_overload_expected.replace('#include "clang/AST/ASTConsumer.h"', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 1', argument_reference_expected + call_overload_expected.replace('    if (S.getASTConsumer().wantsNeverCTemplateSource()) {', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 2', argument_reference_expected + call_overload_expected.replace('      const auto *NeverCSelectedFunction = ICS.isUserDefined()', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 3', argument_reference_expected + call_overload_expected.replace('          ? ICS.UserDefined.ConversionFunction : ICS.Standard.CopyConstructor;', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 4', argument_reference_expected + call_overload_expected.replace('      if (NeverCSelectedFunction && NeverCSelectedFunction->getPrimaryTemplate())', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 5', argument_reference_expected + call_overload_expected.replace('        ICS.NeverCTemplateDeductionLocation = Conversions.getLocation();', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 6', argument_reference_expected + call_overload_expected.replace('    if (S.getASTConsumer().wantsNeverCTemplateSource() &&', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 7', argument_reference_expected + call_overload_expected.replace('        Best->Function->getPrimaryTemplate())', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 8', argument_reference_expected + call_overload_expected.replace('      ICS.NeverCTemplateDeductionLocation = CandidateSet.getLocation();', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 9', argument_reference_expected + call_overload_expected.replace('  if (Conversion->getPrimaryTemplate() &&', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 10', argument_reference_expected + call_overload_expected.replace('      SemaRef.getASTConsumer().wantsNeverCTemplateSource())', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 11', argument_reference_expected + call_overload_expected.replace('    SemaRef.getASTConsumer().HandleNeverCSelectedTemplateCallSource(', "// Missing selected call statement.", 1)),
-                (7, 'selected call overload lost statement 12', argument_reference_expected + call_overload_expected.replace('        Result.get(), Conversion, Loc);', "// Missing selected call statement.", 1)),
-                (7, 'selected call orphan overload', argument_reference_expected + call_overload_expected + "// HandleNeverCSelectedTemplateCallSource\n"),
+                (7, 'selected call duplicate overload original', argument_reference_expected + (call_overload_original + object_call_original) * 2),
+                (7, 'selected call duplicate overload expected', argument_reference_expected + (call_overload_expected + object_call_expected) * 2),
+                (7, 'selected call overload lost statement 0', argument_reference_expected + (call_overload_expected + object_call_expected).replace('#include "clang/AST/ASTConsumer.h"', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 1', argument_reference_expected + (call_overload_expected + object_call_expected).replace('    if (S.getASTConsumer().wantsNeverCTemplateSource()) {', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 2', argument_reference_expected + (call_overload_expected + object_call_expected).replace('      const auto *NeverCSelectedFunction = ICS.isUserDefined()', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 3', argument_reference_expected + (call_overload_expected + object_call_expected).replace('          ? ICS.UserDefined.ConversionFunction : ICS.Standard.CopyConstructor;', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 4', argument_reference_expected + (call_overload_expected + object_call_expected).replace('      if (NeverCSelectedFunction && NeverCSelectedFunction->getPrimaryTemplate())', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 5', argument_reference_expected + (call_overload_expected + object_call_expected).replace('        ICS.NeverCTemplateDeductionLocation = Conversions.getLocation();', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 6', argument_reference_expected + (call_overload_expected + object_call_expected).replace('    if (S.getASTConsumer().wantsNeverCTemplateSource() &&', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 7', argument_reference_expected + (call_overload_expected + object_call_expected).replace('        Best->Function->getPrimaryTemplate())', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 8', argument_reference_expected + (call_overload_expected + object_call_expected).replace('      ICS.NeverCTemplateDeductionLocation = CandidateSet.getLocation();', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 9', argument_reference_expected + (call_overload_expected + object_call_expected).replace('  if (Conversion->getPrimaryTemplate() &&', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 10', argument_reference_expected + (call_overload_expected + object_call_expected).replace('      SemaRef.getASTConsumer().wantsNeverCTemplateSource())', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 11', argument_reference_expected + (call_overload_expected + object_call_expected).replace('    SemaRef.getASTConsumer().HandleNeverCSelectedTemplateCallSource(', "// Missing selected call statement.", 1)),
+                (7, 'selected call overload lost statement 12', argument_reference_expected + (call_overload_expected + object_call_expected).replace('        Result.get(), Conversion, Loc);', "// Missing selected call statement.", 1)),
+                (7, 'selected call orphan overload', argument_reference_expected + (call_overload_expected + object_call_expected) + "// HandleNeverCSelectedTemplateCallSource\n"),
                 (8, 'selected call duplicate init original', reference_expected + call_init_original * 2),
                 (8, 'selected call duplicate init expected', reference_expected + call_init_expected * 2),
                 (8, 'selected call init lost statement 0', reference_expected + call_init_expected.replace('#include "clang/AST/ASTConsumer.h"', "// Missing selected call statement.", 1)),
