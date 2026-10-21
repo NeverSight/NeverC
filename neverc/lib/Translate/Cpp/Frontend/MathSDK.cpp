@@ -11864,7 +11864,7 @@ describeFunctionalNotFnCallSource(
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
     if (!Target) return std::nullopt;
   }
-  return FunctionalNotFnCallSource{*Storage, Method, Object, Receiver, Get, Move, Operation,
+  return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
 }
 
@@ -12541,11 +12541,20 @@ public:
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+    const auto *SourceCall = Call.SourceCall;
+    if (!SourceCall || SourceCall->getOperator() != OO_Call ||
+        SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
+        SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
+        !S.owns(SM, SourceCall->getOperatorLoc()) || !S.owns(SM, Use.Location)) return false;
     bool Selected = false;
     for (const auto *Selection : Selections)
       if (Selection && Selection->FunctionalNotFnConstraint &&
-          Selection->Function == Method && Selection->Location == Use.Location &&
-          isa_and_nonnull<CallExpr>(Selection->Expression)) Selected = true;
+          Selection->Expression == SourceCall && Selection->Function == Method &&
+          Selection->Location == SourceCall->getOperatorLoc() &&
+          matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
+    // Deduction/default packets belong to this exact instantiated method and
+    // canonical/sugared arguments below. Repeated uses retain their own call
+    // selections; their source location need not equal the first deduction.
     if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||

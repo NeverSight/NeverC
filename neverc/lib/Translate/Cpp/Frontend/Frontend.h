@@ -1763,6 +1763,9 @@ describeFunctionalNotFnFactorySource(
     const clang::ASTContext &Context);
 enum class FunctionalNotFnSourceMode { Runtime, Signature, Exception };
 struct FunctionalNotFnCallSource {
+  // Keep the actual call root distinct from a specialization's first
+  // retained deduction/default occurrence.
+  const clang::CXXOperatorCallExpr *SourceCall;
   FunctionalNotFnStorage Storage;
   const clang::CXXMethodDecl *Method;
   const clang::Expr *Object;
