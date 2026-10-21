@@ -7605,6 +7605,7 @@ class UtilityTupleQueryGraph
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
   std::map<const CXXRecordDecl *, std::pair<const TemplateSpecializationType *, unsigned>>
       NotFnTupleTagSlices;
+  std::optional<FunctionalNotFnStorage> NotFnTupleTagStorage;
   const CXXConstructorDecl *PairConstructor = nullptr;
   std::set<const Type *> PairInputTypes;
   std::set<const CXXRecordDecl *> PairInputRecords;
@@ -9390,9 +9391,22 @@ class UtilityTupleQueryGraph
     if (Object->isReferenceType() || Object.hasLocalQualifiers() ||
         (Mode != UtilityTupleQueryMode::CatSignature &&
          !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return false;
-    const auto Tuple = Mode == UtilityTupleQueryMode::CatSignature
-        ? approvedUtilityTupleCatQueryLayout(S, SM, Object, Context)
-        : approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
+    const auto NotFnSlice = NotFnTupleTagSlices.find(Instance->getCanonicalDecl());
+    std::optional<UtilityTupleLikeSource> Tuple;
+    if (NotFnSlice != NotFnTupleTagSlices.end()) {
+      // The ordinary tuple_cat carrier excludes function pointers. These two
+      // exact tag scopes instead use the pointer wrapper's independently
+      // authenticated tuple field, never a new generic tuple layout rule.
+      if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagStorage ||
+          !Context.hasSameType(Object, Context.getRecordType(NotFnTupleTagStorage->Tuple)) ||
+          !Context.hasSameType(NotFnTupleTagStorage->Callable.getType(),
+                               NotFnTupleTagStorage->CallableType)) return false;
+      Tuple = UtilityTupleLikeSource{{NotFnTupleTagStorage->Callable}, nullptr, {}, 0};
+    } else {
+      Tuple = Mode == UtilityTupleQueryMode::CatSignature
+          ? approvedUtilityTupleCatQueryLayout(S, SM, Object, Context)
+          : approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
+    }
     if (!Tuple) return false;
     const auto Integral = [&](unsigned I, QualType T, uint64_t N) {
       const auto &Argument = Arguments[I];
@@ -9401,7 +9415,6 @@ class UtilityTupleQueryGraph
           !Argument.getAsIntegral().isNegative() &&
           Argument.getAsIntegral().getLimitedValue(N + 1) == N;
     };
-    const auto NotFnSlice = NotFnTupleTagSlices.find(Instance->getCanonicalDecl());
     const unsigned Start = NotFnSlice == NotFnTupleTagSlices.end() ? 0U : NotFnSlice->second.second;
     if (!Integral(1, Context.getSizeType(), Tuple->size()) ||
         !Integral(2, Context.getSizeType(), Start) ||
@@ -9984,7 +9997,8 @@ public:
   bool bindNotFnTupleTagSlices(const FunctionalNotFnFactorySource &Factory,
       llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags) {
     if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
-        Tags.size() != 4 || Factory.SelectedConstructions.size() != 4) return false;
+        NotFnTupleTagStorage || Tags.size() != 4 ||
+        Factory.SelectedConstructions.size() != 4) return false;
     const auto Pointer = approvedFunctionalNotFnPointerStorage(S, SM, Factory.Storage.Record, Context);
     const auto *TupleInstance = Pointer ? dyn_cast<ClassTemplateSpecializationDecl>(Pointer->Tuple) : nullptr;
     const auto *Construction = Factory.SelectedConstructions[1];
@@ -10049,6 +10063,7 @@ public:
       if (!NotFnTupleTagSlices.emplace(Instance->getCanonicalDecl(),
               std::make_pair(Use, I == 1 ? 0U : 1U)).second) return false;
     }
+    NotFnTupleTagStorage = *Pointer;
     return true;
   }
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage) {
@@ -12424,7 +12439,8 @@ class NotFnPointerSourceProof {
     const TemplateUseSource *Result = nullptr;
     for (const auto *Source : Sources) {
       if (!Source || Source->Kind != TemplateSourceKind::Type ||
-          Source->Template != Template || Source->Location != Root.getTemplateNameLoc()) continue;
+          Source->Template != Template || Source->Location != Root.getTemplateNameLoc() ||
+          Source->Type != Root.getTypePtr()) continue;
       if (!Source->FunctionalNotFnConstraint || !Source->Underlying ||
           Source->Declaration || !Source->Type || !Source->Written ||
           Source->Written->getNumTemplateArgs() != Root.getNumArgs() || !arguments(*Source)) return nullptr;
@@ -12434,8 +12450,9 @@ class NotFnPointerSourceProof {
         if (!Written.getArgument().structurallyEquals(Actual.getArgument()) ||
             Written.getSourceRange() != Actual.getSourceRange()) return nullptr;
       }
-      // Every duplicate is a separate original occurrence. An incompatible
-      // callback cannot be hidden by a canonical result or a first cache hit.
+      // Another substitution at this spelling has its own exact Type key.
+      // Duplicates of this actual occurrence still close independently;
+      // canonical void or a sibling's source can never satisfy this lookup.
       if (Result && (Result->Type != Source->Type ||
                      Result->Underlying != Source->Underlying)) return nullptr;
       Result = Source;
