@@ -7601,6 +7601,7 @@ class UtilityTupleQueryGraph
   bool Failed = false;
   const UtilityTupleQueryMode Mode;
   const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
+  TypeLoc NotFnConstructorReturn;
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
   std::map<const CXXRecordDecl *, std::pair<const TemplateSpecializationType *, unsigned>>
@@ -10094,6 +10095,32 @@ public:
     NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
     return true;
   }
+  bool TraverseNotFnConstructorSignature(const CXXConstructorDecl *Constructor,
+      const TypeSourceInfo *Written) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnFactoryDefaults ||
+        NotFnConstructorReturn || !Constructor || !Written ||
+        Written != Constructor->getTypeSourceInfo() || !family(Constructor) ||
+        !Constructor->getPrimaryTemplate() || !Constructor->getReturnType()->isVoidType())
+      return false;
+    bool Selected = false;
+    for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions) {
+      const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
+      if (Actual && Actual->isInheritingConstructor())
+        Actual = Actual->getInheritedConstructor().getConstructor();
+      if (Actual == Constructor) Selected = true;
+    }
+    const auto Prototype = Written->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+    const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
+    if (!Selected || !Prototype || !Return ||
+        !Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType())
+      return false;
+    // Clang's actual selected constructor carries a void return TypeLoc, but
+    // constructors have no written return token. Bind only that precise slot;
+    // all parameters, defaults, noexcept and other locations keep their proof.
+    NotFnConstructorReturn = Return;
+    auto Restore = llvm::make_scope_exit([&] { NotFnConstructorReturn = TypeLoc(); });
+    return TraverseTypeLoc(Written->getTypeLoc());
+  }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
         NotFnConstraintVariableSource || !Source) return false;
@@ -10182,6 +10209,14 @@ public:
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
         }
+    // Only the selected constructor's own, observed synthetic return slot
+    // has no source tokens. Never replace a missing default's written type.
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnConstructorReturn &&
+        Location.getOpaqueData() == NotFnConstructorReturn.getOpaqueData() &&
+        Location.getType() == NotFnConstructorReturn.getType() &&
+        Location.getAs<BuiltinTypeLoc>() && Location.getType()->isVoidType() &&
+        Location.getBeginLoc().isInvalid() && Location.getEndLoc().isInvalid())
+      return TraverseType(Location.getType());
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
       const auto Origin = S.sdkFile(SM, L);
       if ((!Origin || Origin->Root != "libcxx") &&
@@ -12812,7 +12847,7 @@ public:
       const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
       if (!PrimaryTemplate || !Graph.function(Constructor)) return false;
       if (const auto *Written = Constructor->getTypeSourceInfo())
-        if (!Graph.TraverseTypeLoc(Written->getTypeLoc())) return false;
+        if (!Graph.TraverseNotFnConstructorSignature(Constructor, Written)) return false;
       bool Found = false;
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
