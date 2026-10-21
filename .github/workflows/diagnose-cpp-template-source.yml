@@ -907,6 +907,16 @@ jobs:
       run: |
         set -o pipefail
         cmake -P neverc/cmake/tests/ManagedCPythonContract.cmake 2>&1 | tee "$RUNNER_TEMP/artifact-policy/managed-cpython.log"
+    - name: Check generated SDK snapshot consistency with real C and C++ compilers
+      shell: bash
+      run: |
+        set -o pipefail
+        command -v cc
+        command -v c++
+        cc --version | tee "$RUNNER_TEMP/artifact-policy/sdk-cc.log"
+        c++ --version | tee "$RUNNER_TEMP/artifact-policy/sdk-cxx.log"
+        python3 utils/plugin-api/check-single-header.py 2>&1 | tee "$RUNNER_TEMP/artifact-policy/sdk-generation.log"
+        echo "Original PluginSDKGenerationConsistency command passed with both real compilers" | tee -a "$RUNNER_TEMP/artifact-policy/sdk-generation.log"
     - name: Preserve actual policy evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
