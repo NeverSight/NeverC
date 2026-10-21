@@ -27643,8 +27643,11 @@ class FunctionLowering {
         const auto RightType = ReverseOrder ? Leaf.LeftType : Leaf.RightType;
         if (const auto String = approvedUtilityStringRecord(
                 A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
-          auto LeftAddress = snapshot(address(std::move(Left), LeftType, L), L);
-          auto RightAddress = snapshot(address(std::move(Right), RightType, L), L);
+          // Comparisons borrow string subobjects through the const pair.
+          auto LeftAddress = snapshot(
+              address(std::move(Left), LeftType.withConst(), L), L);
+          auto RightAddress = snapshot(
+              address(std::move(Right), RightType.withConst(), L), L);
           auto LeftBytes = readStringAt(std::move(LeftAddress), *String, L);
           auto RightBytes = readStringAt(std::move(RightAddress), *String, L);
           return comparePairByteRanges(Relation, std::move(LeftBytes.first),
@@ -28619,6 +28622,37 @@ class FunctionLowering {
     auto *Callee = Call->getDirectCallee();
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
     if (A.S.coreV2()) {
+      if (const auto Factory = A.VerifiedNotFnFactories.find(Call);
+          Factory != A.VerifiedNotFnFactories.end()) {
+        const auto &Storage = Factory->second.Storage;
+        auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        Expression Member{{"kind", "member"}, {"type", type(Storage.CallableType, L)},
+            {"name", "nct_not_fn_callable"}, {"args", json::Array{json::Object(Result)}},
+            {"loc", A.loc(L)}};
+        // Snapshot before storing: a pointer-producing factory argument and
+        // every source cleanup run once, regardless of the destination form.
+        auto Callable = snapshot(Call->getArg(0)->getType()->isFunctionType()
+            ? functionValue(Call->getArg(0)) : expression(Call->getArg(0)), L);
+        assign(std::move(Member), std::move(Callable), L);
+        return Result;
+      }
+      if (const auto Invocation = A.VerifiedNotFnCalls.find(Call);
+          Invocation != A.VerifiedNotFnCalls.end()) {
+        const auto &Source = Invocation->second;
+        auto Object = lvalue(Source.Object);
+        Expression Member{{"kind", "member"}, {"type", type(Source.Storage.CallableType, L)},
+            {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Object)}},
+            {"loc", A.loc(L)}};
+        auto Callable = snapshot(std::move(Member), L);
+        const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+        json::Array Args;
+        for (unsigned I = 0; I < Prototype->getNumParams(); ++I)
+          Args.push_back(argument(Call->getArg(I + 1), Prototype->getParamType(I)));
+        auto Value = emitIndirectCall(std::move(Callable), std::move(Args),
+                                      Prototype->getReturnType(), L);
+        return Expression{{"kind", "unary"}, {"type", "bool"},
+            {"operator", "!"}, {"args", json::Array{std::move(Value)}}, {"loc", A.loc(L)}};
+      }
       if (auto Info = approvedNativeMemberPointerCall(
               A.S, A.Sources, Call, A.Context))
         return memberPointerCall(Call, *Info, 0, std::move(Destination));
@@ -31150,7 +31184,7 @@ class FunctionLowering {
     jump(Ready, L);
     label(Short, L);
     auto ShortPointer =
-        cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
+        cast(cast(json::Object(Address), "cptr:void", L), PointerType, L);
     assign(Data,
            String.AlternateLayout
                ? std::move(ShortPointer)
@@ -32747,6 +32781,8 @@ class FunctionLowering {
     const auto *R = T->getAsCXXRecordDecl();
     if (!A.S.coreV2() || !R || !R->getDefinition())
       return false;
+    if (approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context))
+      return false; // Its source has no direct fields, but its validated base stores the pointer.
     if (R->getDefinition()->field_empty())
       return true;
     const auto Array =

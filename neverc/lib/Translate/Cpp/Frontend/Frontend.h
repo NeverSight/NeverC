@@ -38,6 +38,7 @@ class SizeOfPackExpr;
 class InitListExpr;
 class StringLiteral;
 class TypeTraitExpr;
+class TypeLoc;
 class Expr;
 class UnaryExprOrTypeTraitExpr;
 struct ASTTemplateArgumentListInfo;
@@ -150,6 +151,9 @@ struct TemplateUseSource {
   const clang::TemplateArgumentList *Selection;
   bool WrittenStorageClass;
   const clang::NamedDecl *Origin = nullptr; // Exact copied partial/full class source; null for a written event.
+  // Inert SDK evidence for an exact not_fn constraint root. It is never
+  // indexed as ordinary owned source or as permission to execute an SDK body.
+  bool FunctionalNotFnConstraint = false;
 };
 // Retain each type substitution already performed by Sema. The final
 // VarDecl may keep its first declaration's TypeSourceInfo after completion.
@@ -166,6 +170,7 @@ struct SelectedTemplateCallSource {
   const clang::Expr *Expression;
   const clang::FunctionDecl *Function;
   clang::SourceLocation Location;
+  bool FunctionalNotFnConstraint = false;
 };
 // Each batch is copied before indexing and then remains immutable. Its AST
 // pointers still belong to the same ASTContext; retaining a batch grants no use.
@@ -1756,7 +1761,7 @@ std::optional<FunctionalNotFnFactorySource>
 describeFunctionalNotFnFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-enum class FunctionalNotFnSourceMode { Runtime, Signature };
+enum class FunctionalNotFnSourceMode { Runtime, Signature, Exception };
 struct FunctionalNotFnCallSource {
   FunctionalNotFnStorage Storage;
   const clang::CXXMethodDecl *Method;
@@ -1796,6 +1801,50 @@ describeFunctionalNotFnFactoryTemplateSource(
     const SelectedTemplateCallSource &Selection, const TemplateUseSource &Use,
     const clang::ASTContext &Context);
 
+
+// Bind only the actual nested decay_t end token in the three independently
+// authenticated default spellings. This does not complete their type graph.
+bool functionalNotFnFactorySplitTypeEnd(
+    const State &S, const clang::SourceManager &SM,
+    const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory, clang::TypeLoc Location,
+    clang::SourceLocation End);
+
+// Collection is purpose-bound and inert. Consuming the selected factory's
+// default/alias/trait source and granting runtime use remain separate checks.
+bool retainFunctionalNotFnConstraintRoot(
+    const State &S, const clang::SourceManager &SM, TemplateSourceKind Kind,
+    const clang::NamedDecl *Template, const clang::Decl *Declaration,
+    const clang::Type *Type, const clang::TypeSourceInfo *Underlying,
+    clang::SourceLocation Location);
+
+// Match an actual retained callback to its original expression. Inherited
+// construction keeps the real selected base declaration and derived AST node;
+// this identity check grants no factory, signature or body permission.
+bool matchesFunctionalNotFnSelectedSource(
+    const State &S, const clang::SourceManager &SM,
+    const SelectedTemplateCallSource &Source, const clang::ASTContext &Context);
+
+// A storage descriptor grants no selected call permission. The allowlist
+// records certificates only after the exact retained source graph completes.
+std::optional<FunctionalNotFnStorage>
+approvedFunctionalNotFnPointerStorage(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedFunctionalNotFnPointerFactorySource(const State &S,
+    const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
+    const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
 struct FunctionalNotFnTupleTagSource {
   const clang::CXXConstructExpr *Construction;
@@ -2683,6 +2732,9 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalObjects;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
+  std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
+  std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
+  std::map<const clang::CallExpr *, FunctionalNotFnCallSource> VerifiedNotFnCalls;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::map<const clang::VarDecl *, LocalDecomposition> Decompositions;

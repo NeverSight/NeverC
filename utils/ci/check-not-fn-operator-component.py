@@ -67,8 +67,8 @@ def main():
         sources = ['neverc/lib/Translate/Cpp/Frontend/' + name for name in names]
         sources += ['neverc/cmake/modules/BuiltinCppFrontend.cmake',
                     'utils/translate-frontends/cpp/tests/project.py',
-                    'utils/ci/FrontendProtocolDriver.cpp', 'utils/ci/check-ordinary-template-call-component.py',
-                    '.github/workflows/diagnose-cpp-template-source.yml', 'utils/ci/cpp-ordinary-template-call-component-plan.json',
+                    'utils/ci/FrontendProtocolDriver.cpp', 'utils/ci/check-not-fn-operator-component.py',
+                    '.github/workflows/diagnose-cpp-template-source.yml', 'utils/ci/cpp-not-fn-operator-component-plan.json',
                     'neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py']
         report['source_sha256'] = {name: sha(root / name) for name in sources}
         report['exact_private_input_sha256'] = {name: sha(frontend / name) for name in names}
@@ -118,6 +118,40 @@ def main():
         assert probe.read_bytes() == actual_source and isolated_source.read_bytes() == actual_source
         report['ordinary_patch_reapplication_verified_on_actual_produced_source'] = True
         report['actual_produced_semaexpr_sha256'] = sha(isolated_source)
+        # Reapply the original atomic selected-source owner to its real,
+        # production-generated files. Its all-file pristine/patched checks
+        # include the new object-call row and all previous source callbacks.
+        selected_owner = next(node for node in source_module.body
+            if isinstance(node, ast.FunctionDef) and
+            node.name == 'preserve_explicit_function_instantiation_source')
+        selected_scope = {'Path': Path, 're': re}
+        exec(compile(ast.Module(body=[selected_owner], type_ignores=[]),
+            '<actual-produced-selected-source>', 'exec'), selected_scope)
+        actual_root = build / '_deps/neverc-cpp-src'
+        groups_node = next(node.value for node in selected_owner.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == 'groups' for target in node.targets))
+        groups = ast.literal_eval(groups_node)
+        original_hashes = {relative: sha(actual_root / relative) for relative, _ in groups}
+        for _ in range(2):
+            selected_scope['preserve_explicit_function_instantiation_source'](actual_root)
+            assert {relative: sha(actual_root / relative) for relative, _ in groups} == original_hashes
+        object_rows = [row for relative, rows in groups
+            if relative == 'clang/lib/Sema/SemaOverload.cpp'
+            for row in rows if 'NeverCObjectCallResult' in row[1]]
+        assert len(object_rows) == 1
+        before, after = object_rows[0]
+        actual_overload = actual_root / 'clang/lib/Sema/SemaOverload.cpp'
+        produced_overload = actual_overload.read_text()
+        assert produced_overload.count(after) == 1
+        assert produced_overload.replace(after, '').count(before) == 0
+        assert 'TheCall, Method, CandidateSet.getLocation()' in after
+        source_proof = out / 'actual-object-call-source.json'
+        source_proof.write_text(json.dumps({'upstream_file':'clang/lib/Sema/SemaOverload.cpp',
+            'actual_produced_sha256':sha(actual_overload), 'original_block':before,
+            'actual_produced_block':after, 'all_group_file_sha256':original_hashes,
+            'actual_produced_source_reapplied_twice_unchanged':True}, indent=2)+'\n')
+        report['actual_object_call_source_proof_sha256'] = sha(source_proof)
+        report['object_patch_reapplication_verified_on_actual_produced_source'] = True
         save()
         private = build / '_deps/neverc-cpp-build'
         archive = private / 'lib/Release/libnevercCppFrontend.a'
@@ -240,7 +274,7 @@ def main():
                     'returncode': row['returncode'], 'diagnostic_codes': codes,
                     'passed': row['returncode'] == 0 and result is not None and not codes})
                 save()
-        plan = json.loads((root / 'utils/ci/cpp-ordinary-template-call-component-plan.json').read_text())
+        plan = json.loads((root / 'utils/ci/cpp-not-fn-operator-component-plan.json').read_text())
         report['plan'] = plan
         report['source_observations'] = []
         for case in plan['cases']:
@@ -286,9 +320,10 @@ def main():
             row['passed'] for row in report['requests'])
         report['sdk_and_project_contract_passed'] = report['passed']
         report['source_observation_contract_passed'] = all(v['expectation_satisfied'] for v in report['source_observations'])
-        report['private_not_fn_admission_implemented'] = False
-        report['not_fn_lowering_implemented'] = False
-        report['passed'] = False  # Honest unsupported diagnostic, regardless of observation results.
+        report['private_not_fn_admission_implemented'] = True
+        report['not_fn_lowering_implemented'] = True
+        report['not_fn_private_support_complete'] = False
+        report['passed'] = report['sdk_and_project_contract_passed'] and report['source_observation_contract_passed']
         report['completed'] = True
         save()
         return 0 if report['passed'] else 1

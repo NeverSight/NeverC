@@ -1,4 +1,3 @@
-#include "llvm/Support/raw_ostream.h"
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -2906,8 +2905,12 @@ utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record,
             A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
       OwningElement = true;
     else if (!Record->hasTrivialDestructor() && needsDestruction(Element)) {
-      if (!utilityTupleDestructionSource(
-              A, Element->getAsCXXRecordDecl(), Depth + 1))
+      const auto *Member = Element->getAsCXXRecordDecl();
+      // The tuple's implicit SDK destructor supplies only its storage edge.
+      // OperationSourceChecker::destruction independently closes each source
+      // record's actual destructor body, signature and nested field sources.
+      if ((!Member || !A.S.owns(A.Sources, Member->getLocation())) &&
+          !utilityTupleDestructionSource(A, Member, Depth + 1))
         return std::nullopt;
       OwningElement = true;
     }
@@ -9598,7 +9601,9 @@ static bool utilityUniquePtrOwnerComparisonSource(Adapter &A,
   default:
     return false;
   }
-  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected)
+  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected &&
+      approvedUtilityPairComparisonChildOperation(A.S, A.Sources,
+          dyn_cast<CXXOperatorCallExpr>(Call), A.Context) != Expected)
     return false;
   const auto Left = utilityUniquePtrSource(
       A, Call->getArg(0)->getType()->getAsCXXRecordDecl());
@@ -10161,6 +10166,44 @@ class UtilityPairByteComparisonSources
     // The enclosing visitor still closes the original member/operand sources.
     return true;
   }
+  bool stringPointerAddressof(CallExpr *Call, const FunctionDecl *Function) {
+    const auto Origin = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    const auto *Builtin = Function->getAttr<BuiltinAttr>();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Call->getCallee()->IgnoreParens());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
+    const auto Element = A.Context.CharTy.withConst();
+    const auto Pointer = A.Context.getPointerType(Element);
+    if (!Origin || Origin->Root != "libcxx" ||
+        Origin->Path != "__memory/pointer_traits.h" ||
+        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIaddressof ||
+        Function->getBuiltinID() != Builtin::BIaddressof ||
+        !Function->getIdentifier() || Function->getName() != "addressof" ||
+        !Primary || !Function->isInlined() || !Function->isConstexpr() ||
+        Function->getNumParams() != 1 || Function->getParamDecl(0)->hasDefaultArg() ||
+        !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() || !Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(Arguments->get(0).getAsType(), Element) ||
+        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||
+        Reference->getDecl() != Function ||
+        (Reference->getFoundDecl() != Function && Reference->getFoundDecl() != Primary) ||
+        operationCalleePrototype(Call) != Prototype ||
+        Call->getNumArgs() != 1 || !Call->isPRValue() || !Call->getArg(0)->isLValue() ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(), Element) ||
+        !A.Context.hasSameType(Function->getParamDecl(0)->getType(),
+                              A.Context.getLValueReferenceType(Element)) ||
+        !A.Context.hasSameType(Function->getReturnType(), Pointer) ||
+        !A.Context.hasSameType(Call->getType(), Pointer))
+      return false;
+    // Clang implements this selected library builtin. Its primary and every
+    // declaration still come from the immutable SDK; operands keep traversing.
+    return utilitySDKFunctionSource(A, Function, "__memory/addressof.h",
+                                     /*RequireDefinition=*/false);
+  }
   bool pinned(const FunctionDecl *Function) {
     if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
         Function->isVariadic() || !Function->getDefinition() ||
@@ -10246,6 +10289,8 @@ public:
     if (Function->getBuiltinID()) {
       if (Function->getBuiltinID() == Builtin::BI__builtin_constant_p)
         return stringConstantQuery(Call, Function);
+      if (Function->getBuiltinID() == Builtin::BIaddressof)
+        return stringPointerAddressof(Call, Function);
       const auto Name = Function->getName();
       return location(Call->getExprLoc()) &&
              (Name == "__builtin_memcmp" ||
@@ -13372,6 +13417,11 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
+      } else if (const auto NotFn = approvedFunctionalNotFnPointerStorage(S, Sources, D, Context)) {
+        if (RequiredFunctionalNotFnPointers.insert(D->getCanonicalDecl()).second) {
+          if (type(NotFn->CallableType, L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
         if (!requireFunctionalReference(D, L, Depth + 1))
           return {};
@@ -13938,6 +13988,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     json::Array Args;
     if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto NotFn = approvedFunctionalNotFnPointerStorage(S, Sources, R, Context)) {
+      Args.push_back(zero(NotFn->CallableType, L));
     } else if (auto Wrapper =
                    approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
       if (Wrapper->PaddedBase)
@@ -14832,6 +14884,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   // Consumer vectors may grow inside RequireCompleteType. Only immutable
   // batches owned here supply indexed addresses after the initial snapshots.
   std::deque<TemplateSourceEventBatch> LateTemplateSourceEvents;
+  using NotFnConstraintKey = std::tuple<TemplateSourceKind, const NamedDecl *,
+      const Type *, const Decl *, unsigned>;
+  std::set<NotFnConstraintKey> NotFnConstraintKeys;
+  std::vector<const TemplateUseSource *> NotFnConstraintSources;
+  std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> NotFnSelectedCallSources;
+  static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
+    return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
+            Source.Location.getRawEncoding()};
+  }
   std::size_t TemplateUseCursor = 0, SelectedCallCursor = 0;
   bool SourceEventsReady = false, SourceEventsSealed = false,
        IndexingSourceEvents = false;
@@ -18506,6 +18567,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // Retain the stored iterator's source without borrowing private
           // field/base TypeLocs or consuming the pointed-to object's layout.
           Self(Self, Iterator->IteratorType, true, Depth + 1);
+          return;
+        }
+        if (const auto NotFn = approvedFunctionalNotFnPointerStorage(
+                A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, NotFn->CallableType, false, Depth + 1);
           return;
         }
         if (const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -22581,6 +22647,8 @@ public:
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
+    if (Source.FunctionalNotFnConstraint)
+      return !NotFnConstraintKeys.count(notFnConstraintKey(Source));
     // A previously checked key cannot acquire an untraversed alternative after
     // its source result was cached. Repeated late keys need a separate complete
     // traversal; this boundary rejects them rather than invalidating a cache
@@ -22657,6 +22725,7 @@ public:
       }
       for (const auto &Source : Batch.Calls) {
         if (SelectedCallSources.count(Source.Expression) ||
+            NotFnSelectedCallSources.count(Source.Expression) ||
             PairTraitSelections.count(Source.Expression)) {
           A.reject(Source.Location, "repeated late selected source",
                    "A retained late selection needs a fresh exact expression.");
@@ -22677,10 +22746,18 @@ public:
       const FunctionDecl *Selected = nullptr;
       if (const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression))
         Selected = Construction->getConstructor();
-      else if (const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Source.Expression))
+      else if (const auto *Call = dyn_cast_or_null<CallExpr>(Source.Expression))
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Source.FunctionalNotFnConstraint) {
+        if (!matchesFunctionalNotFnSelectedSource(A.S, A.Sources, Source, A.Context)) {
+          A.reject(Source.Location, "not_fn selected source", "The exact retained SDK selection is required.");
+          continue;
+        }
+        NotFnSelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
       if (Selected == Source.Function &&
           (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
@@ -22744,13 +22821,18 @@ public:
                                                    A.Context) ||
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
-      const bool ApprovedUtilityCall =
-          UtilityCall &&
-          approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context);
+      const bool ApprovedUtilityCall = UtilityCall &&
+          (approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context) ||
+           (describeFunctionalNotFnFactorySource(A.S, A.Sources, UtilityCall, A.Context) &&
+            approvedFunctionalNotFnPointerStorage(A.S, A.Sources,
+                UtilityCall->getType()->getAsCXXRecordDecl(), A.Context)) ||
+           (describeFunctionalNotFnCallSource(A.S, A.Sources, UtilityCall,
+                A.Context, FunctionalNotFnSourceMode::Runtime) &&
+            approvedFunctionalNotFnPointerStorage(A.S, A.Sources,
+                UtilityCall->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl(), A.Context)));
+
       if (!Selected || Selected != Source.Function ||
-          !(isa<CXXNewExpr>(Source.Expression)
-                ? concreteFunctionTemplate(Selected)
-                : concreteMemberFunctionTemplate(Selected)) ||
+          !concreteFunctionTemplate(Selected) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
@@ -23169,6 +23251,13 @@ public:
       return;
     for (const auto &Source : Sources) {
       A.chargeExpansion(1, Source.Location);
+      if (Source.FunctionalNotFnConstraint) {
+        // These addresses have the same initial snapshot/owned-batch lifetime
+        // as every other retained event. No ordinary permission index sees them.
+        NotFnConstraintKeys.insert(notFnConstraintKey(Source));
+        NotFnConstraintSources.push_back(&Source);
+        continue;
+      }
       switch (Source.Kind) {
       case TemplateSourceKind::Type:
         if (Source.Template && Source.Template->getIdentifier() &&
@@ -25715,7 +25804,109 @@ public:
       Source.Complete = true;
     return Result;
   }
+  std::optional<bool> traverseNotFnFactory(CallExpr *Call) {
+    const auto Shape = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);
+    if (!Shape || !approvedFunctionalNotFnPointerStorage(
+            A.S, A.Sources, Shape->Storage.Record, A.Context)) return std::nullopt;
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+    if (!Reference || Reference->getDecl() != Shape->Factory ||
+        Reference->hasExplicitTemplateArgs() || !A.S.owns(A.Sources, Reference->getExprLoc())) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer factory",
+               "A direct deduced factory use with its original source is required.");
+      return true;
+    }
+    const auto Selections = SelectedCallSources.find(Call);
+    if (Selections == SelectedCallSources.end() || Selections->second.empty()) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+               "The actual selected factory deduction is required.");
+      return true;
+    }
+    for (const auto *Selection : sourceCandidates(Selections->second)) {
+      const auto Uses = FunctionSources.find({Shape->Factory, Selection->Location.getRawEncoding()});
+      if (Uses == FunctionSources.end() || Uses->second.empty()) {
+        A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+                 "The selected factory's original defaults are required.");
+        return true;
+      }
+      for (const auto *Use : sourceCandidates(Uses->second)) {
+        const auto Source = describeFunctionalNotFnFactoryTemplateSource(
+            A.S, A.Sources, *Selection, *Use, A.Context);
+        std::vector<const TemplateUseSource *> Dependencies = NotFnConstraintSources;
+        for (const auto &[Key, Entries] : FunctionSources)
+          for (const auto *Entry : Entries)
+            if (!A.S.owns(A.Sources, Entry->Location)) Dependencies.push_back(Entry);
+        std::vector<const SelectedTemplateCallSource *> Selections;
+        for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
+          Selections.insert(Selections.end(), Entries.begin(), Entries.end());
+        if (!Source || !approvedFunctionalNotFnPointerFactorySource(
+                A.S, A.Sources, A.Context, *Source, Dependencies, Selections,
+                A.SpecialMembers, A.OperationTraits)) {
+          A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+                   "The selected default, alias, trait and constructor source graph must be complete.");
+          return true;
+        }
+      }
+    }
+    A.VerifiedNotFnFactories.emplace(Call, *Shape);
+    A.type(Call->getType(), Call->getExprLoc());
+    return TraverseStmt(Call->getArg(0));
+  }
+  std::optional<bool> traverseNotFnCall(CXXOperatorCallExpr *Call) {
+    const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Runtime);
+    if (!Runtime || !approvedFunctionalNotFnPointerStorage(
+            A.S, A.Sources, Runtime->Storage.Record, A.Context)) return std::nullopt;
+    const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Signature);
+    const auto Exception = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Exception);
+    const auto *Target = Runtime->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto *Negation = dyn_cast<UnaryOperator>(Runtime->Negation);
+    const auto *Prototype = Runtime->Method->getType()->getAs<FunctionProtoType>();
+    bool Source = Signature && Exception && Negation && Negation->getOpcode() == UO_LNot &&
+        Target && ordinaryCallbackPrototype(Target) && Target->getReturnType()->isArithmeticType() &&
+        Prototype && Prototype->isNothrow() == Target->isNothrow() &&
+        Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
+        A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
+        functionalFunctionInvokeSource(A, Runtime->InvokeCall);
+    // Consume the selected operator's real enable_if/default packet, including
+    // its original primary spelling, rather than assuming that void means valid.
+    bool SelectedDefault = false;
+    for (const auto *Use : NotFnConstraintSources) {
+      if (Use->Kind != TemplateSourceKind::Function || Use->Declaration != Runtime->Method) continue;
+      if (Use->Template != Runtime->Method->getPrimaryTemplate() ||
+          Use->Defaults.size() != 1 || Use->DefaultsOverflow) { Source = false; break; }
+      const auto &Default = Use->Defaults.front();
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
+      if (!Parameter || !Parameter->hasDefaultArgument() ||
+          Default.Written.getArgument().getKind() != TemplateArgument::Type ||
+          Default.Converted.getArgument().getKind() != TemplateArgument::Type) { Source = false; break; }
+      // This bounded walker follows actual selected aliases, partials, trait
+      // roots and all original declaration chains. No ordinary permission leaks.
+      std::vector<const SelectedTemplateCallSource *> Selections;
+      const auto Found = NotFnSelectedCallSources.find(Call);
+      if (Found != NotFnSelectedCallSources.end()) Selections = Found->second;
+      SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
+          A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
+          A.SpecialMembers, A.OperationTraits);
+      if (!SelectedDefault) { Source = false; break; }
+    }
+    if (!Source || !SelectedDefault || !Call->getType()->isBooleanType()) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer call source",
+               "The selected invocation, exception and enabling source graph must be complete.");
+      return true;
+    }
+    A.VerifiedNotFnCalls.emplace(Call, *Runtime);
+    A.type(Runtime->Storage.CallableType, Call->getExprLoc());
+    // The SDK receiver cast is exactly bound by the descriptor. Traverse its
+    // original object and every original argument once, with normal lifetimes.
+    if (!TraverseStmt(const_cast<Expr *>(Runtime->Object))) return false;
+    for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+      if (!TraverseStmt(Call->getArg(I))) return false;
+    return true;
+  }
   bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto NotFn = traverseNotFnFactory(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
     // Keep selection/default source that can disappear from the instantiated
@@ -25726,6 +25917,7 @@ public:
     });
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto NotFn = traverseNotFnCall(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, Queue);
     return traverseTypeQuerySource(Call, [&] {
@@ -28571,7 +28763,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
     const auto FunctionalReference =
         approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = FunctionalObject || FunctionalReference ||
+    const auto NotFn = approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context);
+    if (const auto *Base = FunctionalObject || FunctionalReference || NotFn ||
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
@@ -28628,6 +28821,8 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
+    } else if (NotFn) {
+      DependencyTypes.emplace_back(NotFn->CallableType, R->getLocation());
     } else if (FunctionalReference) {
       DependencyTypes.emplace_back(FunctionalReference->PointerType,
                                    FunctionalReference->Record->getLocation());
@@ -28824,7 +29019,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto FunctionalReference =
         S.coreV2() ? approvedFunctionalReferenceRecord(S, Sources, R, Context)
                    : std::optional<FunctionalReferenceRecord>();
-    const auto *Base = S.coreV2() && !FunctionalObject &&
+    const auto NotFn = S.coreV2()
+        ? approvedFunctionalNotFnPointerStorage(S, Sources, R, Context)
+        : std::optional<FunctionalNotFnStorage>();
+    const auto *Base = S.coreV2() && !FunctionalObject && !NotFn &&
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
@@ -28843,6 +29041,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     if (FunctionalObject) {
       Fields.push_back(json::Object{{"name", "nct_functional_storage"},
                                     {"type", "u8"}});
+    } else if (NotFn) {
+      Fields.push_back(json::Object{{"name", "nct_not_fn_callable"},
+          {"type", type(NotFn->CallableType, R->getLocation())}});
     } else if (FunctionalReference) {
       if (FunctionalReference->PaddedBase)
         Fields.push_back(json::Object{
@@ -29503,45 +29704,13 @@ class Consumer : public ASTConsumer {
       bool Overflow, const SourceLocation &Location, bool Instantiation = false,
       const TemplateArgumentList *Selection = nullptr,
       bool WrittenStorageClass = false, const NamedDecl *Origin = nullptr) {
-    if (Template && (Template->getNameAsString() == "not_fn" ||
-        Template->getNameAsString() == "__not_fn_t" ||
-        Template->getNameAsString() == "__perfect_forward" ||
-        Template->getNameAsString() == "ordinary_source_default" ||
-        Template->getNameAsString() == "ordinary_source_failed")) {
-      auto &ObservedSources = Template->getASTContext().getSourceManager();
-      llvm::errs() << "ORDINARY_SOURCE_DEFAULTS_BEGIN name=" << Template->getNameAsString()
-                   << " count=" << Count << " defaults=" << DefaultCount
-                   << " types=" << TypeCount << " overflow=" << Overflow << "\n";
-      Location.print(llvm::errs(), ObservedSources);
-      llvm::errs() << "\nPRIMARY\n";
-      Template->dump(llvm::errs());
-      for (unsigned I = 0; I != DefaultCount && I != 64; ++I) {
-        llvm::errs() << "DEFAULT_PARAMETER " << I << "\n";
-        if (DefaultParameters && DefaultParameters[I]) DefaultParameters[I]->dump(llvm::errs());
-        for (unsigned Stage = 0; Stage != 2; ++Stage) {
-          const auto *Arguments = Stage ? ConvertedDefaults : OriginalDefaults;
-          llvm::errs() << (Stage ? "CONVERTED " : "SUBSTITUTED_WRITTEN ") << I
-                       << " present=" << bool(Arguments) << "\n";
-          if (!Arguments) continue;
-          llvm::errs() << "kind=" << unsigned(Arguments[I].getArgument().getKind()) << "\n";
-          if (Arguments[I].getArgument().getKind() == TemplateArgument::Type) {
-            const auto *Info = Arguments[I].getTypeSourceInfo();
-            llvm::errs() << "TSI=" << bool(Info) << "\n";
-            if (Info) {
-              llvm::errs() << Info->getType().getAsString() << "\n";
-              Info->getTypeLoc().getSourceRange().print(llvm::errs(), ObservedSources);
-              llvm::errs() << "\n";
-            }
-          }
-        }
-      }
-      llvm::errs() << "ORDINARY_SOURCE_DEFAULTS_END\n";
-    }
     if (!S.coreV2() || !Template || !S.Diagnostics.empty())
       return;
     auto &Context = Template->getASTContext();
     auto &Sources = Context.getSourceManager();
-    if (!S.owns(Sources, Location) &&
+    const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
+        S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
+    if (!S.owns(Sources, Location) && !NotFnConstraint &&
         !(Kind == TemplateSourceKind::Function &&
           (tupleFactorySelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)) ||
@@ -29609,6 +29778,7 @@ class Consumer : public ASTConsumer {
         TemplateArgumentList::CreateCopy(Context, llvm::ArrayRef<TemplateArgument>(Sugared, Count)),
         {}, {}, Location, Overflow, Instantiation, Selection, WrittenStorageClass};
     Source.Origin = Origin;
+    Source.FunctionalNotFnConstraint = NotFnConstraint;
     Source.Defaults.reserve(DefaultCount);
     for (unsigned I = 0; I < DefaultCount; ++I)
       Source.Defaults.push_back({DefaultParameters[I], OriginalDefaults[I], ConvertedDefaults[I]});
@@ -29862,20 +30032,12 @@ public:
   void HandleNeverCSelectedTemplateCallSource(
       Expr *Expression, FunctionDecl *Function,
       const SourceLocation &Location) override {
-    if (Function && (Function->getNameAsString() == "not_fn" ||
-        Function->getNameAsString() == "ordinary_source_default" ||
-        Function->getNameAsString() == "ordinary_source_failed")) {
-      llvm::errs() << "ORDINARY_SOURCE_SELECTED_BEGIN name=" << Function->getNameAsString() << "\n";
-      Location.print(llvm::errs(), Function->getASTContext().getSourceManager());
-      llvm::errs() << "\n";
-      if (Expression) Expression->dump(llvm::errs(), Function->getASTContext());
-      Function->dump(llvm::errs());
-      llvm::errs() << "ORDINARY_SOURCE_SELECTED_END\n";
-    }
     if (!S.coreV2() || !Function || !Function->getPrimaryTemplate())
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
-    if ((!S.owns(Sources, Location) &&
+    const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
+        Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
+    if ((!S.owns(Sources, Location) && !NotFn &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
@@ -29884,7 +30046,7 @@ public:
       return;
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
-    SelectedCalls.push_back({Expression, Function, Location});
+    SelectedCalls.push_back({Expression, Function, Location, NotFn});
   }
   void HandleNeverCFunctionTemplateSource(
       FunctionDecl *Function,
