@@ -9891,6 +9891,22 @@ class UtilityTupleQueryGraph
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairHelperOwner(R))
       return true;
+    if (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage &&
+        R->getCanonicalDecl() == NotFnTupleTagStorage->Tuple->getCanonicalDecl()) {
+      // This exact tuple was independently authenticated as the pointer
+      // wrapper's storage. Consume its element in this metadata graph without
+      // treating a function-pointer tuple as a generic tuple_cat carrier.
+      const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
+      const auto *Definition = R->getDefinition();
+      if (!Instance || !Definition || !family(R) || !family(Definition) ||
+          Instance->getTemplateArgs().size() != 1 ||
+          Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
+          Instance->getTemplateArgs()[0].pack_size() != 1) return false;
+      const auto &Element = Instance->getTemplateArgs()[0].pack_elements()[0];
+      return Element.getKind() == TemplateArgument::Type &&
+          Context.hasSameType(Element.getAsType(), NotFnTupleTagStorage->CallableType) &&
+          TraverseType(Element.getAsType());
+    }
     if (carrier(Context.getRecordType(R))) {
       if (Mode != UtilityTupleQueryMode::CatSignature) return true;
       if (!family(R)) return false;
@@ -9969,7 +9985,6 @@ class UtilityTupleQueryGraph
     if (const auto *R = dyn_cast<CXXRecordDecl>(D->getDeclContext()))
       if (!record(R)) return false;
     if (const auto *V = dyn_cast<VarDecl>(D)) {
-      if (!V->isConstexpr()) return false;
       if (!V->isStaticDataMember()) {
         // Only the bound not_fn proof can consume this exact retained use
         // and its selected initializer. No namespace constant joins the
@@ -9978,6 +9993,7 @@ class UtilityTupleQueryGraph
             Reference->getDecl() == V && NotFnConstraintVariableSource &&
             NotFnConstraintVariableSource(Reference);
       }
+      if (!V->isConstexpr()) return false;
       const VarDecl *Holder = nullptr;
       const auto *Initializer = V->getAnyInitializer(Holder);
       return Initializer && Holder && family(Holder) &&
@@ -12406,6 +12422,7 @@ class NotFnPointerSourceProof {
   UtilityTupleQueryGraph Graph;
   llvm::ArrayRef<const TemplateUseSource *> Sources;
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
+  std::set<const DeclRefExpr *> InvocableVariableChildren;
 
   static const TemplateSpecializationType *specialization(QualType Type) {
     if (Type.isNull()) return nullptr;
@@ -12544,6 +12561,86 @@ class NotFnPointerSourceProof {
     // Follow the actual selected initializer (including is_move_constructible's
     // selected class/base/trait), not its folded true value alone.
     return Found && Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+  }
+  bool invocationVariableUse(const DeclRefExpr *Reference,
+      const FunctionalNotFnCallSource &Call) {
+    const auto *Variable = Reference
+        ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
+    const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
+    const bool Internal = InvocableVariableChildren.count(Reference);
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *First = Parameters && Parameters->size() == 2
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+    const auto *Rest = Parameters && Parameters->size() == 2
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    if (!Variable || !Primary || !Primary->getIdentifier() ||
+        Primary->getName() != (Internal ? "__is_invocable_v" : "is_invocable_v") ||
+        Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Variable->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary ||
+        !Variable->getType()->isBooleanType() || !Variable->getType().isConstQualified() ||
+        !Variable->hasInit() || !Variable->isUsableInConstantExpressions(Context) ||
+        (!Internal && !Variable->isConstexpr()) ||
+        !Check.family(Primary, {"__type_traits/invoke.h"}) || !First || !Rest ||
+        First->isParameterPack() || First->hasDefaultArgument() ||
+        !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
+        !Check.family(First, {"__type_traits/invoke.h"}) ||
+        !Check.family(Rest, {"__type_traits/invoke.h"})) return false;
+    for (const auto *Redeclaration : Variable->redecls())
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
+    const auto *Method = Call.Method;
+    const auto *CallArguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+    if (!Method || !CallArguments || CallArguments->size() != 2 ||
+        CallArguments->get(0).getKind() != TemplateArgument::Pack ||
+        CallArguments->get(0).pack_size() != Method->getNumParams() ||
+        Method->getNumParams() > 64 ||
+        !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
+    const auto &Arguments = Variable->getTemplateArgs();
+    if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments[0].getAsType(), Context.getRecordType(Call.Storage.Operation)) ||
+        Arguments[1].getKind() != TemplateArgument::Pack ||
+        Arguments[1].pack_size() != Method->getNumParams() + 1) return false;
+    auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
+                                 : Call.Storage.CallableType;
+    if (Method->getRefQualifier() == RQ_LValue)
+      Bound = Context.getLValueReferenceType(Bound);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    const auto Pack = Arguments[1].pack_elements();
+    if (Pack[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Pack[0].getAsType(), Bound)) return false;
+    const auto Selected = CallArguments->get(0).pack_elements();
+    for (unsigned I = 0; I < Selected.size(); ++I)
+      if (Selected[I].getKind() != TemplateArgument::Type ||
+          Pack[I + 1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Pack[I + 1].getAsType(), Selected[I].getAsType())) return false;
+    if (!Internal) {
+      bool Found = false;
+      for (const auto *Source : Sources) {
+        if (!Source || Source->Kind != TemplateSourceKind::VariableUse ||
+            Source->Declaration != Variable || Source->Location != Reference->getExprLoc()) continue;
+        if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
+            Source->Type || Source->Underlying || !arguments(*Source) ||
+            !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
+            Source->Canonical->size() != Arguments.size()) return false;
+        for (unsigned I = 0; I < Arguments.size(); ++I)
+          if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return false;
+        Found = true;
+      }
+      if (!Found || !Check.location(Reference->getExprLoc(),
+                                    {"__functional/perfect_forward.h"})) return false;
+      // Only the actual child of this authenticated outer initializer may
+      // consume the SDK's non-constexpr inline const implementation variable.
+      // Its identity, arguments and selected primary close again on reentry.
+      const auto *Load = dyn_cast<ImplicitCastExpr>(Variable->getInit());
+      const auto *Child = Load && Load->getCastKind() == CK_LValueToRValue
+          ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
+      if (!Child || !Check.location(Child->getExprLoc(), {"__type_traits/invoke.h"}) ||
+          !InvocableVariableChildren.insert(Child).second) return false;
+      auto Restore = llvm::make_scope_exit([&] { InvocableVariableChildren.erase(Child); });
+      return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+    }
+    // Never use the folded true result in place of the selected class/alias,
+    // overload and initializer source graph.
+    return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
   }
   bool decay(TemplateSpecializationTypeLoc Root, QualType Input, QualType Output) {
     const auto *Source = typeUse(Root);
@@ -12696,7 +12793,10 @@ public:
     return true;
   }
   bool callDefaults(const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use) {
-    if (!Graph.bindNotFnOperation(Call.Storage)) return false;
+    if (!Graph.bindNotFnOperation(Call.Storage) ||
+        !Graph.bindNotFnConstraintVariables([this, Call](const DeclRefExpr *Reference) {
+          return invocationVariableUse(Reference, Call);
+        })) return false;
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
