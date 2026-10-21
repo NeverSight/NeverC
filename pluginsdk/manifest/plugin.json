@@ -417,7 +417,7 @@
   ],
   "single_header": {
     "path": "pluginsdk/include/neverc/Plugin/NevercPluginAPI.h",
-    "source_digest": "bb555918c5a1d946d3b2c6401fd9932c066abc3e143992a8e73095b2b8bab80b"
+    "source_digest": "7ed5cee4c5f0232b8201237e6786f5f47381acddf9041fd5af19ecaedeb2f7a7"
   },
   "targets": [
     "aarch64",
