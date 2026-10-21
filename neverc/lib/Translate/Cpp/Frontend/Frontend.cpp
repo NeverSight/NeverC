@@ -36,6 +36,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <functional>
+#include <deque>
 #include <set>
 #include <tuple>
 #ifndef _WIN32
@@ -13416,6 +13417,11 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
+      } else if (const auto NotFn = approvedFunctionalNotFnPointerStorage(S, Sources, D, Context)) {
+        if (RequiredFunctionalNotFnPointers.insert(D->getCanonicalDecl()).second) {
+          if (type(NotFn->CallableType, L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
         if (!requireFunctionalReference(D, L, Depth + 1))
           return {};
@@ -13982,6 +13988,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     json::Array Args;
     if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto NotFn = approvedFunctionalNotFnPointerStorage(S, Sources, R, Context)) {
+      Args.push_back(zero(NotFn->CallableType, L));
     } else if (auto Wrapper =
                    approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
       if (Wrapper->PaddedBase)
@@ -14873,6 +14881,27 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const VarDecl *> CheckedVariablePartials, CheckedVariableDeclarations;
   std::vector<const VarDecl *> ActiveVariablePartials, ActiveVariableDeclarations;
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
+  // Consumer vectors may grow inside RequireCompleteType. Only immutable
+  // batches owned here supply indexed addresses after the initial snapshots.
+  std::deque<TemplateSourceEventBatch> LateTemplateSourceEvents;
+  using NotFnConstraintKey = std::tuple<TemplateSourceKind, const NamedDecl *,
+      const Type *, const Decl *, unsigned>;
+  std::set<NotFnConstraintKey> NotFnConstraintKeys;
+  std::vector<const TemplateUseSource *> NotFnConstraintSources;
+  std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> NotFnSelectedCallSources;
+  static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
+    return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
+            Source.Location.getRawEncoding()};
+  }
+  std::size_t TemplateUseCursor = 0, SelectedCallCursor = 0;
+  bool SourceEventsReady = false, SourceEventsSealed = false,
+       IndexingSourceEvents = false;
+  template <class Source>
+  static std::vector<Source> sourceCandidates(const std::vector<Source> &Sources) {
+    // A nested completion may append to the index while a candidate is checked.
+    // Keep this iteration's exact candidate range independent of that append.
+    return Sources;
+  }
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
@@ -17586,7 +17615,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  "The actual SDK factory return needs its retained constructor selection.");
         return false;
       }
-      for (const auto *Selection : Found->second)
+      for (const auto *Selection : sourceCandidates(Found->second))
         if (!Selection || Selection->Expression != Construction ||
             Selection->Function != Construction->getConstructor() ||
             !pairConstructorTemplateSource(*Selection, Call)) {
@@ -17810,7 +17839,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       A.reject(L, "selected member template source", "Construction, conversion or allocation needs its exact successful selection source.");
       return false;
     }
-    for (const auto *Source : Found->second) {
+    for (const auto *Source : sourceCandidates(Found->second)) {
       A.chargeExpansion(1, Source->Location);
       if (Source->Expression != Expression || Source->Function != Function ||
           (!A.S.owns(A.Sources, Source->Location) &&
@@ -18084,7 +18113,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (Location.isInvalid() || !Locations.insert(Location.getRawEncoding()).second) continue;
       const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
       if (Found == FunctionSources.end()) continue;
-      for (const auto *Source : Found->second) {
+      for (const auto *Source : sourceCandidates(Found->second)) {
         if ((First && !equivalentUse(*First, *Source)) ||
             !approvedUtilityTupleCatQueryTemplateSource(A.S, A.Sources, Function, *Source,
                 A.Context, A.SpecialMembers, A.OperationTraits)) return {};
@@ -18538,6 +18567,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // Retain the stored iterator's source without borrowing private
           // field/base TypeLocs or consuming the pointed-to object's layout.
           Self(Self, Iterator->IteratorType, true, Depth + 1);
+          return;
+        }
+        if (const auto NotFn = approvedFunctionalNotFnPointerStorage(
+                A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, NotFn->CallableType, false, Depth + 1);
           return;
         }
         if (const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -19444,7 +19478,7 @@ private:
         return false;
       }
       const TemplateUseSource *First = nullptr;
-      for (const auto *Selection : Found->second) {
+      for (const auto *Selection : sourceCandidates(Found->second)) {
         if (!Selection || Selection->Expression != Use ||
             Selection->Function != Use->getConstructor() ||
             (Use == Construction ? !A.S.owns(A.Sources, Selection->Location)
@@ -19455,7 +19489,7 @@ private:
             {Selection->Function, Selection->Location.getRawEncoding()});
         if (Sources == FunctionSources.end() || Sources->second.empty())
           return false;
-        for (const auto *Source : Sources->second) {
+        for (const auto *Source : sourceCandidates(Sources->second)) {
           if (!Source || Source->Location != Selection->Location ||
               (First && !equivalentUse(*First, *Source)) ||
               !Outer.deduction(*Source, Use->getConstructor()))
@@ -21804,7 +21838,7 @@ public:
       ImplicitInitializerOwner = SavedInitializer;
     });
     const TemplateUseSource *First = nullptr;
-    for (const auto *Source : Found->second) {
+    for (const auto *Source : sourceCandidates(Found->second)) {
       if (!partialDeclarationIdentity(*Source) ||
           (First && (First->Origin != Source->Origin || !equivalentUse(*First, *Source)))) {
         A.reject(D->getLocation(), "partial declaration source identity",
@@ -21887,7 +21921,7 @@ public:
       ImplicitInitializerOwner = SavedInitializer;
     });
     const TemplateUseSource *First = nullptr;
-    for (const auto *Source : Found->second) {
+    for (const auto *Source : sourceCandidates(Found->second)) {
       if (!classFullDeclarationIdentity(*Source) ||
           (First && (First->Origin != Source->Origin || !equivalentUse(*First, *Source)))) {
         A.reject(D->getLocation(), "class full declaration source identity",
@@ -22405,7 +22439,7 @@ public:
       auto Found = FunctionSources.find({Function, UseLocation.getRawEncoding()});
       if (Found == FunctionSources.end())
         continue;
-      for (const auto *Source : Found->second) {
+      for (const auto *Source : sourceCandidates(Found->second)) {
         if ((First && !equivalentUse(*First, *Source)) ||
             !sameArguments(Source->Canonical, Function->getTemplateSpecializationArgs())) {
           A.reject(Location, "selected template source conflict", "Repeated selected deductions must preserve equivalent complete source evidence.");
@@ -22451,7 +22485,7 @@ public:
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
     std::set<const CXXMethodDecl *> Members;
-    for (const auto *Source : Found->second) {
+    for (const auto *Source : sourceCandidates(Found->second)) {
       std::vector<const TypeTraitExpr *> Local;
       std::vector<const Type *> LocalTypes;
       std::vector<const CXXMethodDecl *> LocalMembers;
@@ -22546,7 +22580,7 @@ public:
               const auto Uses = TypeSources.find({Instance, Written.getTemplateNameLoc().getRawEncoding()});
               if (Uses == TypeSources.end() || Uses->second.empty()) continue;
               bool Actual = true;
-              for (const auto *Use : Uses->second)
+              for (const auto *Use : sourceCandidates(Uses->second))
                 Actual &= Use && Use->Type == Instance && Use->Written &&
                     Use->Template == Instance->getTemplateName().getAsTemplateDecl() &&
                     Use->Location == Written.getTemplateNameLoc();
@@ -22606,6 +22640,101 @@ public:
     }
     return true;
   }
+  void beginTemplateSourceEvents(std::size_t Uses, std::size_t Calls) {
+    TemplateUseCursor = Uses;
+    SelectedCallCursor = Calls;
+    SourceEventsReady = true;
+  }
+  void sealTemplateSourceEvents() { SourceEventsSealed = true; }
+  bool freshLateTemplateSource(const TemplateUseSource &Source) const {
+    if (Source.FunctionalNotFnConstraint)
+      return !NotFnConstraintKeys.count(notFnConstraintKey(Source));
+    // A previously checked key cannot acquire an untraversed alternative after
+    // its source result was cached. Repeated late keys need a separate complete
+    // traversal; this boundary rejects them rather than invalidating a cache
+    // incompletely or treating equivalent canonical types as source evidence.
+    switch (Source.Kind) {
+    case TemplateSourceKind::Type:
+      return !TypeSources.count({Source.Type, Source.Location.getRawEncoding()});
+    case TemplateSourceKind::Function:
+      return !FunctionSources.count({dyn_cast_or_null<FunctionDecl>(Source.Declaration),
+                                     Source.Location.getRawEncoding()});
+    case TemplateSourceKind::ClassFullDeclaration:
+      return !ClassFullDeclarations.count(Source.Declaration);
+    case TemplateSourceKind::ClassDeclaration:
+      return !ClassSources.count(Source.Declaration);
+    case TemplateSourceKind::PartialDeclaration:
+      return !PartialDeclarations.count(Source.Declaration);
+    case TemplateSourceKind::VariableUse:
+    case TemplateSourceKind::VariableDeclaration:
+      return !VariableArgumentSources.count(dyn_cast_or_null<VarDecl>(Source.Declaration));
+    case TemplateSourceKind::VariablePartialDeduction:
+    case TemplateSourceKind::VariablePartialPattern: {
+      const auto Found = VariablePartialSources.find(Source.Selection);
+      return Found == VariablePartialSources.end() ||
+          !(Source.Kind == TemplateSourceKind::VariablePartialDeduction
+                ? Found->second.Deduction : Found->second.Pattern);
+    }
+    case TemplateSourceKind::PartialDeduction:
+    case TemplateSourceKind::PartialPattern: {
+      const auto Found = PartialSources.find(Source.Selection);
+      return Found == PartialSources.end() ||
+          !(Source.Kind == TemplateSourceKind::PartialDeduction
+                ? Found->second.Deduction : Found->second.Pattern);
+    }
+    }
+    return false;
+  }
+  void synchronizeTemplateSourceEvents() {
+    if (!SourceEventsReady || IndexingSourceEvents || !A.SnapshotTemplateSourceEvents)
+      return;
+    IndexingSourceEvents = true;
+    auto Restore = llvm::make_scope_exit([&] { IndexingSourceEvents = false; });
+    for (;;) {
+      auto Pending = A.SnapshotTemplateSourceEvents(TemplateUseCursor, SelectedCallCursor);
+      if (!Pending) {
+        A.reject({}, "template source event cursor",
+                 "Retained source events must preserve their original append order.");
+        return;
+      }
+      if (Pending->Uses.empty() && Pending->Calls.empty())
+        return;
+      if (SourceEventsSealed) {
+        A.reject({}, "late template source finalization",
+                 "Source finalization cannot introduce unchecked retained events.");
+        return;
+      }
+      // Both cursors advance before any indexing can re-enter Sema. A nested
+      // completion only appends; this outer drain takes its next exact batch.
+      TemplateUseCursor += Pending->Uses.size();
+      SelectedCallCursor += Pending->Calls.size();
+      LateTemplateSourceEvents.push_back(std::move(*Pending));
+      const auto &Batch = LateTemplateSourceEvents.back();
+      // An unsuccessful Sema completion can emit callbacks before its error.
+      // Retain that exact batch and advance both cursors, but never index or
+      // grant permissions from evidence produced by a failed completion.
+      if (!A.S.Diagnostics.empty())
+        return;
+      for (const auto &Source : Batch.Uses) {
+        if (!freshLateTemplateSource(Source)) {
+          A.reject(Source.Location, "repeated late template source",
+                   "A retained late use needs a fresh exact source key.");
+          return;
+        }
+        indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
+      }
+      for (const auto &Source : Batch.Calls) {
+        if (SelectedCallSources.count(Source.Expression) ||
+            NotFnSelectedCallSources.count(Source.Expression) ||
+            PairTraitSelections.count(Source.Expression)) {
+          A.reject(Source.Location, "repeated late selected source",
+                   "A retained late selection needs a fresh exact expression.");
+          return;
+        }
+        indexSelectedTemplateCalls(llvm::ArrayRef<SelectedTemplateCallSource>(&Source, 1));
+      }
+    }
+  }
   void indexSelectedTemplateCalls(llvm::ArrayRef<SelectedTemplateCallSource> Sources) {
     for (const auto &Source : Sources)
       if (const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression))
@@ -22617,16 +22746,40 @@ public:
       const FunctionDecl *Selected = nullptr;
       if (const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression))
         Selected = Construction->getConstructor();
-      else if (const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Source.Expression))
+      else if (const auto *Call = dyn_cast_or_null<CallExpr>(Source.Expression))
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Source.FunctionalNotFnConstraint) {
+        if (!matchesFunctionalNotFnSelectedSource(A.S, A.Sources, Source, A.Context)) {
+          A.reject(Source.Location, "not_fn selected source", "The exact retained SDK selection is required.");
+          continue;
+        }
+        NotFnSelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
       if (Selected == Source.Function &&
           (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Selected) ||
            approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Selected))) {
         // Collection is inert until an exact public factory binds this node.
+        SelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
+      if (const auto *Call = dyn_cast_or_null<CallExpr>(Source.Expression);
+          Call && !isa<CXXMemberCallExpr>(Call)) {
+        // Ordinary and operator hooks also report unevaluated SDK calls.
+        // Their exact selection is inert evidence: lexical query signatures
+        // and runtime callees still pass their separate original checkers.
+        // Do not apply member-name/body admission while building this index.
+        if (!Selected || Selected != Source.Function ||
+            !Selected->getPrimaryTemplate() || Selected->isInvalidDecl() ||
+            !A.S.owns(A.Sources, Source.Location)) {
+          A.reject(Source.Location, "ordinary selected template identity",
+                   "Retained evidence must name its actual direct selected call.");
+          continue;
+        }
         SelectedCallSources[Source.Expression].push_back(&Source);
         continue;
       }
@@ -22684,13 +22837,18 @@ public:
                                                    A.Context) ||
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
-      const bool ApprovedUtilityCall =
-          UtilityCall &&
-          approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context);
+      const bool ApprovedUtilityCall = UtilityCall &&
+          (approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context) ||
+           (describeFunctionalNotFnFactorySource(A.S, A.Sources, UtilityCall, A.Context) &&
+            approvedFunctionalNotFnPointerStorage(A.S, A.Sources,
+                UtilityCall->getType()->getAsCXXRecordDecl(), A.Context)) ||
+           (describeFunctionalNotFnCallSource(A.S, A.Sources, UtilityCall,
+                A.Context, FunctionalNotFnSourceMode::Runtime) &&
+            approvedFunctionalNotFnPointerStorage(A.S, A.Sources,
+                UtilityCall->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl(), A.Context)));
+
       if (!Selected || Selected != Source.Function ||
-          !(isa<CXXNewExpr>(Source.Expression)
-                ? concreteFunctionTemplate(Selected)
-                : concreteMemberFunctionTemplate(Selected)) ||
+          !concreteFunctionTemplate(Selected) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
@@ -22742,12 +22900,12 @@ public:
       const auto Found = SelectedCallSources.find(Construction);
       if (Found == SelectedCallSources.end() || Found->second.empty()) return false;
       const TemplateUseSource *First = nullptr;
-      for (const auto *Selected : Found->second) {
+      for (const auto *Selected : sourceCandidates(Found->second)) {
         if (Selected->Expression != Construction || Selected->Function != Constructor ||
             !A.S.owns(A.Sources, Selected->Location)) return false;
         const auto Sources = FunctionSources.find({Constructor, Selected->Location.getRawEncoding()});
         if (Sources == FunctionSources.end() || Sources->second.empty()) return false;
-        for (const auto *Source : Sources->second) {
+        for (const auto *Source : sourceCandidates(Sources->second)) {
           if ((First && !equivalentUse(*First, *Source)) ||
               !sameArguments(Source->Canonical, Constructor->getTemplateSpecializationArgs()) ||
               !sameCanonicalArguments(Source->Canonical, Source->Sugared) ||
@@ -22835,7 +22993,7 @@ public:
       CurrentDefaultField = SavedField;
       ImplicitInitializerOwner = SavedInitializer;
     });
-    for (const auto *Source : Found->second) {
+    for (const auto *Source : sourceCandidates(Found->second)) {
       A.chargeExpansion(1, Source->Location);
       if (!variableSourceIdentity(D, *Source, true))
         return true;
@@ -23007,7 +23165,7 @@ public:
         return nullptr;
       auto Found = VariableArgumentSources.find(Current);
       if (Found != VariableArgumentSources.end() && !Found->second.empty()) {
-        for (const auto *Source : Found->second) {
+        for (const auto *Source : sourceCandidates(Found->second)) {
           A.chargeExpansion(1, Source->Location);
           if (!variableSourceIdentity(Current, *Source))
             return nullptr;
@@ -23082,7 +23240,7 @@ public:
       return true;
     }
     const TemplateUseSource *First = nullptr;
-    for (const auto *Source : Found->second) {
+    for (const auto *Source : sourceCandidates(Found->second)) {
       if (!variableSourceIdentity(Variable, *Source))
         return true;
       if ((First && !equivalentUse(*First, *Source)) ||
@@ -23109,6 +23267,13 @@ public:
       return;
     for (const auto &Source : Sources) {
       A.chargeExpansion(1, Source.Location);
+      if (Source.FunctionalNotFnConstraint) {
+        // These addresses have the same initial snapshot/owned-batch lifetime
+        // as every other retained event. No ordinary permission index sees them.
+        NotFnConstraintKeys.insert(notFnConstraintKey(Source));
+        NotFnConstraintSources.push_back(&Source);
+        continue;
+      }
       switch (Source.Kind) {
       case TemplateSourceKind::Type:
         if (Source.Template && Source.Template->getIdentifier() &&
@@ -23624,7 +23789,7 @@ public:
       return true;
     }
     if (Declarations != VariableDeclarations.end())
-      for (const auto *Source : Declarations->second) {
+      for (const auto *Source : sourceCandidates(Declarations->second)) {
         if (!variableSourceIdentity(D, *Source))
           return true;
         if (!checkTemplateUse(*Source, Source->Written->arguments()))
@@ -23865,7 +24030,7 @@ public:
     auto Found = TypeSources.find({Type, TL.getTemplateNameLoc().getRawEncoding()});
     const TemplateUseSource *First = nullptr;
     if (Found != TypeSources.end())
-      for (const auto *Source : Found->second) {
+      for (const auto *Source : sourceCandidates(Found->second)) {
         if (!Source->Written || Source->Written->NumTemplateArgs != TL.getNumArgs())
           continue;
         bool Matches = true;
@@ -24426,7 +24591,7 @@ public:
                  "A full member class needs an admitted concrete outer scope and its exact written declaration source.");
         return true;
       }
-      for (const auto *Source : Found->second) {
+      for (const auto *Source : sourceCandidates(Found->second)) {
         A.chargeExpansion(1 + Written->getNumTemplateArgs(), D->getLocation());
         if (Source->Kind != TemplateSourceKind::ClassDeclaration || Source->Declaration != D ||
             Source->Instantiation || Source->Location != D->getLocation() || !Source->Written ||
@@ -24446,7 +24611,7 @@ public:
       }
     }
     if (auto Found = ClassSources.find(D); Found != ClassSources.end())
-      for (const auto *Source : Found->second)
+      for (const auto *Source : sourceCandidates(Found->second))
         if (!checkTemplateUse(*Source, Source->Written->arguments()))
           return false;
     if (const auto *Written = D->getTemplateArgsAsWritten(); Written && !FullSource)
@@ -25655,7 +25820,109 @@ public:
       Source.Complete = true;
     return Result;
   }
+  std::optional<bool> traverseNotFnFactory(CallExpr *Call) {
+    const auto Shape = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);
+    if (!Shape || !approvedFunctionalNotFnPointerStorage(
+            A.S, A.Sources, Shape->Storage.Record, A.Context)) return std::nullopt;
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+    if (!Reference || Reference->getDecl() != Shape->Factory ||
+        Reference->hasExplicitTemplateArgs() || !A.S.owns(A.Sources, Reference->getExprLoc())) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer factory",
+               "A direct deduced factory use with its original source is required.");
+      return true;
+    }
+    const auto Selections = SelectedCallSources.find(Call);
+    if (Selections == SelectedCallSources.end() || Selections->second.empty()) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+               "The actual selected factory deduction is required.");
+      return true;
+    }
+    for (const auto *Selection : sourceCandidates(Selections->second)) {
+      const auto Uses = FunctionSources.find({Shape->Factory, Selection->Location.getRawEncoding()});
+      if (Uses == FunctionSources.end() || Uses->second.empty()) {
+        A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+                 "The selected factory's original defaults are required.");
+        return true;
+      }
+      for (const auto *Use : sourceCandidates(Uses->second)) {
+        const auto Source = describeFunctionalNotFnFactoryTemplateSource(
+            A.S, A.Sources, *Selection, *Use, A.Context);
+        std::vector<const TemplateUseSource *> Dependencies = NotFnConstraintSources;
+        for (const auto &[Key, Entries] : FunctionSources)
+          for (const auto *Entry : Entries)
+            if (!A.S.owns(A.Sources, Entry->Location)) Dependencies.push_back(Entry);
+        std::vector<const SelectedTemplateCallSource *> Selections;
+        for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
+          Selections.insert(Selections.end(), Entries.begin(), Entries.end());
+        if (!Source || !approvedFunctionalNotFnPointerFactorySource(
+                A.S, A.Sources, A.Context, *Source, Dependencies, Selections,
+                A.SpecialMembers, A.OperationTraits)) {
+          A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
+                   "The selected default, alias, trait and constructor source graph must be complete.");
+          return true;
+        }
+      }
+    }
+    A.VerifiedNotFnFactories.emplace(Call, *Shape);
+    A.type(Call->getType(), Call->getExprLoc());
+    return TraverseStmt(Call->getArg(0));
+  }
+  std::optional<bool> traverseNotFnCall(CXXOperatorCallExpr *Call) {
+    const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Runtime);
+    if (!Runtime || !approvedFunctionalNotFnPointerStorage(
+            A.S, A.Sources, Runtime->Storage.Record, A.Context)) return std::nullopt;
+    const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Signature);
+    const auto Exception = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
+        A.Context, FunctionalNotFnSourceMode::Exception);
+    const auto *Target = Runtime->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto *Negation = dyn_cast<UnaryOperator>(Runtime->Negation);
+    const auto *Prototype = Runtime->Method->getType()->getAs<FunctionProtoType>();
+    bool Source = Signature && Exception && Negation && Negation->getOpcode() == UO_LNot &&
+        Target && ordinaryCallbackPrototype(Target) && Target->getReturnType()->isArithmeticType() &&
+        Prototype && Prototype->isNothrow() == Target->isNothrow() &&
+        Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
+        A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
+        functionalFunctionInvokeSource(A, Runtime->InvokeCall);
+    // Consume the selected operator's real enable_if/default packet, including
+    // its original primary spelling, rather than assuming that void means valid.
+    bool SelectedDefault = false;
+    for (const auto *Use : NotFnConstraintSources) {
+      if (Use->Kind != TemplateSourceKind::Function || Use->Declaration != Runtime->Method) continue;
+      if (Use->Template != Runtime->Method->getPrimaryTemplate() ||
+          Use->Defaults.size() != 1 || Use->DefaultsOverflow) { Source = false; break; }
+      const auto &Default = Use->Defaults.front();
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
+      if (!Parameter || !Parameter->hasDefaultArgument() ||
+          Default.Written.getArgument().getKind() != TemplateArgument::Type ||
+          Default.Converted.getArgument().getKind() != TemplateArgument::Type) { Source = false; break; }
+      // This bounded walker follows actual selected aliases, partials, trait
+      // roots and all original declaration chains. No ordinary permission leaks.
+      std::vector<const SelectedTemplateCallSource *> Selections;
+      const auto Found = NotFnSelectedCallSources.find(Call);
+      if (Found != NotFnSelectedCallSources.end()) Selections = Found->second;
+      SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
+          A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
+          A.SpecialMembers, A.OperationTraits);
+      if (!SelectedDefault) { Source = false; break; }
+    }
+    if (!Source || !SelectedDefault || !Call->getType()->isBooleanType()) {
+      A.reject(Call->getExprLoc(), "not_fn function-pointer call source",
+               "The selected invocation, exception and enabling source graph must be complete.");
+      return true;
+    }
+    A.VerifiedNotFnCalls.emplace(Call, *Runtime);
+    A.type(Runtime->Storage.CallableType, Call->getExprLoc());
+    // The SDK receiver cast is exactly bound by the descriptor. Traverse its
+    // original object and every original argument once, with normal lifetimes.
+    if (!TraverseStmt(const_cast<Expr *>(Runtime->Object))) return false;
+    for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+      if (!TraverseStmt(Call->getArg(I))) return false;
+    return true;
+  }
   bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto NotFn = traverseNotFnFactory(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
     // Keep selection/default source that can disappear from the instantiated
@@ -25666,6 +25933,7 @@ public:
     });
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto NotFn = traverseNotFnCall(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, Queue);
     return traverseTypeQuerySource(Call, [&] {
@@ -28511,7 +28779,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
     const auto FunctionalReference =
         approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = FunctionalObject || FunctionalReference ||
+    const auto NotFn = approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context);
+    if (const auto *Base = FunctionalObject || FunctionalReference || NotFn ||
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
@@ -28568,6 +28837,8 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
+    } else if (NotFn) {
+      DependencyTypes.emplace_back(NotFn->CallableType, R->getLocation());
     } else if (FunctionalReference) {
       DependencyTypes.emplace_back(FunctionalReference->PointerType,
                                    FunctionalReference->Record->getLocation());
@@ -28628,18 +28899,34 @@ static void orderCoreV2Records(Adapter &A) {
   A.Records = std::move(Ordered);
 }
 
-void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives,
-                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives,
-                  llvm::ArrayRef<TemplateUseSource> TemplateUses,
-                  llvm::ArrayRef<FunctionSpecializationSource> Specializations,
-                  llvm::ArrayRef<VariableTypeSource> VariableTypes,
-                  llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls,
-                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> MemberClassDirectives,
-                  llvm::ArrayRef<FriendFunctionSource> FriendFunctions,
-                  llvm::ArrayRef<FriendDeclarationSource> FriendDeclarations,
-                  llvm::ArrayRef<FriendFunctionTemplateSource> FriendTemplates,
-                  llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies,
-                  llvm::ArrayRef<FriendClassTemplateSource> FriendClasses) {
+void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirectives,
+                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> InputStaticDirectives,
+                  llvm::ArrayRef<TemplateUseSource> InputTemplateUses,
+                  llvm::ArrayRef<FunctionSpecializationSource> InputSpecializations,
+                  llvm::ArrayRef<VariableTypeSource> InputVariableTypes,
+                  llvm::ArrayRef<SelectedTemplateCallSource> InputSelectedCalls,
+                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> InputMemberClassDirectives,
+                  llvm::ArrayRef<FriendFunctionSource> InputFriendFunctions,
+                  llvm::ArrayRef<FriendDeclarationSource> InputFriendDeclarations,
+                  llvm::ArrayRef<FriendFunctionTemplateSource> InputFriendTemplates,
+                  llvm::ArrayRef<FunctionTemplateBodySource> InputTemplateBodies,
+                  llvm::ArrayRef<FriendClassTemplateSource> InputFriendClasses) {
+  // Index immutable owned snapshots. RequireCompleteType may re-enter the
+  // Consumer and grow its source vectors while this run still uses record
+  // addresses; those later callback records keep their original Consumer owner.
+  // Capturing a snapshot supplies no missing late source or runtime permission.
+  const auto Directives = InputDirectives.vec();
+  const auto StaticDirectives = InputStaticDirectives.vec();
+  const auto TemplateUses = InputTemplateUses.vec();
+  const auto Specializations = InputSpecializations.vec();
+  const auto VariableTypes = InputVariableTypes.vec();
+  const auto SelectedCalls = InputSelectedCalls.vec();
+  const auto MemberClassDirectives = InputMemberClassDirectives.vec();
+  const auto FriendFunctions = InputFriendFunctions.vec();
+  const auto FriendDeclarations = InputFriendDeclarations.vec();
+  const auto FriendTemplates = InputFriendTemplates.vec();
+  const auto TemplateBodies = InputTemplateBodies.vec();
+  const auto FriendClasses = InputFriendClasses.vec();
   CheckingSource = true;
   auto FinishSource = llvm::make_scope_exit([&] { CheckingSource = false; });
   // Reuse successful roots only within this AST and run. Every later Sema
@@ -28655,6 +28942,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   Check.indexTemplates();
   Check.indexTemplateSources(TemplateUses, Specializations, VariableTypes);
   Check.indexSelectedTemplateCalls(SelectedCalls);
+  Check.beginTemplateSourceEvents(TemplateUses.size(), SelectedCalls.size());
+  SynchronizeTemplateSourceEvents = [&] { Check.synchronizeTemplateSourceEvents(); };
+  auto FinishSourceEvents = llvm::make_scope_exit([&] {
+    SynchronizeTemplateSourceEvents = {};
+  });
+  SynchronizeTemplateSourceEvents();
   Check.checkFriendSourceIdentities();
   for (const auto &Directive : Directives)
     Check.checkExplicitFunctionInstantiation(Directive);
@@ -28673,11 +28966,16 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
            "Complete source traversal is required before operation validation and lowering.");
   if (!Traversed || !S.Diagnostics.empty())
     return;
+  Check.sealTemplateSourceEvents();
   CheckingSource = false;
   if (!Check.finishTypeQueries() || !Check.finishPairConstructorSources() ||
       !Check.finishPairPiecewiseConstructions() || !Check.finishTupleFactories() ||
       !Check.finishAlgorithmPredicates())
     return;
+  SynchronizeTemplateSourceEvents();
+  if (!S.Diagnostics.empty())
+    return;
+  SynchronizeTemplateSourceEvents = {};
   if (S.coreV2())
     orderCoreV2Records(*this);
   const auto &Target = Context.getTargetInfo();
@@ -28737,7 +29035,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto FunctionalReference =
         S.coreV2() ? approvedFunctionalReferenceRecord(S, Sources, R, Context)
                    : std::optional<FunctionalReferenceRecord>();
-    const auto *Base = S.coreV2() && !FunctionalObject &&
+    const auto NotFn = S.coreV2()
+        ? approvedFunctionalNotFnPointerStorage(S, Sources, R, Context)
+        : std::optional<FunctionalNotFnStorage>();
+    const auto *Base = S.coreV2() && !FunctionalObject && !NotFn &&
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
@@ -28756,6 +29057,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (FunctionalObject) {
       Fields.push_back(json::Object{{"name", "nct_functional_storage"},
                                     {"type", "u8"}});
+    } else if (NotFn) {
+      Fields.push_back(json::Object{{"name", "nct_not_fn_callable"},
+          {"type", type(NotFn->CallableType, R->getLocation())}});
     } else if (FunctionalReference) {
       if (FunctionalReference->PaddedBase)
         Fields.push_back(json::Object{
@@ -29420,7 +29724,9 @@ class Consumer : public ASTConsumer {
       return;
     auto &Context = Template->getASTContext();
     auto &Sources = Context.getSourceManager();
-    if (!S.owns(Sources, Location) &&
+    const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
+        S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
+    if (!S.owns(Sources, Location) && !NotFnConstraint &&
         !(Kind == TemplateSourceKind::Function &&
           (tupleFactorySelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)) ||
@@ -29488,6 +29794,7 @@ class Consumer : public ASTConsumer {
         TemplateArgumentList::CreateCopy(Context, llvm::ArrayRef<TemplateArgument>(Sugared, Count)),
         {}, {}, Location, Overflow, Instantiation, Selection, WrittenStorageClass};
     Source.Origin = Origin;
+    Source.FunctionalNotFnConstraint = NotFnConstraint;
     Source.Defaults.reserve(DefaultCount);
     for (unsigned I = 0; I < DefaultCount; ++I)
       Source.Defaults.push_back({DefaultParameters[I], OriginalDefaults[I], ConvertedDefaults[I]});
@@ -29560,6 +29867,8 @@ public:
             Method->getParent()->hasTrivialCopyConstructor() &&
             Method->getParent()->hasTrivialDestructor()));
     }
+    const bool NotFnSignatureMember = shouldRetainFunctionalNotFnSpecialMemberSource(
+        S, Context.getSourceManager(), Method, Context);
     const auto *DefaultConstructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
     const bool PairArrayDefaultMember = DefaultConstructor && !Owned &&
         DefaultConstructor->isImplicit() && DefaultConstructor->isDefaulted() &&
@@ -29578,7 +29887,7 @@ public:
         approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method->getParent());
     if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
         (!Owned && !TupleSignatureMember && !PairSignatureMember && !PairArrayDefaultMember &&
-         !PairOptionalMember) ||
+         !PairOptionalMember && !NotFnSignatureMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
         !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
       return false;
@@ -29742,7 +30051,9 @@ public:
     if (!S.coreV2() || !Function || !Function->getPrimaryTemplate())
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
-    if ((!S.owns(Sources, Location) &&
+    const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
+        Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
+    if ((!S.owns(Sources, Location) && !NotFn &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
@@ -29751,7 +30062,7 @@ public:
       return;
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
-    SelectedCalls.push_back({Expression, Function, Location});
+    SelectedCalls.push_back({Expression, Function, Location, NotFn});
   }
   void HandleNeverCFunctionTemplateSource(
       FunctionDecl *Function,
@@ -30115,8 +30426,22 @@ public:
       }
     }
     Adapter A(S, C, OperationTraits, SpecialMembers);
+    A.SnapshotTemplateSourceEvents = [&](std::size_t Uses, std::size_t Calls)
+        -> std::optional<TemplateSourceEventBatch> {
+      if (Uses > TemplateUses.size() || Calls > SelectedCalls.size())
+        return std::nullopt;
+      TemplateSourceEventBatch Batch;
+      Batch.Uses.assign(TemplateUses.begin() + Uses, TemplateUses.end());
+      Batch.Calls.assign(SelectedCalls.begin() + Calls, SelectedCalls.end());
+      return Batch;
+    };
     A.CompleteSDKRecord = [&](QualType Type, SourceLocation Location) {
-      return completeSDKType(Type, Location);
+      const bool Complete = completeSDKType(Type, Location);
+      // Failed completion can also emit source callbacks. Preserve and check
+      // them without turning their collection into successful completion.
+      if (A.SynchronizeTemplateSourceEvents)
+        A.SynchronizeTemplateSourceEvents();
+      return Complete;
     };
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
     try {

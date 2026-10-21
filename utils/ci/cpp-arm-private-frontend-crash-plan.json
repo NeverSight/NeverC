@@ -1,0 +1,116 @@
+{
+  "compiler_source_revision": "43c7c0c55874c8b3ebfd4c1c39096189741f9616",
+  "compiler_run_id": 39341054945,
+  "compiler_artifact": {
+    "id": 12235108529,
+    "name": "windows-arm64-neverc",
+    "digest": "sha256:995c74533ccaf3aa43111bf07fba09b3fffd15faae908833b5d26ef3ecf1c707"
+  },
+  "compiler_sha256": "adf3b0421e9ccf5120e121393595b85e351b90dfaccc16d4a707cd3c374e0176",
+  "expected_frontend_version": "neverc-cpp-frontend 20.1.8 protocol 1 cpp-frontend-1-4bc309632733d66c978340b59c65031cd49f564f0217a411f763b15a6d915cc4",
+  "compiler_private_input_sha256": {
+    "Frontend.cpp": "a650997bd5962083377dfb7a4b6245d4a65d5b75c877fa5324e0802acaac39a0",
+    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "0506507ca68446475c1f4da4339735a50c1d083d5386ded146d73aab90f7eae1",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "8b77eb365687ea35fc554079c02a187a804b0b9a1d932355a48671f455b2deea",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "source": "\nusing Size = decltype(sizeof(0));\nextern \"C\" void *malloc(Size);\nextern \"C\" void free(void *);\nint allocations;\nint releases;\nvoid *operator new(Size n) { ++allocations; return malloc(n); }\nvoid operator delete(void *p) noexcept { ++releases; free(p); }\n#include <string>\nint main() {\n  const std::string head(\"PQ\");\n  const std::string tail(\"XY\");\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    Size capacity = source.capacity();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + tail;\n    if (result != \"abcdefghijklmnopqrstuvwxyzXY\" || result.data() != data ||\n        result.capacity() != capacity || !source.empty() ||\n        allocations != before)\n      return 1;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    Size capacity = source.capacity();\n    int before = allocations;\n    std::string result = head + static_cast<std::string &&>(source);\n    if (result != \"PQabcdefghijklmnopqrstuvwxyz\" || result.data() != data ||\n        result.capacity() != capacity || !source.empty() ||\n        allocations != before)\n      return 2;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    std::string other(\"ABCDEFGHIJKLMNOPQRSTUVWXYZ\");\n    source.reserve(80);\n    const char *data = source.data();\n    Size capacity = source.capacity();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) +\n                         static_cast<std::string &&>(other);\n    if (result.size() != 52 || result[0] != 'a' || result[25] != 'z' ||\n        result[26] != 'A' || result[51] != 'Z' || result.data() != data ||\n        result.capacity() != capacity || !source.empty() ||\n        other.size() != 26 || other[0] != 'A' || allocations != before)\n      return 3;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = \"PQ\" + static_cast<std::string &&>(source);\n    if (result != \"PQabcdefghijklmnopqrstuvwxyz\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 4;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = 'Q' + static_cast<std::string &&>(source);\n    if (result != \"Qabcdefghijklmnopqrstuvwxyz\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 5;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + \"PQ\";\n    if (result != \"abcdefghijklmnopqrstuvwxyzPQ\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 6;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + 'Q';\n    if (result != \"abcdefghijklmnopqrstuvwxyzQ\" || result.data() != data ||\n        !source.empty() || allocations != before)\n      return 7;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    const std::string suffix(\"ABCDEFGHIJKLMNOPQRSTUVWXYZ\");\n    const char *old_data = source.data();\n    Size old_capacity = source.capacity();\n    int before = allocations, freed = releases;\n    std::string result = static_cast<std::string &&>(source) + suffix;\n    Size desired = 2 * old_capacity;\n    if (desired < result.size()) desired = result.size();\n    Size expected_capacity = ((desired + 8) / 8) * 8 - 1;\n    if (result.size() != 52 || result.data() == old_data ||\n        result.capacity() != expected_capacity || !source.empty() ||\n        allocations != before + 1 || releases != freed + 1)\n      return 8;\n  }\n  {\n    std::string source(\"ab\");\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + 'c';\n    if (result != \"abc\" || !source.empty() || allocations != before)\n      return 9;\n  }\n  {\n    std::string source(\"ab\");\n    int before = allocations;\n    std::string result = '!' + static_cast<std::string &&>(source);\n    if (result != \"!ab\" || !source.empty() || allocations != before)\n      return 19;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuv\");\n    Size short_capacity = source.capacity();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + 'w';\n    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;\n    if (result.size() != 23 || result.capacity() != expected_capacity ||\n        result[22] != 'w' || !source.empty() || allocations != before + 1)\n      return 16;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuv\");\n    Size short_capacity = source.capacity();\n    int before = allocations;\n    std::string result = 'w' + static_cast<std::string &&>(source);\n    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;\n    if (result.size() != 23 || result.capacity() != expected_capacity ||\n        result[0] != 'w' || result[22] != 'v' || !source.empty() ||\n        allocations != before + 1)\n      return 17;\n  }\n  {\n    const char raw[] = {'X', 0, 'Y'};\n    const std::string suffix(raw, 3);\n    std::string source(\"ab\");\n    std::string result = static_cast<std::string &&>(source) + suffix;\n    if (result.size() != 5 || result[2] != 'X' || result[3] != 0 ||\n        result[4] != 'Y' || !source.empty())\n      return 10;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = source + static_cast<std::string &&>(source);\n    if (result.size() != 52 || result.data() != data || result[0] != 'a' ||\n        result[25] != 'z' || result[26] != 'a' || result[51] != 'z' ||\n        !source.empty() || allocations != before)\n      return 11;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = source.c_str() + static_cast<std::string &&>(source);\n    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||\n        result[51] != 'z' || !source.empty() || allocations != before)\n      return 12;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = (source.c_str() + 3) +\n                         static_cast<std::string &&>(source);\n    if (result.size() != 49 || result.data() != data || result[0] != 'd' ||\n        result[22] != 'z' || result[23] != 'a' || result[48] != 'z' ||\n        !source.empty() || allocations != before)\n      return 18;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + source;\n    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||\n        result[51] != 'z' || !source.empty() || allocations != before)\n      return 13;\n  }\n  {\n    std::string source(\"abcdefghijklmnopqrstuvwxyz\");\n    source.reserve(80);\n    const char *data = source.data();\n    int before = allocations;\n    std::string result = static_cast<std::string &&>(source) + source.c_str();\n    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||\n        result[51] != 'z' || !source.empty() || allocations != before)\n      return 14;\n  }\n  return allocations == releases ? 0 : 15;\n}\n",
+  "source_sha256": "7bf58530192ef60fba5feecfc571728a20b584d8e744307be752c330088e2e3c",
+  "original_test_name": "TranslateTest.CoreV2StringConcatRvalueRun",
+  "original_test_body_sha256": "5124b6b3625e622bdbf6c66f59f5f6ddd9671ba8f207fd241d19da9d1677e3b3",
+  "source_paths": [
+    "utils/ci/check-arm-private-frontend-crash.py",
+    "utils/ci/download-repaired-windows-arm.py",
+    "utils/ci/cpp-arm-private-frontend-crash-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml"
+  ],
+  "actual_prior_crash_evidence": {
+    "actual_evidence_authenticated": true,
+    "passed": false,
+    "commit": "fbe5fd998ee837f00b0f15ec5d9d1e33e06265c7",
+    "run_id": 39379744634,
+    "artifact_id": 12245336125,
+    "archive_sha256": "a5c2b1d710e57a26a158c515f6ccb5ae8c78522b871b25de68dedc910cd68885",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-abi-oracles-ci-artifact-12245336125/unpacked/results.json",
+    "report_sha256": "45a0a5e7217704cfe2599ef7a2bebc10a482ec0113852786666a5fd6a72dcba1",
+    "compiler_package_sha256": "adf3b0421e9ccf5120e121393595b85e351b90dfaccc16d4a707cd3c374e0176",
+    "compiler_stage": "authenticated installed package; not assumed byte-identical to preinstall wide or later test binaries",
+    "same_as_later_test_binary_established": false,
+    "native_program_runs": 12,
+    "translated_program_runs": 0,
+    "native_reference_passed": false,
+    "proposed_oracle_runtime_passed": false,
+    "original_translated_failures_reproduced": false,
+    "native_vendor_stl_is_not_frozen_sdk_abi_proof": true,
+    "actual_protocol_requests": 16,
+    "actual_protocol_failures": [],
+    "actual_string_crash_replays": [
+      {
+        "attempt": 0,
+        "returncode": 1,
+        "output_exists": false,
+        "nc_sha256": null
+      },
+      {
+        "attempt": 1,
+        "returncode": 1,
+        "output_exists": false,
+        "nc_sha256": null
+      },
+      {
+        "attempt": 2,
+        "returncode": 1,
+        "output_exists": false,
+        "nc_sha256": null
+      }
+    ],
+    "compiler_repaired": false,
+    "current_production_sources_runtime_verified": false,
+    "full_ci_passed": false,
+    "published_to_dev": false,
+    "goal_complete": false
+  },
+  "pdb_artifact": {
+    "id": 12235763065,
+    "name": "windows-arm64-neverc-pdb",
+    "digest": "sha256:a8ae24fbde3907580152347c2c35f52dbc1e2faee66f572d81ed7b5aadded9b0"
+  },
+  "debugger_readonly": true,
+  "compiler_or_production_options_modified": false,
+  "original_later_test_binary_identity_established": false,
+  "frontend_timeout_seconds": 60,
+  "all_compiler_pdb_dump_binaries_remote_only": true,
+  "compiler_rebuild": false,
+  "compiler_repair_verified": false,
+  "goal_complete": false,
+  "previous_actual_av_and_deferred_symbol_observation": {
+    "commit": "e9edb3988fa99088e453f34c878663a9b580172c",
+    "run_id": 39382875447,
+    "artifact_id": 12246323002,
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-private-frontend-crash-ci-artifact-12246323002/unpacked/cpp-arm-private-crash/results.json",
+    "report_sha256": "7a18d4bdbd95f5461de2d5469c34562a7a8d7325cb8c3a77a25f5dd2172ce20e",
+    "actual_av_stack": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/arm-private-frontend-crash-ci-artifact-12246323002/unpacked/cpp-arm-private-crash/debugger/actual-av.log",
+    "actual_av_stack_sha256": "6035522279f999901ac1592f90cfa823932f41a968c0307038415181b2b1a6ff",
+    "full_symbol_authentication_passed": false,
+    "compiler_repaired": false,
+    "reason": "lmv ran while symbols were deferred; later stack loaded private-looking names. Require explicit symbol load and lmv after it."
+  },
+  "explicit_private_symbol_load_required": true,
+  "readonly_generated_nodes_inspection": true
+}
