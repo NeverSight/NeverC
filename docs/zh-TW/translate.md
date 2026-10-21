@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+在 Linux 上，使用浮點分布取樣的生成 C23 程式需要以 `-lm` 連結。原生比對程式與生成程式均須使用 `-fno-fast-math -ffp-contract=off` 編譯。
+
 Core v2 現可直接降低原始指標或經認證的包裝迭代器純量範圍上的 `std::shuffle` 和 C++17 `std::sample`。產生器須為原始碼自有、標準配置、可平凡複製且解構平凡的記錄，直接宣告最多 64 位元的非 bool 無號 `result_type`、傳回相同型別的零參數呼叫運算子，以及各含一個常數傳回敘述且滿足 `min() < max()` 的靜態 constexpr `min()`/`max()`。產生器以參考繫結，保留狀態、libc++ 的精確拒絕重抽次數及獨立位元組合。Sample 接受最多 64 位元的非負內建整數數量，保留輸入順序並傳回可寫輸出的結束指標。空／單元素 shuffle 和零數量／空輸入 sample 不呼叫產生器。所選 SDK 的原始碼替換仍遭拒絕；其他 `<random>` 功能、自訂迭代器及記錄元素尚不在此支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
 Core v2 另支援經認證的 `std::linear_congruential_engine` 與 `std::mersenne_twister_engine` 實例，無號結果型別最多 64 位元，包含 `minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64`。預設及純量種子建構、複製、賦值、`seed`、`operator()`、`discard`、`min`/`max` 與相等比較保留固定 SDK 的狀態語義及目標配置；這些引擎可直接用於 `shuffle`/`sample`，包括包裝迭代器範圍。所選 SDK 的原始碼替換仍遭拒絕。其他分布、串流序列化及 `random_device` 仍待支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
@@ -959,3 +961,9 @@ merge 接受同一預設 int/int unordered_map 的左值或右值來源容器。
 `cpp-core-v2`: std::make_pair 透過已驗證的 SDK 工廠及其選取的 pair 建構函式，建立允許範圍內的 string、string_view 與 unique_ptr 元素。每個呼叫都保留字串的獨立複製、移動來源清空、檢視及 ref/cref 的借用綁定、引數副作用與結果清理。預設引數、約束、明確性、noexcept 及選取的包裝器轉換都必須驗證確切原始碼；其他操作繼續遵守各自要求。
 
 `cpp-core-v2`: std::pair 的選定預設建構透過確切的子建構函式初始化已准入的非 const char 字串、字串檢視與唯一擁有者欄位。原始 SDK 約束、隱式預設建構路徑及例外規格原始碼均須驗證；純量零值、空字串、空檢視與擁有者以及遞迴清理保留原有語意。空自訂刪除器沿用既有的平凡建構範圍。
+
+`cpp-core-v2`：選定的 std::pair 賦值及成員/非成員 swap 使用原始選中的 string、string_view 和 unique_ptr 操作。賦值保留目標參考、獨立字串副本、移後來源 owner 清空及舊目標釋放；交換保留借用綁定、欄位順序、owner 位址與清理。約束、例外運算式、轉發及各子操作均保留其精確 SDK 或原始碼要求。
+
+`cpp-core-v2`: 選定的 std::pair 比較對已接納的 char 字串、string_view 和 unique_ptr 元素保留原有欄位順序與短路行為。字串與檢視按無號位元組、內嵌零及長度比較；擁有者比較觀察到的指標，不移動或刪除物件。參照繫結與外層運算元僅求值一次的副作用保持不變。選定的 pair 運算子、子比較及所使用的 SDK 輔助函式均須驗證原始碼。
+
+`cpp-core-v2`: 選定的 std::pair 分段建構從兩個 tuple 參數物件初始化已接納的純量、原始碼記錄、string、string_view 和 unique_ptr 欄位，保留引數副作用、值 tuple 的獨立副本、先 first 後 second 的建構順序、選定的尾端預設引數及清理。兩層 SDK 建構函式、get/forward 使用、推導及例外規格來源均須獨立檢查。參照欄位必須指向仍存活的呼叫端物件；指向傳值 tuple 參數的參照及尚未證明的空基底 tuple 投影仍被拒絕。

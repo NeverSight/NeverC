@@ -42,6 +42,7 @@ set(NEVERC_TEST_SOURCES
   AndroidKernelRuntimeTests.cpp
   LTOTests.cpp
   LinkerTests.cpp
+  MachODataConstTests.cpp
   OverrideTests.cpp
   ConformanceTests.cpp
   DynCodeTests.cpp
@@ -2102,6 +2103,7 @@ add_executable(neverc-plugin-link-tests
   PluginELFContextIsolationTests.cpp
   PluginLinkABICompileTests.cpp
   PluginLinkContextTests.cpp
+  SessionCacheOwnershipTests.cpp
   PluginLinkGraphTests.cpp
   PluginLinkGCICFTests.cpp
   PluginLinkInputTests.cpp

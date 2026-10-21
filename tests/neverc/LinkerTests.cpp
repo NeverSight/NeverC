@@ -2804,6 +2804,87 @@ TEST_F(LinkerTest, NativeMachOImageShapeOptions) {
   EXPECT_FALSE(weakExports["_twin_b"]);
 }
 
+TEST_F(LinkerTest, MachOTLVDescriptorAtomsUsePointerAlignment) {
+  for (const std::string &Architecture : {"arm64", "x86_64"}) {
+    SCOPED_TRACE(Architecture);
+    const std::string Target = "--target=" + Architecture + "-apple-macos13";
+    const auto Source = tmpFile("tlv-byte-aligned-" + Architecture + ".s");
+    const auto Object = tmpFile("tlv-byte-aligned-" + Architecture + ".o");
+    const auto Image = tmpFile("tlv-byte-aligned-" + Architecture + ".dylib");
+    writeFile(Source, R"asm(
+.section __DATA,__thread_bss,thread_local_zerofill
+.zerofill __DATA,__thread_bss,_first$tlv$init,4,2
+.zerofill __DATA,__thread_bss,_second$tlv$init,4,2
+.section __DATA,__thread_vars,thread_local_variables
+.globl _first
+_first:
+.quad __tlv_bootstrap
+.quad 0
+.quad _first$tlv$init
+.globl _second
+_second:
+.quad __tlv_bootstrap
+.quad 0
+.quad _second$tlv$init
+.subsections_via_symbols
+)asm");
+    const auto Compile = ncc({Target, "-fno-lto", "-fno-builtin-mimalloc", "-c",
+                              Source.string(), "-o", Object.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Link = ncc({Target, "-nostdlib", "-fno-builtin-mimalloc",
+                           "-dynamiclib", "-Wl,-undefined,dynamic_lookup",
+                           "-Wl,-unaligned_pointers,error", Object.string(),
+                           "-o", Image.string()});
+    ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    EXPECT_FALSE(Link.stderrContains("is not word-aligned")) << Link.err;
+    const std::string Bytes = readFile(Image);
+    auto MachO = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(Bytes, Image.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    ASSERT_TRUE(static_cast<bool>(MachO))
+        << llvm::toString(MachO.takeError()).str().str();
+    bool Found = false;
+    for (const auto &Section : (*MachO)->sections()) {
+      const auto Header = (*MachO)->getSection64(Section.getRawDataRefImpl());
+      if ((Header.flags & llvm::MachO::SECTION_TYPE) !=
+          llvm::MachO::S_THREAD_LOCAL_VARIABLES)
+        continue;
+      Found = true;
+      EXPECT_GE(Header.align, 3u);
+      EXPECT_EQ(Header.addr % 8, 0u);
+      EXPECT_EQ(Header.size, 48u);
+    }
+    EXPECT_TRUE(Found);
+
+    // Normalizing the atom alignment must not hide a misaligned pointer
+    // inside a malformed descriptor.
+    const auto BadSource = tmpFile("tlv-bad-offset-" + Architecture + ".s");
+    const auto BadObject = tmpFile("tlv-bad-offset-" + Architecture + ".o");
+    const auto BadImage = tmpFile("tlv-bad-offset-" + Architecture + ".dylib");
+    writeFile(BadSource, R"asm(
+.section __DATA,__thread_vars,thread_local_variables
+.globl _bad_descriptor
+_bad_descriptor:
+.byte 0
+.quad __tlv_bootstrap
+.quad 0
+.quad 0
+.subsections_via_symbols
+)asm");
+    const auto BadCompile =
+        ncc({Target, "-fno-lto", "-fno-builtin-mimalloc", "-c",
+             BadSource.string(), "-o", BadObject.string()});
+    ASSERT_EQ(BadCompile.exitCode, 0) << BadCompile.out << BadCompile.err;
+    const auto BadLink =
+        ncc({Target, "-nostdlib", "-fno-builtin-mimalloc", "-dynamiclib",
+             "-Wl,-undefined,dynamic_lookup", "-Wl,-unaligned_pointers,error",
+             BadObject.string(), "-o", BadImage.string()});
+    EXPECT_NE(BadLink.exitCode, 0);
+    EXPECT_TRUE(BadLink.stderrContains("is not word-aligned")) << BadLink.err;
+    EXPECT_FALSE(fs::exists(BadImage));
+  }
+}
+
 TEST_F(LinkerTest, NativeMachOBindingAndLoadingOptions) {
   const std::string target = "--target=arm64-apple-macos13";
   auto compile = [&](const std::string &name, const std::string &source,

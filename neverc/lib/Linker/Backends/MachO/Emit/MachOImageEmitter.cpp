@@ -906,6 +906,14 @@ void OutputWriter::scanRelocations() {
     if (isec->shouldOmitFromOutput())
       continue;
 
+    // Mach-O TLV descriptors contain three pointer-sized fields. LLVM can
+    // emit these atoms without an explicit alignment directive. Align each
+    // input atom as well as the output section before checking its fixups, so
+    // the check and the eventual layout use the same ABI guarantee. A fixup
+    // at an unaligned offset within a descriptor must still be rejected.
+    if (isThreadLocalVariables(isec->getFlags()))
+      isec->align = std::max<uint32_t>(isec->align, target->wordSize);
+
     for (auto it = isec->relocs.begin(); it != isec->relocs.end(); ++it) {
       linker::macho::Reloc &r = *it;
 

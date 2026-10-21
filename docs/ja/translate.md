@@ -4,6 +4,8 @@
 
 # C++ を NeverC に変換する
 
+Linux では、浮動小数点分布からサンプリングする生成 C23 プログラムを `-lm` 付きでリンクします。ネイティブの比較用プログラムと生成プログラムは、`-fno-fast-math -ffp-contract=off` を指定してコンパイルします。
+
 Core v2 は、対応するスカラーの生ポインター範囲または認証済みラップイテレーター範囲で `std::shuffle` と C++17 の `std::sample` を直接変換します。生成器はソース所有の標準レイアウトで、コピーとデストラクターが trivial なレコードです。bool 以外の最大 64 ビットの符号なし `result_type` を直接宣言し、同じ型を返す引数なしの呼び出し演算子と、単一の定数 return を持ち `min() < max()` を満たす static constexpr `min()`/`max()` を定義します。生成器を参照で渡し、状態、libc++ の棄却による再抽選回数と独立ビットの組み立てを保ちます。Sample は最大 64 ビットの非負の組み込み整数を個数として受け取り、入力順序を保ち、書き込み可能な出力の終端ポインターを返します。空または単一要素の shuffle と、個数ゼロまたは空入力の sample は生成器を呼びません。選択された SDK のソース置換は拒否され、その他の `<random>` 機能、独自のイテレーター、レコード要素はこの範囲外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
 Core v2 は認証済みの `std::linear_congruential_engine` と `std::mersenne_twister_engine` もサポートします。符号なし結果型は最大 64 ビットで、`minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64` を含みます。デフォルトおよび整数シードによる構築、コピー、代入、`seed`、`operator()`、`discard`、`min`/`max`、等価比較は固定 SDK の状態とターゲット配置を維持します。ラップされた範囲を含む `shuffle`/`sample` に渡せます。選択された SDK のソース置換は拒否されます。その他の分布、ストリーム直列化、`random_device` は引き続き実装が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
@@ -959,3 +961,9 @@ merge は同じ既定 int/int unordered_map の左辺値・右辺値を入力に
 `cpp-core-v2`: std::make_pair は、認証済み SDK ファクトリと選択された pair コンストラクタを通じて、許可された string、string_view、unique_ptr 要素を構築します。各呼び出しは、文字列の独立したコピー、移動元のクリア、ビューと ref/cref の借用バインディング、引数の副作用、結果の後処理を保持します。既定引数、制約、明示性、noexcept、選択されたラッパー変換には正確なソースが必要です。他の操作にはそれぞれの要件が適用されます。
 
 `cpp-core-v2`: std::pair の選択されたデフォルト構築は、対応済みの非 const char 文字列、文字列ビュー、一意所有者の各フィールドを、実際に選択された子コンストラクターで初期化します。元の SDK 制約、暗黙のデフォルト構築経路、例外仕様のソースを検証し、スカラーのゼロ値、空文字列、空のビューと所有者、再帰的な後始末を保持します。空のカスタムデリーターには、既存の自明な構築の範囲を適用します。
+
+`cpp-core-v2`: 選択された std::pair の代入とメンバー／非メンバー swap は、元の string、string_view、unique_ptr の選択済み操作を使用します。代入では代入先への参照、独立した文字列コピー、移動元 owner の空状態と旧代入先の解放を保持し、交換では借用バインディング、フィールド順序、owner のアドレスとクリーンアップを保持します。制約、例外式、転送および各子操作には、それぞれ正確な SDK またはソースの要件が引き続き適用されます。
+
+`cpp-core-v2`: 選択された std::pair の比較は、許可された char 文字列、string_view、unique_ptr 要素について、元のフィールド順序と短絡評価を保ちます。文字列とビューは符号なしバイト、埋め込みゼロ、長さを比較し、所有者は移動や削除を行わず観測したポインターを比較します。参照の束縛と外側の各オペランドを一度だけ評価する副作用を保持します。選択された pair 演算子、子の比較、使用する SDK ヘルパーには元のソースが必要です。
+
+`cpp-core-v2`: 選択された std::pair の piecewise 構築は、許可されたスカラー、ソース側レコード、string、string_view、unique_ptr のフィールドを二つの tuple パラメーターオブジェクトから初期化します。引数の副作用、値 tuple の独立したコピー、first から second の構築順序、選択された末尾の既定引数と後処理を保持します。二層の SDK コンストラクター、get/forward の使用、推論と例外仕様のソースを個別に検証します。参照フィールドには生存中の呼び出し側オブジェクトが必要です。値渡し tuple パラメーターへの参照と、未検証の空基底 tuple 投影は拒否します。

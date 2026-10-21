@@ -169,13 +169,15 @@ struct MappedFile {
   bool fromDisk = false; // a mapping of a file, as opposed to caller memory
 };
 
-const Options *activeOptions; // the running link's options
+// One owner per public link call. Workers capture this invocation directly;
+// nested and concurrent requests never publish their options or graph state.
+struct FastLinkInvocation {
 
 MappedFile mapFile(const string &path) {
-  if (activeOptions->openFile) {
+  if (ctx.opt.openFile) {
     const unsigned char *data;
     size_t size;
-    if (activeOptions->openFile(path, data, size))
+    if (ctx.opt.openFile(path, data, size))
       return {data, size};
   }
   int fd = open(path.c_str(), O_RDONLY);
@@ -215,7 +217,7 @@ enum SymFlag : uint16_t {
   IpltDirect = 32768,
 };
 
-constexpr uint64_t None64 = ~0ull;
+static constexpr uint64_t None64 = ~0ull;
 
 struct Symbol {
   // DynUndef: an undefined weak reference that a shared library loaded at
@@ -295,7 +297,7 @@ struct Ctx {
   bool hasDynSymTab = true;
 };
 
-Ctx ctx;
+Ctx ctx{};
 std::atomic<bool> needsTlsLd{false}; // the module's TLS GOT pair is used
 std::atomic<bool> needsGotBase{false}; // relocations use the GOT's address
 
@@ -423,9 +425,6 @@ inline uint64_t outputSize(const ObjectFile *o, uint32_t sec,
   return ps.merged ? ps.mergedSize : o->shdrs[sec].sh_size;
 }
 
-// The output address of offset `off` of a mergeable section.
-uint64_t mergedAddress(const ObjectFile *o, uint32_t sec, uint64_t off);
-
 // Runs fn(id, lists) for every name id in parallel, where lists holds the
 // calling worker's K output vectors, then appends each worker's vectors in
 // worker order. Callers order the results themselves.
@@ -444,13 +443,14 @@ void collectNames(std::array<vector<uint32_t> *, K> outs, F fn) {
 struct StepTimer {
   const char *name;
   Clock::time_point start = Clock::now();
-  explicit StepTimer(const char *n) : name(n) {}
+  bool timing;
+  StepTimer(const char *n, bool timing) : name(n), timing(timing) {}
   ~StepTimer() {
-    if (ctx.opt.timing)
+    if (timing)
       fprintf(stderr, "  %-22s %6.2f\n", name, msSince(start));
   }
 };
-#define STEP(n) StepTimer stepTimer##__LINE__(n)
+#define STEP(n) StepTimer stepTimer##__LINE__(n, ctx.opt.timing)
 Clock::time_point markTime = Clock::now();
 void mark(const char *n) {
   if (ctx.opt.timing)
@@ -1720,7 +1720,7 @@ RelInfo classify(const ObjectFile *o, const uint8_t *secData,
 }
 
 
-uint8_t *relKinds; // classify() results, reused when writing
+uint8_t *relKinds = nullptr; // classify() results, reused when writing
 
 // General- and local-dynamic TLS sequences are rewritten in place, which is
 // only valid for the exact code sequences compilers emit for them.
@@ -2146,7 +2146,7 @@ struct Layout {
   bool staticTls = false;
   uint32_t sonameOff = 0;
 };
-Layout L;
+Layout L{};
 
 uint64_t tpoff(uint64_t va) {
   uint64_t end = L.tlsAddr + L.tlsMemsz;
@@ -2377,7 +2377,7 @@ void assignInputSections() {
     if (os->name != ".init_array" && os->name != ".fini_array")
       continue;
     std::stable_sort(os->members.begin(), os->members.end(),
-                     [](const auto &a, const auto &b) {
+                     [this](const auto &a, const auto &b) {
                        return initPriority(a.first->secName(a.second)) <
                               initPriority(b.first->secName(b.second));
                      });
@@ -2404,7 +2404,6 @@ void assignOffsets(OutputSection *os) {
 // Identical code folding with the full backend's semantics: sections with
 // equal contents, equal output sections and equivalent relocations are folded
 // into one, found by refining equivalence classes until they are stable.
-namespace icf {
 
 struct Candidate {
   ObjectFile *file;
@@ -2605,7 +2604,7 @@ bool equalsVariable(const Candidate &a, const Candidate &b, int cur) {
   return true;
 }
 
-void run() {
+void runIcf() {
   STEP("icf");
   markTime = Clock::now();
   markKeepUnique();
@@ -2748,7 +2747,11 @@ void run() {
   }
   mark("icf sort");
   ctx.pool->forEach(groups.size(), [&](size_t g) {
-    segregate(groups[g].first, groups[g].second, equalsConstant, 0);
+    segregate(groups[g].first, groups[g].second,
+              [this](const Candidate &a, const Candidate &b) {
+                return equalsConstant(a, b);
+              },
+              0);
   }, 16);
   mark("icf constant");
   // Relocation targets of the members of the groups that remain.
@@ -2842,14 +2845,14 @@ void run() {
   }, 1);
 }
 
-} // namespace icf
+
 
 // ================================================================ merging
 // Mergeable sections are split into pieces, strings or fixed-size records,
 // and equal pieces of one group (output section, kind, entry size and
 // alignment) share one copy: the piece that comes first by position. Each
 // section holds, in order, the pieces it owns.
-constexpr uint32_t MergeOwner = 1u << 31;
+static constexpr uint32_t MergeOwner = 1u << 31;
 
 struct MergeGroup {
   uint64_t numPieces = 0;
@@ -2859,9 +2862,10 @@ vector<MergeGroup> mergeGroups;
 // One table for the pieces of all groups, tagged with their group, and by
 // piece id the lowest (placed index, offset) and the owner's output offset.
 std::unique_ptr<NameTable> mergeTable;
-std::atomic<uint64_t> *mergeRank;
-uint32_t *mergeOut;
+std::atomic<uint64_t> *mergeRank = nullptr;
+uint32_t *mergeOut = nullptr;
 
+// The output address of offset `off` of a mergeable section.
 uint64_t mergedAddress(const ObjectFile *o, uint32_t sec, uint64_t off) {
   const SectionState &ss = o->secs[sec];
   const PlacedSection &ps = ctx.placed[ss.placed];
@@ -3147,7 +3151,7 @@ void assignCopies() {
       primaries.push_back(id);
   if (primaries.empty())
     return;
-  std::sort(primaries.begin(), primaries.end(), [](uint32_t a, uint32_t b) {
+  std::sort(primaries.begin(), primaries.end(), [this](uint32_t a, uint32_t b) {
     return ctx.nameStr[a] < ctx.nameStr[b];
   });
   uint64_t off = 0, maxAlign = 1;
@@ -3193,7 +3197,7 @@ void buildDynamic() {
   (void)n;
   vector<uint32_t> got, gotTp, plt, tlsGd, iplt;
   collectNames<7>({&L.exports, &got, &gotTp, &plt, &L.imports, &tlsGd, &iplt},
-                  [](uint32_t id, auto &out) {
+                  [this](uint32_t id, auto &out) {
     uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     const Symbol &s = ctx.syms[id];
     if (s.copied) {
@@ -3227,7 +3231,7 @@ void buildDynamic() {
   });
   for (uint32_t id : L.exports)
     L.numCopies += ctx.syms[id].copyPrimary;
-  auto byName = [](uint32_t a, uint32_t b) {
+  auto byName = [this](uint32_t a, uint32_t b) {
     return ctx.nameStr[a] < ctx.nameStr[b];
   };
   std::sort(got.begin(), got.end(), byName);
@@ -3291,7 +3295,7 @@ void buildDynamic() {
       uint32_t h = gnuHash(ctx.nameStr[id]);
       keyed.push_back({(uint64_t(h % L.gnuBuckets) << 32) | h, id});
     }
-    std::sort(keyed.begin(), keyed.end(), [](const auto &a, const auto &b) {
+    std::sort(keyed.begin(), keyed.end(), [this](const auto &a, const auto &b) {
       if (a.first != b.first)
         return a.first < b.first;
       return ctx.nameStr[a.second] < ctx.nameStr[b.second];
@@ -3320,7 +3324,7 @@ void buildDynamic() {
 
   // .dynstr
   L.dynstrData.assign(1, '\0');
-  auto addStr = [](string_view s) {
+  auto addStr = [this](string_view s) {
     uint32_t off = L.dynstrData.size();
     L.dynstrData.append(s);
     L.dynstrData.push_back('\0');
@@ -3584,7 +3588,7 @@ vector<Elf64_Dyn> dynamicEntries() {
     add(DT_FINI_ARRAY, fini->second->addr);
     add(DT_FINI_ARRAYSZ, fini->second->size);
   }
-  auto symVAOf = [](const char *name) -> uint64_t {
+  auto symVAOf = [this](const char *name) -> uint64_t {
     uint32_t id = ctx.names ? ctx.names->find(name, strlen(name)) : UINT32_MAX;
     if (id == UINT32_MAX || ctx.syms[id].kind != Symbol::Object)
       return 0;
@@ -3747,7 +3751,7 @@ void prepareSymtab() {
     o->strBytes = bytes;
   });
   uint64_t str = 1;
-  collectNames<2>({&L.symHead, &L.symTail}, [](uint32_t id, auto &out) {
+  collectNames<2>({&L.symHead, &L.symTail}, [this](uint32_t id, auto &out) {
     const Symbol &s = ctx.syms[id];
     uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     if (s.kind == Symbol::Linker)
@@ -3758,7 +3762,7 @@ void prepareSymtab() {
              (f & WeakRef))
       out[1].push_back(id);
   });
-  auto byName = [](uint32_t a, uint32_t b) {
+  auto byName = [this](uint32_t a, uint32_t b) {
     return ctx.nameStr[a] < ctx.nameStr[b];
   };
   std::sort(L.symHead.begin(), L.symHead.end(), byName);
@@ -3883,7 +3887,7 @@ void layout() {
   mark("offsets");
   L.ordered.assign(L.all.begin() + 1, L.all.end());
   std::stable_sort(L.ordered.begin(), L.ordered.end(),
-                   [](const OutputSection *a, const OutputSection *b) {
+                   [this](const OutputSection *a, const OutputSection *b) {
                      return rankOf(a) < rankOf(b);
                    });
   for (size_t i = 0; i < L.ordered.size(); ++i)
@@ -4082,7 +4086,7 @@ void layout() {
     else if (s.copied)
       s.va = L.copyRel->addr + s.copyOff;
   });
-  auto secAddr = [](const char *n, bool endOf) -> uint64_t {
+  auto secAddr = [this](const char *n, bool endOf) -> uint64_t {
     auto it = L.byName.find(n);
     if (it == L.byName.end())
       return 0;
@@ -5107,7 +5111,7 @@ void checkUndefined() {
   if (undefined.empty())
     return;
   // The full backend reports undefined symbols with their references.
-  std::sort(undefined.begin(), undefined.end(), [](uint32_t a, uint32_t b) {
+  std::sort(undefined.begin(), undefined.end(), [this](uint32_t a, uint32_t b) {
     return ctx.nameStr[a] < ctx.nameStr[b];
   });
   string names;
@@ -5162,7 +5166,7 @@ void runPipeline() {
   assignInputSections();
   mergeSections();
   if (ctx.opt.icf)
-    icf::run();
+    runIcf();
   scanRelocations();
   lap();
   layout();
@@ -5178,29 +5182,27 @@ void runPipeline() {
             msSince(t0));
 }
 
+  void link(const Options &Req) {
+    ctx.opt = Req;
+    L.all.push_back(new OutputSection); // index 0: not in the output
+    runPipeline();
+  }
+  ~FastLinkInvocation() { ctx.pool.reset(); }
+};
+
 } // namespace
 
 fastlink::Status fastlink::link(const Request &Req, std::string &Reason) {
-  ctx = Ctx();
-  needsTlsLd = false;
-  needsGotBase = false;
-  L = Layout();
-  L.all.push_back(new OutputSection); // index 0: not in the output
-  relKinds = nullptr;
-  ctx.opt = Req;
-  activeOptions = &ctx.opt;
   try {
-    runPipeline();
+    FastLinkInvocation Invocation;
+    Invocation.link(Req);
   } catch (const fl::Failure &F) {
     Reason = F.message;
-    ctx.pool.reset();
     return Status::Declined;
   } catch (const std::bad_alloc &) {
     Reason = "out of memory";
-    ctx.pool.reset();
     return Status::Declined;
   }
-  // Workers are idle from here on; the process exits soon.
   return Status::Linked;
 }
 

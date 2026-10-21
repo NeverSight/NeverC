@@ -1596,7 +1596,8 @@ std::optional<std::vector<UtilityOwnedSwapOperations>>
 approvedUtilitySwapOperations(const State &S, const clang::SourceManager &SM,
                               const clang::CallExpr *Call,
                               UtilityOperation Operation,
-                              const clang::ASTContext &Context);
+                              const clang::ASTContext &Context,
+                              std::vector<const clang::CallExpr *> *SelectedPairSDKSwaps = nullptr);
 const clang::CXXMethodDecl *
 approvedUtilityOwnedFillN(const State &S, const clang::SourceManager &SM,
                           const clang::FunctionDecl *Function,
@@ -1648,12 +1649,25 @@ approvedUtilityMakePairSelectedCopies(const State &S,
                                       const clang::CallExpr *Call,
                                       const UtilityPairRecord &Pair,
                                       const clang::ASTContext &Context);
+enum class UtilityPairElementAssignmentKind { SourceOwned, StringCopy, StringMove, ViewCopy, OwnerMove };
+struct UtilityPairElementAssignment {
+  const clang::CXXOperatorCallExpr *Call = nullptr;
+  UtilityPairElementAssignmentKind Kind = UtilityPairElementAssignmentKind::SourceOwned;
+};
 std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXOperatorCallExpr *Assignment,
     const clang::ASTContext &Context,
-    std::vector<const clang::CXXOperatorCallExpr *> *SelectedAssignments =
+    std::vector<UtilityPairElementAssignment> *SelectedAssignments =
         nullptr);
+std::optional<UtilityOperation>
+approvedUtilityPairComparisonChildOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Call, const clang::ASTContext &Context);
+std::optional<std::vector<const clang::CXXOperatorCallExpr *>>
+approvedUtilityPairSelectedComparisons(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Call, const clang::ASTContext &Context);
 // A logical tuple element may be an ordinary field or an authenticated empty
 // base. Keeping its value type separate from its storage supports projections
 // without inventing an SDK field for an empty-base subobject.
@@ -1683,6 +1697,28 @@ struct UtilityTupleRecord {
   // References retain their bindings without owning their referents.
   bool RequiresSelectedElementOperations = false;
 };
+// Draft metadata only. Runtime admission also requires a completed, bounded
+// source proof of both constructors, their signatures and consumed helpers.
+struct UtilityPairPiecewiseElement {
+  const clang::FieldDecl *Field;
+  UtilityTupleRecord Tuple;
+  const clang::Expr *Initializer;
+  std::vector<std::pair<const clang::CallExpr *, unsigned>> Getters;
+  std::vector<const clang::CallExpr *> Forwarders;
+};
+struct UtilityPairPiecewiseConstruction {
+  UtilityPairRecord Pair;
+  const clang::CXXConstructorDecl *PublicConstructor;
+  const clang::CXXConstructorDecl *PrivateConstructor;
+  const clang::CXXConstructExpr *Delegation;
+  std::vector<UtilityPairPiecewiseElement> Elements;
+};
+std::optional<UtilityPairPiecewiseConstruction>
+approvedUtilityPairPiecewiseConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXRecordDecl *Record);
@@ -2078,6 +2114,7 @@ struct UtilityOptionalRecord {
   const clang::CXXRecordDecl *StorageBase, *DestructBase;
   const clang::FieldDecl *Value, *Engaged;
   clang::QualType ElementType;
+  uint64_t TailPaddingBytes = 0;
 };
 std::optional<FunctionalReferenceRecord>
 approvedUtilityOptionalReferenceEmplace(const State &S,
@@ -2501,11 +2538,14 @@ public:
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
   std::set<const clang::Expr *> SeparateArrayFillers;
-  std::map<const clang::TypeTraitExpr *, OperationTraitSource> OperationTraits;
-  std::map<const clang::CXXMethodDecl *, SpecialMemberSource> SpecialMembers;
+  // Consumer owns callback records until HandleTranslationUnit returns.
+  // Lazy Sema completion must append to the same maps consulted here.
+  std::map<const clang::TypeTraitExpr *, OperationTraitSource> &OperationTraits;
+  std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
   bool CheckingSource = false;
   std::function<bool(clang::QualType, clang::SourceLocation)> CompleteSDKRecord;
   std::set<const clang::CallExpr *> VerifiedTupleFactories;
+  std::set<const clang::CXXConstructExpr *> VerifiedPairPiecewiseConstructions;
   std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
   std::set<const clang::TypeTraitExpr *> DeferredOperationQueries, VerifiedOperationQueries;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
@@ -2555,8 +2595,11 @@ public:
   std::map<const clang::ArrayInitLoopExpr *, DecompositionArrayCopy> DecompositionArrayCopies;
   std::map<const clang::Expr *, const clang::ArrayInitLoopExpr *> DecompositionArrayNodes;
   std::size_t ExpandedNodes = 0;
-  Adapter(State &S, clang::ASTContext &C)
-      : S(S), Context(C), Sources(C.getSourceManager()) {}
+  Adapter(State &S, clang::ASTContext &C,
+          std::map<const clang::TypeTraitExpr *, OperationTraitSource> &OperationTraits,
+          std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &SpecialMembers)
+      : S(S), Context(C), Sources(C.getSourceManager()),
+        OperationTraits(OperationTraits), SpecialMembers(SpecialMembers) {}
   json::Object loc(clang::SourceLocation L) const;
   void reject(clang::SourceLocation L, llvm::StringRef Construct,
               llvm::StringRef Reason, llvm::StringRef Code = "TR0201");

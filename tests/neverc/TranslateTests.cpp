@@ -304,6 +304,17 @@ protected:
     return ncc(Args);
   }
 
+  CmdResult compileGeneratedWithMath(const fs::path &Source,
+                                     const fs::path &Output,
+                                     const std::string &Optimization) {
+    std::vector<std::string> Extra = {"-fno-fast-math", "-ffp-contract=off"};
+#if defined(__linux__)
+    // The C23 driver leaves hosted math imports to an explicit libm link.
+    Extra.push_back("-lm");
+#endif
+    return compileGenerated(Source, Output, Optimization, Extra);
+  }
+
   std::string nativeTarget() {
     auto Result = ncc({"-dumpmachine"});
     if (!Result.ok()) {
@@ -326,6 +337,73 @@ TEST_F(TranslateTest, HelpDescribesTheBuiltInFrontend) {
   EXPECT_TRUE(Result.contains("built into")) << Result.out;
   EXPECT_FALSE(Result.contains("--frontend")) << Result.out;
   EXPECT_FALSE(Result.contains("--cpp-sdk")) << Result.out;
+}
+
+TEST_F(TranslateTest, CoreV2PinnedSdkDoesNotDetectHostMsvcVersion) {
+  const auto Source = tmpFile("sdk-host-msvc-version.cpp");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <memory>
+#include <tuple>
+#include <utility>
+#ifdef _MSC_VER
+#error the private SDK must not select the installed Visual Studio version
+#endif
+#ifdef _LIBCPP_ABI_VCRUNTIME
+#error the pinned SDK must not require unbundled VCRuntime headers
+#endif
+int main() {
+  std::pair<int, int> pair(3, 4);
+  return pair.first + pair.second == 7 ? 0 : 1;
+}
+)cpp");
+  for (const std::string &Target : {
+           "i686-pc-windows-msvc", "x86_64-pc-windows-msvc",
+           "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu",
+           "aarch64-unknown-linux-gnu", "arm64-apple-macosx15.0.0",
+           "x86_64-apple-macosx15.0.0", "i686-unknown-linux-gnu"}) {
+    SCOPED_TRACE(Target);
+    const auto Request = tmpFile("sdk-host-msvc-version-" + Target + "-request.json");
+    const auto Response = tmpFile("sdk-host-msvc-version-" + Target + "-response.json");
+    const auto CatalogHash = neverc::translate::approvedCppSdkCatalogSHA256();
+    llvm::json::Object SDK{{"distribution_id", neverc::translate::CppMathSDKID},
+                          {"catalog_sha256", CatalogHash}};
+    llvm::json::Object Input{{"protocol", 1}, {"profile", "cpp-core-v2"},
+        {"root", Source.parent_path().string()}, {"source", Source.string()},
+        {"target", Target}, {"arguments", llvm::json::Array{"-std=c++17"}},
+        {"sdk", std::move(SDK)}};
+    std::string Text;
+    llvm::raw_string_ostream Stream(Text);
+    Stream << llvm::json::Value(std::move(Input));
+    writeFile(Request, Text);
+    const auto Frontend = ncc({"__neverc_cpp_frontend", "--request", Request.string(),
+                               "--output", Response.string()});
+    ASSERT_EQ(Frontend.exitCode, 0) << Frontend.out << Frontend.err;
+    auto Parsed = llvm::json::parse(readFile(Response));
+    ASSERT_TRUE(static_cast<bool>(Parsed))
+        << llvm::toString(Parsed.takeError()).str().str();
+    const auto *Module = Parsed->getAsObject();
+    ASSERT_NE(Module, nullptr);
+    const auto *Diagnostics = Module->getArray("diagnostics");
+    ASSERT_NE(Diagnostics, nullptr);
+    EXPECT_TRUE(Diagnostics->empty());
+    EXPECT_TRUE(Module->getString("sdk_catalog_sha256") == CatalogHash);
+    const auto *Layout = Module->getObject("target");
+    ASSERT_NE(Layout, nullptr);
+    EXPECT_TRUE(Layout->getString("triple") == Target);
+    int64_t PointerBits = 0;
+    ASSERT_TRUE(Layout->getInteger("pointer_bits", PointerBits));
+    EXPECT_EQ(PointerBits, Target.rfind("i686-", 0) == 0 ? 32 : 64);
+    // Both i686 ABIs retain their full private frontend checks. NeverC's
+    // independent C23 target model admits only the six 64-bit backends.
+    if (Target.rfind("i686-", 0) == 0)
+      continue;
+    const auto Output = tmpFile("sdk-host-msvc-version-" + Target + ".nc");
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2",
+                                           "--target", Target, "-o",
+                                           Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
 }
 
 TEST_F(TranslateTest, RequiresExplicitLanguageAndKnownProfile) {
@@ -46928,6 +47006,542 @@ int main(){std::pair<std::unique_ptr<int>,int> p;return p.first.get()!=nullptr||
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairPiecewiseConstructionRunsAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-piecewise-scalars", R"cpp(#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-source-records-order", R"cpp(#include <tuple>
+#include <utility>
+int trace,destroyed;struct X{int value;X(int a,int b):value(a+b){trace=trace*10+1;}~X(){++destroyed;}};struct Y{int value;explicit Y(int n):value(n){trace=trace*10+2;}~Y(){++destroyed;}};
+int main(){{std::pair<X,Y> p(std::piecewise_construct,std::tuple<int,int>(3,4),std::tuple<int>(9));if(p.first.value!=7||p.second.value!=9||trace!=12||destroyed)return 1;}return destroyed!=2;}
+)cpp"},
+      {"pair-piecewise-string-fill", R"cpp(#include <string>
+#include <tuple>
+#include <utility>
+int main(){std::pair<std::string,int> p(std::piecewise_construct,std::forward_as_tuple(3,'x'),std::forward_as_tuple(7));return p.first.size()!=3||p.first[0]!='x'||p.first[2]!='x'||p.second!=7;}
+)cpp"},
+      {"pair-piecewise-owner-pointer", R"cpp(#include <memory>
+#include <tuple>
+#include <utility>
+int destroyed;struct X{int value;~X(){++destroyed;}};
+int main(){{X* raw=new X{17};std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::forward_as_tuple(raw),std::forward_as_tuple(9));if(p.first.get()!=raw||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-reference-bindings", R"cpp(#include <tuple>
+#include <utility>
+int main(){int x=3,y=9;std::pair<int&,int&> p(std::piecewise_construct,std::forward_as_tuple(x),std::forward_as_tuple(y));p.first=7;p.second=11;return &p.first!=&x||&p.second!=&y||x!=7||y!=11;}
+)cpp"},
+      {"pair-piecewise-empty-defaults", R"cpp(#include <memory>
+#include <string>
+#include <tuple>
+#include <utility>
+int main(){std::pair<std::string,std::unique_ptr<int>> p(std::piecewise_construct,std::tuple<>(),std::tuple<>());return !p.first.empty()||p.second.get()!=nullptr;}
+)cpp"},
+      {"pair-piecewise-value-tuple-isolation", R"cpp(#include <tuple>
+#include <utility>
+struct X{int value;explicit X(int&& n):value(n){n=7;}};
+int main(){std::tuple<int> input(3);std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));return p.first.value!=3||p.second!=9||std::get<0>(input)!=3;}
+)cpp"},
+      {"pair-piecewise-value-tuple-cleanup", R"cpp(#include <tuple>
+#include <utility>
+int live,copies,destroyed;struct Token{int value;explicit Token(int n):value(n){++live;}Token(const Token& t):value(t.value){++live;++copies;}~Token(){--live;++destroyed;}};
+struct X{int value;explicit X(Token&& t):value(t.value){if(live!=2)value=-1;t.value=7;}};
+int main(){auto input=std::make_tuple(Token(3));if(live!=1)return 1;copies=0;destroyed=0;{std::pair<X,int> p(std::piecewise_construct,input,std::tuple<int>(9));if(p.first.value!=3||p.second!=9||std::get<0>(input).value!=3||copies!=1||live!=1||destroyed!=1)return 2;}return live!=1||destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-forwarded-owner-tuple", R"cpp(#include <memory>
+#include <tuple>
+#include <utility>
+int destroyed;struct X{int value;~X(){++destroyed;}};
+int main(){{std::tuple<std::unique_ptr<X>> input(std::unique_ptr<X>(new X{17}));std::pair<std::unique_ptr<X>,int> p(std::piecewise_construct,std::move(input),std::tuple<int>(9));if(std::get<0>(input).get()!=nullptr||p.first->value!=17||p.second!=9||destroyed)return 1;}return destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-first-before-second-binding", R"cpp(#include <tuple>
+#include <utility>
+int trace;struct X{int value;explicit X(int& n):value(n){trace=trace*10+1;n=7;}};struct Y{int value;explicit Y(int& n):value(n){trace=trace*10+2;n=11;}};
+int main(){int n=3;std::pair<X,Y> p(std::piecewise_construct,std::forward_as_tuple(n),std::forward_as_tuple(n));return p.first.value!=3||p.second.value!=7||n!=11||trace!=12;}
+)cpp"},
+      {"pair-piecewise-source-trailing-default", R"cpp(#include <tuple>
+#include <utility>
+int defaults,destroyed;struct Default{Default(){++defaults;}~Default(){++destroyed;}};struct X{int value;explicit X(int n,const Default& d=Default()):value(n){}};
+int main(){std::pair<X,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first.value!=3||p.second!=9||defaults!=1||destroyed!=1;}
+)cpp"},
+      {"pair-piecewise-source-default-full-expression", R"cpp(#include <tuple>
+#include <utility>
+int trace;struct Default{Default(){trace=trace*10+1;}~Default(){trace=trace*10+3;}};struct X{int value;explicit X(int n,const Default& d=Default()):value(n){trace=trace*10+2;}};struct Y{int value;explicit Y(int n):value(n){trace=trace*10+4;}};
+int main(){std::pair<X,Y> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first.value!=3||p.second.value!=9||trace!=1234;}
+)cpp"},
+      {"pair-piecewise-caller-argument-effects", R"cpp(#include <tuple>
+#include <utility>
+int first_calls,second_calls;std::tuple<int> first(){++first_calls;return std::tuple<int>(3);}std::tuple<int> second(){++second_calls;return std::tuple<int>(9);}
+int main(){std::pair<int,int> p(std::piecewise_construct,first(),second());return p.first!=3||p.second!=9||first_calls!=1||second_calls!=1;}
+)cpp"},
+      {"pair-piecewise-mixed-reference-values", R"cpp(#include <string_view>
+#include <tuple>
+#include <utility>
+int main(){int n=3;std::pair<int&,std::string_view> p(std::piecewise_construct,std::forward_as_tuple(n),std::forward_as_tuple("abc",3));p.first=7;return &p.first!=&n||n!=7||p.second.size()!=3||p.second[2]!='c';}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-piecewise-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-piecewise-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-piecewise-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+
+
+TEST_F(TranslateTest, CoreV2PairPiecewiseConstructionRequiresExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-piecewise-forward-identity", R"cpp(#include <type_traits>
+#define forward forward
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-get-identity", R"cpp(#include <type_traits>
+#define get get
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-piecewise-construct-t-identity", R"cpp(#include <type_traits>
+#define piecewise_construct_t piecewise_construct_t
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-tuple-identity", R"cpp(#include <type_traits>
+#define tuple tuple
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-tuple-indices-identity", R"cpp(#include <type_traits>
+#define __tuple_indices __tuple_indices
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-make-tuple-indices-identity", R"cpp(#include <type_traits>
+#define __make_tuple_indices __make_tuple_indices
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-is-nothrow-constructible-identity", R"cpp(#include <type_traits>
+#define is_nothrow_constructible is_nothrow_constructible
+#include <tuple>
+#include <utility>
+int main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-tuple-selected-get", R"cpp(#include <tuple>
+#include <utility>
+namespace std{inline namespace __1{template<>int& get<0,int>(tuple<int>& t)noexcept{static int n=3;return n;}}}
+void use(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}int main(){return 0;}
+)cpp"},
+      {"pair-piecewise-standalone-tag", R"cpp(#include <tuple>
+#include <utility>
+int main(){std::piecewise_construct_t tag{};std::pair<int,int> p(tag,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}
+)cpp"},
+      {"pair-piecewise-reference-to-value-parameter", R"cpp(#include <tuple>
+#include <utility>
+void use(){std::pair<int&&,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));}
+int main(){use();return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-piecewise-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-piecewise-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+
+
+TEST_F(TranslateTest, CoreV2PairSelectedComparisonsRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-comparison-embedded-zero", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+int check(const P& a,const P& b){return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}
+int main(){P a(std::string("a\0x",3),9),b(std::string("a\0y",3),1);if(check(a,b))return 1;b.first=a.first;b.second=a.second;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}
+)cpp"},
+      {"pair-string-comparison-prefix-and-second", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<int,std::string>;
+int main(){P a(7,std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),b(7,std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789z"));if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;a.first=8;return !(a>b)||a<b||a<=b||!(a>=b);}
+)cpp"},
+      {"pair-view-comparison-live-buffers", R"cpp(#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+int main(){char x[3]={'a',0,'x'},y[3]={'a',0,'y'};P a(std::string_view(x,3),9),b(std::string_view(y,3),1);if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;x[2]='z';return !(a>b)||a<b||a<=b||!(a>=b);}
+)cpp"},
+      {"pair-string-reference-comparison-effects", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string&,int&>;
+int observed;P& observe(P& p){++observed;return p;}
+int main(){std::string s="abc",t="abd";int x=9,y=1;P a(s,x),b(t,y);bool less=observe(a)<observe(b);if(!less||observed!=2||a==b||!(a!=b)||a>b||!(a<=b)||a>=b)return 1;s[2]='z';return !(a>b)||a<b||a<=b||!(a>=b)||&a.first!=&s||&b.second!=&y;}
+)cpp"},
+      {"pair-string-heterogeneous-comparison", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;using Q=std::pair<std::string,long>;
+int main(){P a(std::string("same"),3);Q b(std::string("same"),9);if(a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b)return 1;b.second=3;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}
+)cpp"},
+      {"pair-owner-comparison-pointer-order", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+using U=std::unique_ptr<int>;using P=std::pair<U,int>;
+int main(){P a(U(new int(17)),3),b(U(new int(29)),9);std::less<int*> less;bool expected=less(a.first.get(),b.first.get());if(a==b||!(a!=b)||(a<b)!=expected||(a>b)==expected||(a<=b)!=expected||(a>=b)==expected)return 1;a.first.reset();b.first.reset();return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}
+)cpp"},
+      {"pair-view-comparison-empty-high-bit", R"cpp(#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+int main(){P a(std::string_view(),3),b(std::string_view(),9);if(a==b||!(a<b))return 1;char x[2]={static_cast<char>(0x80),0},y[2]={static_cast<char>(0x7f),0};a.first=std::string_view(x,1);b.first=std::string_view(y,1);return !(a>b)||a<b||a<=b||!(a>=b);}
+)cpp"},
+      {"pair-string-comparison-unsigned-bytes", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+int main(){char x[2]={static_cast<char>(0x80),0},y[2]={static_cast<char>(0x7f),0};P a(std::string(x,1),3),b(std::string(y,1),9);if(a==b||!(a!=b)||!(a>b)||a<b||a<=b||!(a>=b))return 1;a.first.clear();b.first.clear();return !(a<b)||a==b;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-comparison-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedComparisonsRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-equality-byte-compare-identity", R"cpp(#define compare compare
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-equality-size-identity", R"cpp(#define size size
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-equality-data-identity", R"cpp(#define data data
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-less-compare-identity", R"cpp(#define compare compare
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-view-less-compare-identity", R"cpp(#define compare compare
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-view-equality-size-identity", R"cpp(#define size size
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-owner-equality-get-identity", R"cpp(#define get get
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-owner-less-comparator-identity", R"cpp(#define less less
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-byte-builtin-identity", R"cpp(#define __builtin_memcmp __builtin_memcmp
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a==b;}
+int main(){return 0;}
+)cpp"},
+      {"pair-string-less-min-comparator-identity", R"cpp(#define __less __less
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+bool use(const P& a,const P& b){return a<b;}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairComparisonQueriesRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-comparison-query-effects", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+int calls,defaults;
+const P& source(const P& p,int n=(++defaults,1)) noexcept{++calls;return p;}
+int query(const P& a,const P& b){static_assert(sizeof(source(a)==source(b))==sizeof(bool));static_assert(__is_same(decltype(source(a)==source(b)),bool));static_assert(__is_same(decltype(source(a)!=source(b)),bool));static_assert(__is_same(decltype(source(a)<source(b)),bool));static_assert(__is_same(decltype(source(a)>source(b)),bool));static_assert(!noexcept(source(a)<=source(b)));static_assert(!noexcept(source(a)>=source(b)));return calls||defaults;}
+int main(){return calls||defaults;}
+)cpp"},
+      {"pair-view-comparison-query-runtime-substitution", R"cpp(#define compare compare
+#include <string_view>
+#include <utility>
+using P=std::pair<std::string_view,int>;
+int query(const P& a,const P& b){static_assert(sizeof(a==b)==sizeof(bool));static_assert(__is_same(decltype(a==b),bool));static_assert(__is_same(decltype(a!=b),bool));static_assert(__is_same(decltype(a<b),bool));static_assert(__is_same(decltype(a>b),bool));static_assert(!noexcept(a<=b));static_assert(!noexcept(a>=b));return 0;}
+int main(){return 0;}
+)cpp"},
+      {"pair-owner-comparison-query-runtime-substitution", R"cpp(#define get get
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+int query(const P& a,const P& b){static_assert(sizeof(a==b)==sizeof(bool));static_assert(__is_same(decltype(a==b),bool));static_assert(__is_same(decltype(a!=b),bool));static_assert(__is_same(decltype(a<b),bool));static_assert(__is_same(decltype(a>b),bool));static_assert(!noexcept(a<=b));static_assert(!noexcept(a>=b));return 0;}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-comparison-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairComparisonQueriesRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-comparison-query-public-specialization", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+namespace std{inline namespace __1{template<>bool operator==<string,int,string,int>(const P&,const P&){return true;}}}
+int query(const P& a,const P& b){static_assert(__is_same(decltype(a==b),bool));return 0;}
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-comparison-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedAssignmentsAndSwapsRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-string-copy-assignment", R"cpp(#include <string>
+#include <utility>
+int main(){using P=std::pair<std::string,int>;P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3),b(std::string("xyz"),9);P* returned=&(b=a);a.first[0]='Z';return returned!=&b||b.first[0]!='a'||b.first.size()!=62||b.second!=3||a.first[0]!='Z';}
+)cpp"},
+      {"pair-owner-move-assignment", R"cpp(#include <memory>
+#include <utility>
+int deleted;struct Item{int value;~Item(){++deleted;}};
+int main(){{using U=std::unique_ptr<Item>;using P=std::pair<U,int>;P a(U(new Item{11}),3),b(U(new Item{22}),7);Item* raw=a.first.get();P* returned=&(b=std::move(a));if(returned!=&b||a.first.get()!=nullptr||b.first.get()!=raw||b.first->value!=11||b.second!=3||deleted!=1)return 1;}return deleted!=2;}
+)cpp"},
+      {"pair-string-member-free-swap", R"cpp(#include <string>
+#include <utility>
+int main(){using P=std::pair<std::string,int>;P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3),b(std::string("secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),9);a.swap(b);if(a.first.size()!=68||b.first.size()!=62||a.second!=9||b.second!=3)return 1;std::swap(a,b);return a.first[0]!='a'||b.first[0]!='s'||a.second!=3||b.second!=9;}
+)cpp"},
+      {"pair-owner-member-free-swap", R"cpp(#include <memory>
+#include <utility>
+int main(){using U=std::unique_ptr<int>;using P=std::pair<U,int>;P a(U(new int(17)),3),b(U(new int(29)),9);int* x=a.first.get();int* y=b.first.get();a.swap(b);if(a.first.get()!=y||b.first.get()!=x||a.second!=9||b.second!=3)return 1;std::swap(a,b);return a.first.get()!=x||b.first.get()!=y||*a.first!=17||*b.first!=29;}
+)cpp"},
+      {"pair-view-assignment-swap", R"cpp(#include <string_view>
+#include <utility>
+int main(){char x[3]={'a','b',0},y[3]={'c','d',0};using P=std::pair<int,std::string_view>;P a(3,std::string_view(x,2)),b(9,std::string_view(y,2));P* returned=&(b=a);x[0]='Z';if(returned!=&b||b.second.data()!=x||b.second[0]!='Z'||b.first!=3)return 1;b.second=std::string_view(y,2);a.swap(b);if(a.second.data()!=y||b.second.data()!=x)return 2;std::swap(a,b);return a.second.data()!=x||b.second.data()!=y;}
+)cpp"},
+      {"pair-string-move-self-assignment", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+P& copy(P& p,const P& q){return p=q;}
+P& move(P& p,P& q){return p=std::move(q);}
+int main(){P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3),b(std::string("xyz"),9);if(&copy(a,a)!=&a||a.first.size()!=62||a.second!=3)return 1;if(&move(b,a)!=&b||b.first.size()!=62||b.first[0]!='a'||b.second!=3)return 2;return &copy(b,b)!=&b||b.first.size()!=62;}
+)cpp"},
+      {"pair-double-string-assignment-swap", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,std::string>;
+int main(){P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),std::string("secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),b(std::string("x"),std::string("y"));b=a;a.first[0]='Z';a.second[0]='Q';if(b.first[0]!='a'||b.second[0]!='s'||b.first.size()!=62||b.second.size()!=68)return 1;a.swap(b);if(a.first[0]!='a'||a.second[0]!='s'||b.first[0]!='Z'||b.second[0]!='Q')return 2;std::swap(a,b);return a.first[0]!='Z'||a.second[0]!='Q'||b.first[0]!='a'||b.second[0]!='s';}
+)cpp"},
+      {"pair-array-owner-assignment-swap", R"cpp(#include <memory>
+#include <utility>
+int destroyed;
+struct Item{int value=7;~Item(){++destroyed;}};
+using U=std::unique_ptr<Item[]>;using P=std::pair<U,int>;
+int main(){{P a(U(new Item[3]),3),b(U(new Item[2]),9);Item* raw=a.first.get();P* returned=&(b=std::move(a));if(returned!=&b||a.first.get()!=nullptr||b.first.get()!=raw||b.first[2].value!=7||b.second!=3||destroyed!=2)return 1;P c(U(new Item[1]),11);Item* other=c.first.get();b.swap(c);if(b.first.get()!=other||c.first.get()!=raw||b.second!=11||c.second!=3||destroyed!=2)return 2;std::swap(b,c);if(b.first.get()!=raw||c.first.get()!=other||destroyed!=2)return 3;}return destroyed!=6;}
+)cpp"},
+      {"pair-custom-owner-assignment-swap", R"cpp(#include <memory>
+#include <utility>
+int destroyed,calls;
+struct Item{int value;~Item(){++destroyed;}};
+struct D{void operator()(Item* p)const noexcept{++calls;delete p;}};
+using U=std::unique_ptr<Item,D>;using P=std::pair<int,U>;
+int main(){{P a(3,U(new Item{17})),b(9,U(new Item{29}));Item* raw=a.second.get();P* returned=&(b=std::move(a));if(returned!=&b||a.second.get()!=nullptr||b.second.get()!=raw||b.second->value!=17||b.first!=3||destroyed!=1||calls!=1)return 1;P c(11,U(new Item{31}));Item* other=c.second.get();b.swap(c);if(b.second.get()!=other||c.second.get()!=raw||b.first!=11||c.first!=3||calls!=1)return 2;std::swap(b,c);if(b.second.get()!=raw||c.second.get()!=other||calls!=1)return 3;}return destroyed!=3||calls!=3;}
+)cpp"},
+      {"pair-reference-string-assignment", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string&,int&>;
+int main(){std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",t="xyz";int x=3,y=9;P a(s,x),b(t,y);P* result=&(b=a);s[0]='Z';return result!=&b||&b.first!=&t||&b.second!=&y||t[0]!='a'||t.size()!=62||y!=3||s[0]!='Z';}
+)cpp"},
+      {"pair-reference-string-alias-swap", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string&,std::string&>;
+int main(){std::string s="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",t="secondabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";P a(s,s),b(t,t);a.swap(b);if(s.size()!=62||t.size()!=68||s[0]!='a'||t[0]!='s')return 1;std::swap(a,b);return s.size()!=62||t.size()!=68||&a.first!=&s||&b.second!=&t;}
+)cpp"},
+      {"pair-owner-self-move-assignment", R"cpp(#include <memory>
+#include <utility>
+int destroyed;struct Item{int value;~Item(){++destroyed;}};using U=std::unique_ptr<Item>;using P=std::pair<U,int>;P& move(P& a,P& b){return a=std::move(b);}
+int main(){{P a(U(new Item{17}),3);Item* raw=a.first.get();if(&move(a,a)!=&a||a.first.get()!=raw||a.first->value!=17||a.second!=3||destroyed)return 1;}return destroyed!=1;}
+)cpp"},
+      {"pair-string-converting-assignment", R"cpp(#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;using Q=std::pair<std::string,long>;
+int main(){P a(std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),3);Q b(std::string("xyz"),9);Q* result=&(b=a);a.first[0]='Z';return result!=&b||b.first.size()!=62||b.first[0]!='a'||b.second!=3||a.first[0]!='Z';}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(readFile(Output).find("mapped_call"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("pair-selected-operation-") + Case.Name + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairSelectedAssignmentsAndSwapsRequireExactSources) {
+  const struct { const char *Name; const char *Source; } Cases[] = {
+      {"pair-owner-assignment-selected-source", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>unique_ptr<int>& unique_ptr<int>::operator=(unique_ptr<int>&&)noexcept{return *this;}}}
+using P=std::pair<std::unique_ptr<int>,int>;
+void use(P& a,P& b){a=static_cast<P&&>(b);}int main(){return 0;}
+)cpp"},
+      {"pair-string-swap-selected-source", R"cpp(#include <string>
+#include <utility>
+namespace std{inline namespace __1{template<>void basic_string<char>::swap(basic_string<char>&)noexcept{}}}
+using P=std::pair<std::string,int>;
+void use(P& a,P& b){a.swap(b);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-swap-selected-source", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>void unique_ptr<int>::swap(unique_ptr<int>&)noexcept{}}}
+using P=std::pair<std::unique_ptr<int>,int>;
+void use(P& a,P& b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"pair-owner-assignment-forward-identity", R"cpp(#include <type_traits>
+#define forward forward
+#include <memory>
+#include <utility>
+using P=std::pair<std::unique_ptr<int>,int>;
+void use(P& a,P& b){a=static_cast<P&&>(b);}int main(){return 0;}
+)cpp"},
+      {"pair-assignment-conditional-identity", R"cpp(#include <type_traits>
+#define __conditional_t __conditional_t
+#include <string>
+#include <utility>
+using P=std::pair<std::string,int>;
+void use(P& a,const P& b){a=b;}int main(){return 0;}
+)cpp"},
+      {"pair-string-move-assignment-selected-source", R"cpp(#include <string>
+#include <utility>
+namespace std{inline namespace __1{template<>basic_string<char>& basic_string<char>::operator=(basic_string<char>&&)noexcept{return *this;}}}
+using P=std::pair<std::string,int>;
+void use(P& a,P& b){a=static_cast<P&&>(b);}int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-selected-operation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203")) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0101"), std::string::npos) << Result.err;
+    EXPECT_EQ(Result.err.find("TR0102"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations) {
   const struct { const char *Name; const char *Source; } Cases[] = {
       {"pair-factory-string-copy-move", R"cpp(#include <string>
@@ -88157,12 +88771,28 @@ int main() {
   const auto *Dependencies =
       Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 435u);
+  // Actual replays of all eight SDK ABIs consume this same pinned set.
+  auto ExpectedSDK = llvm::json::parse(
+      readFile(fixture("algorithm-standard-sdk-dependencies.json")));
+  ASSERT_TRUE(static_cast<bool>(ExpectedSDK))
+      << llvm::toString(ExpectedSDK.takeError()).str().str();
+  const auto *ExpectedDependencies = ExpectedSDK->getAsArray();
+  ASSERT_NE(ExpectedDependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), ExpectedDependencies->size());
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
     ASSERT_NE(Dependency, nullptr);
     EXPECT_NE(Dependency->getString("root"), "platform");
   }
+  auto ActualDependencies = *Dependencies;
+  std::sort(ActualDependencies.begin(), ActualDependencies.end(),
+            [](const llvm::json::Value &Left, const llvm::json::Value &Right) {
+              const auto *L = Left.getAsObject();
+              const auto *R = Right.getAsObject();
+              return std::make_pair(L->getString("root"), L->getString("path")) <
+                     std::make_pair(R->getString("root"), R->getString("path"));
+            });
+  EXPECT_TRUE(ActualDependencies == *ExpectedDependencies);
 
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
@@ -169051,7 +169681,7 @@ TEST_F(TranslateTest,
 #include <functional>
 #include <utility>
 #include <type_traits>
-using W=std::reference_wrapper<const int>;using U=std::unique_ptr<W[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,W&>);return sizeof(R)==sizeof(void*)?0:1;}
+using W=std::reference_wrapper<const int>;using U=std::unique_ptr<W[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,W&>);return sizeof(R)==sizeof(W)?0:1;}
 )cpp");
   const auto Result =
       translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
@@ -169131,7 +169761,7 @@ TEST_F(TranslateTest,
 #include <functional>
 #include <utility>
 #include <type_traits>
-using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(*std::declval<U&>());static_assert(std::is_same_v<R,W&>);static_assert(noexcept(*std::declval<U&>()));return sizeof(R)==sizeof(void*)?0:1;}
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(*std::declval<U&>());static_assert(std::is_same_v<R,W&>);static_assert(noexcept(*std::declval<U&>()));return sizeof(R)==sizeof(W)?0:1;}
 )cpp");
   const auto Result =
       translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
@@ -169807,7 +170437,8 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::reset)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <type_traits>
 using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
@@ -169862,6 +170493,27 @@ namespace std{inline namespace __1{template<>void unique_ptr<int>::reset(int*)no
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrReset.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrReset.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){U p(new int(7));return f(p)||p.get()!=nullptr;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrReset" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -170138,7 +170790,8 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -170188,6 +170841,29 @@ namespace std{inline namespace __1{template<>void unique_ptr<int>::swap(unique_p
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrMemberSwap.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrMemberSwap.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p,U&q){using V=decltype(p.swap(q));static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return f(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrMemberSwap" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -170543,7 +171219,8 @@ using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::swap
 #include <type_traits>
 using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -170598,6 +171275,29 @@ using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::swap<int,std
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrFreeSwap.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrFreeSwap.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return inspect(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrFreeSwap" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -170941,7 +171641,8 @@ using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::decl
 #include <type_traits>
 using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=nullptr));using R=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -170998,6 +171699,29 @@ using U=std::unique_ptr<int>;U&owner()noexcept{long double n=1;return *static_ca
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrNullAssignment.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrNullAssignment.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p){static_assert(noexcept(p=nullptr));p=nullptr;return 0;}int main(){U p(new int(7));return inspect(p)||p.get()!=nullptr;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrNullAssignment" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -171405,7 +172129,8 @@ using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::decl
 #include <type_traits>
 using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));using R=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -171462,6 +172187,29 @@ namespace std{inline namespace __1{template<>int*unique_ptr<int>::release()noexc
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrMoveAssignment.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrMoveAssignment.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));p=std::move(q);return 0;}int main(){U p(new int(7)),q(new int(8));int*expected=q.get();return inspect(p,q)||q.get()!=nullptr||p.get()!=expected||*p!=8;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrMoveAssignment" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -171883,7 +172631,8 @@ using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S
 #include <type_traits>
 using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -171940,6 +172689,29 @@ using U=std::unique_ptr<int>;U&owner(int n=sizeof(long double))noexcept{return *
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrEquality.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrEquality.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return inspect(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrEquality" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -172353,7 +173125,8 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);using S=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -172416,6 +173189,29 @@ int object;template<int*>using U=std::unique_ptr<int>;int main(){using R=decltyp
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrOrdering.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrOrdering.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return inspect(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrOrdering" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -172846,7 +173642,8 @@ using U=std::unique_ptr<int>;using F=bool(*)(decltype(nullptr),const U&);int mai
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>()==nullptr);static_assert(std::is_same_v<R,bool>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -172938,6 +173735,29 @@ namespace std{inline namespace __1{template<>bool operator!=<int,default_delete<
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-UniquePtrNullComparison.cpp");
+    const auto Output = tmpFile("boundary-default-heap-UniquePtrNullComparison.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p){using R=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){U p(new int(7));return inspect(p)||p.get()!=nullptr;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-UniquePtrNullComparison" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -173243,7 +174063,8 @@ using D=std::default_delete<int>;using F=void(D::*)(int*)const noexcept;int main
 #include <type_traits>
 using D=std::default_delete<long double>;int main(){using R=decltype(std::declval<D&>()(std::declval<long double*>()));static_assert(std::is_same_v<R,void>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-delete", R"cpp(
+      {"query-does-not-authorize-runtime-delete", R"cpp(void operator delete(void*) noexcept;
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -173314,6 +174135,29 @@ namespace std{inline namespace __1{template<>void default_delete<int>::operator(
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-DefaultDeleteCall.cpp");
+    const auto Output = tmpFile("boundary-default-heap-DefaultDeleteCall.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct S{int n;~S()noexcept{}};using D=std::default_delete<S>;int inspect(D&d,S*p){using R=decltype(d(p));static_assert(std::is_same_v<R,void>);d(p);return 0;}int main(){D d;return inspect(d,new S{7});}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-DefaultDeleteCall" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -173591,7 +174435,8 @@ using A=std::allocator<int>;using N=decltype(sizeof(0));using F=int*(A::*)(N);in
 #include <type_traits>
 using A=std::allocator<long double>;int main(){using R=decltype(std::declval<A&>().allocate(3));static_assert(std::is_same_v<R,long double*>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-allocate", R"cpp(
+      {"query-does-not-authorize-runtime-allocate", R"cpp(void*operator new(decltype(sizeof(0)));
+
 #include <memory>
 #include <functional>
 #include <utility>
@@ -173662,6 +174507,29 @@ using A=std::allocator<int>;A&select(){long double n=0;(void)n;return *static_ca
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-AllocatorCall.cpp");
+    const auto Output = tmpFile("boundary-default-heap-AllocatorCall.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int inspect(A&a){using R=decltype(a.allocate(3));static_assert(std::is_same_v<R,int*>);return a.allocate(3)==nullptr;}int main(){A a;return inspect(a);}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-AllocatorCall" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -174672,7 +175540,8 @@ using A=std::allocator<long double>;using T=std::allocator_traits<A>;using R=dec
 using A=std::allocator<int>;using T=std::allocator_traits<A>;
 using R=decltype(T::construct(std::declval<A&>(),(int*)nullptr,(long double)3));int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-runtime-allocate", R"cpp(
+      {"query-does-not-authorize-runtime-allocate", R"cpp(void*operator new(decltype(sizeof(0)));
+
 #include <memory>
 #include <utility>
 #include <type_traits>
@@ -174755,6 +175624,29 @@ using R=decltype(T::deallocate(std::declval<A&>(),(int*)nullptr,3));int main(){r
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-AllocatorTraitsCall.cpp");
+    const auto Output = tmpFile("boundary-default-heap-AllocatorTraitsCall.nc");
+    writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;using T=std::allocator_traits<A>;
+using R=decltype(T::allocate(std::declval<A&>(),3));int* evaluate(A&a){return T::allocate(a,3);}int main(){A a;int*p=evaluate(a);p[0]=3;p[1]=4;p[2]=5;int result=p[0]+p[1]+p[2]!=12;T::deallocate(a,p,3);return result;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-AllocatorTraitsCall" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -256289,6 +257181,7 @@ TEST_F(
       {"stored-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_and;}}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
@@ -256575,12 +257468,14 @@ auto selected(W*a,W*b){return std::transform_reduce(a,a+1,0,std::plus<>{},std::n
       {"stored-negate", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct negate;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
 )cpp"},
       {"stored-plus", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct plus;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
 )cpp"},
@@ -256626,6 +257521,79 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-object-bool-accumulator.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-object-bool-accumulator.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4,a,nullptr)!=false;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-object-bool-accumulator" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-negate.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-negate.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4)!=-1;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-negate" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-plus.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-plus.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4)!=-1;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformReduceUnary-stored-plus" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -257680,6 +258648,7 @@ TEST_F(
       {"stored-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_and;}}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
@@ -257966,12 +258935,14 @@ auto selected(W*a,W*b,int*out){return std::transform_exclusive_scan(a,a+1,out,0,
       {"stored-negate", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct negate;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}
 )cpp"},
       {"stored-plus", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct plus;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}
 )cpp"},
@@ -258017,6 +258988,79 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-object-bool-accumulator.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-object-bool-accumulator.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,0,0};if(selected(a,a+4,a,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-object-bool-accumulator" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-negate.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-negate.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,-3,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-negate" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-plus.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-plus.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,-3,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformExclusiveScan-stored-plus" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -258698,6 +259742,7 @@ TEST_F(
       {"stored-object-bool-accumulator", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_and;}}
 #include <utility>
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}
@@ -258984,12 +260029,14 @@ auto selected(W*a,W*b,int*out){return std::transform_inclusive_scan(a,a+1,out,st
       {"stored-negate", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct negate;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}
 )cpp"},
       {"stored-plus", R"cpp(
 #include <numeric>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct plus;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}
 )cpp"},
@@ -259035,6 +260082,79 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-object-bool-accumulator.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-object-bool-accumulator.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,0,0};if(selected(a,a+4,a,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-object-bool-accumulator" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-negate.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-negate.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,-3,-1,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-negate" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-plus.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-plus.nc");
+    writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,-3,-1,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperTransformInclusiveScan-stored-plus" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -289414,6 +290534,7 @@ auto selected(W*a,W*b,W*out){return std::copy_if(a,a+1,out,std::logical_not<>{})
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}
 )cpp"},
@@ -289465,6 +290586,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::copy_if
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperCopyIfRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperCopyIfRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};if(selected(a,a+4,out)!=out+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&out[2].get()!=&sentinel)return 1;v[0]=42;return out[0].get()!=42;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperCopyIfRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -290317,6 +291462,7 @@ auto selected(W*a,W*b,W*out){return std::remove_copy_if(a,a+1,out,std::logical_n
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}
 )cpp"},
@@ -290368,6 +291514,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::remove_
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperRemoveCopyIfRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperRemoveCopyIfRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};if(selected(a,a+4,out)!=out+2||&out[0].get()!=&v[1]||&out[1].get()!=&v[2]||&out[2].get()!=&sentinel)return 1;v[1]=42;return out[0].get()!=42;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperRemoveCopyIfRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -293113,6 +294283,7 @@ auto selected(W*a,W*b,W*out){return std::partition_copy(a,a+1,out,out,std::logic
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}
 )cpp"},
@@ -293176,6 +294347,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::partiti
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperPartitionCopyRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperPartitionCopyRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,W*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};W other[]={sentinel,sentinel,sentinel};auto result=selected(a,a+4,out,other);return result.first!=out+2||result.second!=other+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&other[0].get()!=&v[1]||&other[1].get()!=&v[2]||&out[2].get()!=&sentinel||&other[2].get()!=&sentinel;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperPartitionCopyRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -294056,6 +295251,7 @@ auto selected(W*a,W*b,W*out,int*other){return std::partition_copy(a,a+1,out,othe
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}
 )cpp"},
@@ -294119,6 +295315,30 @@ auto selected(P a,P b,std::reference_wrapper<const int>*out){return std::partiti
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperPartitionCopyMixedOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperPartitionCopyMixedOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};int other[]={91,92,93};auto result=selected(a,a+4,out,other);return result.first!=out+2||result.second!=other+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&out[2].get()!=&sentinel||other[0]!=3||other[1]!=-2||other[2]!=93;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperPartitionCopyMixedOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -294998,6 +296218,7 @@ auto selected(W*a,W*b,W*out){return std::replace_copy_if(a,a+1,out,std::logical_
       {"stored-logical-not", R"cpp(
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}
 )cpp"},
@@ -295061,6 +296282,30 @@ long double value=7;auto selected(P a,P b,int*out){return std::replace_copy_if(a
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfRecordOutput-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfRecordOutput-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};return selected(a,a+4,out)!=out+4||&out[0].get()!=&v[0]||&out[1].get()!=&v[1]||&out[2].get()!=&v[2]||&out[3].get()!=&v[0]||&out[4].get()!=&sentinel;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfRecordOutput-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -295968,6 +297213,7 @@ auto selected(W*a,W*b,int*out){return std::replace_copy_if(a,a+1,out,std::logica
 int value=7;
 #include <algorithm>
 #include <functional>
+namespace std{inline namespace __1{template<class T>struct logical_not;}}
 using W=std::reference_wrapper<int>;using P=W*;
 auto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}
 )cpp"},
@@ -296034,6 +297280,31 @@ long double value=7;auto selected(P a,P b,int*out){return std::replace_copy_if(a
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfWrappedValue-stored-logical-not.cpp");
+    const auto Output = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfWrappedValue-stored-logical-not.nc");
+    writeFile(Source, R"cpp(
+int value=7;
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}
+
+int main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};return selected(a,a+4,out)!=out+4||out[0]!=7||out[1]!=3||out[2]!=-2||out[3]!=7||out[4]!=95||value!=7;}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("stored-wrapper-positive-WrapperReplaceCopyIfWrappedValue-stored-logical-not" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -359366,7 +360637,7 @@ int main(){std::knuth_b e;return e()==0;}
 )cpp"},
       {"shuffle-floating-helper", R"cpp(#include <random>
 using E=std::shuffle_order_engine<std::mt19937_64,17>;
-namespace std {template<> template<> unsigned long long E::__evalf<17,0>(){return 7;}}
+namespace std {template<> template<> E::result_type E::__evalf<17,0>(){return 7;}}
 int main(){E e;return e()==7?0:1;}
 )cpp"},
       {"seed-generate", R"cpp(using Size = decltype(sizeof(0));
@@ -359443,7 +360714,8 @@ int main(){std::seed_seq q{1,2};std::linear_congruential_engine<unsigned,1664525
 struct Seq {template<class P> void generate(P first,P last){for(;first!=last;++first)*first=7;}};
 int main(){Seq q;std::mt19937 e(q);return e()==0;}
 )cpp"},
-      {"missing-allocation-body", R"cpp(#include <random>
+      {"missing-allocation-body", R"cpp(void*operator new(decltype(sizeof(0)));
+#include <random>
 int main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return 0;}
 )cpp"},
   };
@@ -359458,6 +360730,25 @@ int main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return 0
     EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0203"))
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+
+  {
+    const auto Source = tmpFile("boundary-default-heap-SeedSequence.cpp");
+    const auto Output = tmpFile("boundary-default-heap-SeedSequence.nc");
+    writeFile(Source, R"cpp(#include <random>
+int main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return q.size()!=2||(!out[0]&&!out[1]&&!out[2]&&!out[3]);}
+)cpp");
+    const auto Result = translate(Source,
+        {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("boundary-default-heap-SeedSequence" + Optimization);
+      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      const auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -360274,7 +361565,7 @@ TEST_F(TranslateTest, CoreV2PiecewiseLinearPreservesBitsStateAndOwnership) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360292,7 +361583,7 @@ TEST_F(TranslateTest, CoreV2PiecewiseLinearCallbacksPreserveBoundaryReferences) 
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360310,7 +361601,7 @@ TEST_F(TranslateTest, CoreV2PiecewiseLinearObjectsPreserveCopiedLifetimes) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360381,7 +361672,7 @@ TEST_F(TranslateTest, CoreV2ExponentialPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360439,7 +361730,7 @@ TEST_F(TranslateTest, CoreV2ExtremeValuePreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360501,7 +361792,7 @@ TEST_F(TranslateTest, CoreV2NormalPreservesCachedStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360572,7 +361863,7 @@ TEST_F(TranslateTest, CoreV2LognormalPreservesCachedStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360652,7 +361943,7 @@ TEST_F(TranslateTest, CoreV2WeibullPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360721,7 +362012,7 @@ TEST_F(TranslateTest, CoreV2GammaPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360797,7 +362088,7 @@ TEST_F(TranslateTest, CoreV2ChiSquaredPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360876,7 +362167,7 @@ TEST_F(TranslateTest, CoreV2FisherFPreservesParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -360957,7 +362248,7 @@ TEST_F(TranslateTest, CoreV2StudentTPreservesCacheParametersStateAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361046,7 +362337,7 @@ TEST_F(TranslateTest, CoreV2CauchyPreservesDoublePrecisionAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361107,7 +362398,7 @@ TEST_F(TranslateTest, CoreV2PoissonPreservesIntegerStateParametersAndSamples) {
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361198,7 +362489,7 @@ TEST_F(TranslateTest, CoreV2NegativeBinomialAndGeometricPreserveMixtureStateAndS
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
@@ -361299,7 +362590,7 @@ TEST_F(TranslateTest, CoreV2BinomialPreservesModalParametersEndpointsAndSamples)
     for (const std::string &Optimization : {"-O0", "-O2"}) {
       SCOPED_TRACE(Optimization);
       const auto Executable = tmpFile(Name + Optimization);
-      const auto Compile = compileGenerated(Output, Executable, Optimization);
+      const auto Compile = compileGeneratedWithMath(Output, Executable, Optimization);
       ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
       const auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;

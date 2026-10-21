@@ -5594,6 +5594,39 @@ class FunctionLowering {
     destroy(std::move(Temporary), Element, L);
   }
 
+  Expression uniquePtrStoredPointer(Expression Base,
+                                    const UtilityUniquePtrRecord &Unique,
+                                    SourceLocation L) {
+    return Expression{{"kind", "member"},
+                      {"type", type(Unique.PointerType, L)},
+                      {"name", "nct_unique_ptr_pointer"},
+                      {"args", json::Array{std::move(Base)}},
+                      {"loc", A.loc(L)}};
+  }
+
+  void swapSelectedStrings(Expression LeftAddress, Expression RightAddress,
+                           const UtilityStringRecord &String, SourceLocation L) {
+    auto Word = [&](Expression Address, const char *Name) {
+      const bool PointerWord = String.AlternateLayout
+                                   ? llvm::StringRef(Name) == "nct_string_word0"
+                                   : llvm::StringRef(Name) == "nct_string_word2";
+      return Expression{{"kind", "member"},
+                        {"type",
+                         type(PointerWord ? String.PointerType
+                                          : A.Context.getSizeType(), L)},
+                        {"name", Name},
+                        {"args", json::Array{dereference(std::move(Address), L)}},
+                        {"loc", A.loc(L)}};
+    };
+    for (const char *Name : {"nct_string_word0", "nct_string_word1",
+                             "nct_string_word2"}) {
+      auto OldLeft = snapshot(Word(json::Object(LeftAddress), Name), L);
+      auto OldRight = snapshot(Word(json::Object(RightAddress), Name), L);
+      assign(Word(json::Object(LeftAddress), Name), std::move(OldRight), L);
+      assign(Word(json::Object(RightAddress), Name), std::move(OldLeft), L);
+    }
+  }
+
   bool swapOwnedPairFields(Expression LeftAddress, Expression RightAddress,
                            const UtilityPairRecord &Pair,
                            const CXXMethodDecl *Method, SourceLocation L) {
@@ -5606,6 +5639,7 @@ class FunctionLowering {
     ++Statement; // The pinned member's using std::swap declaration.
     const FieldDecl *Fields[] = {Pair.First, Pair.Second};
     std::optional<UtilityOwnedSwapOperations> Owned[2];
+    bool SDK[2] = {false, false};
     for (unsigned I = 0; I != 2; ++I) {
       const auto *Selected = dyn_cast<CallExpr>(*Statement++);
       if (!Selected)
@@ -5613,10 +5647,13 @@ class FunctionLowering {
       auto Element = Fields[I]->getType();
       if (Element->isReferenceType())
         Element = Element->getPointeeType();
-      Owned[I] = approvedUtilityOwnedSwap(
+      SDK[I] = approvedUtilityStringRecord(A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context).has_value() ||
+          approvedUtilityStringViewRecord(A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context).has_value() ||
+          approvedUtilityUniquePtrRecord(A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context).has_value();
+      if (!SDK[I]) Owned[I] = approvedUtilityOwnedSwap(
           A.S, A.Sources, Selected->getDirectCallee(), Element, A.Context);
     }
-    if (!Owned[0] && !Owned[1])
+    if (!Owned[0] && !Owned[1] && !SDK[0] && !SDK[1])
       return false;
     auto Left = dereference(std::move(LeftAddress), L);
     auto Right = dereference(std::move(RightAddress), L);
@@ -5628,6 +5665,27 @@ class FunctionLowering {
         LeftValue = dereference(std::move(LeftValue), L);
         RightValue = dereference(std::move(RightValue), L);
         Element = Element->getPointeeType();
+      }
+      if (SDK[I]) {
+        if (const auto String = approvedUtilityStringRecord(A.S, A.Sources,
+                Element->getAsCXXRecordDecl(), A.Context)) {
+          auto LeftPointer = snapshot(address(std::move(LeftValue), Element, L), L);
+          auto RightPointer = snapshot(address(std::move(RightValue), Element, L), L);
+          swapSelectedStrings(std::move(LeftPointer), std::move(RightPointer), *String, L);
+          continue;
+        }
+        if (const auto Owner = approvedUtilityUniquePtrRecord(A.S, A.Sources,
+                Element->getAsCXXRecordDecl(), A.Context)) {
+          auto LeftPointer = snapshot(address(std::move(LeftValue), Element, L), L);
+          auto RightPointer = snapshot(address(std::move(RightValue), Element, L), L);
+          auto LeftMember = [&] { return uniquePtrStoredPointer(dereference(json::Object(LeftPointer), L), *Owner, L); };
+          auto RightMember = [&] { return uniquePtrStoredPointer(dereference(json::Object(RightPointer), L), *Owner, L); };
+          auto OldLeft = snapshot(LeftMember(), L);
+          auto OldRight = snapshot(RightMember(), L);
+          assign(LeftMember(), std::move(OldRight), L);
+          assign(RightMember(), std::move(OldLeft), L);
+          continue;
+        }
       }
       if (!Owned[I]) {
         auto OldLeft = snapshot(json::Object(LeftValue), L);
@@ -5642,1923 +5700,11 @@ class FunctionLowering {
     return true;
   }
 
-  Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
-                              std::optional<Expression> Destination) {
-    auto L = Call->getExprLoc();
-    if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
-        Operation == UtilityOperation::UnorderedMapPolicy) {
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      const bool Valid = Operation == UtilityOperation::UnorderedMapGetAllocator
-          ? bool(approvedUtilityUnorderedMapAllocatorQuery(A.S, A.Sources, Call, A.Context))
-          : bool(approvedUtilityUnorderedMapPolicyQuery(A.S, A.Sources, Call, A.Context));
-      if (!Member || !Valid) reject(L, "unordered map observer", "The authenticated stateless result is unavailable.");
-      const auto *Object = Member->getImplicitObjectArgument();
-      if (Object->getType()->isPointerType()) expression(Object);
-      else lvalue(Object);
-      auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
-      assign(Result, A.zero(Call->getType(), L), L);
-      return Result;
-    }
-    if (Operation == UtilityOperation::UnorderedMapCopyAssign ||
-        Operation == UtilityOperation::UnorderedMapMoveAssign) {
-      const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
-      const unsigned Offset = Operator ? 1 : 0;
-      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      if (!Info) reject(L, "unordered map assignment", "The authenticated storage layout is unavailable.");
-      std::optional<Expression> SourceAddress;
-      // Assignment notation evaluates its right operand before its left in C++17.
-      if (Operator)
-        SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      if (!SourceAddress)
-        SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
-      auto Place = dereference(Receiver, L), Source = dereference(*SourceAddress, L);
-      if (Operation == UtilityOperation::UnorderedMapMoveAssign) {
-        unorderedMoveMap(Place, Source, *Info, true, L);
-      } else {
-        const auto Copy = labelName(), Done = labelName();
-        branch(binary("!=", cast(Receiver, type(A.Context.VoidPtrTy, L), L),
-            cast(*SourceAddress, type(A.Context.VoidPtrTy, L), L), "bool", L), Copy, Done, L);
-        label(Copy, L);
-        unorderedCopyMap(Place, Source, *Info, true, L);
-        jump(Done, L);
-        label(Done, L);
-      }
-      return Place;
-    }
-    if (Operation == UtilityOperation::UnorderedMapEqualRange) {
-      const auto Info = approvedUtilityUnorderedMapEqualRange(A.S, A.Sources, Call, A.Context);
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      if (!Info || !Member) reject(L, "unordered map equal range", "The authenticated operation is unavailable.");
-      const auto *Object = Member->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Key = snapshot(argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType()), L);
-      auto Hash = snapshot(cast(dereference(Key, L), type(A.Context.getSizeType(), L), L), L);
-      auto First = unorderedFindNode(dereference(Receiver, L), Info->Map, dereference(Key, L), Hash, L);
-      auto Last = snapshot(A.zero(Info->Map.NodePointerType, L), L);
-      const auto Advance = labelName(), Ready = labelName();
-      branch(cast(First, "bool", L), Advance, Ready, L);
-      label(Advance, L);
-      assign(Last, unorderedNodeNext(First, Info->Map, L), L);
-      jump(Ready, L);
-      label(Ready, L);
-      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
-      unorderedMakeIterator(First, Info->Iterator, fieldStorage(Output, Info->Pair.First, L), L);
-      unorderedMakeIterator(Last, Info->Iterator, fieldStorage(Output, Info->Pair.Second, L), L);
-      return Output;
-    }
-    if (Operation == UtilityOperation::UnorderedMapInsertRange) {
-      const auto Info = approvedUtilityUnorderedMapRangeInsertion(A.S, A.Sources, Call, A.Context);
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      if (!Info || !Member) reject(L, "unordered map range insertion", "The authenticated operation is unavailable.");
-      const auto *Method = Member->getMethodDecl();
-      const auto *Object = Member->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      Expression Current, End;
-      std::optional<Expression> Bucket, Count;
-      if (Info->List) {
-        auto List = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        Current = snapshot(fieldStorage(dereference(List, L), Info->List->Begin, L), L);
-        auto Count = snapshot(fieldStorage(dereference(List, L), Info->List->Size, L), L);
-        End = snapshot(Current, L);
-        const auto Advance = labelName(), Ready = labelName();
-        branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L), Advance, Ready, L);
-        label(Advance, L);
-        assign(End, binary("+", Current, Count, type(Info->PointerType, L), L), L);
-        jump(Ready, L);
-        label(Ready, L);
-      } else {
-        auto First = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        if (Info->Iterator && Info->Iterator->Local) {
-          Bucket = snapshot(unorderedIteratorMetadata(dereference(First, L), "nct_unordered_iterator_bucket", L), L);
-          Count = snapshot(unorderedIteratorMetadata(dereference(First, L), "nct_unordered_iterator_count", L), L);
-        }
-        auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
-        Current = snapshot(Info->Iterator
-            ? unorderedIteratorNode(dereference(First, L), *Info->Iterator, L) : First, L);
-        End = snapshot(Info->Iterator
-            ? unorderedIteratorNode(dereference(Last, L), *Info->Iterator, L) : Last, L);
-      }
-      unorderedInsertRange(Place, *Info, Current, End, L, Bucket, Count);
-      return {};
-    }
-    if (Operation == UtilityOperation::UnorderedMapInsertValue) {
-      const auto Info = approvedUtilityUnorderedMapInsertion(A.S, A.Sources, Call, A.Context);
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      if (!Info || !Member) reject(L, "unordered map insertion", "The authenticated operation is unavailable.");
-      const auto *Method = Member->getMethodDecl();
-      const auto *Object = Member->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Info->Offset)
-        argument(Call->getArg(0), Method->getParamDecl(0)->getType());
-      Expression Key;
-      std::optional<Expression> Mapped, PreparedNode;
-      if (Info->Kind == UnorderedMapInsertionKind::Piecewise) {
-        if (!Info->KeyTuple || !Info->ValueTuple)
-          reject(L, "unordered map piecewise construction", "Authenticated tuple shapes are required.");
-        auto Keys = snapshot(argument(Call->getArg(Info->Offset + 1),
-            Method->getParamDecl(Info->Offset + 1)->getType()), L);
-        auto Values = snapshot(argument(Call->getArg(Info->Offset + 2),
-            Method->getParamDecl(Info->Offset + 2)->getType()), L);
-        PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
-            quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
-            type(Info->Map.NodePointerType, L), L), L);
-        auto Read = [&](Expression Tuple, const UtilityTupleRecord &Shape) {
-          if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
-          const auto &Element = Shape.Elements.front();
-          auto Value = fieldStorage(dereference(Tuple, L), Element, L);
-          return Element.getType()->isReferenceType() ? dereference(Value, L) : Value;
-        };
-        // The SDK copies tuple parameters while constructing the pair, after
-        // node allocation. Reference elements still read their live referents.
-        assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), Read(Keys, *Info->KeyTuple), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), Read(Values, *Info->ValueTuple), L);
-        Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
-        Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
-      } else if (Info->Kind == UnorderedMapInsertionKind::Default) {
-
-        PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
-            quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
-            type(Info->Map.NodePointerType, L), L), L);
-        assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
-        Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
-        Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
-      } else if (Info->Kind == UnorderedMapInsertionKind::Pair) {
-        auto Pair = snapshot(argument(Call->getArg(Info->Offset),
-            Method->getParamDecl(Info->Offset)->getType()), L);
-        Key = fieldStorage(dereference(Pair, L), Info->ArgumentPair->First, L);
-        Mapped = fieldStorage(dereference(Pair, L), Info->ArgumentPair->Second, L);
-      } else {
-        auto KeyReference = snapshot(argument(Call->getArg(Info->Offset),
-            Method->getParamDecl(Info->Offset)->getType()), L);
-        Key = dereference(KeyReference, L);
-        if (Info->Kind == UnorderedMapInsertionKind::KeyValue) {
-          auto Reference = snapshot(argument(Call->getArg(Info->Offset + 1),
-              Method->getParamDecl(Info->Offset + 1)->getType()), L);
-          Mapped = dereference(Reference, L);
-        }
-      }
-      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L, PreparedNode);
-      if (!Info->ResultPair)
-        return unorderedMakeIterator(Result.Node, Info->Iterator, std::move(Destination), L);
-      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
-      unorderedMakeIterator(Result.Node, Info->Iterator,
-          fieldStorage(Output, Info->ResultPair->First, L), L);
-      assign(fieldStorage(Output, Info->ResultPair->Second, L), Result.Inserted, L);
-      return Output;
-    }
-    if (Operation >= UtilityOperation::UnorderedMapBegin &&
-        Operation <= UtilityOperation::UnorderedMapFind) {
-      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
-      const auto *Method = Member->getMethodDecl();
-      const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
-          Method->getReturnType()->getAsCXXRecordDecl(), A.Context);
-      if (!Map || !Iterator) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
-      const auto *Object = Member->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Iterator->Local) {
-        auto Bucket = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        auto Count = snapshot(unorderedMapMember(Place, *Map, "nct_unordered_bucket_count", L), L);
-        auto Node = snapshot(A.zero(Map->NodePointerType, L), L);
-        if (Operation == UtilityOperation::UnorderedMapBegin) {
-          auto Previous = snapshot(index(unorderedMapMember(Place, *Map, "nct_unordered_buckets", L),
-              Bucket, type(Map->NodePointerType, L), L), L);
-          const auto First = labelName(), Ready = labelName();
-          branch(cast(Previous, "bool", L), First, Ready, L);
-          label(First, L);assign(Node, unorderedNodeNext(Previous, *Map, L), L);jump(Ready, L);
-          label(Ready, L);
-        }
-        return unorderedMakeIterator(Node, *Iterator, std::move(Destination), L, Bucket, Count);
-      }
-      Expression Node;
-      if (Operation == UtilityOperation::UnorderedMapEnd) {
-        Node = A.zero(Map->NodePointerType, L);
-      } else if (Operation == UtilityOperation::UnorderedMapBegin) {
-        Node = snapshot(unorderedMapMember(Place, *Map, "nct_unordered_first", L), L);
-      } else {
-        auto Key = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        auto Hash = snapshot(cast(dereference(Key, L), type(A.Context.getSizeType(), L), L), L);
-        Node = unorderedFindNode(Place, *Map, dereference(Key, L), Hash, L);
-      }
-      return unorderedMakeIterator(std::move(Node), *Iterator, std::move(Destination), L);
-    }
-    if (Operation == UtilityOperation::UnorderedMapEraseIterator ||
-        Operation == UtilityOperation::UnorderedMapEraseRange) {
-      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
-      const auto *Method = Member->getMethodDecl();
-      const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      const auto Result = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
-          Method->getReturnType()->getAsCXXRecordDecl(), A.Context);
-      const auto Input = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
-          Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!Map || !Result || !Input)
-        reject(L, "unordered map iterator erase", "The authenticated layouts are unavailable.");
-      const auto *Object = Member->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      auto First = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-      auto Node = snapshot(unorderedIteratorNode(dereference(First, L), *Input, L), L);
-      auto Remove = [&] {
-        auto Next = snapshot(unorderedNodeNext(Node, *Map, L), L);
-        unorderedEraseKey(Place, *Map, unorderedNodeKey(Node, *Map, L), L);
-        assign(Node, Next, L);
-      };
-      if (Operation == UtilityOperation::UnorderedMapEraseRange) {
-        auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
-        auto End = snapshot(unorderedIteratorNode(dereference(Last, L), *Input, L), L);
-        const auto Check = labelName(), Erase = labelName(), Done = labelName();
-        jump(Check, L);
-        label(Check, L);
-        branch(binary("!=", Node, End, "bool", L), Erase, Done, L);
-        label(Erase, L);
-        Remove();
-        jump(Check, L);
-        label(Done, L);
-      } else {
-        Remove();
-      }
-      return unorderedMakeIterator(Node, *Result, std::move(Destination), L);
-    }
-    if (Operation >= UtilityOperation::UnorderedIteratorDereference &&
-        Operation <= UtilityOperation::UnorderedIteratorAssign) {
-      const auto *F = Call->getDirectCallee();
-      const auto *Method = dyn_cast<CXXMethodDecl>(F);
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *Record = Method ? Method->getParent()
-          : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, Record, A.Context);
-      if (!Info) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
-      if (!Method) {
-        auto Left = snapshot(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
-        auto Right = snapshot(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L);
-        return binary(Operation == UtilityOperation::UnorderedIteratorEqual ? "==" : "!=",
-            unorderedIteratorNode(dereference(Left, L), *Info, L),
-            unorderedIteratorNode(dereference(Right, L), *Info, L), "bool", L);
-      }
-      const unsigned Offset = Operator ? 1 : 0;
-      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
-      // Operator notation evaluates the right operand first; an explicit
-      // member call evaluates its receiver before its arguments in C++17.
-      if (Operation == UtilityOperation::UnorderedIteratorAssign) {
-        Expression Receiver, Right;
-        auto ObjectAddress = [&] { return snapshot(Object->getType()->isPointerType() ? expression(Object)
-            : address(lvalue(Object), Object->getType(), L), L); };
-        if (Member) Receiver = ObjectAddress();
-        Right = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
-        auto Value = snapshot(dereference(Right, L), L);
-        if (!Member) Receiver = ObjectAddress();
-        auto Place = dereference(Receiver, L);
-        assign(Place, Value, L);
-        return Place;
-      }
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::UnorderedIteratorPostIncrement)
-        expression(Call->getArg(Offset));
-      auto Node = snapshot(unorderedIteratorNode(Place, *Info, L), L);
-      if (Operation == UtilityOperation::UnorderedIteratorDereference)
-        return dereference(unorderedIteratorValue(Node, *Info, L), L);
-      if (Operation == UtilityOperation::UnorderedIteratorArrow)
-        return unorderedIteratorValue(Node, *Info, L);
-      assign(unorderedIteratorNode(Place, *Info, L), unorderedAdvanceIterator(Node, *Info, Place, L), L);
-      if (Operation == UtilityOperation::UnorderedIteratorPreIncrement) return Place;
-      return unorderedMakeIterator(Node, *Info, std::move(Destination), L,
-          Info->Local ? std::optional<Expression>(unorderedIteratorMetadata(Place, "nct_unordered_iterator_bucket", L)) : std::nullopt,
-          Info->Local ? std::optional<Expression>(unorderedIteratorMetadata(Place, "nct_unordered_iterator_count", L)) : std::nullopt);
-    }
-    if (Operation >= UtilityOperation::UnorderedMapSize &&
-        Operation <= UtilityOperation::UnorderedMapSetMaxLoadFactor) {
-      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
-      const auto *Method = Member->getMethodDecl();
-      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      if (!Info) reject(L, "unordered map operation", "The authenticated storage layout is unavailable.");
-      const auto *Object = Member->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::UnorderedMapLoadFactor)
-        return unorderedMapLoadFactor(Place, *Info, L);
-      if (Operation == UtilityOperation::UnorderedMapSetMaxLoadFactor) {
-        auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        auto Current = unorderedMapLoadFactor(Place, *Info, L);
-        const auto Clamp = labelName(), Ready = labelName();
-        branch(binary("<", Value, Current, "bool", L), Clamp, Ready, L);
-        label(Clamp, L);
-        assign(Value, Current, L);
-        jump(Ready, L);
-        label(Ready, L);
-        assign(unorderedMapMember(Place, *Info, "nct_unordered_max_load", L), Value, L);
-        return {};
-      }
-      auto Value = unorderedMapMember(Place, *Info,
-          Operation == UtilityOperation::UnorderedMapBucketCount ? "nct_unordered_bucket_count"
-          : Operation == UtilityOperation::UnorderedMapMaxLoadFactor ? "nct_unordered_max_load"
-                                                                  : "nct_unordered_size", L);
-      if (Operation == UtilityOperation::UnorderedMapEmpty)
-        return binary("==", Value, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
-      return snapshot(std::move(Value), L);
-    }
-    if (Operation >= UtilityOperation::UnorderedMapClear &&
-        Operation <= UtilityOperation::UnorderedMapSubscript) {
-      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
-      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
-      const unsigned Offset = Member ? 0 : 1;
-      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      if (!Info) reject(L, "unordered map operation", "The authenticated storage layout is unavailable.");
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      const auto Size = type(A.Context.getSizeType(), L);
-      if (Operation == UtilityOperation::UnorderedMapMaxSize ||
-          Operation == UtilityOperation::UnorderedMapMaxBucketCount) {
-        const auto Bits = A.Context.getTypeSize(A.Context.getSizeType());
-        return quantity(llvm::APInt::getMaxValue(Bits).udiv(llvm::APInt(Bits, Info->NodeBytes)).getZExtValue(), Size, L);
-      }
-      if (Operation == UtilityOperation::UnorderedMapClear) {
-        releaseUnorderedMap(Place, *Info, false, L);
-        return {};
-      }
-      if (Operation == UtilityOperation::UnorderedMapSwap) {
-        auto Other = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
-        unorderedSwap(Place, dereference(Other, L), *Info, L);
-        return {};
-      }
-      if (Operation == UtilityOperation::UnorderedMapReserve ||
-          Operation == UtilityOperation::UnorderedMapRehash ||
-          Operation == UtilityOperation::UnorderedMapBucketSize) {
-        auto Count = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
-        if (Operation == UtilityOperation::UnorderedMapBucketSize)
-          return unorderedBucketSize(Place, *Info, Count, L);
-        if (Operation == UtilityOperation::UnorderedMapReserve)
-          Count = unorderedCeilCount(Count, unorderedMapMember(Place, *Info, "nct_unordered_max_load", L), L);
-        unorderedRehash(Place, *Info, Count, L);
-        return {};
-      }
-      auto KeyReference = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
-      auto Key = dereference(KeyReference, L);
-      if (Operation == UtilityOperation::UnorderedMapSubscript)
-        return unorderedSubscript(Place, *Info, Key, L);
-      if (Operation == UtilityOperation::UnorderedMapEraseKey)
-        return unorderedEraseKey(Place, *Info, Key, L);
-      auto Hash = snapshot(cast(Key, Size, L), L);
-      if (Operation == UtilityOperation::UnorderedMapBucket)
-        return unorderedConstrainHash(Hash, unorderedMapMember(Place, *Info, "nct_unordered_bucket_count", L), L);
-      if (Operation == UtilityOperation::UnorderedMapCount)
-        return cast(cast(unorderedFindNode(Place, *Info, Key, Hash, L), "bool", L), Size, L);
-      reject(L, "unordered map operation", "The authenticated operation has no lowering.");
-    }
-    if (Operation >= UtilityOperation::RandomEngineGenerate &&
-        Operation <= UtilityOperation::RandomEngineSeedSequence) {
-      const auto *F = Call->getDirectCallee();
-      const auto *M = dyn_cast<CXXMethodDecl>(F);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *R = M ? M->getParent()
-                        : F->getParamDecl(0)->getType().getNonReferenceType()
-                              ->getAsCXXRecordDecl();
-      const auto Engine = approvedRandomEngineRecord(A.S, A.Sources, R, A.Context);
-      if (!Engine)
-        reject(L, "random engine", "An authenticated standard engine is required.");
-      if (Operation == UtilityOperation::RandomEngineMinimum ||
-          Operation == UtilityOperation::RandomEngineMaximum) {
-        if (const auto *Member =
-                dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()))
-          expression(Member->getBase());
-        return quantity(Operation == UtilityOperation::RandomEngineMinimum
-                            ? Engine->Minimum : Engine->Maximum,
-                        type(Engine->ResultType, L), L);
-      }
-      if (Operation == UtilityOperation::RandomEngineEqual ||
-          Operation == UtilityOperation::RandomEngineNotEqual) {
-        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        auto Equal = equalRandomEngines(dereference(Left, L),
-                                        dereference(Right, L), *Engine, L);
-        return snapshot(Operation == UtilityOperation::RandomEngineNotEqual
-                            ? binary("==", std::move(Equal), quantity(0, "bool", L),
-                                     "bool", L)
-                            : std::move(Equal), L);
-      }
-      const auto *Object = Operator ? Operator->getArg(0)
-                                    : llvm::cast<CXXMemberCallExpr>(Call)
-                                          ->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType()
-                                   ? expression(Object)
-                                   : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::RandomEngineGenerate)
-        return generateRandomEngine(std::move(Place), *Engine, L);
-      if (Operation == UtilityOperation::RandomEngineAssign) {
-        auto Source = argument(Call->getArg(Operator ? 1 : 0),
-                               F->getParamDecl(0)->getType());
-        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
-        return Place;
-      }
-      if (Operation == UtilityOperation::RandomEngineBase)
-        return fieldStorage(std::move(Place), Engine->Base, L);
-      if (Operation == UtilityOperation::RandomEngineSeedSequence) {
-        const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources,
-            F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl(), A.Context);
-        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        seedRandomEngineSequence(std::move(Place), *Engine, dereference(std::move(Source), L), *Seq, L);
-        return {};
-      }
-      if (Operation == UtilityOperation::RandomEngineSeed) {
-        auto Seed = Call->getNumArgs()
-            ? argument(Call->getArg(0), F->getParamDecl(0)->getType())
-            : quantity(Engine->DefaultSeed, type(A.Context.UnsignedLongLongTy, L), L);
-        seedRandomEngine(std::move(Place), *Engine, std::move(Seed), L,
-                         !Call->getNumArgs());
-        return {};
-      }
-      auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-      discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
-      return {};
-    }
-    if (Operation >= UtilityOperation::PiecewiseGenerate &&
-        Operation <= UtilityOperation::PiecewiseAssign) {
-      const auto *F = Call->getDirectCallee();
-      const auto *M = dyn_cast<CXXMethodDecl>(F);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedPiecewiseRecord(A.S, A.Sources, R, A.Context);
-      if (!Info)
-        reject(L, "piecewise constant distribution", "The checked distribution layout is unavailable.");
-      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
-          Info->Bounds->getType()->getAsCXXRecordDecl(), A.Context);
-      if (Operation == UtilityOperation::PiecewiseEqual || Operation == UtilityOperation::PiecewiseNotEqual) {
-        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        auto LP = piecewiseParameter(dereference(Left, L), *Info, L);
-        auto RP = piecewiseParameter(dereference(Right, L), *Info, L);
-        auto Equal = snapshot(binary("==", compareNestedVectors(fieldStorage(LP, Info->Densities, L),
-            fieldStorage(RP, Info->Densities, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
-        const auto BoundsEqual = labelName(), Done = labelName();
-        branch(Equal, BoundsEqual, Done, L);
-        label(BoundsEqual, L);
-        assign(Equal, binary("==", compareNestedVectors(fieldStorage(LP, Info->Bounds, L),
-            fieldStorage(RP, Info->Bounds, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
-        jump(Done, L);
-        label(Done, L);
-        return Operation == UtilityOperation::PiecewiseNotEqual
-            ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : Equal;
-      }
-      const auto *Object = Operator ? Operator->getArg(0)
-          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      auto Parameter = piecewiseParameter(Place, *Info, L);
-      if (Operation == UtilityOperation::PiecewiseAssign || Operation == UtilityOperation::PiecewiseParamSet) {
-        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
-        auto Input = Operation == UtilityOperation::PiecewiseParamSet
-            ? dereference(Source, L) : piecewiseParameter(dereference(Source, L), *Info, L);
-        copyPiecewiseParameter(Parameter, Input, *Info, *Vector, true, L);
-        return Operation == UtilityOperation::PiecewiseAssign ? Place : Expression{};
-      }
-      if (Operation == UtilityOperation::PiecewiseReset)
-        return {};
-      if (Operation == UtilityOperation::PiecewiseParamGet) {
-        auto Value = Destination ? json::Object(*Destination)
-            : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
-        copyPiecewiseParameter(Value, Parameter, *Info, *Vector, false, L);
-        return Value;
-      }
-      if (Operation == UtilityOperation::PiecewiseIntervals || Operation == UtilityOperation::PiecewiseDensities) {
-        auto Value = Destination ? json::Object(*Destination) : objectTemporary(F->getReturnType(), L);
-        copyRandomVector(Value, fieldStorage(Parameter, Operation == UtilityOperation::PiecewiseIntervals
-            ? Info->Bounds : Info->Densities, L), *Vector, false, false, L);
-        return Value;
-      }
-      const auto Size = type(A.Context.getSizeType(), L);
-      const auto Real = type(Info->ResultType, L);
-      auto Bounds = fieldStorage(Parameter, Info->Bounds, L);
-      if (Operation == UtilityOperation::PiecewiseMinimum || Operation == UtilityOperation::PiecewiseMaximum) {
-        auto I = Operation == UtilityOperation::PiecewiseMinimum ? quantity(0, Size, L)
-            : binary("-", randomVectorCount(Bounds, *Vector, "nct_vector_end", L), quantity(1, Size, L), Size, L);
-        return snapshot(index(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), I, Real, L), L);
-      }
-      const auto Random = approvedPiecewiseRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Random)
-        reject(L, "piecewise generator", "The selected generator source is unavailable.");
-      const unsigned First = Operator ? 1 : 0;
-      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
-      if (F->getNumParams() == 2) {
-        auto Source = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
-        Parameter = dereference(Source, L);
-      }
-      auto Areas = fieldStorage(Parameter, Info->Areas, L);
-      auto Count = randomVectorCount(Areas, *Vector, "nct_vector_end", L);
-      auto Input = snapshot(randomVectorMember(Areas, *Vector, "nct_vector_begin", L), L);
-      CapturedAlgorithmPredicate Generator{GeneratorAddress, Random->ObjectType, Random->Method, std::nullopt};
-      auto Draw = snapshot(emitCanonicalRandom(Generator, *Random,
-          Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L), L);
-      auto Position = snapshot(quantity(0, Size, L), L);
-      auto Remaining = snapshot(Count, L);
-      const auto Check = labelName(), Step = labelName(), Left = labelName(), Right = labelName(), Done = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Step, Done, L);
-      label(Step, L);
-      auto Half = snapshot(binary("/", Remaining, quantity(2, Size, L), Size, L), L);
-      auto Middle = snapshot(binary("+", Position, Half, Size, L), L);
-      branch(binary("<", Draw, index(Input, Middle, Real, L), "bool", L), Left, Right, L);
-      label(Left, L);
-      assign(Remaining, Half, L);
-      jump(Check, L);
-      label(Right, L);
-      assign(Position, binary("+", Middle, quantity(1, Size, L), Size, L), L);
-      assign(Remaining, binary("-", binary("-", Remaining, Half, Size, L), quantity(1, Size, L), Size, L), L);
-      jump(Check, L);
-      label(Done, L);
-      auto K = snapshot(binary("-", Position, quantity(1, Size, L), Size, L), L);
-      auto Density = randomVectorMember(fieldStorage(Parameter, Info->Densities, L), *Vector, "nct_vector_begin", L);
-      auto B = randomVectorMember(fieldStorage(Parameter, Info->Bounds, L), *Vector, "nct_vector_begin", L);
-      auto U = snapshot(binary("-", Draw, index(Input, K, Real, L), Real, L), L);
-      auto DK = snapshot(index(Density, K, Real, L), L);
-      auto BK = snapshot(index(B, K, Real, L), L);
-      if (!Info->Linear)
-        return snapshot(binary("+", binary("/", U, DK, Real, L), BK, Real, L), L);
-      auto Next = binary("+", K, quantity(1, Size, L), Size, L);
-      auto DK1 = snapshot(index(Density, Next, Real, L), L);
-      auto DeltaD = snapshot(binary("-", DK1, DK, Real, L), L);
-      auto Result = temporary(Real, L);
-      const auto Flat = labelName(), Sloped = labelName(), Sampled = labelName();
-      branch(binary("==", DeltaD, A.zero(Info->ResultType, L), "bool", L), Flat, Sloped, L);
-      label(Flat, L);
-      assign(Result, binary("+", binary("/", U, DK, Real, L), BK, Real, L), L);
-      jump(Sampled, L);
-      label(Sloped, L);
-      auto BK1 = snapshot(index(B, Next, Real, L), L);
-      auto DeltaB = snapshot(binary("-", BK1, BK, Real, L), L);
-      auto Square = binary("*", binary("*", DeltaB, DK, Real, L), DK, Real, L);
-      auto Offset = binary("*", binary("*", cast(quantity(2, "int", L), Real, L), DeltaD, Real, L), U, Real, L);
-      auto Radicand = binary("*", DeltaB, binary("+", Square, Offset, Real, L), Real, L);
-      json::Array RootArguments;
-      RootArguments.push_back(std::move(Radicand));
-      auto Root = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
-          {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
-      auto Base = binary("-", binary("*", BK, DK1, Real, L), binary("*", BK1, DK, Real, L), Real, L);
-      assign(Result, binary("/", binary("+", Base, Root, Real, L), DeltaD, Real, L), L);
-      jump(Sampled, L);
-      label(Sampled, L);
-      return Result;
-    }
-    if (Operation >= UtilityOperation::DiscreteGenerate && Operation <= UtilityOperation::DiscreteAssign) {
-      const auto *F = Call->getDirectCallee();
-      const auto *M = dyn_cast<CXXMethodDecl>(F);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedDiscreteDistributionRecord(A.S, A.Sources, R, A.Context);
-      if (!Info)
-        reject(L, "discrete distribution", "The checked distribution layout is unavailable.");
-      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
-          Info->Thresholds->getType()->getAsCXXRecordDecl(), A.Context);
-      if (Operation == UtilityOperation::DiscreteEqual || Operation == UtilityOperation::DiscreteNotEqual) {
-        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        auto Order = compareNestedVectors(discreteVector(dereference(Left, L), *Info, L),
-            discreteVector(dereference(Right, L), *Info, L), *Vector, true, L);
-        return binary(Operation == UtilityOperation::DiscreteEqual ? "==" : "!=",
-                      Order, quantity(0, "int", L), "bool", L);
-      }
-      const auto *Object = Operator ? Operator->getArg(0)
-          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      auto Parameter = discreteParameter(Place, *Info, L);
-      auto Storage = fieldStorage(Parameter, Info->Thresholds, L);
-      if (Operation == UtilityOperation::DiscreteAssign || Operation == UtilityOperation::DiscreteParamSet) {
-        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
-        auto SourceVector = Operation == UtilityOperation::DiscreteAssign
-            ? discreteVector(dereference(Source, L), *Info, L)
-            : fieldStorage(dereference(Source, L), Info->Thresholds, L);
-        copyRandomVector(Storage, SourceVector, *Vector,
-                         F->getParamDecl(0)->getType()->isRValueReferenceType(), true, L);
-        if (Operation == UtilityOperation::DiscreteAssign)
-          return Place;
-        return {};
-      }
-      if (Operation == UtilityOperation::DiscreteReset)
-        return {};
-      if (Operation == UtilityOperation::DiscreteMinimum)
-        return quantity(0, type(Info->ResultType, L), L);
-      if (Operation == UtilityOperation::DiscreteParamGet) {
-        auto Value = Destination ? json::Object(*Destination)
-            : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
-        copyRandomVector(fieldStorage(Value, Info->Thresholds, L), Storage, *Vector, false, false, L);
-        return Value;
-      }
-      const auto Size = type(A.Context.getSizeType(), L);
-      const auto Real = type(A.Context.DoubleTy, L);
-      if (Operation == UtilityOperation::DiscreteMaximum)
-        return cast(randomVectorCount(Storage, *Vector, "nct_vector_end", L), type(Info->ResultType, L), L);
-      if (Operation == UtilityOperation::DiscreteProbabilities) {
-        auto Count = randomVectorCount(Storage, *Vector, "nct_vector_end", L);
-        auto Value = Destination ? json::Object(*Destination)
-            : objectTemporary(F->getReturnType(), L);
-        allocateRandomVector(Value, *Vector, binary("+", Count, quantity(1, Size, L), Size, L), L);
-        auto Output = snapshot(randomVectorMember(Value, *Vector, "nct_vector_begin", L), L);
-        auto Input = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
-        const auto Empty = labelName(), NonEmpty = labelName(), Done = labelName();
-        branch(binary("==", Count, quantity(0, Size, L), "bool", L), Empty, NonEmpty, L);
-        label(Empty, L);
-        assign(index(Output, quantity(0, Size, L), Real, L), one(Real, L), L);
-        jump(Done, L);
-        label(NonEmpty, L);
-        auto Previous = snapshot(index(Input, quantity(0, Size, L), Real, L), L);
-        assign(index(Output, quantity(0, Size, L), Real, L), Previous, L);
-        auto I = snapshot(quantity(1, Size, L), L);
-        const auto Check = labelName(), Step = labelName(), Finished = labelName();
-        jump(Check, L);
-        label(Check, L);
-        branch(binary("<", I, Count, "bool", L), Step, Finished, L);
-        label(Step, L);
-        auto Current = snapshot(index(Input, I, Real, L), L);
-        assign(index(Output, I, Real, L), binary("-", Current, Previous, Real, L), L);
-        assign(Previous, Current, L);
-        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
-        jump(Check, L);
-        label(Finished, L);
-        assign(index(Output, Count, Real, L), binary("-", one(Real, L), Previous, Real, L), L);
-        jump(Done, L);
-        label(Done, L);
-        return Value;
-      }
-      const auto Random = approvedDiscreteDistributionRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Random)
-        reject(L, "discrete generator", "The selected generator source is unavailable.");
-      const unsigned First = Operator ? 1 : 0;
-      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
-      if (F->getNumParams() == 2) {
-        auto Source = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
-        Storage = fieldStorage(dereference(Source, L), Info->Thresholds, L);
-      }
-      auto Count = randomVectorCount(Storage, *Vector, "nct_vector_end", L);
-      auto Input = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
-      CapturedAlgorithmPredicate Generator{GeneratorAddress, Random->ObjectType, Random->Method, std::nullopt};
-      auto Draw = snapshot(emitCanonicalRandom(Generator, *Random, 53, L), L);
-      auto Position = snapshot(quantity(0, Size, L), L);
-      auto Remaining = snapshot(Count, L);
-      const auto Check = labelName(), Step = labelName(), Left = labelName(), Right = labelName(), Done = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Step, Done, L);
-      label(Step, L);
-      auto Half = snapshot(binary("/", Remaining, quantity(2, Size, L), Size, L), L);
-      auto Middle = snapshot(binary("+", Position, Half, Size, L), L);
-      branch(binary("<", Draw, index(Input, Middle, Real, L), "bool", L), Left, Right, L);
-      label(Left, L);
-      assign(Remaining, Half, L);
-      jump(Check, L);
-      label(Right, L);
-      assign(Position, binary("+", Middle, quantity(1, Size, L), Size, L), L);
-      assign(Remaining, binary("-", binary("-", Remaining, Half, Size, L), quantity(1, Size, L), Size, L), L);
-      jump(Check, L);
-      label(Done, L);
-      return cast(Position, type(Info->ResultType, L), L);
-    }
-    if (Operation >= UtilityOperation::ScalarRealDistributionGenerate && Operation <= UtilityOperation::ScalarRealDistributionAssign) {
-      const auto *F = Call->getDirectCallee();
-      const auto *M = dyn_cast<CXXMethodDecl>(F);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedScalarRealDistributionRecord(A.S, A.Sources, R, A.Context);
-      if (!Info) reject(L, "real distribution", "The checked distribution layout is unavailable.");
-      if (Operation == UtilityOperation::ScalarRealDistributionEqual || Operation == UtilityOperation::ScalarRealDistributionNotEqual) {
-        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        auto LeftParameter = scalarRealDistributionParameter(dereference(Left, L), *Info, L);
-        auto RightParameter = scalarRealDistributionParameter(dereference(Right, L), *Info, L);
-        auto Equal = binary("==", scalarRealDistributionField(LeftParameter, *Info, false, L),
-                            scalarRealDistributionField(RightParameter, *Info, false, L), "bool", L);
-        if (Info->Second) {
-          auto Result = snapshot(std::move(Equal), L);
-          const auto CompareSecond = labelName(), Compared = labelName();
-          branch(Result, CompareSecond, Compared, L);
-          label(CompareSecond, L);
-          assign(Result, binary("==", scalarRealDistributionField(LeftParameter, *Info, true, L),
-                                scalarRealDistributionField(RightParameter, *Info, true, L), "bool", L), L);
-          jump(Compared, L);
-          label(Compared, L);
-          Equal = std::move(Result);
-        }
-        if (Info->CacheValid && Info->Kind != ScalarRealDistributionKind::StudentT && Info->Record == Info->Distribution) {
-          auto Result = snapshot(std::move(Equal), L);
-          const auto CheckFlags = labelName(), CheckHot = labelName(), CheckSpare = labelName(), Compared = labelName();
-          branch(Result, CheckFlags, Compared, L);
-          label(CheckFlags, L);
-          auto LeftHot = snapshot(fieldStorage(scalarRealDistributionState(dereference(Left, L), *Info, L), Info->CacheValid, L), L);
-          auto RightHot = snapshot(fieldStorage(scalarRealDistributionState(dereference(Right, L), *Info, L), Info->CacheValid, L), L);
-          assign(Result, binary("==", LeftHot, RightHot, "bool", L), L);
-          branch(Result, CheckHot, Compared, L);
-          label(CheckHot, L);
-          branch(LeftHot, CheckSpare, Compared, L);
-          label(CheckSpare, L);
-          assign(Result, binary("==", fieldStorage(scalarRealDistributionState(dereference(Left, L), *Info, L), Info->Cached, L),
-                                fieldStorage(scalarRealDistributionState(dereference(Right, L), *Info, L), Info->Cached, L), "bool", L), L);
-          jump(Compared, L);
-          label(Compared, L);
-          Equal = std::move(Result);
-        }
-        return Operation == UtilityOperation::ScalarRealDistributionEqual ? std::move(Equal)
-            : binary("==", std::move(Equal), quantity(0, "bool", L), "bool", L);
-      }
-      const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::ScalarRealDistributionAssign) {
-        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
-        copyScalarRealDistribution(Place, dereference(std::move(Source), L), *Info, L);
-        return Place;
-      }
-      auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
-      auto State = scalarRealDistributionState(Place, *Info, L);
-      switch (Operation) {
-      case UtilityOperation::ScalarRealDistributionFirst:
-        return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, false, L), L);
-      case UtilityOperation::ScalarRealDistributionSecond:
-        return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, true, L), L);
-      case UtilityOperation::ScalarRealDistributionMinimum:
-        if (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) return quantity(0, type(Info->ResultType, L), L);
-        return Info->Kind == ScalarRealDistributionKind::Cauchy || Info->Kind == ScalarRealDistributionKind::StudentT || Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::ExtremeValue
-            ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
-                            : A.zero(Info->ResultType, L);
-      case UtilityOperation::ScalarRealDistributionMaximum:
-        if (Info->Kind == ScalarRealDistributionKind::Binomial)
-          return snapshot(fieldStorage(Parameter, Info->First, L), L);
-        if (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) {
-          const unsigned Width = A.Context.getTypeSize(Info->ResultType);
-          const bool Unsigned = Info->ResultType->isUnsignedIntegerType();
-          return A.literal(llvm::APSInt(Unsigned ? llvm::APInt::getAllOnes(Width) : llvm::APInt::getSignedMaxValue(Width), Unsigned), type(Info->ResultType, L), L);
-        }
-        return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
-      case UtilityOperation::ScalarRealDistributionReset:
-        if (Info->CacheValid)
-          assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
-        return {};
-      case UtilityOperation::ScalarRealDistributionParamGet: {
-        if (Info->Kind == ScalarRealDistributionKind::Binomial) {
-          auto Value = Destination ? json::Object(*Destination)
-                                  : temporary(type(A.Context.getRecordType(Info->Parameter), L), L);
-          copyBinomialParameters(Value, Parameter, *Info, L);
-          return Value;
-        }
-        auto Value = Info->Kind == ScalarRealDistributionKind::Lognormal ? temporary(type(A.Context.getRecordType(Info->Parameter), L), L)
-                                  : snapshot(Parameter, L);
-        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
-          assign(fieldStorage(Value, Info->First, L), snapshot(scalarRealDistributionField(Parameter, *Info, false, L), L), L);
-          assign(fieldStorage(Value, Info->Second, L), snapshot(scalarRealDistributionField(Parameter, *Info, true, L), L), L);
-        }
-        if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
-        return Value;
-      }
-      case UtilityOperation::ScalarRealDistributionParamSet: {
-        if (Info->Kind == ScalarRealDistributionKind::Binomial) {
-          auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-          copyBinomialParameters(Parameter, dereference(std::move(Source), L), *Info, L);
-          return {};
-        }
-        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Value = snapshot(dereference(std::move(Source), L), L);
-        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
-          assign(scalarRealDistributionField(Parameter, *Info, false, L), fieldStorage(Value, Info->First, L), L);
-          assign(scalarRealDistributionField(Parameter, *Info, true, L), fieldStorage(Value, Info->Second, L), L);
-        } else
-          assign(std::move(Parameter), std::move(Value), L);
-        return {};
-      }
-      default: break;
-      }
-      const auto Random = approvedScalarRealDistributionRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Random) reject(L, "real distribution generator", "The selected generator source is unavailable.");
-      const unsigned First = Operator ? 1 : 0;
-      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
-      if (F->getNumParams() == 2) {
-        auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
-        Parameter = dereference(std::move(Address), L);
-        // The lognormal overload constructs a separate normal param_type
-        // before it invokes the generator. Preserve that copy boundary.
-        if (Info->Kind == ScalarRealDistributionKind::Lognormal) Parameter = snapshot(std::move(Parameter), L);
-      }
-      const auto Real = type(Info->ResultType, L);
-      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
-      if (Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) {
-        auto Count = Info->Second ? snapshot(fieldStorage(Parameter, Info->First, L), L) : one(type(Info->ResultType, L), L);
-        auto Probability = snapshot(fieldStorage(Parameter, Info->Second ? Info->Second : Info->First, L), L);
-        return emitNegativeBinomialRandom(Generator, *Random, Info->ResultType, Count, Probability, L);
-      }
-      if (Info->Kind == ScalarRealDistributionKind::Binomial)
-        return emitBinomialRandom(Generator, *Random, Parameter, *Info, L);
-      if (Info->Kind == ScalarRealDistributionKind::Poisson)
-        return emitPoissonRandom(Generator, *Random, Parameter, *Info, L);
-      if (Info->Kind == ScalarRealDistributionKind::Cauchy) {
-        auto Location = snapshot(cast(fieldStorage(Parameter, Info->First, L), "double", L), L);
-        auto Scale = snapshot(cast(fieldStorage(Parameter, Info->Second, L), "double", L), L);
-        auto Draw = emitCanonicalRandom(Generator, *Random,
-            Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
-        auto Pi = A.floatingLiteral(llvm::APFloat(llvm::APFloat::IEEEdouble(), llvm::APInt(64, 0x400921fb54442d18ULL)), L);
-        json::Array Args;
-        Args.push_back(binary("*", std::move(Pi), cast(std::move(Draw), "double", L), "double", L));
-        auto Tangent = snapshot(json::Object{{"kind", "unary"}, {"type", "double"}, {"operator", "tan"},
-            {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
-        return snapshot(cast(binary("+", Location, binary("*", Scale, Tangent, "double", L), "double", L), Real, L), L);
-      }
-      if (Info->Kind == ScalarRealDistributionKind::StudentT) {
-        // The SDK constructs its local Gamma before sampling the persistent normal.
-        auto Degree = fieldStorage(Parameter, Info->First, L);
-        auto Shape = snapshot(cast(binary("*", cast(Degree, "double", L),
-            A.floatingLiteral(llvm::APFloat(0.5), L), "double", L), Real, L), L);
-        auto NormalParameter = fieldStorage(State, Info->NestedStorage, L);
-        auto Normal = emitNormalRandom(Generator, *Random, Info->ResultType, State, Info->Cached, Info->CacheValid,
-            fieldStorage(NormalParameter, Info->NestedFirst, L), fieldStorage(NormalParameter, Info->NestedSecond, L), L);
-        auto Numerator = snapshot(Degree, L);
-        auto Gamma = emitGammaRandom(Generator, *Random, Info->ResultType, Shape,
-            cast(quantity(2, "int", L), Real, L), L);
-        json::Array Args;
-        Args.push_back(binary("/", Numerator, Gamma, Real, L));
-        auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
-            {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
-        return snapshot(binary("*", Normal, Factor, Real, L), L);
-      }
-      if (Info->Kind == ScalarRealDistributionKind::FisherF) {
-        auto Half = cast(A.floatingLiteral(llvm::APFloat(0.5), L), Real, L);
-        // Both local Gamma distributions are constructed before either draw.
-        auto MShape = snapshot(binary("*", fieldStorage(Parameter, Info->First, L), Half, Real, L), L);
-        auto NShape = snapshot(binary("*", fieldStorage(Parameter, Info->Second, L), Half, Real, L), L);
-        auto NumeratorDegree = snapshot(fieldStorage(Parameter, Info->Second, L), L);
-        auto X = emitGammaRandom(Generator, *Random, Info->ResultType, MShape, one(Real, L), L);
-        auto DenominatorDegree = snapshot(fieldStorage(Parameter, Info->First, L), L);
-        auto Y = emitGammaRandom(Generator, *Random, Info->ResultType, NShape, one(Real, L), L);
-        return snapshot(binary("/", binary("*", NumeratorDegree, X, Real, L),
-            binary("*", DenominatorDegree, Y, Real, L), Real, L), L);
-      }
-      if (Info->Kind == ScalarRealDistributionKind::ChiSquared) {
-        auto Two = cast(quantity(2, "int", L), Real, L);
-        return emitGammaRandom(Generator, *Random, Info->ResultType,
-            binary("/", fieldStorage(Parameter, Info->First, L), Two, Real, L), Two, L);
-      }
-      if (Info->Kind == ScalarRealDistributionKind::Gamma)
-        return emitGammaRandom(Generator, *Random, Info->ResultType,
-            fieldStorage(Parameter, Info->First, L), fieldStorage(Parameter, Info->Second, L), L);
-      if (Info->CacheValid) {
-        auto Value = emitNormalRandom(Generator, *Random, Info->ResultType, State, Info->Cached, Info->CacheValid,
-            scalarRealDistributionField(Parameter, *Info, false, L, F->getNumParams() == 2),
-            scalarRealDistributionField(Parameter, *Info, true, L, F->getNumParams() == 2), L);
-        if (Info->Kind != ScalarRealDistributionKind::Lognormal) return Value;
-        json::Array Arguments;
-        Arguments.push_back(std::move(Value));
-        return snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "exp"},
-            {"args", std::move(Arguments)}, {"loc", A.loc(L)}}, L);
-      }
-      auto Draw = emitCanonicalRandom(Generator, *Random,
-          Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
-      json::Array Arguments;
-      Arguments.push_back(binary("-", one(Real, L), std::move(Draw), Real, L));
-      auto Log = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
-          {"args", std::move(Arguments)}, {"loc", A.loc(L)}}, L);
-      json::Array Negative;
-      Negative.push_back(std::move(Log));
-      auto Numerator = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "-"},
-          {"args", std::move(Negative)}, {"loc", A.loc(L)}}, L);
-      if (Info->Kind == ScalarRealDistributionKind::Weibull) {
-        auto Shape = snapshot(fieldStorage(Parameter, Info->First, L), L);
-        auto Scale = snapshot(fieldStorage(Parameter, Info->Second, L), L);
-        auto Power = binary("pow", std::move(Numerator), binary("/", one(Real, L), Shape, Real, L), Real, L);
-        return snapshot(binary("*", Scale, std::move(Power), Real, L), L);
-      }
-      if (Info->Second) {
-        json::Array OuterArguments;
-        OuterArguments.push_back(std::move(Numerator));
-        auto OuterLog = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
-            {"args", std::move(OuterArguments)}, {"loc", A.loc(L)}}, L);
-        auto Location = snapshot(fieldStorage(Parameter, Info->First, L), L);
-        auto Scale = snapshot(fieldStorage(Parameter, Info->Second, L), L);
-        return snapshot(binary("-", std::move(Location),
-            binary("*", std::move(Scale), std::move(OuterLog), Real, L), Real, L), L);
-      }
-      auto Rate = snapshot(scalarRealDistributionField(std::move(Parameter), *Info, false, L), L);
-      return snapshot(binary("/", std::move(Numerator), std::move(Rate), Real, L), L);
-    }
-    if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
-      const auto *F = Call->getDirectCallee();
-      const auto *M = dyn_cast<CXXMethodDecl>(F);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedBernoulliRecord(A.S, A.Sources, R, A.Context);
-      if (!Info) reject(L, "Bernoulli distribution", "The checked distribution layout is unavailable.");
-      if (Operation == UtilityOperation::BernoulliEqual || Operation == UtilityOperation::BernoulliNotEqual) {
-        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        return binary(Operation == UtilityOperation::BernoulliEqual ? "==" : "!=",
-            fieldStorage(bernoulliParameter(dereference(std::move(Left), L), *Info, L), Info->Probability, L),
-            fieldStorage(bernoulliParameter(dereference(std::move(Right), L), *Info, L), Info->Probability, L), "bool", L);
-      }
-      const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::BernoulliAssign) {
-        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
-        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
-        return Place;
-      }
-      auto Parameter = bernoulliParameter(Place, *Info, L);
-      switch (Operation) {
-      case UtilityOperation::BernoulliProbability:
-        return snapshot(fieldStorage(std::move(Parameter), Info->Probability, L), L);
-      case UtilityOperation::BernoulliMinimum: return quantity(0, "bool", L);
-      case UtilityOperation::BernoulliMaximum: return quantity(1, "bool", L);
-      case UtilityOperation::BernoulliReset: return {};
-      case UtilityOperation::BernoulliParamGet: {
-        auto Value = snapshot(std::move(Parameter), L);
-        if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
-        return Value;
-      }
-      case UtilityOperation::BernoulliParamSet: {
-        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
-        return {};
-      }
-      default: break;
-      }
-      const auto Random = approvedBernoulliRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Random) reject(L, "Bernoulli generator", "The selected generator source is unavailable.");
-      const unsigned First = Operator ? 1 : 0;
-      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
-      if (F->getNumParams() == 2) {
-        auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
-        Parameter = dereference(std::move(Address), L);
-      }
-      auto Probability = snapshot(fieldStorage(std::move(Parameter), Info->Probability, L), L);
-      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
-      auto Draw = emitCanonicalRandom(Generator, *Random, 53, L);
-      return snapshot(binary("<", std::move(Draw), std::move(Probability), "bool", L), L);
-    }
-    if (Operation == UtilityOperation::GenerateCanonical) {
-      const auto Info = approvedCanonicalRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Info)
-        reject(L, "canonical random generation", "The selected generator source is unavailable.");
-      auto Storage = argument(Call->getArg(0), Info->Random.ObjectType);
-      CapturedAlgorithmPredicate Generator{std::move(Storage), Info->Random.ObjectType, Info->Random.Method, std::nullopt};
-      return emitCanonicalRandom(Generator, Info->Random, Info->Bits, L);
-    }
-    if (Operation >= UtilityOperation::UniformGenerate &&
-        Operation <= UtilityOperation::UniformAssign) {
-      const auto *F = Call->getDirectCallee();
-      const auto *M = dyn_cast<CXXMethodDecl>(F);
-      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      const auto *R = M ? M->getParent()
-          : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedUniformDistributionRecord(A.S, A.Sources, R, A.Context);
-      if (!Info)
-        reject(L, "uniform distribution", "The checked distribution layout is unavailable.");
-      if (Operation == UtilityOperation::UniformEqual ||
-          Operation == UtilityOperation::UniformNotEqual) {
-        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
-        auto LP = uniformDistributionParameter(dereference(std::move(Left), L), *Info, L);
-        auto RP = uniformDistributionParameter(dereference(std::move(Right), L), *Info, L);
-        auto Equal = snapshot(quantity(0, "bool", L), L);
-        const auto CompareUpper = labelName(), Done = labelName();
-        branch(binary("==", fieldStorage(LP, Info->Lower, L), fieldStorage(RP, Info->Lower, L), "bool", L), CompareUpper, Done, L);
-        label(CompareUpper, L);
-        assign(Equal, binary("==", fieldStorage(LP, Info->Upper, L), fieldStorage(RP, Info->Upper, L), "bool", L), L);
-        jump(Done, L);
-        label(Done, L);
-        return Operation == UtilityOperation::UniformNotEqual
-            ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : std::move(Equal);
-      }
-      const auto *Object = Operator ? Operator->getArg(0)
-          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::UniformAssign) {
-        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
-        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
-        return Place;
-      }
-      auto Parameter = uniformDistributionParameter(Place, *Info, L);
-      switch (Operation) {
-      case UtilityOperation::UniformLower:
-        return snapshot(fieldStorage(std::move(Parameter), Info->Lower, L), L);
-      case UtilityOperation::UniformUpper:
-        return snapshot(fieldStorage(std::move(Parameter), Info->Upper, L), L);
-      case UtilityOperation::UniformParamGet: {
-        auto Value = snapshot(std::move(Parameter), L);
-        if (Destination) {
-          assign(*Destination, std::move(Value), L);
-          return json::Object(*Destination);
-        }
-        return Value;
-      }
-      case UtilityOperation::UniformParamSet: {
-        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
-        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
-        return {};
-      }
-      case UtilityOperation::UniformReset:
-        return {};
-      default:
-        break;
-      }
-      const unsigned First = Operator ? 1 : 0;
-      const auto GeneratorType = F->getParamDecl(0)->getType();
-      const auto Random = approvedUniformDistributionRandomCall(A.S, A.Sources, Call, A.Context);
-      if (!Random)
-        reject(L, "uniform generator", "The selected generator source is unavailable.");
-      auto GeneratorAddress = argument(Call->getArg(First), GeneratorType);
-      if (F->getNumParams() == 2) {
-        auto ParameterAddress = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
-        Parameter = dereference(std::move(ParameterAddress), L);
-      }
-      auto Lower = snapshot(fieldStorage(Parameter, Info->Lower, L), L);
-      auto Upper = snapshot(fieldStorage(std::move(Parameter), Info->Upper, L), L);
-      if (Info->Real) {
-        CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), GeneratorType, Random->Method, std::nullopt};
-        const auto Real = type(Info->ResultType, L);
-        auto Span = snapshot(binary("-", Upper, Lower, Real, L), L);
-        const unsigned Digits = Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53;
-        auto Draw = emitCanonicalRandom(Generator, *Random, Digits, L);
-        return snapshot(binary("+", binary("*", Span, std::move(Draw), Real, L), Lower, Real, L), L);
-      }
-      const auto Unsigned = A.Context.getTypeSize(Info->ResultType) <= 32
-          ? A.Context.UnsignedIntTy : A.Context.getCorrespondingUnsignedType(Info->ResultType);
-      const auto U = type(Unsigned, L), Result = type(Info->ResultType, L);
-      auto Span = snapshot(binary("-", cast(Upper, U, L), cast(Lower, U, L), U, L), L);
-      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), GeneratorType, Random->Method, std::nullopt};
-      auto Draw = snapshot(emitAlgorithmRandom(Generator, *Random, Span, L), L);
-      auto Value = temporary(Result, L);
-      const auto Full = labelName(), Bounded = labelName(), Done = labelName();
-      branch(binary("==", binary("+", Span, quantity(1, U, L), U, L), quantity(0, U, L), "bool", L), Full, Bounded, L);
-      label(Full, L);
-      assign(Value, Draw, L);
-      jump(Done, L);
-      label(Bounded, L);
-      assign(Value, cast(binary("+", cast(Draw, U, L), cast(Lower, U, L), U, L), Result, L), L);
-      jump(Done, L);
-      label(Done, L);
-      return Value;
-    }
-    if (Operation >= UtilityOperation::SeedSequenceGenerate &&
-        Operation <= UtilityOperation::SeedSequenceParam) {
-      const auto *M = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
-      const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, M->getParent(), A.Context);
-      const auto *Object = llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
-      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-      auto Place = dereference(Receiver, L);
-      if (Operation == UtilityOperation::SeedSequenceSize)
-        return seedSequenceSize(std::move(Place), *Seq, L);
-      auto First = seedSequenceIterator(Call->getArg(0), L);
-      auto Element = Call->getArg(0)->getType();
-      if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
-              A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
-        Element = Wrapped->IteratorType;
-      Element = Element->getPointeeType();
-      if (Operation == UtilityOperation::SeedSequenceGenerate) {
-        auto Last = seedSequenceIterator(Call->getArg(1), L);
-        generateSeedSequence(std::move(Place), *Seq, std::move(First), std::move(Last), Element, L);
-      } else {
-        auto Count = seedSequenceSize(Place, *Seq, L);
-        auto Seeds = snapshot(seedSequenceMember(std::move(Place), *Seq, "nct_vector_begin", L), L);
-        const auto Size = type(A.Context.getSizeType(), L);
-        auto I = snapshot(quantity(0, Size, L), L);
-        const auto Check = labelName(), Copy = labelName(), Done = labelName();
-        jump(Check, L);
-        label(Check, L);
-        branch(binary("<", I, Count, "bool", L), Copy, Done, L);
-        label(Copy, L);
-        assign(index(First, I, type(Element, L), L),
-               cast(index(Seeds, I, type(Seq->ResultType, L), L), type(Element, L), L), L);
-        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
-        jump(Check, L);
-        label(Done, L);
-      }
-      return {};
-    }
-    auto ArrayFor = [&](QualType Type) {
-      return approvedUtilityArrayRecord(
-          A.S, A.Sources,
-          Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), A.Context);
-    };
-    auto InitializerListFor = [&](QualType Type) {
-      return approvedUtilityInitializerListRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
-    };
-    auto StringViewFor = [&](QualType Type) {
-      return approvedUtilityStringViewRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
-    };
-    auto StringFor = [&](QualType Type) {
-      return approvedUtilityStringRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
-    };
-    auto ReadStringAt = [&](Expression Address,
-                            const UtilityStringRecord &String) {
-      return readStringAt(std::move(Address), String, L);
-    };
-    auto SliceStringBytes = [&](Expression Data, Expression Size,
-                                Expression Position, Expression Requested) {
-      const auto SizeType = type(A.Context.getSizeType(), L);
-      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto ConstPointerType =
-          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
-      auto Length = temporary(SizeType, L);
-      const auto InRange = labelName(), OutOfRange = labelName(),
-                 UseCount = labelName(), UseRemaining = labelName(),
-                 Ready = labelName();
-      branch(
-          binary("<=", json::Object(Position), json::Object(Size), "bool", L),
-          InRange, OutOfRange, L);
-      label(InRange, L);
-      auto Remaining = temporary(SizeType, L);
-      assign(
-          Remaining,
-          binary("-", json::Object(Size), json::Object(Position), SizeType, L),
-          L);
-      branch(binary("<", json::Object(Requested), json::Object(Remaining),
-                    "bool", L),
-             UseCount, UseRemaining, L);
-      label(UseCount, L);
-      assign(Length, json::Object(Requested), L);
-      jump(Ready, L);
-      label(UseRemaining, L);
-      assign(Length, json::Object(Remaining), L);
-      jump(Ready, L);
-      label(OutOfRange, L);
-      assign(Position, json::Object(Size), L);
-      assign(Length, quantity(0, SizeType, L), L);
-      jump(Ready, L);
-      label(Ready, L);
-      const auto Offset = labelName(), Positioned = labelName();
-      branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
-                    "bool", L),
-             Offset, Positioned, L);
-      label(Offset, L);
-      assign(Data,
-             binary("+", json::Object(Data),
-                    cast(json::Object(Position), DifferenceType, L),
-                    ConstPointerType, L),
-             L);
-      jump(Positioned, L);
-      label(Positioned, L);
-      return std::pair<Expression, Expression>{std::move(Data),
-                                               std::move(Length)};
-    };
-    auto ReadStringSlice = [&](Expression Address,
-                               const UtilityStringRecord &String,
-                               Expression Position, Expression Requested) {
-      auto [Data, Size] = ReadStringAt(std::move(Address), String);
-      return SliceStringBytes(std::move(Data), std::move(Size),
-                              std::move(Position), std::move(Requested));
-    };
-    auto ReadStringViewAt = [&](unsigned Index) {
-      const auto *Argument = Call->getArg(Index);
-      const auto View = approvedUtilityStringViewRecord(
-          A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!View)
-        reject(L, "string view source",
-               "The selected std::string_view layout is unavailable.");
-      auto Value = snapshot(expression(Argument), L);
-      auto Data = snapshot(fieldStorage(json::Object(Value), View->Data, L), L);
-      auto Size = snapshot(fieldStorage(std::move(Value), View->Size, L), L);
-      return std::pair<Expression, Expression>{std::move(Data),
-                                               std::move(Size)};
-    };
-    auto StringSliceArgument = [&](unsigned Index) {
-      const auto *Argument = Call->getArg(Index);
-      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
-        Argument = selectedDefaultArgument(Default, A.Context);
-      if (!Argument)
-        reject(L, "string slice",
-               "The selected string slice argument is unavailable.");
-      return snapshot(expression(Argument), L);
-    };
-    auto ReadCStringAt = [&](Expression Data) {
-      const auto SizeType = type(A.Context.getSizeType(), L);
-      const auto PointerType =
-          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
-      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      auto Cursor = temporary(PointerType, L);
-      auto Size = temporary(SizeType, L);
-      assign(Cursor, json::Object(Data), L);
-      assign(Size, quantity(0, SizeType, L), L);
-      const auto Check = labelName(), Advance = labelName();
-      const auto Ready = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("==", dereference(json::Object(Cursor), L),
-                    quantity(0, type(A.Context.CharTy, L), L), "bool", L),
-             Ready, Advance, L);
-      label(Advance, L);
-      assign(Cursor,
-             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
-                    PointerType, L),
-             L);
-      assign(Size,
-             binary("+", json::Object(Size), quantity(1, SizeType, L), SizeType,
-                    L),
-             L);
-      jump(Check, L);
-      label(Ready, L);
-      return std::pair<Expression, Expression>{std::move(Data),
-                                               std::move(Size)};
-    };
-    auto VectorFor = [&](QualType Type) {
-      return approvedUtilityVectorRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
-    };
-    auto OptionalFor = [&](QualType Type) {
-      return approvedUtilityOptionalRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
-    };
-    auto TupleFor = [&](QualType Type) {
-      const auto *Record =
-          Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
-      auto Tuple = approvedUtilityTupleRecord(A.S, A.Sources, Record, A.Context);
-      if (!Tuple)
-        Tuple = approvedUtilityReferenceTupleRecord(A.S, A.Sources, Record,
-                                                    A.Context);
-      return Tuple;
-    };
-    auto TupleElement = [&](Expression Base, const UtilityTupleElement &Field,
-                            bool ReadOnly) {
-      auto Element = fieldStorage(std::move(Base), Field, L, ReadOnly);
-      return Field.getType()->isReferenceType()
-                 ? dereference(std::move(Element), L)
-                 : std::move(Element);
-    };
-    auto MemberObject = [&]() -> const Expr * {
-      if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
-        return Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
-      if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call))
-        return Member->getImplicitObjectArgument();
-      return nullptr;
-    };
-    auto UniquePtrMember = [&](Expression Base,
-                               const UtilityUniquePtrRecord &Unique) {
-      return Expression{{"kind", "member"},
-                        {"type", type(Unique.PointerType, L)},
-                        {"name", "nct_unique_ptr_pointer"},
-                        {"args", json::Array{std::move(Base)}},
-                        {"loc", A.loc(L)}};
-    };
-    auto ReferenceMember = [&](Expression Base,
-                               const FunctionalReferenceRecord &Wrapper) {
-      return Expression{{"kind", "member"},
-                        {"type", type(Wrapper.PointerType, L)},
-                        {"name", "nct_reference_wrapper_pointer"},
-                        {"args", json::Array{std::move(Base)}},
-                        {"loc", A.loc(L)}};
-    };
-    auto OptionalObject = [&]() -> const Expr * {
-      const Expr *Object = MemberObject();
-      while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Object)) {
-        if (Cast->getCastKind() != CK_NoOp &&
-            Cast->getCastKind() != CK_DerivedToBase &&
-            Cast->getCastKind() != CK_UncheckedDerivedToBase)
-          break;
-        Object = Cast->getSubExpr();
-      }
-      return Object;
-    };
-    auto ArrayElement = [&](Expression Base, const UtilityArrayRecord &Array,
-                            Expression Position, QualType ResultType,
-                            bool ReadOnly = false) {
-      auto PointeeType = ReadOnly ? ResultType.withConst() : ResultType;
-      auto PointerType = type(A.Context.getPointerType(PointeeType), L);
-      auto Elements = fieldStorage(std::move(Base), Array.Elements, L);
-      return index(decay(std::move(Elements), PointerType, L),
-                   std::move(Position), type(ResultType, L), L);
-    };
-    using UtilityComparisonLeaves =
-        std::vector<std::pair<Expression, Expression>>;
-    auto CollectUtilityComparisonLeaves =
-        [&](auto &&Collect, const Expression &LeftValue, QualType LeftType,
-            const Expression &RightValue, QualType RightType, bool Ordered,
-            UtilityComparisonLeaves &Leaves, unsigned Depth) -> bool {
-      if (Depth > 64 || LeftType.isNull() || RightType.isNull())
-        return false;
-      if (LeftType->isReferenceType() || RightType->isReferenceType()) {
-        auto LeftReferent = json::Object(LeftValue);
-        auto RightReferent = json::Object(RightValue);
-        if (LeftType->isReferenceType()) {
-          LeftReferent = dereference(std::move(LeftReferent), L);
-          LeftType = LeftType->getPointeeType();
-        }
-        if (RightType->isReferenceType()) {
-          RightReferent = dereference(std::move(RightReferent), L);
-          RightType = RightType->getPointeeType();
-        }
-        return Collect(Collect, LeftReferent, LeftType, RightReferent,
-                       RightType, Ordered, Leaves, Depth + 1);
-      }
-      if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
-                                                          RightType, Ordered)) {
-        const auto CommonType = type(*Common, L);
-        Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
-                            cast(json::Object(RightValue), CommonType, L));
-        return true;
-      }
-      if (!Ordered) {
-        if (const auto Common =
-                utilityCallbackComparisonType(A.Context, LeftType, RightType)) {
-          const auto CommonType = type(*Common, L);
-          Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
-                              cast(json::Object(RightValue), CommonType, L));
-          return true;
-        }
-      }
-
-      const auto LeftArray = ArrayFor(LeftType);
-      const auto RightArray = ArrayFor(RightType);
-      if (LeftArray || RightArray) {
-        if (!LeftArray || !RightArray ||
-            LeftArray->Record->getCanonicalDecl() !=
-                RightArray->Record->getCanonicalDecl() ||
-            LeftArray->Size != RightArray->Size)
-          return false;
-        const auto SizeType = type(A.Context.getSizeType(), L);
-        for (uint64_t I = 0; I < LeftArray->Size; ++I) {
-          auto LeftElement = ArrayElement(json::Object(LeftValue), *LeftArray,
-                                          quantity(I, SizeType, L),
-                                          LeftArray->ElementType, true);
-          auto RightElement = ArrayElement(
-              json::Object(RightValue), *RightArray, quantity(I, SizeType, L),
-              RightArray->ElementType, true);
-          if (!Collect(Collect, LeftElement, LeftArray->ElementType,
-                       RightElement, RightArray->ElementType, Ordered, Leaves,
-                       Depth + 1))
-            return false;
-        }
-        return true;
-      }
-
-      auto LeftPair = approvedUtilityPairRecord(
-          A.S, A.Sources, LeftType.getUnqualifiedType()->getAsCXXRecordDecl(),
-          A.Context);
-      auto RightPair = approvedUtilityPairRecord(
-          A.S, A.Sources, RightType.getUnqualifiedType()->getAsCXXRecordDecl(),
-          A.Context);
-      if (!LeftPair)
-        LeftPair = approvedUtilityReferencePairRecord(
-            A.S, A.Sources,
-            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
-      if (!RightPair)
-        RightPair = approvedUtilityReferencePairRecord(
-            A.S, A.Sources,
-            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
-      if (!LeftPair)
-        LeftPair = approvedUtilityMixedReferencePairRecord(
-            A.S, A.Sources,
-            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
-      if (!RightPair)
-        RightPair = approvedUtilityMixedReferencePairRecord(
-            A.S, A.Sources,
-            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
-      if (LeftPair || RightPair) {
-        if (!LeftPair || !RightPair)
-          return false;
-        auto LeftFirst =
-            fieldStorage(json::Object(LeftValue), LeftPair->First, L);
-        auto RightFirst =
-            fieldStorage(json::Object(RightValue), RightPair->First, L);
-        if (!Collect(Collect, LeftFirst, LeftPair->First->getType(), RightFirst,
-                     RightPair->First->getType(), Ordered, Leaves, Depth + 1))
-          return false;
-        auto LeftSecond =
-            fieldStorage(json::Object(LeftValue), LeftPair->Second, L);
-        auto RightSecond =
-            fieldStorage(json::Object(RightValue), RightPair->Second, L);
-        return Collect(Collect, LeftSecond, LeftPair->Second->getType(),
-                       RightSecond, RightPair->Second->getType(), Ordered,
-                       Leaves, Depth + 1);
-      }
-
-      auto LeftTuple = TupleFor(LeftType);
-      auto RightTuple = TupleFor(RightType);
-      if (!LeftTuple)
-        LeftTuple = approvedUtilityMixedReferenceTupleRecord(
-            A.S, A.Sources,
-            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
-      if (!RightTuple)
-        RightTuple = approvedUtilityMixedReferenceTupleRecord(
-            A.S, A.Sources,
-            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
-      if (!LeftTuple && !RightTuple)
-        return false;
-      if (!LeftTuple || !RightTuple ||
-          LeftTuple->Elements.size() != RightTuple->Elements.size())
-        return false;
-      for (unsigned I = 0; I < LeftTuple->Elements.size(); ++I) {
-        auto LeftElement =
-            fieldStorage(json::Object(LeftValue), LeftTuple->Elements[I], L);
-        auto RightElement =
-            fieldStorage(json::Object(RightValue), RightTuple->Elements[I], L);
-        if (!Collect(Collect, LeftElement, LeftTuple->Elements[I].getType(),
-                     RightElement, RightTuple->Elements[I].getType(), Ordered,
-                     Leaves, Depth + 1))
-          return false;
-      }
-      return true;
-    };
-    auto CompareUtilityValues =
-        [&](llvm::StringRef Operator, const Expression &LeftValue,
-            QualType LeftType, const Expression &RightValue,
-            QualType RightType) -> Expression {
-      const bool Ordered = Operator != "==" && Operator != "!=";
-      if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
-                                                          RightType, Ordered)) {
-        // Scalar relations must preserve unordered floating-point results.
-        // Recursive comparisons below use the aggregate's lexicographic rules.
-        const auto CommonType = type(*Common, L);
-        return binary(Operator, cast(json::Object(LeftValue), CommonType, L),
-                      cast(json::Object(RightValue), CommonType, L), "bool", L);
-      }
-      UtilityComparisonLeaves Leaves;
-      if (!CollectUtilityComparisonLeaves(CollectUtilityComparisonLeaves,
-                                          LeftValue, LeftType, RightValue,
-                                          RightType, Ordered, Leaves, 0))
-        reject(L, "utility value comparison",
-               "The selected values have no approved recursive comparison.");
-      auto Equal = [&]() -> Expression {
-        if (Leaves.empty())
-          return boolean(true, L);
-        auto Result = temporary("bool", L);
-        const auto True = labelName(), False = labelName(), End = labelName();
-        std::vector<std::string> Next;
-        Next.reserve(Leaves.size() - 1);
-        for (std::size_t I = 1; I < Leaves.size(); ++I)
-          Next.push_back(labelName());
-        for (std::size_t I = 0; I < Leaves.size(); ++I) {
-          const auto Success = I + 1 == Leaves.size() ? True : Next[I];
-          branch(binary("==", json::Object(Leaves[I].first),
-                        json::Object(Leaves[I].second), "bool", L),
-                 Success, False, L);
-          if (I + 1 != Leaves.size())
-            label(Next[I], L);
-        }
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      auto Less = [&](bool ReverseOrder) -> Expression {
-        if (Leaves.empty())
-          return boolean(false, L);
-        auto Result = temporary("bool", L);
-        const auto True = labelName(), False = labelName(), End = labelName();
-        for (const auto &Leaf : Leaves) {
-          const auto Reverse = labelName(), Next = labelName();
-          const auto &First = ReverseOrder ? Leaf.second : Leaf.first;
-          const auto &Second = ReverseOrder ? Leaf.first : Leaf.second;
-          branch(
-              binary("<", json::Object(First), json::Object(Second), "bool", L),
-              True, Reverse, L);
-          label(Reverse, L);
-          branch(
-              binary("<", json::Object(Second), json::Object(First), "bool", L),
-              False, Next, L);
-          label(Next, L);
-        }
-        jump(False, L);
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      Expression Result;
-      bool Negate = false;
-      if (Operator == "==")
-        Result = Equal();
-      else if (Operator == "!=") {
-        Result = Equal();
-        Negate = true;
-      } else if (Operator == "<")
-        Result = Less(false);
-      else if (Operator == ">")
-        Result = Less(true);
-      else if (Operator == "<=") {
-        Result = Less(true);
-        Negate = true;
-      } else if (Operator == ">=") {
-        Result = Less(false);
-        Negate = true;
-      } else {
-        reject(L, "utility value comparison",
-               "Unknown approved recursive comparison.");
-      }
-      if (!Negate)
-        return Result;
-      return snapshot(Expression{{"kind", "unary"},
-                                 {"type", "bool"},
-                                 {"operator", "!"},
-                                 {"args", json::Array{std::move(Result)}},
-                                 {"loc", A.loc(L)}},
-                      L);
-    };
-    auto UtilityComparisonOperator = [&](UtilityOperation Comparison) {
-      switch (Comparison) {
-      case UtilityOperation::PairEqual:
-      case UtilityOperation::TupleEqual:
-      case UtilityOperation::ArrayEqual:
-      case UtilityOperation::OptionalEqual:
-        return llvm::StringRef("==");
-      case UtilityOperation::PairNotEqual:
-      case UtilityOperation::TupleNotEqual:
-      case UtilityOperation::ArrayNotEqual:
-      case UtilityOperation::OptionalNotEqual:
-        return llvm::StringRef("!=");
-      case UtilityOperation::PairLess:
-      case UtilityOperation::TupleLess:
-      case UtilityOperation::ArrayLess:
-      case UtilityOperation::OptionalLess:
-        return llvm::StringRef("<");
-      case UtilityOperation::PairGreater:
-      case UtilityOperation::TupleGreater:
-      case UtilityOperation::ArrayGreater:
-      case UtilityOperation::OptionalGreater:
-        return llvm::StringRef(">");
-      case UtilityOperation::PairLessEqual:
-      case UtilityOperation::TupleLessEqual:
-      case UtilityOperation::ArrayLessEqual:
-      case UtilityOperation::OptionalLessEqual:
-        return llvm::StringRef("<=");
-      case UtilityOperation::PairGreaterEqual:
-      case UtilityOperation::TupleGreaterEqual:
-      case UtilityOperation::ArrayGreaterEqual:
-      case UtilityOperation::OptionalGreaterEqual:
-        return llvm::StringRef(">=");
-      default:
-        reject(L, "utility value comparison",
-               "Unknown approved comparison operation.");
-      }
-    };
-    auto AlgorithmElementType = [&](unsigned Index) {
-      const auto Iterator = Call->getArg(Index)->getType();
-      const auto Wrapped = approvedUtilityWrapIteratorRecord(
-          A.S, A.Sources, Iterator->getAsCXXRecordDecl(), A.Context);
-      return Wrapped ? Wrapped->IteratorType->getPointeeType()
-                     : Iterator->getPointeeType();
-    };
-    auto AlgorithmSourceCompare =
-        [&](Expression Left, unsigned LeftIndex, Expression Right,
-            unsigned RightIndex,
-            OverloadedOperatorKind Operator) -> std::optional<Expression> {
-      const auto LeftType = AlgorithmElementType(LeftIndex);
-      const auto RightType = AlgorithmElementType(RightIndex);
-      const auto SourceComparison =
-          A.Context.hasSameUnqualifiedType(LeftType, RightType)
-              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
-                                                       Operator, A.Context)
-              : std::nullopt;
-      if (SourceComparison) {
-        auto LeftAddress =
-            snapshot(address(std::move(Left), LeftType.withConst(), L), L);
-        auto RightAddress =
-            snapshot(address(std::move(Right), RightType.withConst(), L), L);
-        return compareVectorSourceElements(
-            std::move(LeftAddress), std::move(RightAddress),
-            SourceComparison->Member,
-            SourceComparison->Friend ? SourceComparison->Friend
-                                     : SourceComparison->Namespace,
-            L);
-      }
-      return std::nullopt;
-    };
-    auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
-                              Expression Right, unsigned RightIndex) {
-      if (auto Source = AlgorithmSourceCompare(json::Object(Left), LeftIndex,
-                                               json::Object(Right), RightIndex,
-                                               OO_EqualEqual))
-        return std::move(*Source);
-      return CompareUtilityValues("==", Left, AlgorithmElementType(LeftIndex),
-                                  Right, AlgorithmElementType(RightIndex));
-    };
-    auto AlgorithmLess = [&](Expression Left, unsigned LeftIndex,
-                             Expression Right, unsigned RightIndex) {
-      if (auto Source =
-              AlgorithmSourceCompare(json::Object(Left), LeftIndex,
-                                     json::Object(Right), RightIndex, OO_Less))
-        return std::move(*Source);
-      return CompareUtilityValues("<", Left, AlgorithmElementType(LeftIndex),
-                                  Right, AlgorithmElementType(RightIndex));
-    };
-    auto AlgorithmReferenceLess = [&](Expression LeftAddress,
-                                      Expression RightAddress) {
-      const auto SourceComparison = approvedUtilityTrivialSourceComparison(
-          A.S, A.Sources, Call->getArg(0)->getType(), OO_Less, A.Context);
-      if (SourceComparison)
-        return compareVectorSourceElements(
-            std::move(LeftAddress), std::move(RightAddress),
-            SourceComparison->Member,
-            SourceComparison->Friend ? SourceComparison->Friend
-                                     : SourceComparison->Namespace,
-            L);
-      return binary("<", dereference(std::move(LeftAddress), L),
-                    dereference(std::move(RightAddress), L), "bool", L);
-    };
-    auto AlgorithmRangeValueLess = [&](Expression Left, QualType LeftType,
-                                       Expression Right, QualType RightType) {
-      const auto SourceComparison =
-          A.Context.hasSameUnqualifiedType(LeftType, RightType)
-              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
-                                                       OO_Less, A.Context)
-              : std::nullopt;
-      if (SourceComparison) {
-        auto LeftAddress =
-            snapshot(address(std::move(Left), LeftType.withConst(), L), L);
-        auto RightAddress =
-            snapshot(address(std::move(Right), RightType.withConst(), L), L);
-        return compareVectorSourceElements(
-            std::move(LeftAddress), std::move(RightAddress),
-            SourceComparison->Member,
-            SourceComparison->Friend ? SourceComparison->Friend
-                                     : SourceComparison->Namespace,
-            L);
-      }
-      const auto Common =
-          utilityScalarComparisonType(A.Context, LeftType, RightType, true);
-      if (!Common)
-        reject(L, "ordered algorithm query",
-               "The range element and value have no ordered common type.");
-      const auto ComparisonType = type(*Common, L);
-      return binary("<", cast(std::move(Left), ComparisonType, L),
-                    cast(std::move(Right), ComparisonType, L), "bool", L);
-    };
-    auto AlgorithmRangeValue = [&](unsigned Index)
-        -> std::pair<Expression, QualType> {
-      const auto IteratorType = Call->getArg(Index)->getType();
-      const auto Wrapped = approvedUtilityWrapIteratorRecord(
-          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
-      auto Value = snapshot(expression(Call->getArg(Index)), L);
-      if (Wrapped)
-        return {snapshot(fieldStorage(std::move(Value), Wrapped->Current, L),
-                         L),
-                Wrapped->IteratorType};
-      return {std::move(Value), IteratorType};
-    };
-    auto AlgorithmIteratorResult = [&](Expression Pointer,
-                                       unsigned OutputIndex) -> Expression {
-      const auto IteratorType = Call->getArg(OutputIndex)->getType();
-      const auto Wrapped = approvedUtilityWrapIteratorRecord(
-          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
-      if (!Wrapped)
-        return Pointer;
-      auto Place = Destination ? std::move(*Destination)
-                               : objectTemporary(Call->getType(), L);
-      Destination.reset();
-      if (Place.getString("type") != type(Call->getType(), L))
-        reject(L, "algorithm iterator result",
-               "The iterator destination type differs from its result.");
-      assign(fieldStorage(json::Object(Place), Wrapped->Current, L),
-             std::move(Pointer), L);
-      return Place;
-    };
-    auto AlgorithmPairIteratorField = [&](Expression Place,
-                                          const FieldDecl *Field,
-                                          unsigned IteratorIndex) {
-      auto Member = fieldStorage(std::move(Place), Field, L);
-      const auto Wrapped = approvedUtilityWrapIteratorRecord(
-          A.S, A.Sources,
-          Call->getArg(IteratorIndex)->getType()->getAsCXXRecordDecl(),
-          A.Context);
-      return Wrapped ? fieldStorage(std::move(Member), Wrapped->Current, L)
-                     : Member;
-    };
-    auto ReverseFor = [&](QualType Type) {
-      return approvedUtilityReverseIteratorRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
-    };
-    auto ReverseCurrent = [&](Expression Base,
-                              const UtilityReverseIteratorRecord &Reverse) {
-      auto Current = fieldStorage(std::move(Base), Reverse.Current, L);
-      return Reverse.WrappedCurrent
-                 ? fieldStorage(std::move(Current), Reverse.WrappedCurrent, L)
-                 : Current;
-    };
-    auto ReverseValue = [&](Expression Pointer,
-                            const UtilityReverseIteratorRecord &Reverse) {
-      auto RecordType = A.Context.getRecordType(Reverse.Record);
-      auto Place = Destination ? std::move(*Destination)
-                               : objectTemporary(RecordType, L);
-      Destination.reset();
-      if (Place.getString("type") != type(RecordType, L))
-        reject(
-            L, "reverse iterator result",
-            "The destination type differs from the reverse iterator result.");
-      auto Value = snapshot(
-          cast(std::move(Pointer), type(Reverse.PointerType, L), L), L);
-      auto MemberPointer = [&](const FieldDecl *Field) {
-        auto Member = fieldStorage(json::Object(Place), Field, L);
-        return Reverse.WrappedCurrent
-                   ? fieldStorage(std::move(Member), Reverse.WrappedCurrent, L)
-                   : Member;
-      };
-      assign(MemberPointer(Reverse.Legacy), json::Object(Value), L);
-      assign(MemberPointer(Reverse.Current), std::move(Value), L);
-      return Place;
-    };
-    auto AllocatorMaximum = [&](const UtilityAllocatorRecord &Allocator,
-                                llvm::StringRef Description) {
-      if (Allocator.ElementType->isVoidType() ||
-          Allocator.ElementType->isIncompleteType())
-        reject(L, Description,
-               "A checked complete std::allocator element is required.");
-      const auto ResultType = type(Call->getType(), L);
-      const unsigned Bits = integerBits(ResultType);
-      const uint64_t Maximum = Bits == 64
-                                   ? std::numeric_limits<uint64_t>::max()
-                                   : (uint64_t(1) << Bits) - 1;
-      const uint64_t ElementBytes =
-          A.Context.getTypeSizeInChars(Allocator.ElementType).getQuantity();
-      if (!ElementBytes)
-        reject(L, Description,
-               "The allocator element must have positive complete size.");
-      return quantity(Maximum / ElementBytes, ResultType, L);
-    };
-    auto ConstructAt = [&](Expression Place, QualType ElementType,
-                           const CXXConstructorDecl *Constructor,
-                           const CXXConstructExpr *Construction,
-                           unsigned ArgumentIndex,
-                           llvm::StringRef Description) {
-      if (ArgumentIndex > Call->getNumArgs())
-        reject(L, Description,
-               "The checked construction arguments are missing.");
-      const unsigned ArgumentCount = Call->getNumArgs() - ArgumentIndex;
-      if (!Constructor) {
-        if (!ArgumentCount) {
-          initializeZero(std::move(Place), ElementType, L);
-          return;
-        }
-        if (ArgumentCount != 1)
-          reject(L, Description,
-                 "A scalar construction needs zero or one argument.");
-        assign(std::move(Place),
-               cast(expression(Call->getArg(ArgumentIndex)),
-                    type(ElementType, L), L),
-               L);
-        return;
-      }
-
-      const unsigned ConstructionArguments =
-          Construction ? Construction->getNumArgs() : ArgumentCount;
-      if (ConstructionArguments < ArgumentCount ||
-          Constructor->getNumParams() != ConstructionArguments)
-        reject(L, Description,
-               "The selected constructor and argument counts differ.");
-      if (!ConstructionArguments && Constructor->isDefaultConstructor()) {
-        constructMemoryDefault(std::move(Place), ElementType, Constructor, true,
-                               L);
-        return;
-      }
-      if (ArgumentCount == 1 && ConstructionArguments == 1 &&
-          Constructor->isCopyOrMoveConstructor()) {
-        auto Source = argument(Call->getArg(ArgumentIndex),
-                               Constructor->getParamDecl(0)->getType());
-        constructMemorySource(std::move(Place), ElementType, Constructor,
-                              std::move(Source), L);
-        return;
-      }
-      if (Constructor->isTrivial() || !Constructor->hasBody())
-        reject(L, Description,
-               "The selected source constructor has no checked body.");
-      json::Array Args;
-      Args.push_back(snapshot(
-          address(std::move(Place), ElementType.getUnqualifiedType(), L), L));
-      for (unsigned I = 0; I < ConstructionArguments; ++I) {
-        const auto Parameter = Constructor->getParamDecl(I)->getType();
-        const auto *Actual = I < ArgumentCount ? Call->getArg(ArgumentIndex + I)
-                                               : Construction->getArg(I);
-        if (Parameter->isReferenceType() || recordValue(Parameter))
-          Args.push_back(argument(Actual, Parameter));
-        else
-          Args.push_back(snapshot(
-              cast(argument(Actual, Parameter), type(Parameter, L), L), L));
-      }
-      chargeCall(Args, L);
-      Body.push_back(json::Object{{"op", "call"},
-                                  {"callee", A.name(Constructor)},
-                                  {"args", std::move(Args)},
-                                  {"loc", A.loc(L)}});
-    };
-    auto AllocatorConstruct = [&](const UtilityAllocatorConstructCall &Info,
-                                  unsigned PointerIndex,
-                                  unsigned ArgumentIndex) {
-      if (PointerIndex >= Call->getNumArgs() ||
-          ArgumentIndex > Call->getNumArgs())
-        reject(L, "allocator construct",
-               "The checked pointer and construction arguments are missing.");
-      auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
-      ConstructAt(dereference(std::move(Pointer), L), Info.ElementType,
-                  Info.Constructor, Info.Construction, ArgumentIndex,
-                  "allocator construct");
-    };
-    auto AllocatorHeap = [&](const UtilityAllocatorHeapCall &Info) {
-      if (Info.Traits) {
-        if (!Call->getNumArgs())
-          reject(L, "allocator heap operation",
-                 "A checked allocator reference is required.");
-        lvalue(Call->getArg(0));
-      } else {
-        const auto *Object = MemberObject();
-        if (!Object)
-          reject(L, "allocator heap operation",
-                 "A checked std::allocator receiver is required.");
-        lvalue(Object);
-      }
-      const unsigned First = Info.Traits ? 1u : 0u;
-      const auto Size = type(A.Context.getSizeType(), L);
-      const uint64_t ElementBytes =
-          A.Context.getTypeSizeInChars(Info.Allocator.ElementType)
-              .getQuantity();
-      if (!ElementBytes)
-        reject(L, "allocator heap operation",
-               "The allocator element must have positive complete size.");
-
-      if (Info.Allocate) {
-        if (First >= Call->getNumArgs())
-          reject(L, "allocator allocation",
-                 "A checked element count within max_size is required.");
-        auto Count = snapshot(expression(Call->getArg(First)), L);
-        if (Info.Hint) {
-          if (First + 1 >= Call->getNumArgs())
-            reject(L, "allocator allocation",
-                   "The allocation hint is missing.");
-          discard(Call->getArg(First + 1));
-        }
-        const auto *Function =
-            A.allocatorHeapFunction(true, Info.Allocator.ElementType, L);
-        json::Array Args;
-        Args.push_back(cast(binary("*", std::move(Count),
-                                   quantity(ElementBytes, Size, L), Size, L),
-                            type(Function->getParamDecl(0)->getType(), L), L));
-        chargeCall(Args, L);
-        auto Storage = temporary(type(Function->getReturnType(), L), L);
-        Body.push_back(json::Object{{"op", "call"},
-                                    {"callee", A.name(Function)},
-                                    {"args", std::move(Args)},
-                                    {"target", json::Object(Storage)},
-                                    {"loc", A.loc(L)}});
-        return snapshot(cast(std::move(Storage), type(Call->getType(), L), L),
-                        L);
-      }
-
-      if (First + 1 >= Call->getNumArgs())
-        reject(L, "allocator deallocation",
-               "A checked pointer and element count are required.");
-      auto Pointer = snapshot(expression(Call->getArg(First)), L);
-      auto Count = snapshot(expression(Call->getArg(First + 1)), L);
-      const auto *Function =
-          A.allocatorHeapFunction(false, Info.Allocator.ElementType, L);
-      json::Array Args;
-      Args.push_back(cast(std::move(Pointer),
-                          type(Function->getParamDecl(0)->getType(), L), L));
-      if (Function->getNumParams() == 2)
-        Args.push_back(cast(binary("*", std::move(Count),
-                                   quantity(ElementBytes, Size, L), Size, L),
-                            type(Function->getParamDecl(1)->getType(), L), L));
-      chargeCall(Args, L);
-      Body.push_back(json::Object{{"op", "call"},
-                                  {"callee", A.name(Function)},
-                                  {"args", std::move(Args)},
-                                  {"loc", A.loc(L)}});
-      return Expression();
-    };
+  Expression utilityCStringOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L) {
     switch (Operation) {
     case UtilityOperation::CStringLength: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
@@ -8246,6 +6392,27 @@ class FunctionLowering {
       label(End, L);
       return Destination;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename StringForFunction, typename VectorForFunction, typename MemberObjectFunction, typename UniquePtrMemberFunction, typename ReferenceMemberFunction, typename AllocatorMaximumFunction, typename ConstructAtFunction, typename AllocatorConstructFunction, typename AllocatorHeapFunction>
+  Expression utilityMemoryOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      StringForFunction &StringFor,
+      VectorForFunction &VectorFor,
+      MemberObjectFunction &MemberObject,
+      UniquePtrMemberFunction &UniquePtrMember,
+      ReferenceMemberFunction &ReferenceMember,
+      AllocatorMaximumFunction &AllocatorMaximum,
+      ConstructAtFunction &ConstructAt,
+      AllocatorConstructFunction &AllocatorConstruct,
+      AllocatorHeapFunction &AllocatorHeap) {
+    switch (Operation) {
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
     case UtilityOperation::MoveIfNoexcept:
@@ -9442,6 +7609,20 @@ class FunctionLowering {
                       *Selected, L);
       return {};
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction>
+  Expression utilityNumericOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult) {
+    switch (Operation) {
     case UtilityOperation::NumericIota: {
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
@@ -10678,6 +8859,24 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename CompareUtilityValuesFunction, typename AlgorithmEqualFunction, typename AlgorithmLessFunction, typename AlgorithmRangeValueLessFunction, typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction>
+  Expression utilityAlgorithmRangeOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      CompareUtilityValuesFunction &CompareUtilityValues,
+      AlgorithmEqualFunction &AlgorithmEqual,
+      AlgorithmLessFunction &AlgorithmLess,
+      AlgorithmRangeValueLessFunction &AlgorithmRangeValueLess,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmFind: {
       // Function arguments are all bound before the algorithm body. Choose
       // the permitted left-to-right C++17 order, retaining the value referent
@@ -11115,7 +9314,7 @@ class FunctionLowering {
       auto BoundaryType =
           Counted ? Call->getArg(1)->getType() : PointerQualType;
       if (Counted) {
-        if (const auto *Enumeration = BoundaryType->getAs<EnumType>())
+        if (const auto *Enumeration = BoundaryType->template getAs<EnumType>())
           BoundaryType = Enumeration->getDecl()->getPromotionType();
         else if (A.Context.isPromotableIntegerType(BoundaryType))
           BoundaryType = A.Context.getPromotedIntegerType(BoundaryType);
@@ -12187,6 +10386,26 @@ class FunctionLowering {
       label(End, L);
       return AlgorithmIteratorResult(std::move(Output), 2);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename ReferenceMemberFunction, typename CompareUtilityValuesFunction, typename AlgorithmEqualFunction, typename AlgorithmLessFunction, typename AlgorithmRangeValueLessFunction, typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction, typename AlgorithmPairIteratorFieldFunction>
+  Expression utilityAlgorithmSearchOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      ReferenceMemberFunction &ReferenceMember,
+      CompareUtilityValuesFunction &CompareUtilityValues,
+      AlgorithmEqualFunction &AlgorithmEqual,
+      AlgorithmLessFunction &AlgorithmLess,
+      AlgorithmRangeValueLessFunction &AlgorithmRangeValueLess,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult,
+      AlgorithmPairIteratorFieldFunction &AlgorithmPairIteratorField) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmSearch:
     case UtilityOperation::AlgorithmFindEnd: {
       const bool LastMatch = Operation == UtilityOperation::AlgorithmFindEnd;
@@ -13444,6 +11663,24 @@ class FunctionLowering {
       label(End, L);
       return AlgorithmIteratorResult(std::move(Output), 4);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename InitializerListForFunction, typename CompareUtilityValuesFunction, typename AlgorithmLessFunction, typename AlgorithmReferenceLessFunction, typename AlgorithmRangeValueFunction, typename AlgorithmPairIteratorFieldFunction>
+  Expression utilityAlgorithmSelectionOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      InitializerListForFunction &InitializerListFor,
+      CompareUtilityValuesFunction &CompareUtilityValues,
+      AlgorithmLessFunction &AlgorithmLess,
+      AlgorithmReferenceLessFunction &AlgorithmReferenceLess,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmPairIteratorFieldFunction &AlgorithmPairIteratorField) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmMin:
     case UtilityOperation::AlgorithmMax: {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMin;
@@ -14061,6 +12298,23 @@ class FunctionLowering {
       }
       return Place;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename CompareUtilityValuesFunction, typename AlgorithmEqualFunction, typename AlgorithmLessFunction, typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction>
+  Expression utilityAlgorithmOrderingOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      CompareUtilityValuesFunction &CompareUtilityValues,
+      AlgorithmEqualFunction &AlgorithmEqual,
+      AlgorithmLessFunction &AlgorithmLess,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmIsHeap:
     case UtilityOperation::AlgorithmIsHeapUntil: {
       const bool BooleanResult = Operation == UtilityOperation::AlgorithmIsHeap;
@@ -15167,6 +13421,20 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction>
+  Expression utilityAlgorithmPredicateOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmFindIf:
     case UtilityOperation::AlgorithmFindIfNot: {
       const bool Match = Operation == UtilityOperation::AlgorithmFindIf;
@@ -15930,6 +14198,21 @@ class FunctionLowering {
       label(End, L);
       return AlgorithmIteratorResult(std::move(Output), 2);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction, typename AlgorithmPairIteratorFieldFunction>
+  Expression utilityAlgorithmPartitionOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult,
+      AlgorithmPairIteratorFieldFunction &AlgorithmPairIteratorField) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmIsPartitioned: {
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
@@ -16658,6 +14941,20 @@ class FunctionLowering {
       label(End, L);
       return AlgorithmIteratorResult(std::move(Current), 0);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction>
+  Expression utilityAlgorithmTransformOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmTransformUnary:
     case UtilityOperation::AlgorithmTransformBinary: {
       const bool Binary =
@@ -18303,6 +16600,20 @@ class FunctionLowering {
       label(End, L);
       return AlgorithmIteratorResult(std::move(Output), OutputIndex);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction>
+  Expression utilityAlgorithmGeneratorOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult) {
+    switch (Operation) {
     case UtilityOperation::AlgorithmShuffle:
     case UtilityOperation::AlgorithmSample: {
       const auto Info = approvedUtilityAlgorithmRandomCall(
@@ -18433,6 +16744,25 @@ class FunctionLowering {
         return AlgorithmIteratorResult(std::move(Current), 0);
       return Expression{};
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename OptionalForFunction, typename TupleForFunction, typename TupleElementFunction, typename ReferenceMemberFunction, typename ArrayElementFunction, typename CompareUtilityValuesFunction, typename UtilityComparisonOperatorFunction>
+  Expression utilityTupleOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      OptionalForFunction &OptionalFor,
+      TupleForFunction &TupleFor,
+      TupleElementFunction &TupleElement,
+      ReferenceMemberFunction &ReferenceMember,
+      ArrayElementFunction &ArrayElement,
+      CompareUtilityValuesFunction &CompareUtilityValues,
+      UtilityComparisonOperatorFunction &UtilityComparisonOperator) {
+    switch (Operation) {
     case UtilityOperation::MakeOptional: {
       auto Optional = OptionalFor(Call->getType());
       if (!Optional)
@@ -19548,6 +17878,25 @@ class FunctionLowering {
                                   Right,
                                   A.Context.getRecordType(RightTuple->Record));
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename ArrayForFunction, typename MemberObjectFunction, typename AlgorithmRangeValueFunction, typename AlgorithmIteratorResultFunction, typename ReverseForFunction, typename ReverseCurrentFunction, typename ReverseValueFunction>
+  Expression utilityIteratorOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      ArrayForFunction &ArrayFor,
+      MemberObjectFunction &MemberObject,
+      AlgorithmRangeValueFunction &AlgorithmRangeValue,
+      AlgorithmIteratorResultFunction &AlgorithmIteratorResult,
+      ReverseForFunction &ReverseFor,
+      ReverseCurrentFunction &ReverseCurrent,
+      ReverseValueFunction &ReverseValue) {
+    switch (Operation) {
     case UtilityOperation::IteratorBegin:
     case UtilityOperation::IteratorEnd:
     case UtilityOperation::IteratorSize:
@@ -19895,6 +18244,21 @@ class FunctionLowering {
                                  type(Reverse->PointerType, L), L),
                           *Reverse);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename OptionalForFunction, typename OptionalObjectFunction, typename CompareUtilityValuesFunction>
+  Expression utilityOptionalOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      OptionalForFunction &OptionalFor,
+      OptionalObjectFunction &OptionalObject,
+      CompareUtilityValuesFunction &CompareUtilityValues) {
+    switch (Operation) {
     case UtilityOperation::OptionalEqual:
     case UtilityOperation::OptionalNotEqual:
     case UtilityOperation::OptionalLess:
@@ -20279,6 +18643,22 @@ class FunctionLowering {
       reject(L, "utility optional operation",
              "Unknown approved std::optional operation.");
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename InitializerListForFunction, typename MemberObjectFunction, typename ReverseForFunction, typename ReverseValueFunction>
+  Expression utilityWrappedIteratorOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      InitializerListForFunction &InitializerListFor,
+      MemberObjectFunction &MemberObject,
+      ReverseForFunction &ReverseFor,
+      ReverseValueFunction &ReverseValue) {
+    switch (Operation) {
     case UtilityOperation::InitializerListSize:
     case UtilityOperation::InitializerListEmpty:
     case UtilityOperation::InitializerListBegin:
@@ -20474,6 +18854,25 @@ class FunctionLowering {
                     type(Iterator->IteratorType, L), L), L);
       return Place;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename StringForFunction, typename ReadStringAtFunction, typename SliceStringBytesFunction, typename ReadStringSliceFunction, typename ReadStringViewAtFunction, typename StringSliceArgumentFunction, typename MemberObjectFunction>
+  Expression utilityStringAssignmentOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      StringForFunction &StringFor,
+      ReadStringAtFunction &ReadStringAt,
+      SliceStringBytesFunction &SliceStringBytes,
+      ReadStringSliceFunction &ReadStringSlice,
+      ReadStringViewAtFunction &ReadStringViewAt,
+      StringSliceArgumentFunction &StringSliceArgument,
+      MemberObjectFunction &MemberObject) {
+    switch (Operation) {
     case UtilityOperation::StringAssignPointer:
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
@@ -21459,6 +19858,27 @@ class FunctionLowering {
       }
       return dereference(json::Object(Receiver), L);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename StringForFunction, typename ReadStringAtFunction, typename SliceStringBytesFunction, typename ReadStringSliceFunction, typename ReadStringViewAtFunction, typename StringSliceArgumentFunction, typename MemberObjectFunction, typename ReverseForFunction, typename ReverseValueFunction>
+  Expression utilityStringStorageOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      StringForFunction &StringFor,
+      ReadStringAtFunction &ReadStringAt,
+      SliceStringBytesFunction &SliceStringBytes,
+      ReadStringSliceFunction &ReadStringSlice,
+      ReadStringViewAtFunction &ReadStringViewAt,
+      StringSliceArgumentFunction &StringSliceArgument,
+      MemberObjectFunction &MemberObject,
+      ReverseForFunction &ReverseFor,
+      ReverseValueFunction &ReverseValue) {
+    switch (Operation) {
     case UtilityOperation::StringMemberSwap:
     case UtilityOperation::StringSwap: {
       const Expr *LeftObject = Operation == UtilityOperation::StringMemberSwap
@@ -21480,27 +19900,10 @@ class FunctionLowering {
           address(lvalue(LeftObject), LeftObject->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(RightObject), RightObject->getType(), L), L);
-      auto Word = [&](Expression Address, const char *Name) {
-        const bool PointerWord = LeftString->AlternateLayout
-                                     ? llvm::StringRef(Name) == "nct_string_word0"
-                                     : llvm::StringRef(Name) == "nct_string_word2";
-        return Expression{{"kind", "member"},
-                          {"type",
-                           type(PointerWord ? LeftString->PointerType
-                                            : A.Context.getSizeType(), L)},
-                          {"name", Name},
-                          {"args", json::Array{dereference(std::move(Address), L)}},
-                          {"loc", A.loc(L)}};
-      };
-      for (const char *Name : {"nct_string_word0", "nct_string_word1",
-                               "nct_string_word2"}) {
-        auto OldLeft = snapshot(Word(json::Object(LeftAddress), Name), L);
-        auto OldRight = snapshot(Word(json::Object(RightAddress), Name), L);
-        assign(Word(json::Object(LeftAddress), Name), std::move(OldRight), L);
-        assign(Word(json::Object(RightAddress), Name), std::move(OldLeft), L);
-      }
+      swapSelectedStrings(std::move(LeftAddress), std::move(RightAddress), *LeftString, L);
       return {};
     }
+
     case UtilityOperation::StringBegin:
     case UtilityOperation::StringEnd: {
       const auto *Object = MemberObject();
@@ -22625,6 +21028,22 @@ class FunctionLowering {
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename StringForFunction, typename VectorForFunction, typename MemberObjectFunction, typename UniquePtrMemberFunction>
+  Expression utilityVectorInsertionOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      StringForFunction &StringFor,
+      VectorForFunction &VectorFor,
+      MemberObjectFunction &MemberObject,
+      UniquePtrMemberFunction &UniquePtrMember) {
+    switch (Operation) {
     case UtilityOperation::VectorInsert:
     case UtilityOperation::VectorInsertRange:
     case UtilityOperation::VectorEmplace: {
@@ -24640,6 +23059,23 @@ class FunctionLowering {
       label(Done, L);
       return Result;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename VectorForFunction, typename MemberObjectFunction, typename ReverseForFunction, typename ReverseValueFunction, typename AllocatorMaximumFunction>
+  Expression utilityVectorStorageOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      VectorForFunction &VectorFor,
+      MemberObjectFunction &MemberObject,
+      ReverseForFunction &ReverseFor,
+      ReverseValueFunction &ReverseValue,
+      AllocatorMaximumFunction &AllocatorMaximum) {
+    switch (Operation) {
     case UtilityOperation::VectorSize:
     case UtilityOperation::VectorCapacity:
     case UtilityOperation::VectorMaxSize:
@@ -25532,6 +23968,25 @@ class FunctionLowering {
         destroy(json::Object(*FillValue), Vector->ElementType, L);
       return {};
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename StringViewForFunction, typename StringForFunction, typename ReadStringAtFunction, typename ReadCStringAtFunction, typename MemberObjectFunction, typename ReverseForFunction, typename ReverseValueFunction>
+  Expression utilityStringViewOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      StringViewForFunction &StringViewFor,
+      StringForFunction &StringFor,
+      ReadStringAtFunction &ReadStringAt,
+      ReadCStringAtFunction &ReadCStringAt,
+      MemberObjectFunction &MemberObject,
+      ReverseForFunction &ReverseFor,
+      ReverseValueFunction &ReverseValue) {
+    switch (Operation) {
     case UtilityOperation::StringConcat: {
       auto String = StringFor(Call->getType());
       if (!String || Call->getNumArgs() != 2)
@@ -25810,11 +24265,13 @@ class FunctionLowering {
           label(ShiftByte, L);
           auto Offset = binary("-", json::Object(TargetSize),
                                json::Object(ShiftIndex), SizeType, L);
+          // The source operand below moves Offset. Form its destination copy
+          // first so either assign argument evaluation order keeps both trees.
+          auto DestinationOffset = binary("+", json::Object(Offset),
+                                          json::Object(LeftSize), SizeType, L);
           assign(dereference(
                      binary("+", json::Object(Data),
-                            cast(binary("+", json::Object(Offset),
-                                        json::Object(LeftSize), SizeType, L),
-                                 DifferenceType, L),
+                            cast(std::move(DestinationOffset), DifferenceType, L),
                             PointerType, L),
                      L),
                  dereference(binary("+", json::Object(Data),
@@ -27438,6 +25895,23 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  template <typename ArrayForFunction, typename MemberObjectFunction, typename ArrayElementFunction, typename CompareUtilityValuesFunction, typename UtilityComparisonOperatorFunction>
+  Expression utilityArrayOperation(
+      const CallExpr *Call,
+      UtilityOperation Operation,
+      std::optional<Expression> &Destination,
+      SourceLocation L,
+      ArrayForFunction &ArrayFor,
+      MemberObjectFunction &MemberObject,
+      ArrayElementFunction &ArrayElement,
+      CompareUtilityValuesFunction &CompareUtilityValues,
+      UtilityComparisonOperatorFunction &UtilityComparisonOperator) {
+    switch (Operation) {
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {
@@ -27646,6 +26120,2493 @@ class FunctionLowering {
                                   Right,
                                   A.Context.getRecordType(RightArray->Record));
     }
+    default:
+      reject(L, "utility operation", "Unknown approved utility operation.");
+    }
+  }
+
+  Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
+                              std::optional<Expression> Destination) {
+    auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
+        Operation == UtilityOperation::UnorderedMapPolicy) {
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const bool Valid = Operation == UtilityOperation::UnorderedMapGetAllocator
+          ? bool(approvedUtilityUnorderedMapAllocatorQuery(A.S, A.Sources, Call, A.Context))
+          : bool(approvedUtilityUnorderedMapPolicyQuery(A.S, A.Sources, Call, A.Context));
+      if (!Member || !Valid) reject(L, "unordered map observer", "The authenticated stateless result is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      if (Object->getType()->isPointerType()) expression(Object);
+      else lvalue(Object);
+      auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      assign(Result, A.zero(Call->getType(), L), L);
+      return Result;
+    }
+    if (Operation == UtilityOperation::UnorderedMapCopyAssign ||
+        Operation == UtilityOperation::UnorderedMapMoveAssign) {
+      const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
+      const unsigned Offset = Operator ? 1 : 0;
+      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info) reject(L, "unordered map assignment", "The authenticated storage layout is unavailable.");
+      std::optional<Expression> SourceAddress;
+      // Assignment notation evaluates its right operand before its left in C++17.
+      if (Operator)
+        SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      if (!SourceAddress)
+        SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+      auto Place = dereference(Receiver, L), Source = dereference(*SourceAddress, L);
+      if (Operation == UtilityOperation::UnorderedMapMoveAssign) {
+        unorderedMoveMap(Place, Source, *Info, true, L);
+      } else {
+        const auto Copy = labelName(), Done = labelName();
+        branch(binary("!=", cast(Receiver, type(A.Context.VoidPtrTy, L), L),
+            cast(*SourceAddress, type(A.Context.VoidPtrTy, L), L), "bool", L), Copy, Done, L);
+        label(Copy, L);
+        unorderedCopyMap(Place, Source, *Info, true, L);
+        jump(Done, L);
+        label(Done, L);
+      }
+      return Place;
+    }
+    if (Operation == UtilityOperation::UnorderedMapEqualRange) {
+      const auto Info = approvedUtilityUnorderedMapEqualRange(A.S, A.Sources, Call, A.Context);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      if (!Info || !Member) reject(L, "unordered map equal range", "The authenticated operation is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Key = snapshot(argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType()), L);
+      auto Hash = snapshot(cast(dereference(Key, L), type(A.Context.getSizeType(), L), L), L);
+      auto First = unorderedFindNode(dereference(Receiver, L), Info->Map, dereference(Key, L), Hash, L);
+      auto Last = snapshot(A.zero(Info->Map.NodePointerType, L), L);
+      const auto Advance = labelName(), Ready = labelName();
+      branch(cast(First, "bool", L), Advance, Ready, L);
+      label(Advance, L);
+      assign(Last, unorderedNodeNext(First, Info->Map, L), L);
+      jump(Ready, L);
+      label(Ready, L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      unorderedMakeIterator(First, Info->Iterator, fieldStorage(Output, Info->Pair.First, L), L);
+      unorderedMakeIterator(Last, Info->Iterator, fieldStorage(Output, Info->Pair.Second, L), L);
+      return Output;
+    }
+    if (Operation == UtilityOperation::UnorderedMapInsertRange) {
+      const auto Info = approvedUtilityUnorderedMapRangeInsertion(A.S, A.Sources, Call, A.Context);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      if (!Info || !Member) reject(L, "unordered map range insertion", "The authenticated operation is unavailable.");
+      const auto *Method = Member->getMethodDecl();
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      Expression Current, End;
+      std::optional<Expression> Bucket, Count;
+      if (Info->List) {
+        auto List = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        Current = snapshot(fieldStorage(dereference(List, L), Info->List->Begin, L), L);
+        auto Count = snapshot(fieldStorage(dereference(List, L), Info->List->Size, L), L);
+        End = snapshot(Current, L);
+        const auto Advance = labelName(), Ready = labelName();
+        branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L), Advance, Ready, L);
+        label(Advance, L);
+        assign(End, binary("+", Current, Count, type(Info->PointerType, L), L), L);
+        jump(Ready, L);
+        label(Ready, L);
+      } else {
+        auto First = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        if (Info->Iterator && Info->Iterator->Local) {
+          Bucket = snapshot(unorderedIteratorMetadata(dereference(First, L), "nct_unordered_iterator_bucket", L), L);
+          Count = snapshot(unorderedIteratorMetadata(dereference(First, L), "nct_unordered_iterator_count", L), L);
+        }
+        auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+        Current = snapshot(Info->Iterator
+            ? unorderedIteratorNode(dereference(First, L), *Info->Iterator, L) : First, L);
+        End = snapshot(Info->Iterator
+            ? unorderedIteratorNode(dereference(Last, L), *Info->Iterator, L) : Last, L);
+      }
+      unorderedInsertRange(Place, *Info, Current, End, L, Bucket, Count);
+      return {};
+    }
+    if (Operation == UtilityOperation::UnorderedMapInsertValue) {
+      const auto Info = approvedUtilityUnorderedMapInsertion(A.S, A.Sources, Call, A.Context);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      if (!Info || !Member) reject(L, "unordered map insertion", "The authenticated operation is unavailable.");
+      const auto *Method = Member->getMethodDecl();
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Info->Offset)
+        argument(Call->getArg(0), Method->getParamDecl(0)->getType());
+      Expression Key;
+      std::optional<Expression> Mapped, PreparedNode;
+      if (Info->Kind == UnorderedMapInsertionKind::Piecewise) {
+        if (!Info->KeyTuple || !Info->ValueTuple)
+          reject(L, "unordered map piecewise construction", "Authenticated tuple shapes are required.");
+        auto Keys = snapshot(argument(Call->getArg(Info->Offset + 1),
+            Method->getParamDecl(Info->Offset + 1)->getType()), L);
+        auto Values = snapshot(argument(Call->getArg(Info->Offset + 2),
+            Method->getParamDecl(Info->Offset + 2)->getType()), L);
+        PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
+            quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
+            type(Info->Map.NodePointerType, L), L), L);
+        auto Read = [&](Expression Tuple, const UtilityTupleRecord &Shape) {
+          if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
+          const auto &Element = Shape.Elements.front();
+          auto Value = fieldStorage(dereference(Tuple, L), Element, L);
+          return Element.getType()->isReferenceType() ? dereference(Value, L) : Value;
+        };
+        // The SDK copies tuple parameters while constructing the pair, after
+        // node allocation. Reference elements still read their live referents.
+        assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), Read(Keys, *Info->KeyTuple), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), Read(Values, *Info->ValueTuple), L);
+        Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
+        Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
+      } else if (Info->Kind == UnorderedMapInsertionKind::Default) {
+
+        PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
+            quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
+            type(Info->Map.NodePointerType, L), L), L);
+        assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
+        Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
+        Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
+      } else if (Info->Kind == UnorderedMapInsertionKind::Pair) {
+        auto Pair = snapshot(argument(Call->getArg(Info->Offset),
+            Method->getParamDecl(Info->Offset)->getType()), L);
+        Key = fieldStorage(dereference(Pair, L), Info->ArgumentPair->First, L);
+        Mapped = fieldStorage(dereference(Pair, L), Info->ArgumentPair->Second, L);
+      } else {
+        auto KeyReference = snapshot(argument(Call->getArg(Info->Offset),
+            Method->getParamDecl(Info->Offset)->getType()), L);
+        Key = dereference(KeyReference, L);
+        if (Info->Kind == UnorderedMapInsertionKind::KeyValue) {
+          auto Reference = snapshot(argument(Call->getArg(Info->Offset + 1),
+              Method->getParamDecl(Info->Offset + 1)->getType()), L);
+          Mapped = dereference(Reference, L);
+        }
+      }
+      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L, PreparedNode);
+      if (!Info->ResultPair)
+        return unorderedMakeIterator(Result.Node, Info->Iterator, std::move(Destination), L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      unorderedMakeIterator(Result.Node, Info->Iterator,
+          fieldStorage(Output, Info->ResultPair->First, L), L);
+      assign(fieldStorage(Output, Info->ResultPair->Second, L), Result.Inserted, L);
+      return Output;
+    }
+    if (Operation >= UtilityOperation::UnorderedMapBegin &&
+        Operation <= UtilityOperation::UnorderedMapFind) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          Method->getReturnType()->getAsCXXRecordDecl(), A.Context);
+      if (!Map || !Iterator) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Iterator->Local) {
+        auto Bucket = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        auto Count = snapshot(unorderedMapMember(Place, *Map, "nct_unordered_bucket_count", L), L);
+        auto Node = snapshot(A.zero(Map->NodePointerType, L), L);
+        if (Operation == UtilityOperation::UnorderedMapBegin) {
+          auto Previous = snapshot(index(unorderedMapMember(Place, *Map, "nct_unordered_buckets", L),
+              Bucket, type(Map->NodePointerType, L), L), L);
+          const auto First = labelName(), Ready = labelName();
+          branch(cast(Previous, "bool", L), First, Ready, L);
+          label(First, L);assign(Node, unorderedNodeNext(Previous, *Map, L), L);jump(Ready, L);
+          label(Ready, L);
+        }
+        return unorderedMakeIterator(Node, *Iterator, std::move(Destination), L, Bucket, Count);
+      }
+      Expression Node;
+      if (Operation == UtilityOperation::UnorderedMapEnd) {
+        Node = A.zero(Map->NodePointerType, L);
+      } else if (Operation == UtilityOperation::UnorderedMapBegin) {
+        Node = snapshot(unorderedMapMember(Place, *Map, "nct_unordered_first", L), L);
+      } else {
+        auto Key = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        auto Hash = snapshot(cast(dereference(Key, L), type(A.Context.getSizeType(), L), L), L);
+        Node = unorderedFindNode(Place, *Map, dereference(Key, L), Hash, L);
+      }
+      return unorderedMakeIterator(std::move(Node), *Iterator, std::move(Destination), L);
+    }
+    if (Operation == UtilityOperation::UnorderedMapEraseIterator ||
+        Operation == UtilityOperation::UnorderedMapEraseRange) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Map = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      const auto Result = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          Method->getReturnType()->getAsCXXRecordDecl(), A.Context);
+      const auto Input = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+          Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Map || !Result || !Input)
+        reject(L, "unordered map iterator erase", "The authenticated layouts are unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      auto First = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+      auto Node = snapshot(unorderedIteratorNode(dereference(First, L), *Input, L), L);
+      auto Remove = [&] {
+        auto Next = snapshot(unorderedNodeNext(Node, *Map, L), L);
+        unorderedEraseKey(Place, *Map, unorderedNodeKey(Node, *Map, L), L);
+        assign(Node, Next, L);
+      };
+      if (Operation == UtilityOperation::UnorderedMapEraseRange) {
+        auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+        auto End = snapshot(unorderedIteratorNode(dereference(Last, L), *Input, L), L);
+        const auto Check = labelName(), Erase = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Node, End, "bool", L), Erase, Done, L);
+        label(Erase, L);
+        Remove();
+        jump(Check, L);
+        label(Done, L);
+      } else {
+        Remove();
+      }
+      return unorderedMakeIterator(Node, *Result, std::move(Destination), L);
+    }
+    if (Operation >= UtilityOperation::UnorderedIteratorDereference &&
+        Operation <= UtilityOperation::UnorderedIteratorAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *Method = dyn_cast<CXXMethodDecl>(F);
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *Record = Method ? Method->getParent()
+          : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, Record, A.Context);
+      if (!Info) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
+      if (!Method) {
+        auto Left = snapshot(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
+        auto Right = snapshot(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L);
+        return binary(Operation == UtilityOperation::UnorderedIteratorEqual ? "==" : "!=",
+            unorderedIteratorNode(dereference(Left, L), *Info, L),
+            unorderedIteratorNode(dereference(Right, L), *Info, L), "bool", L);
+      }
+      const unsigned Offset = Operator ? 1 : 0;
+      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
+      // Operator notation evaluates the right operand first; an explicit
+      // member call evaluates its receiver before its arguments in C++17.
+      if (Operation == UtilityOperation::UnorderedIteratorAssign) {
+        Expression Receiver, Right;
+        auto ObjectAddress = [&] { return snapshot(Object->getType()->isPointerType() ? expression(Object)
+            : address(lvalue(Object), Object->getType(), L), L); };
+        if (Member) Receiver = ObjectAddress();
+        Right = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+        auto Value = snapshot(dereference(Right, L), L);
+        if (!Member) Receiver = ObjectAddress();
+        auto Place = dereference(Receiver, L);
+        assign(Place, Value, L);
+        return Place;
+      }
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::UnorderedIteratorPostIncrement)
+        expression(Call->getArg(Offset));
+      auto Node = snapshot(unorderedIteratorNode(Place, *Info, L), L);
+      if (Operation == UtilityOperation::UnorderedIteratorDereference)
+        return dereference(unorderedIteratorValue(Node, *Info, L), L);
+      if (Operation == UtilityOperation::UnorderedIteratorArrow)
+        return unorderedIteratorValue(Node, *Info, L);
+      assign(unorderedIteratorNode(Place, *Info, L), unorderedAdvanceIterator(Node, *Info, Place, L), L);
+      if (Operation == UtilityOperation::UnorderedIteratorPreIncrement) return Place;
+      return unorderedMakeIterator(Node, *Info, std::move(Destination), L,
+          Info->Local ? std::optional<Expression>(unorderedIteratorMetadata(Place, "nct_unordered_iterator_bucket", L)) : std::nullopt,
+          Info->Local ? std::optional<Expression>(unorderedIteratorMetadata(Place, "nct_unordered_iterator_count", L)) : std::nullopt);
+    }
+    if (Operation >= UtilityOperation::UnorderedMapSize &&
+        Operation <= UtilityOperation::UnorderedMapSetMaxLoadFactor) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info) reject(L, "unordered map operation", "The authenticated storage layout is unavailable.");
+      const auto *Object = Member->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::UnorderedMapLoadFactor)
+        return unorderedMapLoadFactor(Place, *Info, L);
+      if (Operation == UtilityOperation::UnorderedMapSetMaxLoadFactor) {
+        auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        auto Current = unorderedMapLoadFactor(Place, *Info, L);
+        const auto Clamp = labelName(), Ready = labelName();
+        branch(binary("<", Value, Current, "bool", L), Clamp, Ready, L);
+        label(Clamp, L);
+        assign(Value, Current, L);
+        jump(Ready, L);
+        label(Ready, L);
+        assign(unorderedMapMember(Place, *Info, "nct_unordered_max_load", L), Value, L);
+        return {};
+      }
+      auto Value = unorderedMapMember(Place, *Info,
+          Operation == UtilityOperation::UnorderedMapBucketCount ? "nct_unordered_bucket_count"
+          : Operation == UtilityOperation::UnorderedMapMaxLoadFactor ? "nct_unordered_max_load"
+                                                                  : "nct_unordered_size", L);
+      if (Operation == UtilityOperation::UnorderedMapEmpty)
+        return binary("==", Value, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+      return snapshot(std::move(Value), L);
+    }
+    if (Operation >= UtilityOperation::UnorderedMapClear &&
+        Operation <= UtilityOperation::UnorderedMapSubscript) {
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
+      const unsigned Offset = Member ? 0 : 1;
+      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info) reject(L, "unordered map operation", "The authenticated storage layout is unavailable.");
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      const auto Size = type(A.Context.getSizeType(), L);
+      if (Operation == UtilityOperation::UnorderedMapMaxSize ||
+          Operation == UtilityOperation::UnorderedMapMaxBucketCount) {
+        const auto Bits = A.Context.getTypeSize(A.Context.getSizeType());
+        return quantity(llvm::APInt::getMaxValue(Bits).udiv(llvm::APInt(Bits, Info->NodeBytes)).getZExtValue(), Size, L);
+      }
+      if (Operation == UtilityOperation::UnorderedMapClear) {
+        releaseUnorderedMap(Place, *Info, false, L);
+        return {};
+      }
+      if (Operation == UtilityOperation::UnorderedMapSwap) {
+        auto Other = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+        unorderedSwap(Place, dereference(Other, L), *Info, L);
+        return {};
+      }
+      if (Operation == UtilityOperation::UnorderedMapReserve ||
+          Operation == UtilityOperation::UnorderedMapRehash ||
+          Operation == UtilityOperation::UnorderedMapBucketSize) {
+        auto Count = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+        if (Operation == UtilityOperation::UnorderedMapBucketSize)
+          return unorderedBucketSize(Place, *Info, Count, L);
+        if (Operation == UtilityOperation::UnorderedMapReserve)
+          Count = unorderedCeilCount(Count, unorderedMapMember(Place, *Info, "nct_unordered_max_load", L), L);
+        unorderedRehash(Place, *Info, Count, L);
+        return {};
+      }
+      auto KeyReference = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
+      auto Key = dereference(KeyReference, L);
+      if (Operation == UtilityOperation::UnorderedMapSubscript)
+        return unorderedSubscript(Place, *Info, Key, L);
+      if (Operation == UtilityOperation::UnorderedMapEraseKey)
+        return unorderedEraseKey(Place, *Info, Key, L);
+      auto Hash = snapshot(cast(Key, Size, L), L);
+      if (Operation == UtilityOperation::UnorderedMapBucket)
+        return unorderedConstrainHash(Hash, unorderedMapMember(Place, *Info, "nct_unordered_bucket_count", L), L);
+      if (Operation == UtilityOperation::UnorderedMapCount)
+        return cast(cast(unorderedFindNode(Place, *Info, Key, Hash, L), "bool", L), Size, L);
+      reject(L, "unordered map operation", "The authenticated operation has no lowering.");
+    }
+    if (Operation >= UtilityOperation::RandomEngineGenerate &&
+        Operation <= UtilityOperation::RandomEngineSeedSequence) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent()
+                        : F->getParamDecl(0)->getType().getNonReferenceType()
+                              ->getAsCXXRecordDecl();
+      const auto Engine = approvedRandomEngineRecord(A.S, A.Sources, R, A.Context);
+      if (!Engine)
+        reject(L, "random engine", "An authenticated standard engine is required.");
+      if (Operation == UtilityOperation::RandomEngineMinimum ||
+          Operation == UtilityOperation::RandomEngineMaximum) {
+        if (const auto *Member =
+                dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()))
+          expression(Member->getBase());
+        return quantity(Operation == UtilityOperation::RandomEngineMinimum
+                            ? Engine->Minimum : Engine->Maximum,
+                        type(Engine->ResultType, L), L);
+      }
+      if (Operation == UtilityOperation::RandomEngineEqual ||
+          Operation == UtilityOperation::RandomEngineNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto Equal = equalRandomEngines(dereference(Left, L),
+                                        dereference(Right, L), *Engine, L);
+        return snapshot(Operation == UtilityOperation::RandomEngineNotEqual
+                            ? binary("==", std::move(Equal), quantity(0, "bool", L),
+                                     "bool", L)
+                            : std::move(Equal), L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+                                    : llvm::cast<CXXMemberCallExpr>(Call)
+                                          ->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType()
+                                   ? expression(Object)
+                                   : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::RandomEngineGenerate)
+        return generateRandomEngine(std::move(Place), *Engine, L);
+      if (Operation == UtilityOperation::RandomEngineAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0),
+                               F->getParamDecl(0)->getType());
+        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
+        return Place;
+      }
+      if (Operation == UtilityOperation::RandomEngineBase)
+        return fieldStorage(std::move(Place), Engine->Base, L);
+      if (Operation == UtilityOperation::RandomEngineSeedSequence) {
+        const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources,
+            F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl(), A.Context);
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        seedRandomEngineSequence(std::move(Place), *Engine, dereference(std::move(Source), L), *Seq, L);
+        return {};
+      }
+      if (Operation == UtilityOperation::RandomEngineSeed) {
+        auto Seed = Call->getNumArgs()
+            ? argument(Call->getArg(0), F->getParamDecl(0)->getType())
+            : quantity(Engine->DefaultSeed, type(A.Context.UnsignedLongLongTy, L), L);
+        seedRandomEngine(std::move(Place), *Engine, std::move(Seed), L,
+                         !Call->getNumArgs());
+        return {};
+      }
+      auto Count = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+      discardRandomEngine(std::move(Place), *Engine, std::move(Count), L);
+      return {};
+    }
+    if (Operation >= UtilityOperation::PiecewiseGenerate &&
+        Operation <= UtilityOperation::PiecewiseAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedPiecewiseRecord(A.S, A.Sources, R, A.Context);
+      if (!Info)
+        reject(L, "piecewise constant distribution", "The checked distribution layout is unavailable.");
+      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+          Info->Bounds->getType()->getAsCXXRecordDecl(), A.Context);
+      if (Operation == UtilityOperation::PiecewiseEqual || Operation == UtilityOperation::PiecewiseNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto LP = piecewiseParameter(dereference(Left, L), *Info, L);
+        auto RP = piecewiseParameter(dereference(Right, L), *Info, L);
+        auto Equal = snapshot(binary("==", compareNestedVectors(fieldStorage(LP, Info->Densities, L),
+            fieldStorage(RP, Info->Densities, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
+        const auto BoundsEqual = labelName(), Done = labelName();
+        branch(Equal, BoundsEqual, Done, L);
+        label(BoundsEqual, L);
+        assign(Equal, binary("==", compareNestedVectors(fieldStorage(LP, Info->Bounds, L),
+            fieldStorage(RP, Info->Bounds, L), *Vector, true, L), quantity(0, "int", L), "bool", L), L);
+        jump(Done, L);
+        label(Done, L);
+        return Operation == UtilityOperation::PiecewiseNotEqual
+            ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : Equal;
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      auto Parameter = piecewiseParameter(Place, *Info, L);
+      if (Operation == UtilityOperation::PiecewiseAssign || Operation == UtilityOperation::PiecewiseParamSet) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        auto Input = Operation == UtilityOperation::PiecewiseParamSet
+            ? dereference(Source, L) : piecewiseParameter(dereference(Source, L), *Info, L);
+        copyPiecewiseParameter(Parameter, Input, *Info, *Vector, true, L);
+        return Operation == UtilityOperation::PiecewiseAssign ? Place : Expression{};
+      }
+      if (Operation == UtilityOperation::PiecewiseReset)
+        return {};
+      if (Operation == UtilityOperation::PiecewiseParamGet) {
+        auto Value = Destination ? json::Object(*Destination)
+            : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
+        copyPiecewiseParameter(Value, Parameter, *Info, *Vector, false, L);
+        return Value;
+      }
+      if (Operation == UtilityOperation::PiecewiseIntervals || Operation == UtilityOperation::PiecewiseDensities) {
+        auto Value = Destination ? json::Object(*Destination) : objectTemporary(F->getReturnType(), L);
+        copyRandomVector(Value, fieldStorage(Parameter, Operation == UtilityOperation::PiecewiseIntervals
+            ? Info->Bounds : Info->Densities, L), *Vector, false, false, L);
+        return Value;
+      }
+      const auto Size = type(A.Context.getSizeType(), L);
+      const auto Real = type(Info->ResultType, L);
+      auto Bounds = fieldStorage(Parameter, Info->Bounds, L);
+      if (Operation == UtilityOperation::PiecewiseMinimum || Operation == UtilityOperation::PiecewiseMaximum) {
+        auto I = Operation == UtilityOperation::PiecewiseMinimum ? quantity(0, Size, L)
+            : binary("-", randomVectorCount(Bounds, *Vector, "nct_vector_end", L), quantity(1, Size, L), Size, L);
+        return snapshot(index(randomVectorMember(Bounds, *Vector, "nct_vector_begin", L), I, Real, L), L);
+      }
+      const auto Random = approvedPiecewiseRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random)
+        reject(L, "piecewise generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Source = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(Source, L);
+      }
+      auto Areas = fieldStorage(Parameter, Info->Areas, L);
+      auto Count = randomVectorCount(Areas, *Vector, "nct_vector_end", L);
+      auto Input = snapshot(randomVectorMember(Areas, *Vector, "nct_vector_begin", L), L);
+      CapturedAlgorithmPredicate Generator{GeneratorAddress, Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = snapshot(emitCanonicalRandom(Generator, *Random,
+          Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L), L);
+      auto Position = snapshot(quantity(0, Size, L), L);
+      auto Remaining = snapshot(Count, L);
+      const auto Check = labelName(), Step = labelName(), Left = labelName(), Right = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Step, Done, L);
+      label(Step, L);
+      auto Half = snapshot(binary("/", Remaining, quantity(2, Size, L), Size, L), L);
+      auto Middle = snapshot(binary("+", Position, Half, Size, L), L);
+      branch(binary("<", Draw, index(Input, Middle, Real, L), "bool", L), Left, Right, L);
+      label(Left, L);
+      assign(Remaining, Half, L);
+      jump(Check, L);
+      label(Right, L);
+      assign(Position, binary("+", Middle, quantity(1, Size, L), Size, L), L);
+      assign(Remaining, binary("-", binary("-", Remaining, Half, Size, L), quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(Done, L);
+      auto K = snapshot(binary("-", Position, quantity(1, Size, L), Size, L), L);
+      auto Density = randomVectorMember(fieldStorage(Parameter, Info->Densities, L), *Vector, "nct_vector_begin", L);
+      auto B = randomVectorMember(fieldStorage(Parameter, Info->Bounds, L), *Vector, "nct_vector_begin", L);
+      auto U = snapshot(binary("-", Draw, index(Input, K, Real, L), Real, L), L);
+      auto DK = snapshot(index(Density, K, Real, L), L);
+      auto BK = snapshot(index(B, K, Real, L), L);
+      if (!Info->Linear)
+        return snapshot(binary("+", binary("/", U, DK, Real, L), BK, Real, L), L);
+      auto Next = binary("+", K, quantity(1, Size, L), Size, L);
+      auto DK1 = snapshot(index(Density, Next, Real, L), L);
+      auto DeltaD = snapshot(binary("-", DK1, DK, Real, L), L);
+      auto Result = temporary(Real, L);
+      const auto Flat = labelName(), Sloped = labelName(), Sampled = labelName();
+      branch(binary("==", DeltaD, A.zero(Info->ResultType, L), "bool", L), Flat, Sloped, L);
+      label(Flat, L);
+      assign(Result, binary("+", binary("/", U, DK, Real, L), BK, Real, L), L);
+      jump(Sampled, L);
+      label(Sloped, L);
+      auto BK1 = snapshot(index(B, Next, Real, L), L);
+      auto DeltaB = snapshot(binary("-", BK1, BK, Real, L), L);
+      auto Square = binary("*", binary("*", DeltaB, DK, Real, L), DK, Real, L);
+      auto Offset = binary("*", binary("*", cast(quantity(2, "int", L), Real, L), DeltaD, Real, L), U, Real, L);
+      auto Radicand = binary("*", DeltaB, binary("+", Square, Offset, Real, L), Real, L);
+      json::Array RootArguments;
+      RootArguments.push_back(std::move(Radicand));
+      auto Root = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
+          {"args", std::move(RootArguments)}, {"loc", A.loc(L)}}, L);
+      auto Base = binary("-", binary("*", BK, DK1, Real, L), binary("*", BK1, DK, Real, L), Real, L);
+      assign(Result, binary("/", binary("+", Base, Root, Real, L), DeltaD, Real, L), L);
+      jump(Sampled, L);
+      label(Sampled, L);
+      return Result;
+    }
+    if (Operation >= UtilityOperation::DiscreteGenerate && Operation <= UtilityOperation::DiscreteAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedDiscreteDistributionRecord(A.S, A.Sources, R, A.Context);
+      if (!Info)
+        reject(L, "discrete distribution", "The checked distribution layout is unavailable.");
+      const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
+          Info->Thresholds->getType()->getAsCXXRecordDecl(), A.Context);
+      if (Operation == UtilityOperation::DiscreteEqual || Operation == UtilityOperation::DiscreteNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto Order = compareNestedVectors(discreteVector(dereference(Left, L), *Info, L),
+            discreteVector(dereference(Right, L), *Info, L), *Vector, true, L);
+        return binary(Operation == UtilityOperation::DiscreteEqual ? "==" : "!=",
+                      Order, quantity(0, "int", L), "bool", L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      auto Parameter = discreteParameter(Place, *Info, L);
+      auto Storage = fieldStorage(Parameter, Info->Thresholds, L);
+      if (Operation == UtilityOperation::DiscreteAssign || Operation == UtilityOperation::DiscreteParamSet) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        auto SourceVector = Operation == UtilityOperation::DiscreteAssign
+            ? discreteVector(dereference(Source, L), *Info, L)
+            : fieldStorage(dereference(Source, L), Info->Thresholds, L);
+        copyRandomVector(Storage, SourceVector, *Vector,
+                         F->getParamDecl(0)->getType()->isRValueReferenceType(), true, L);
+        if (Operation == UtilityOperation::DiscreteAssign)
+          return Place;
+        return {};
+      }
+      if (Operation == UtilityOperation::DiscreteReset)
+        return {};
+      if (Operation == UtilityOperation::DiscreteMinimum)
+        return quantity(0, type(Info->ResultType, L), L);
+      if (Operation == UtilityOperation::DiscreteParamGet) {
+        auto Value = Destination ? json::Object(*Destination)
+            : objectTemporary(A.Context.getRecordType(Info->Parameter), L);
+        copyRandomVector(fieldStorage(Value, Info->Thresholds, L), Storage, *Vector, false, false, L);
+        return Value;
+      }
+      const auto Size = type(A.Context.getSizeType(), L);
+      const auto Real = type(A.Context.DoubleTy, L);
+      if (Operation == UtilityOperation::DiscreteMaximum)
+        return cast(randomVectorCount(Storage, *Vector, "nct_vector_end", L), type(Info->ResultType, L), L);
+      if (Operation == UtilityOperation::DiscreteProbabilities) {
+        auto Count = randomVectorCount(Storage, *Vector, "nct_vector_end", L);
+        auto Value = Destination ? json::Object(*Destination)
+            : objectTemporary(F->getReturnType(), L);
+        allocateRandomVector(Value, *Vector, binary("+", Count, quantity(1, Size, L), Size, L), L);
+        auto Output = snapshot(randomVectorMember(Value, *Vector, "nct_vector_begin", L), L);
+        auto Input = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
+        const auto Empty = labelName(), NonEmpty = labelName(), Done = labelName();
+        branch(binary("==", Count, quantity(0, Size, L), "bool", L), Empty, NonEmpty, L);
+        label(Empty, L);
+        assign(index(Output, quantity(0, Size, L), Real, L), one(Real, L), L);
+        jump(Done, L);
+        label(NonEmpty, L);
+        auto Previous = snapshot(index(Input, quantity(0, Size, L), Real, L), L);
+        assign(index(Output, quantity(0, Size, L), Real, L), Previous, L);
+        auto I = snapshot(quantity(1, Size, L), L);
+        const auto Check = labelName(), Step = labelName(), Finished = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", I, Count, "bool", L), Step, Finished, L);
+        label(Step, L);
+        auto Current = snapshot(index(Input, I, Real, L), L);
+        assign(index(Output, I, Real, L), binary("-", Current, Previous, Real, L), L);
+        assign(Previous, Current, L);
+        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+        jump(Check, L);
+        label(Finished, L);
+        assign(index(Output, Count, Real, L), binary("-", one(Real, L), Previous, Real, L), L);
+        jump(Done, L);
+        label(Done, L);
+        return Value;
+      }
+      const auto Random = approvedDiscreteDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random)
+        reject(L, "discrete generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Source = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Storage = fieldStorage(dereference(Source, L), Info->Thresholds, L);
+      }
+      auto Count = randomVectorCount(Storage, *Vector, "nct_vector_end", L);
+      auto Input = snapshot(randomVectorMember(Storage, *Vector, "nct_vector_begin", L), L);
+      CapturedAlgorithmPredicate Generator{GeneratorAddress, Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = snapshot(emitCanonicalRandom(Generator, *Random, 53, L), L);
+      auto Position = snapshot(quantity(0, Size, L), L);
+      auto Remaining = snapshot(Count, L);
+      const auto Check = labelName(), Step = labelName(), Left = labelName(), Right = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Step, Done, L);
+      label(Step, L);
+      auto Half = snapshot(binary("/", Remaining, quantity(2, Size, L), Size, L), L);
+      auto Middle = snapshot(binary("+", Position, Half, Size, L), L);
+      branch(binary("<", Draw, index(Input, Middle, Real, L), "bool", L), Left, Right, L);
+      label(Left, L);
+      assign(Remaining, Half, L);
+      jump(Check, L);
+      label(Right, L);
+      assign(Position, binary("+", Middle, quantity(1, Size, L), Size, L), L);
+      assign(Remaining, binary("-", binary("-", Remaining, Half, Size, L), quantity(1, Size, L), Size, L), L);
+      jump(Check, L);
+      label(Done, L);
+      return cast(Position, type(Info->ResultType, L), L);
+    }
+    if (Operation >= UtilityOperation::ScalarRealDistributionGenerate && Operation <= UtilityOperation::ScalarRealDistributionAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedScalarRealDistributionRecord(A.S, A.Sources, R, A.Context);
+      if (!Info) reject(L, "real distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::ScalarRealDistributionEqual || Operation == UtilityOperation::ScalarRealDistributionNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto LeftParameter = scalarRealDistributionParameter(dereference(Left, L), *Info, L);
+        auto RightParameter = scalarRealDistributionParameter(dereference(Right, L), *Info, L);
+        auto Equal = binary("==", scalarRealDistributionField(LeftParameter, *Info, false, L),
+                            scalarRealDistributionField(RightParameter, *Info, false, L), "bool", L);
+        if (Info->Second) {
+          auto Result = snapshot(std::move(Equal), L);
+          const auto CompareSecond = labelName(), Compared = labelName();
+          branch(Result, CompareSecond, Compared, L);
+          label(CompareSecond, L);
+          assign(Result, binary("==", scalarRealDistributionField(LeftParameter, *Info, true, L),
+                                scalarRealDistributionField(RightParameter, *Info, true, L), "bool", L), L);
+          jump(Compared, L);
+          label(Compared, L);
+          Equal = std::move(Result);
+        }
+        if (Info->CacheValid && Info->Kind != ScalarRealDistributionKind::StudentT && Info->Record == Info->Distribution) {
+          auto Result = snapshot(std::move(Equal), L);
+          const auto CheckFlags = labelName(), CheckHot = labelName(), CheckSpare = labelName(), Compared = labelName();
+          branch(Result, CheckFlags, Compared, L);
+          label(CheckFlags, L);
+          auto LeftHot = snapshot(fieldStorage(scalarRealDistributionState(dereference(Left, L), *Info, L), Info->CacheValid, L), L);
+          auto RightHot = snapshot(fieldStorage(scalarRealDistributionState(dereference(Right, L), *Info, L), Info->CacheValid, L), L);
+          assign(Result, binary("==", LeftHot, RightHot, "bool", L), L);
+          branch(Result, CheckHot, Compared, L);
+          label(CheckHot, L);
+          branch(LeftHot, CheckSpare, Compared, L);
+          label(CheckSpare, L);
+          assign(Result, binary("==", fieldStorage(scalarRealDistributionState(dereference(Left, L), *Info, L), Info->Cached, L),
+                                fieldStorage(scalarRealDistributionState(dereference(Right, L), *Info, L), Info->Cached, L), "bool", L), L);
+          jump(Compared, L);
+          label(Compared, L);
+          Equal = std::move(Result);
+        }
+        return Operation == UtilityOperation::ScalarRealDistributionEqual ? std::move(Equal)
+            : binary("==", std::move(Equal), quantity(0, "bool", L), "bool", L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::ScalarRealDistributionAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        copyScalarRealDistribution(Place, dereference(std::move(Source), L), *Info, L);
+        return Place;
+      }
+      auto Parameter = scalarRealDistributionParameter(Place, *Info, L);
+      auto State = scalarRealDistributionState(Place, *Info, L);
+      switch (Operation) {
+      case UtilityOperation::ScalarRealDistributionFirst:
+        return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, false, L), L);
+      case UtilityOperation::ScalarRealDistributionSecond:
+        return snapshot(scalarRealDistributionField(std::move(Parameter), *Info, true, L), L);
+      case UtilityOperation::ScalarRealDistributionMinimum:
+        if (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) return quantity(0, type(Info->ResultType, L), L);
+        return Info->Kind == ScalarRealDistributionKind::Cauchy || Info->Kind == ScalarRealDistributionKind::StudentT || Info->Kind == ScalarRealDistributionKind::Normal || Info->Kind == ScalarRealDistributionKind::ExtremeValue
+            ? A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType), true), L)
+                            : A.zero(Info->ResultType, L);
+      case UtilityOperation::ScalarRealDistributionMaximum:
+        if (Info->Kind == ScalarRealDistributionKind::Binomial)
+          return snapshot(fieldStorage(Parameter, Info->First, L), L);
+        if (Info->Kind == ScalarRealDistributionKind::Poisson || Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) {
+          const unsigned Width = A.Context.getTypeSize(Info->ResultType);
+          const bool Unsigned = Info->ResultType->isUnsignedIntegerType();
+          return A.literal(llvm::APSInt(Unsigned ? llvm::APInt::getAllOnes(Width) : llvm::APInt::getSignedMaxValue(Width), Unsigned), type(Info->ResultType, L), L);
+        }
+        return A.floatingLiteral(llvm::APFloat::getInf(A.Context.getFloatTypeSemantics(Info->ResultType)), L);
+      case UtilityOperation::ScalarRealDistributionReset:
+        if (Info->CacheValid)
+          assign(fieldStorage(State, Info->CacheValid, L), quantity(0, "bool", L), L);
+        return {};
+      case UtilityOperation::ScalarRealDistributionParamGet: {
+        if (Info->Kind == ScalarRealDistributionKind::Binomial) {
+          auto Value = Destination ? json::Object(*Destination)
+                                  : temporary(type(A.Context.getRecordType(Info->Parameter), L), L);
+          copyBinomialParameters(Value, Parameter, *Info, L);
+          return Value;
+        }
+        auto Value = Info->Kind == ScalarRealDistributionKind::Lognormal ? temporary(type(A.Context.getRecordType(Info->Parameter), L), L)
+                                  : snapshot(Parameter, L);
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
+          assign(fieldStorage(Value, Info->First, L), snapshot(scalarRealDistributionField(Parameter, *Info, false, L), L), L);
+          assign(fieldStorage(Value, Info->Second, L), snapshot(scalarRealDistributionField(Parameter, *Info, true, L), L), L);
+        }
+        if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
+        return Value;
+      }
+      case UtilityOperation::ScalarRealDistributionParamSet: {
+        if (Info->Kind == ScalarRealDistributionKind::Binomial) {
+          auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+          copyBinomialParameters(Parameter, dereference(std::move(Source), L), *Info, L);
+          return {};
+        }
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Value = snapshot(dereference(std::move(Source), L), L);
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) {
+          assign(scalarRealDistributionField(Parameter, *Info, false, L), fieldStorage(Value, Info->First, L), L);
+          assign(scalarRealDistributionField(Parameter, *Info, true, L), fieldStorage(Value, Info->Second, L), L);
+        } else
+          assign(std::move(Parameter), std::move(Value), L);
+        return {};
+      }
+      default: break;
+      }
+      const auto Random = approvedScalarRealDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random) reject(L, "real distribution generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(std::move(Address), L);
+        // The lognormal overload constructs a separate normal param_type
+        // before it invokes the generator. Preserve that copy boundary.
+        if (Info->Kind == ScalarRealDistributionKind::Lognormal) Parameter = snapshot(std::move(Parameter), L);
+      }
+      const auto Real = type(Info->ResultType, L);
+      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      if (Info->Kind == ScalarRealDistributionKind::NegativeBinomial || Info->Kind == ScalarRealDistributionKind::Geometric) {
+        auto Count = Info->Second ? snapshot(fieldStorage(Parameter, Info->First, L), L) : one(type(Info->ResultType, L), L);
+        auto Probability = snapshot(fieldStorage(Parameter, Info->Second ? Info->Second : Info->First, L), L);
+        return emitNegativeBinomialRandom(Generator, *Random, Info->ResultType, Count, Probability, L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::Binomial)
+        return emitBinomialRandom(Generator, *Random, Parameter, *Info, L);
+      if (Info->Kind == ScalarRealDistributionKind::Poisson)
+        return emitPoissonRandom(Generator, *Random, Parameter, *Info, L);
+      if (Info->Kind == ScalarRealDistributionKind::Cauchy) {
+        auto Location = snapshot(cast(fieldStorage(Parameter, Info->First, L), "double", L), L);
+        auto Scale = snapshot(cast(fieldStorage(Parameter, Info->Second, L), "double", L), L);
+        auto Draw = emitCanonicalRandom(Generator, *Random,
+            Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
+        auto Pi = A.floatingLiteral(llvm::APFloat(llvm::APFloat::IEEEdouble(), llvm::APInt(64, 0x400921fb54442d18ULL)), L);
+        json::Array Args;
+        Args.push_back(binary("*", std::move(Pi), cast(std::move(Draw), "double", L), "double", L));
+        auto Tangent = snapshot(json::Object{{"kind", "unary"}, {"type", "double"}, {"operator", "tan"},
+            {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+        return snapshot(cast(binary("+", Location, binary("*", Scale, Tangent, "double", L), "double", L), Real, L), L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::StudentT) {
+        // The SDK constructs its local Gamma before sampling the persistent normal.
+        auto Degree = fieldStorage(Parameter, Info->First, L);
+        auto Shape = snapshot(cast(binary("*", cast(Degree, "double", L),
+            A.floatingLiteral(llvm::APFloat(0.5), L), "double", L), Real, L), L);
+        auto NormalParameter = fieldStorage(State, Info->NestedStorage, L);
+        auto Normal = emitNormalRandom(Generator, *Random, Info->ResultType, State, Info->Cached, Info->CacheValid,
+            fieldStorage(NormalParameter, Info->NestedFirst, L), fieldStorage(NormalParameter, Info->NestedSecond, L), L);
+        auto Numerator = snapshot(Degree, L);
+        auto Gamma = emitGammaRandom(Generator, *Random, Info->ResultType, Shape,
+            cast(quantity(2, "int", L), Real, L), L);
+        json::Array Args;
+        Args.push_back(binary("/", Numerator, Gamma, Real, L));
+        auto Factor = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "sqrt"},
+            {"args", std::move(Args)}, {"loc", A.loc(L)}}, L);
+        return snapshot(binary("*", Normal, Factor, Real, L), L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::FisherF) {
+        auto Half = cast(A.floatingLiteral(llvm::APFloat(0.5), L), Real, L);
+        // Both local Gamma distributions are constructed before either draw.
+        auto MShape = snapshot(binary("*", fieldStorage(Parameter, Info->First, L), Half, Real, L), L);
+        auto NShape = snapshot(binary("*", fieldStorage(Parameter, Info->Second, L), Half, Real, L), L);
+        auto NumeratorDegree = snapshot(fieldStorage(Parameter, Info->Second, L), L);
+        auto X = emitGammaRandom(Generator, *Random, Info->ResultType, MShape, one(Real, L), L);
+        auto DenominatorDegree = snapshot(fieldStorage(Parameter, Info->First, L), L);
+        auto Y = emitGammaRandom(Generator, *Random, Info->ResultType, NShape, one(Real, L), L);
+        return snapshot(binary("/", binary("*", NumeratorDegree, X, Real, L),
+            binary("*", DenominatorDegree, Y, Real, L), Real, L), L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::ChiSquared) {
+        auto Two = cast(quantity(2, "int", L), Real, L);
+        return emitGammaRandom(Generator, *Random, Info->ResultType,
+            binary("/", fieldStorage(Parameter, Info->First, L), Two, Real, L), Two, L);
+      }
+      if (Info->Kind == ScalarRealDistributionKind::Gamma)
+        return emitGammaRandom(Generator, *Random, Info->ResultType,
+            fieldStorage(Parameter, Info->First, L), fieldStorage(Parameter, Info->Second, L), L);
+      if (Info->CacheValid) {
+        auto Value = emitNormalRandom(Generator, *Random, Info->ResultType, State, Info->Cached, Info->CacheValid,
+            scalarRealDistributionField(Parameter, *Info, false, L, F->getNumParams() == 2),
+            scalarRealDistributionField(Parameter, *Info, true, L, F->getNumParams() == 2), L);
+        if (Info->Kind != ScalarRealDistributionKind::Lognormal) return Value;
+        json::Array Arguments;
+        Arguments.push_back(std::move(Value));
+        return snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "exp"},
+            {"args", std::move(Arguments)}, {"loc", A.loc(L)}}, L);
+      }
+      auto Draw = emitCanonicalRandom(Generator, *Random,
+          Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53, L);
+      json::Array Arguments;
+      Arguments.push_back(binary("-", one(Real, L), std::move(Draw), Real, L));
+      auto Log = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
+          {"args", std::move(Arguments)}, {"loc", A.loc(L)}}, L);
+      json::Array Negative;
+      Negative.push_back(std::move(Log));
+      auto Numerator = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "-"},
+          {"args", std::move(Negative)}, {"loc", A.loc(L)}}, L);
+      if (Info->Kind == ScalarRealDistributionKind::Weibull) {
+        auto Shape = snapshot(fieldStorage(Parameter, Info->First, L), L);
+        auto Scale = snapshot(fieldStorage(Parameter, Info->Second, L), L);
+        auto Power = binary("pow", std::move(Numerator), binary("/", one(Real, L), Shape, Real, L), Real, L);
+        return snapshot(binary("*", Scale, std::move(Power), Real, L), L);
+      }
+      if (Info->Second) {
+        json::Array OuterArguments;
+        OuterArguments.push_back(std::move(Numerator));
+        auto OuterLog = snapshot(json::Object{{"kind", "unary"}, {"type", Real}, {"operator", "log"},
+            {"args", std::move(OuterArguments)}, {"loc", A.loc(L)}}, L);
+        auto Location = snapshot(fieldStorage(Parameter, Info->First, L), L);
+        auto Scale = snapshot(fieldStorage(Parameter, Info->Second, L), L);
+        return snapshot(binary("-", std::move(Location),
+            binary("*", std::move(Scale), std::move(OuterLog), Real, L), Real, L), L);
+      }
+      auto Rate = snapshot(scalarRealDistributionField(std::move(Parameter), *Info, false, L), L);
+      return snapshot(binary("/", std::move(Numerator), std::move(Rate), Real, L), L);
+    }
+    if (Operation >= UtilityOperation::BernoulliGenerate && Operation <= UtilityOperation::BernoulliAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent() : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedBernoulliRecord(A.S, A.Sources, R, A.Context);
+      if (!Info) reject(L, "Bernoulli distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::BernoulliEqual || Operation == UtilityOperation::BernoulliNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        return binary(Operation == UtilityOperation::BernoulliEqual ? "==" : "!=",
+            fieldStorage(bernoulliParameter(dereference(std::move(Left), L), *Info, L), Info->Probability, L),
+            fieldStorage(bernoulliParameter(dereference(std::move(Right), L), *Info, L), Info->Probability, L), "bool", L);
+      }
+      const auto *Object = Operator ? Operator->getArg(0) : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object) : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::BernoulliAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
+        return Place;
+      }
+      auto Parameter = bernoulliParameter(Place, *Info, L);
+      switch (Operation) {
+      case UtilityOperation::BernoulliProbability:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Probability, L), L);
+      case UtilityOperation::BernoulliMinimum: return quantity(0, "bool", L);
+      case UtilityOperation::BernoulliMaximum: return quantity(1, "bool", L);
+      case UtilityOperation::BernoulliReset: return {};
+      case UtilityOperation::BernoulliParamGet: {
+        auto Value = snapshot(std::move(Parameter), L);
+        if (Destination) {assign(*Destination, std::move(Value), L);return json::Object(*Destination);}
+        return Value;
+      }
+      case UtilityOperation::BernoulliParamSet: {
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
+        return {};
+      }
+      default: break;
+      }
+      const auto Random = approvedBernoulliRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random) reject(L, "Bernoulli generator", "The selected generator source is unavailable.");
+      const unsigned First = Operator ? 1 : 0;
+      auto GeneratorAddress = argument(Call->getArg(First), F->getParamDecl(0)->getType());
+      if (F->getNumParams() == 2) {
+        auto Address = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(std::move(Address), L);
+      }
+      auto Probability = snapshot(fieldStorage(std::move(Parameter), Info->Probability, L), L);
+      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), Random->ObjectType, Random->Method, std::nullopt};
+      auto Draw = emitCanonicalRandom(Generator, *Random, 53, L);
+      return snapshot(binary("<", std::move(Draw), std::move(Probability), "bool", L), L);
+    }
+    if (Operation == UtilityOperation::GenerateCanonical) {
+      const auto Info = approvedCanonicalRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "canonical random generation", "The selected generator source is unavailable.");
+      auto Storage = argument(Call->getArg(0), Info->Random.ObjectType);
+      CapturedAlgorithmPredicate Generator{std::move(Storage), Info->Random.ObjectType, Info->Random.Method, std::nullopt};
+      return emitCanonicalRandom(Generator, Info->Random, Info->Bits, L);
+    }
+    if (Operation >= UtilityOperation::UniformGenerate &&
+        Operation <= UtilityOperation::UniformAssign) {
+      const auto *F = Call->getDirectCallee();
+      const auto *M = dyn_cast<CXXMethodDecl>(F);
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *R = M ? M->getParent()
+          : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
+      const auto Info = approvedUniformDistributionRecord(A.S, A.Sources, R, A.Context);
+      if (!Info)
+        reject(L, "uniform distribution", "The checked distribution layout is unavailable.");
+      if (Operation == UtilityOperation::UniformEqual ||
+          Operation == UtilityOperation::UniformNotEqual) {
+        auto Left = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        auto Right = argument(Call->getArg(1), F->getParamDecl(1)->getType());
+        auto LP = uniformDistributionParameter(dereference(std::move(Left), L), *Info, L);
+        auto RP = uniformDistributionParameter(dereference(std::move(Right), L), *Info, L);
+        auto Equal = snapshot(quantity(0, "bool", L), L);
+        const auto CompareUpper = labelName(), Done = labelName();
+        branch(binary("==", fieldStorage(LP, Info->Lower, L), fieldStorage(RP, Info->Lower, L), "bool", L), CompareUpper, Done, L);
+        label(CompareUpper, L);
+        assign(Equal, binary("==", fieldStorage(LP, Info->Upper, L), fieldStorage(RP, Info->Upper, L), "bool", L), L);
+        jump(Done, L);
+        label(Done, L);
+        return Operation == UtilityOperation::UniformNotEqual
+            ? binary("==", Equal, quantity(0, "bool", L), "bool", L) : std::move(Equal);
+      }
+      const auto *Object = Operator ? Operator->getArg(0)
+          : llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::UniformAssign) {
+        auto Source = argument(Call->getArg(Operator ? 1 : 0), F->getParamDecl(0)->getType());
+        assign(Place, snapshot(dereference(std::move(Source), L), L), L);
+        return Place;
+      }
+      auto Parameter = uniformDistributionParameter(Place, *Info, L);
+      switch (Operation) {
+      case UtilityOperation::UniformLower:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Lower, L), L);
+      case UtilityOperation::UniformUpper:
+        return snapshot(fieldStorage(std::move(Parameter), Info->Upper, L), L);
+      case UtilityOperation::UniformParamGet: {
+        auto Value = snapshot(std::move(Parameter), L);
+        if (Destination) {
+          assign(*Destination, std::move(Value), L);
+          return json::Object(*Destination);
+        }
+        return Value;
+      }
+      case UtilityOperation::UniformParamSet: {
+        auto Source = argument(Call->getArg(0), F->getParamDecl(0)->getType());
+        assign(std::move(Parameter), snapshot(dereference(std::move(Source), L), L), L);
+        return {};
+      }
+      case UtilityOperation::UniformReset:
+        return {};
+      default:
+        break;
+      }
+      const unsigned First = Operator ? 1 : 0;
+      const auto GeneratorType = F->getParamDecl(0)->getType();
+      const auto Random = approvedUniformDistributionRandomCall(A.S, A.Sources, Call, A.Context);
+      if (!Random)
+        reject(L, "uniform generator", "The selected generator source is unavailable.");
+      auto GeneratorAddress = argument(Call->getArg(First), GeneratorType);
+      if (F->getNumParams() == 2) {
+        auto ParameterAddress = argument(Call->getArg(First + 1), F->getParamDecl(1)->getType());
+        Parameter = dereference(std::move(ParameterAddress), L);
+      }
+      auto Lower = snapshot(fieldStorage(Parameter, Info->Lower, L), L);
+      auto Upper = snapshot(fieldStorage(std::move(Parameter), Info->Upper, L), L);
+      if (Info->Real) {
+        CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), GeneratorType, Random->Method, std::nullopt};
+        const auto Real = type(Info->ResultType, L);
+        auto Span = snapshot(binary("-", Upper, Lower, Real, L), L);
+        const unsigned Digits = Info->ResultType->isSpecificBuiltinType(BuiltinType::Float) ? 24 : 53;
+        auto Draw = emitCanonicalRandom(Generator, *Random, Digits, L);
+        return snapshot(binary("+", binary("*", Span, std::move(Draw), Real, L), Lower, Real, L), L);
+      }
+      const auto Unsigned = A.Context.getTypeSize(Info->ResultType) <= 32
+          ? A.Context.UnsignedIntTy : A.Context.getCorrespondingUnsignedType(Info->ResultType);
+      const auto U = type(Unsigned, L), Result = type(Info->ResultType, L);
+      auto Span = snapshot(binary("-", cast(Upper, U, L), cast(Lower, U, L), U, L), L);
+      CapturedAlgorithmPredicate Generator{std::move(GeneratorAddress), GeneratorType, Random->Method, std::nullopt};
+      auto Draw = snapshot(emitAlgorithmRandom(Generator, *Random, Span, L), L);
+      auto Value = temporary(Result, L);
+      const auto Full = labelName(), Bounded = labelName(), Done = labelName();
+      branch(binary("==", binary("+", Span, quantity(1, U, L), U, L), quantity(0, U, L), "bool", L), Full, Bounded, L);
+      label(Full, L);
+      assign(Value, Draw, L);
+      jump(Done, L);
+      label(Bounded, L);
+      assign(Value, cast(binary("+", cast(Draw, U, L), cast(Lower, U, L), U, L), Result, L), L);
+      jump(Done, L);
+      label(Done, L);
+      return Value;
+    }
+    if (Operation >= UtilityOperation::SeedSequenceGenerate &&
+        Operation <= UtilityOperation::SeedSequenceParam) {
+      const auto *M = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+      const auto Seq = approvedSeedSequenceRecord(A.S, A.Sources, M->getParent(), A.Context);
+      const auto *Object = llvm::cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument();
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(Receiver, L);
+      if (Operation == UtilityOperation::SeedSequenceSize)
+        return seedSequenceSize(std::move(Place), *Seq, L);
+      auto First = seedSequenceIterator(Call->getArg(0), L);
+      auto Element = Call->getArg(0)->getType();
+      if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Element->getAsCXXRecordDecl(), A.Context))
+        Element = Wrapped->IteratorType;
+      Element = Element->getPointeeType();
+      if (Operation == UtilityOperation::SeedSequenceGenerate) {
+        auto Last = seedSequenceIterator(Call->getArg(1), L);
+        generateSeedSequence(std::move(Place), *Seq, std::move(First), std::move(Last), Element, L);
+      } else {
+        auto Count = seedSequenceSize(Place, *Seq, L);
+        auto Seeds = snapshot(seedSequenceMember(std::move(Place), *Seq, "nct_vector_begin", L), L);
+        const auto Size = type(A.Context.getSizeType(), L);
+        auto I = snapshot(quantity(0, Size, L), L);
+        const auto Check = labelName(), Copy = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", I, Count, "bool", L), Copy, Done, L);
+        label(Copy, L);
+        assign(index(First, I, type(Element, L), L),
+               cast(index(Seeds, I, type(Seq->ResultType, L), L), type(Element, L), L), L);
+        assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+        jump(Check, L);
+        label(Done, L);
+      }
+      return {};
+    }
+    auto ArrayFor = [&](QualType Type) {
+      return approvedUtilityArrayRecord(
+          A.S, A.Sources,
+          Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), A.Context);
+    };
+    auto InitializerListFor = [&](QualType Type) {
+      return approvedUtilityInitializerListRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto StringViewFor = [&](QualType Type) {
+      return approvedUtilityStringViewRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto StringFor = [&](QualType Type) {
+      return approvedUtilityStringRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto ReadStringAt = [&](Expression Address,
+                            const UtilityStringRecord &String) {
+      return readStringAt(std::move(Address), String, L);
+    };
+    auto SliceStringBytes = [&](Expression Data, Expression Size,
+                                Expression Position, Expression Requested) {
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto ConstPointerType =
+          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+      auto Length = temporary(SizeType, L);
+      const auto InRange = labelName(), OutOfRange = labelName(),
+                 UseCount = labelName(), UseRemaining = labelName(),
+                 Ready = labelName();
+      branch(
+          binary("<=", json::Object(Position), json::Object(Size), "bool", L),
+          InRange, OutOfRange, L);
+      label(InRange, L);
+      auto Remaining = temporary(SizeType, L);
+      assign(
+          Remaining,
+          binary("-", json::Object(Size), json::Object(Position), SizeType, L),
+          L);
+      branch(binary("<", json::Object(Requested), json::Object(Remaining),
+                    "bool", L),
+             UseCount, UseRemaining, L);
+      label(UseCount, L);
+      assign(Length, json::Object(Requested), L);
+      jump(Ready, L);
+      label(UseRemaining, L);
+      assign(Length, json::Object(Remaining), L);
+      jump(Ready, L);
+      label(OutOfRange, L);
+      assign(Position, json::Object(Size), L);
+      assign(Length, quantity(0, SizeType, L), L);
+      jump(Ready, L);
+      label(Ready, L);
+      const auto Offset = labelName(), Positioned = labelName();
+      branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                    "bool", L),
+             Offset, Positioned, L);
+      label(Offset, L);
+      assign(Data,
+             binary("+", json::Object(Data),
+                    cast(json::Object(Position), DifferenceType, L),
+                    ConstPointerType, L),
+             L);
+      jump(Positioned, L);
+      label(Positioned, L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Length)};
+    };
+    auto ReadStringSlice = [&](Expression Address,
+                               const UtilityStringRecord &String,
+                               Expression Position, Expression Requested) {
+      auto [Data, Size] = ReadStringAt(std::move(Address), String);
+      return SliceStringBytes(std::move(Data), std::move(Size),
+                              std::move(Position), std::move(Requested));
+    };
+    auto ReadStringViewAt = [&](unsigned Index) {
+      const auto *Argument = Call->getArg(Index);
+      const auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!View)
+        reject(L, "string view source",
+               "The selected std::string_view layout is unavailable.");
+      auto Value = snapshot(expression(Argument), L);
+      auto Data = snapshot(fieldStorage(json::Object(Value), View->Data, L), L);
+      auto Size = snapshot(fieldStorage(std::move(Value), View->Size, L), L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Size)};
+    };
+    auto StringSliceArgument = [&](unsigned Index) {
+      const auto *Argument = Call->getArg(Index);
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
+        Argument = selectedDefaultArgument(Default, A.Context);
+      if (!Argument)
+        reject(L, "string slice",
+               "The selected string slice argument is unavailable.");
+      return snapshot(expression(Argument), L);
+    };
+    auto ReadCStringAt = [&](Expression Data) {
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto PointerType =
+          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Cursor = temporary(PointerType, L);
+      auto Size = temporary(SizeType, L);
+      assign(Cursor, json::Object(Data), L);
+      assign(Size, quantity(0, SizeType, L), L);
+      const auto Check = labelName(), Advance = labelName();
+      const auto Ready = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("==", dereference(json::Object(Cursor), L),
+                    quantity(0, type(A.Context.CharTy, L), L), "bool", L),
+             Ready, Advance, L);
+      label(Advance, L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    PointerType, L),
+             L);
+      assign(Size,
+             binary("+", json::Object(Size), quantity(1, SizeType, L), SizeType,
+                    L),
+             L);
+      jump(Check, L);
+      label(Ready, L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Size)};
+    };
+    auto VectorFor = [&](QualType Type) {
+      return approvedUtilityVectorRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto OptionalFor = [&](QualType Type) {
+      return approvedUtilityOptionalRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto TupleFor = [&](QualType Type) {
+      const auto *Record =
+          Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+      auto Tuple = approvedUtilityTupleRecord(A.S, A.Sources, Record, A.Context);
+      if (!Tuple)
+        Tuple = approvedUtilityReferenceTupleRecord(A.S, A.Sources, Record,
+                                                    A.Context);
+      return Tuple;
+    };
+    auto TupleElement = [&](Expression Base, const UtilityTupleElement &Field,
+                            bool ReadOnly) {
+      auto Element = fieldStorage(std::move(Base), Field, L, ReadOnly);
+      return Field.getType()->isReferenceType()
+                 ? dereference(std::move(Element), L)
+                 : std::move(Element);
+    };
+    auto MemberObject = [&]() -> const Expr * {
+      if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
+        return Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+      if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call))
+        return Member->getImplicitObjectArgument();
+      return nullptr;
+    };
+    auto UniquePtrMember = [&](Expression Base,
+                               const UtilityUniquePtrRecord &Unique) {
+      return uniquePtrStoredPointer(std::move(Base), Unique, L);
+    };
+    auto ReferenceMember = [&](Expression Base,
+                               const FunctionalReferenceRecord &Wrapper) {
+      return Expression{{"kind", "member"},
+                        {"type", type(Wrapper.PointerType, L)},
+                        {"name", "nct_reference_wrapper_pointer"},
+                        {"args", json::Array{std::move(Base)}},
+                        {"loc", A.loc(L)}};
+    };
+    auto OptionalObject = [&]() -> const Expr * {
+      const Expr *Object = MemberObject();
+      while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Object)) {
+        if (Cast->getCastKind() != CK_NoOp &&
+            Cast->getCastKind() != CK_DerivedToBase &&
+            Cast->getCastKind() != CK_UncheckedDerivedToBase)
+          break;
+        Object = Cast->getSubExpr();
+      }
+      return Object;
+    };
+    auto ArrayElement = [&](Expression Base, const UtilityArrayRecord &Array,
+                            Expression Position, QualType ResultType,
+                            bool ReadOnly = false) {
+      auto PointeeType = ReadOnly ? ResultType.withConst() : ResultType;
+      auto PointerType = type(A.Context.getPointerType(PointeeType), L);
+      auto Elements = fieldStorage(std::move(Base), Array.Elements, L);
+      return index(decay(std::move(Elements), PointerType, L),
+                   std::move(Position), type(ResultType, L), L);
+    };
+    struct UtilityComparisonLeaf {
+      Expression Left, Right;
+      QualType LeftType, RightType;
+    };
+    using UtilityComparisonLeaves = std::vector<UtilityComparisonLeaf>;
+    const bool SelectedPairComparison =
+        Operation == UtilityOperation::PairEqual ||
+        Operation == UtilityOperation::PairNotEqual ||
+        Operation == UtilityOperation::PairLess ||
+        Operation == UtilityOperation::PairGreater ||
+        Operation == UtilityOperation::PairLessEqual ||
+        Operation == UtilityOperation::PairGreaterEqual;
+    auto CollectUtilityComparisonLeaves =
+        [&](auto &&Collect, const Expression &LeftValue, QualType LeftType,
+            const Expression &RightValue, QualType RightType, bool Ordered,
+            UtilityComparisonLeaves &Leaves, unsigned Depth) -> bool {
+      if (Depth > 64 || LeftType.isNull() || RightType.isNull())
+        return false;
+      if (LeftType->isReferenceType() || RightType->isReferenceType()) {
+        auto LeftReferent = json::Object(LeftValue);
+        auto RightReferent = json::Object(RightValue);
+        if (LeftType->isReferenceType()) {
+          LeftReferent = dereference(std::move(LeftReferent), L);
+          LeftType = LeftType->getPointeeType();
+        }
+        if (RightType->isReferenceType()) {
+          RightReferent = dereference(std::move(RightReferent), L);
+          RightType = RightType->getPointeeType();
+        }
+        return Collect(Collect, LeftReferent, LeftType, RightReferent,
+                       RightType, Ordered, Leaves, Depth + 1);
+      }
+      if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
+                                                          RightType, Ordered)) {
+        const auto CommonType = type(*Common, L);
+        Leaves.push_back({cast(json::Object(LeftValue), CommonType, L),
+                          cast(json::Object(RightValue), CommonType, L),
+                          *Common, *Common});
+        return true;
+      }
+      if (!Ordered) {
+        if (const auto Common =
+                utilityCallbackComparisonType(A.Context, LeftType, RightType)) {
+          const auto CommonType = type(*Common, L);
+          Leaves.push_back({cast(json::Object(LeftValue), CommonType, L),
+                            cast(json::Object(RightValue), CommonType, L),
+                            *Common, *Common});
+          return true;
+        }
+      }
+
+      if (SelectedPairComparison) {
+        const auto *LeftRecord = LeftType->getAsCXXRecordDecl();
+        const auto *RightRecord = RightType->getAsCXXRecordDecl();
+        const auto LeftString = approvedUtilityStringRecord(
+            A.S, A.Sources, LeftRecord, A.Context);
+        const auto RightString = approvedUtilityStringRecord(
+            A.S, A.Sources, RightRecord, A.Context);
+        const auto LeftView = approvedUtilityStringViewRecord(
+            A.S, A.Sources, LeftRecord, A.Context);
+        const auto RightView = approvedUtilityStringViewRecord(
+            A.S, A.Sources, RightRecord, A.Context);
+        const auto LeftOwner = approvedUtilityUniquePtrLayout(
+            A.S, A.Sources, LeftRecord, A.Context);
+        const auto RightOwner = approvedUtilityUniquePtrLayout(
+            A.S, A.Sources, RightRecord, A.Context);
+        if (LeftString || RightString || LeftView || RightView ||
+            LeftOwner || RightOwner) {
+          const bool String = LeftString && RightString &&
+              LeftString->Record->getCanonicalDecl() ==
+                  RightString->Record->getCanonicalDecl();
+          const bool View = LeftView && RightView &&
+              LeftView->Record->getCanonicalDecl() ==
+                  RightView->Record->getCanonicalDecl();
+          const bool Owner = LeftOwner && RightOwner &&
+              LeftOwner->Deleter.Array == RightOwner->Deleter.Array &&
+              A.Context.hasSameUnqualifiedType(LeftOwner->ElementType,
+                                               RightOwner->ElementType);
+          if (!String && !View && !Owner)
+            return false;
+          // Collection records storage only. Byte reads belong to the
+          // corresponding short-circuit comparison branch below.
+          Leaves.push_back({json::Object(LeftValue), json::Object(RightValue),
+                            LeftType, RightType});
+          return true;
+        }
+      }
+
+      const auto LeftArray = ArrayFor(LeftType);
+      const auto RightArray = ArrayFor(RightType);
+      if (LeftArray || RightArray) {
+        if (!LeftArray || !RightArray ||
+            LeftArray->Record->getCanonicalDecl() !=
+                RightArray->Record->getCanonicalDecl() ||
+            LeftArray->Size != RightArray->Size)
+          return false;
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        for (uint64_t I = 0; I < LeftArray->Size; ++I) {
+          auto LeftElement = ArrayElement(json::Object(LeftValue), *LeftArray,
+                                          quantity(I, SizeType, L),
+                                          LeftArray->ElementType, true);
+          auto RightElement = ArrayElement(
+              json::Object(RightValue), *RightArray, quantity(I, SizeType, L),
+              RightArray->ElementType, true);
+          if (!Collect(Collect, LeftElement, LeftArray->ElementType,
+                       RightElement, RightArray->ElementType, Ordered, Leaves,
+                       Depth + 1))
+            return false;
+        }
+        return true;
+      }
+
+      auto LeftPair = approvedUtilityPairRecord(
+          A.S, A.Sources, LeftType.getUnqualifiedType()->getAsCXXRecordDecl(),
+          A.Context);
+      auto RightPair = approvedUtilityPairRecord(
+          A.S, A.Sources, RightType.getUnqualifiedType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!LeftPair)
+        LeftPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightPair)
+        RightPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!LeftPair)
+        LeftPair = approvedUtilityMixedReferencePairRecord(
+            A.S, A.Sources,
+            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightPair)
+        RightPair = approvedUtilityMixedReferencePairRecord(
+            A.S, A.Sources,
+            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (LeftPair || RightPair) {
+        if (!LeftPair || !RightPair)
+          return false;
+        auto LeftFirst =
+            fieldStorage(json::Object(LeftValue), LeftPair->First, L);
+        auto RightFirst =
+            fieldStorage(json::Object(RightValue), RightPair->First, L);
+        if (!Collect(Collect, LeftFirst, LeftPair->First->getType(), RightFirst,
+                     RightPair->First->getType(), Ordered, Leaves, Depth + 1))
+          return false;
+        auto LeftSecond =
+            fieldStorage(json::Object(LeftValue), LeftPair->Second, L);
+        auto RightSecond =
+            fieldStorage(json::Object(RightValue), RightPair->Second, L);
+        return Collect(Collect, LeftSecond, LeftPair->Second->getType(),
+                       RightSecond, RightPair->Second->getType(), Ordered,
+                       Leaves, Depth + 1);
+      }
+
+      auto LeftTuple = TupleFor(LeftType);
+      auto RightTuple = TupleFor(RightType);
+      if (!LeftTuple)
+        LeftTuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightTuple)
+        RightTuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!LeftTuple && !RightTuple)
+        return false;
+      if (!LeftTuple || !RightTuple ||
+          LeftTuple->Elements.size() != RightTuple->Elements.size())
+        return false;
+      for (unsigned I = 0; I < LeftTuple->Elements.size(); ++I) {
+        auto LeftElement =
+            fieldStorage(json::Object(LeftValue), LeftTuple->Elements[I], L);
+        auto RightElement =
+            fieldStorage(json::Object(RightValue), RightTuple->Elements[I], L);
+        if (!Collect(Collect, LeftElement, LeftTuple->Elements[I].getType(),
+                     RightElement, RightTuple->Elements[I].getType(), Ordered,
+                     Leaves, Depth + 1))
+          return false;
+      }
+      return true;
+    };
+    auto CompareUtilityValues =
+        [&](llvm::StringRef Operator, const Expression &LeftValue,
+            QualType LeftType, const Expression &RightValue,
+            QualType RightType) -> Expression {
+      const bool Ordered = Operator != "==" && Operator != "!=";
+      if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
+                                                          RightType, Ordered)) {
+        // Scalar relations must preserve unordered floating-point results.
+        // Recursive comparisons below use the aggregate's lexicographic rules.
+        const auto CommonType = type(*Common, L);
+        return binary(Operator, cast(json::Object(LeftValue), CommonType, L),
+                      cast(json::Object(RightValue), CommonType, L), "bool", L);
+      }
+      UtilityComparisonLeaves Leaves;
+      if (!CollectUtilityComparisonLeaves(CollectUtilityComparisonLeaves,
+                                          LeftValue, LeftType, RightValue,
+                                          RightType, Ordered, Leaves, 0))
+        reject(L, "utility value comparison",
+               "The selected values have no approved recursive comparison.");
+      auto CompareLeaf = [&](const UtilityComparisonLeaf &Leaf,
+                             llvm::StringRef Relation,
+                             bool ReverseOrder = false) -> Expression {
+        auto Left = json::Object(ReverseOrder ? Leaf.Right : Leaf.Left);
+        auto Right = json::Object(ReverseOrder ? Leaf.Left : Leaf.Right);
+        const auto LeftType = ReverseOrder ? Leaf.RightType : Leaf.LeftType;
+        const auto RightType = ReverseOrder ? Leaf.LeftType : Leaf.RightType;
+        if (const auto String = approvedUtilityStringRecord(
+                A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
+          // Comparisons borrow string subobjects through the const pair.
+          auto LeftAddress = snapshot(
+              address(std::move(Left), LeftType.withConst(), L), L);
+          auto RightAddress = snapshot(
+              address(std::move(Right), RightType.withConst(), L), L);
+          auto LeftBytes = readStringAt(std::move(LeftAddress), *String, L);
+          auto RightBytes = readStringAt(std::move(RightAddress), *String, L);
+          return comparePairByteRanges(Relation, std::move(LeftBytes.first),
+                                       std::move(LeftBytes.second),
+                                       std::move(RightBytes.first),
+                                       std::move(RightBytes.second), L);
+        }
+        if (const auto View = approvedUtilityStringViewRecord(
+                A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
+          auto LeftData = snapshot(fieldStorage(json::Object(Left), View->Data, L), L);
+          auto LeftSize = snapshot(fieldStorage(std::move(Left), View->Size, L), L);
+          auto RightData = snapshot(fieldStorage(json::Object(Right), View->Data, L), L);
+          auto RightSize = snapshot(fieldStorage(std::move(Right), View->Size, L), L);
+          return comparePairByteRanges(Relation, std::move(LeftData),
+                                       std::move(LeftSize), std::move(RightData),
+                                       std::move(RightSize), L);
+        }
+        if (const auto Owner = approvedUtilityUniquePtrLayout(
+                A.S, A.Sources, LeftType->getAsCXXRecordDecl(), A.Context)) {
+          const auto Other = approvedUtilityUniquePtrLayout(
+              A.S, A.Sources, RightType->getAsCXXRecordDecl(), A.Context);
+          const auto Pointer = Owner->ElementType.isConstQualified()
+                                   ? Owner->PointerType : Other->PointerType;
+          Left = snapshot(cast(uniquePtrStoredPointer(std::move(Left), *Owner, L),
+                               type(Pointer, L), L), L);
+          Right = snapshot(cast(uniquePtrStoredPointer(std::move(Right), *Other, L),
+                                type(Pointer, L), L), L);
+        }
+        return binary(Relation, std::move(Left), std::move(Right), "bool", L);
+      };
+      auto Equal = [&]() -> Expression {
+        if (Leaves.empty())
+          return boolean(true, L);
+        auto Result = temporary("bool", L);
+        const auto True = labelName(), False = labelName(), End = labelName();
+        std::vector<std::string> Next;
+        Next.reserve(Leaves.size() - 1);
+        for (std::size_t I = 1; I < Leaves.size(); ++I)
+          Next.push_back(labelName());
+        for (std::size_t I = 0; I < Leaves.size(); ++I) {
+          const auto Success = I + 1 == Leaves.size() ? True : Next[I];
+          branch(CompareLeaf(Leaves[I], "=="), Success, False, L);
+          if (I + 1 != Leaves.size())
+            label(Next[I], L);
+        }
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      auto Less = [&](bool ReverseOrder) -> Expression {
+        if (Leaves.empty())
+          return boolean(false, L);
+        auto Result = temporary("bool", L);
+        const auto True = labelName(), False = labelName(), End = labelName();
+        for (const auto &Leaf : Leaves) {
+          const auto Reverse = labelName(), Next = labelName();
+          branch(CompareLeaf(Leaf, "<", ReverseOrder), True, Reverse, L);
+          label(Reverse, L);
+          branch(CompareLeaf(Leaf, "<", !ReverseOrder), False, Next, L);
+          label(Next, L);
+        }
+        jump(False, L);
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      Expression Result;
+      bool Negate = false;
+      if (Operator == "==")
+        Result = Equal();
+      else if (Operator == "!=") {
+        Result = Equal();
+        Negate = true;
+      } else if (Operator == "<")
+        Result = Less(false);
+      else if (Operator == ">")
+        Result = Less(true);
+      else if (Operator == "<=") {
+        Result = Less(true);
+        Negate = true;
+      } else if (Operator == ">=") {
+        Result = Less(false);
+        Negate = true;
+      } else {
+        reject(L, "utility value comparison",
+               "Unknown approved recursive comparison.");
+      }
+      if (!Negate)
+        return Result;
+      return snapshot(Expression{{"kind", "unary"},
+                                 {"type", "bool"},
+                                 {"operator", "!"},
+                                 {"args", json::Array{std::move(Result)}},
+                                 {"loc", A.loc(L)}},
+                      L);
+    };
+    auto UtilityComparisonOperator = [&](UtilityOperation Comparison) {
+      switch (Comparison) {
+      case UtilityOperation::PairEqual:
+      case UtilityOperation::TupleEqual:
+      case UtilityOperation::ArrayEqual:
+      case UtilityOperation::OptionalEqual:
+        return llvm::StringRef("==");
+      case UtilityOperation::PairNotEqual:
+      case UtilityOperation::TupleNotEqual:
+      case UtilityOperation::ArrayNotEqual:
+      case UtilityOperation::OptionalNotEqual:
+        return llvm::StringRef("!=");
+      case UtilityOperation::PairLess:
+      case UtilityOperation::TupleLess:
+      case UtilityOperation::ArrayLess:
+      case UtilityOperation::OptionalLess:
+        return llvm::StringRef("<");
+      case UtilityOperation::PairGreater:
+      case UtilityOperation::TupleGreater:
+      case UtilityOperation::ArrayGreater:
+      case UtilityOperation::OptionalGreater:
+        return llvm::StringRef(">");
+      case UtilityOperation::PairLessEqual:
+      case UtilityOperation::TupleLessEqual:
+      case UtilityOperation::ArrayLessEqual:
+      case UtilityOperation::OptionalLessEqual:
+        return llvm::StringRef("<=");
+      case UtilityOperation::PairGreaterEqual:
+      case UtilityOperation::TupleGreaterEqual:
+      case UtilityOperation::ArrayGreaterEqual:
+      case UtilityOperation::OptionalGreaterEqual:
+        return llvm::StringRef(">=");
+      default:
+        reject(L, "utility value comparison",
+               "Unknown approved comparison operation.");
+      }
+    };
+    auto AlgorithmElementType = [&](unsigned Index) {
+      const auto Iterator = Call->getArg(Index)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Iterator->getAsCXXRecordDecl(), A.Context);
+      return Wrapped ? Wrapped->IteratorType->getPointeeType()
+                     : Iterator->getPointeeType();
+    };
+    auto AlgorithmSourceCompare =
+        [&](Expression Left, unsigned LeftIndex, Expression Right,
+            unsigned RightIndex,
+            OverloadedOperatorKind Operator) -> std::optional<Expression> {
+      const auto LeftType = AlgorithmElementType(LeftIndex);
+      const auto RightType = AlgorithmElementType(RightIndex);
+      const auto SourceComparison =
+          A.Context.hasSameUnqualifiedType(LeftType, RightType)
+              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
+                                                       Operator, A.Context)
+              : std::nullopt;
+      if (SourceComparison) {
+        auto LeftAddress =
+            snapshot(address(std::move(Left), LeftType.withConst(), L), L);
+        auto RightAddress =
+            snapshot(address(std::move(Right), RightType.withConst(), L), L);
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      }
+      return std::nullopt;
+    };
+    auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
+                              Expression Right, unsigned RightIndex) {
+      if (auto Source = AlgorithmSourceCompare(json::Object(Left), LeftIndex,
+                                               json::Object(Right), RightIndex,
+                                               OO_EqualEqual))
+        return std::move(*Source);
+      return CompareUtilityValues("==", Left, AlgorithmElementType(LeftIndex),
+                                  Right, AlgorithmElementType(RightIndex));
+    };
+    auto AlgorithmLess = [&](Expression Left, unsigned LeftIndex,
+                             Expression Right, unsigned RightIndex) {
+      if (auto Source =
+              AlgorithmSourceCompare(json::Object(Left), LeftIndex,
+                                     json::Object(Right), RightIndex, OO_Less))
+        return std::move(*Source);
+      return CompareUtilityValues("<", Left, AlgorithmElementType(LeftIndex),
+                                  Right, AlgorithmElementType(RightIndex));
+    };
+    auto AlgorithmReferenceLess = [&](Expression LeftAddress,
+                                      Expression RightAddress) {
+      const auto SourceComparison = approvedUtilityTrivialSourceComparison(
+          A.S, A.Sources, Call->getArg(0)->getType(), OO_Less, A.Context);
+      if (SourceComparison)
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      return binary("<", dereference(std::move(LeftAddress), L),
+                    dereference(std::move(RightAddress), L), "bool", L);
+    };
+    auto AlgorithmRangeValueLess = [&](Expression Left, QualType LeftType,
+                                       Expression Right, QualType RightType) {
+      const auto SourceComparison =
+          A.Context.hasSameUnqualifiedType(LeftType, RightType)
+              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
+                                                       OO_Less, A.Context)
+              : std::nullopt;
+      if (SourceComparison) {
+        auto LeftAddress =
+            snapshot(address(std::move(Left), LeftType.withConst(), L), L);
+        auto RightAddress =
+            snapshot(address(std::move(Right), RightType.withConst(), L), L);
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      }
+      const auto Common =
+          utilityScalarComparisonType(A.Context, LeftType, RightType, true);
+      if (!Common)
+        reject(L, "ordered algorithm query",
+               "The range element and value have no ordered common type.");
+      const auto ComparisonType = type(*Common, L);
+      return binary("<", cast(std::move(Left), ComparisonType, L),
+                    cast(std::move(Right), ComparisonType, L), "bool", L);
+    };
+    auto AlgorithmRangeValue = [&](unsigned Index)
+        -> std::pair<Expression, QualType> {
+      const auto IteratorType = Call->getArg(Index)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      auto Value = snapshot(expression(Call->getArg(Index)), L);
+      if (Wrapped)
+        return {snapshot(fieldStorage(std::move(Value), Wrapped->Current, L),
+                         L),
+                Wrapped->IteratorType};
+      return {std::move(Value), IteratorType};
+    };
+    auto AlgorithmIteratorResult = [&](Expression Pointer,
+                                       unsigned OutputIndex) -> Expression {
+      const auto IteratorType = Call->getArg(OutputIndex)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      if (!Wrapped)
+        return Pointer;
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "algorithm iterator result",
+               "The iterator destination type differs from its result.");
+      assign(fieldStorage(json::Object(Place), Wrapped->Current, L),
+             std::move(Pointer), L);
+      return Place;
+    };
+    auto AlgorithmPairIteratorField = [&](Expression Place,
+                                          const FieldDecl *Field,
+                                          unsigned IteratorIndex) {
+      auto Member = fieldStorage(std::move(Place), Field, L);
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources,
+          Call->getArg(IteratorIndex)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      return Wrapped ? fieldStorage(std::move(Member), Wrapped->Current, L)
+                     : Member;
+    };
+    auto ReverseFor = [&](QualType Type) {
+      return approvedUtilityReverseIteratorRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto ReverseCurrent = [&](Expression Base,
+                              const UtilityReverseIteratorRecord &Reverse) {
+      auto Current = fieldStorage(std::move(Base), Reverse.Current, L);
+      return Reverse.WrappedCurrent
+                 ? fieldStorage(std::move(Current), Reverse.WrappedCurrent, L)
+                 : Current;
+    };
+    auto ReverseValue = [&](Expression Pointer,
+                            const UtilityReverseIteratorRecord &Reverse) {
+      auto RecordType = A.Context.getRecordType(Reverse.Record);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(RecordType, L);
+      Destination.reset();
+      if (Place.getString("type") != type(RecordType, L))
+        reject(
+            L, "reverse iterator result",
+            "The destination type differs from the reverse iterator result.");
+      auto Value = snapshot(
+          cast(std::move(Pointer), type(Reverse.PointerType, L), L), L);
+      auto MemberPointer = [&](const FieldDecl *Field) {
+        auto Member = fieldStorage(json::Object(Place), Field, L);
+        return Reverse.WrappedCurrent
+                   ? fieldStorage(std::move(Member), Reverse.WrappedCurrent, L)
+                   : Member;
+      };
+      assign(MemberPointer(Reverse.Legacy), json::Object(Value), L);
+      assign(MemberPointer(Reverse.Current), std::move(Value), L);
+      return Place;
+    };
+    auto AllocatorMaximum = [&](const UtilityAllocatorRecord &Allocator,
+                                llvm::StringRef Description) {
+      if (Allocator.ElementType->isVoidType() ||
+          Allocator.ElementType->isIncompleteType())
+        reject(L, Description,
+               "A checked complete std::allocator element is required.");
+      const auto ResultType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(ResultType);
+      const uint64_t Maximum = Bits == 64
+                                   ? std::numeric_limits<uint64_t>::max()
+                                   : (uint64_t(1) << Bits) - 1;
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Allocator.ElementType).getQuantity();
+      if (!ElementBytes)
+        reject(L, Description,
+               "The allocator element must have positive complete size.");
+      return quantity(Maximum / ElementBytes, ResultType, L);
+    };
+    auto ConstructAt = [&](Expression Place, QualType ElementType,
+                           const CXXConstructorDecl *Constructor,
+                           const CXXConstructExpr *Construction,
+                           unsigned ArgumentIndex,
+                           llvm::StringRef Description) {
+      if (ArgumentIndex > Call->getNumArgs())
+        reject(L, Description,
+               "The checked construction arguments are missing.");
+      const unsigned ArgumentCount = Call->getNumArgs() - ArgumentIndex;
+      if (!Constructor) {
+        if (!ArgumentCount) {
+          initializeZero(std::move(Place), ElementType, L);
+          return;
+        }
+        if (ArgumentCount != 1)
+          reject(L, Description,
+                 "A scalar construction needs zero or one argument.");
+        assign(std::move(Place),
+               cast(expression(Call->getArg(ArgumentIndex)),
+                    type(ElementType, L), L),
+               L);
+        return;
+      }
+
+      const unsigned ConstructionArguments =
+          Construction ? Construction->getNumArgs() : ArgumentCount;
+      if (ConstructionArguments < ArgumentCount ||
+          Constructor->getNumParams() != ConstructionArguments)
+        reject(L, Description,
+               "The selected constructor and argument counts differ.");
+      if (!ConstructionArguments && Constructor->isDefaultConstructor()) {
+        constructMemoryDefault(std::move(Place), ElementType, Constructor, true,
+                               L);
+        return;
+      }
+      if (ArgumentCount == 1 && ConstructionArguments == 1 &&
+          Constructor->isCopyOrMoveConstructor()) {
+        auto Source = argument(Call->getArg(ArgumentIndex),
+                               Constructor->getParamDecl(0)->getType());
+        constructMemorySource(std::move(Place), ElementType, Constructor,
+                              std::move(Source), L);
+        return;
+      }
+      if (Constructor->isTrivial() || !Constructor->hasBody())
+        reject(L, Description,
+               "The selected source constructor has no checked body.");
+      json::Array Args;
+      Args.push_back(snapshot(
+          address(std::move(Place), ElementType.getUnqualifiedType(), L), L));
+      for (unsigned I = 0; I < ConstructionArguments; ++I) {
+        const auto Parameter = Constructor->getParamDecl(I)->getType();
+        const auto *Actual = I < ArgumentCount ? Call->getArg(ArgumentIndex + I)
+                                               : Construction->getArg(I);
+        if (Parameter->isReferenceType() || recordValue(Parameter))
+          Args.push_back(argument(Actual, Parameter));
+        else
+          Args.push_back(snapshot(
+              cast(argument(Actual, Parameter), type(Parameter, L), L), L));
+      }
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Constructor)},
+                                  {"args", std::move(Args)},
+                                  {"loc", A.loc(L)}});
+    };
+    auto AllocatorConstruct = [&](const UtilityAllocatorConstructCall &Info,
+                                  unsigned PointerIndex,
+                                  unsigned ArgumentIndex) {
+      if (PointerIndex >= Call->getNumArgs() ||
+          ArgumentIndex > Call->getNumArgs())
+        reject(L, "allocator construct",
+               "The checked pointer and construction arguments are missing.");
+      auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
+      ConstructAt(dereference(std::move(Pointer), L), Info.ElementType,
+                  Info.Constructor, Info.Construction, ArgumentIndex,
+                  "allocator construct");
+    };
+    auto AllocatorHeap = [&](const UtilityAllocatorHeapCall &Info) {
+      if (Info.Traits) {
+        if (!Call->getNumArgs())
+          reject(L, "allocator heap operation",
+                 "A checked allocator reference is required.");
+        lvalue(Call->getArg(0));
+      } else {
+        const auto *Object = MemberObject();
+        if (!Object)
+          reject(L, "allocator heap operation",
+                 "A checked std::allocator receiver is required.");
+        lvalue(Object);
+      }
+      const unsigned First = Info.Traits ? 1u : 0u;
+      const auto Size = type(A.Context.getSizeType(), L);
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Info.Allocator.ElementType)
+              .getQuantity();
+      if (!ElementBytes)
+        reject(L, "allocator heap operation",
+               "The allocator element must have positive complete size.");
+
+      if (Info.Allocate) {
+        if (First >= Call->getNumArgs())
+          reject(L, "allocator allocation",
+                 "A checked element count within max_size is required.");
+        auto Count = snapshot(expression(Call->getArg(First)), L);
+        if (Info.Hint) {
+          if (First + 1 >= Call->getNumArgs())
+            reject(L, "allocator allocation",
+                   "The allocation hint is missing.");
+          discard(Call->getArg(First + 1));
+        }
+        const auto *Function =
+            A.allocatorHeapFunction(true, Info.Allocator.ElementType, L);
+        json::Array Args;
+        Args.push_back(cast(binary("*", std::move(Count),
+                                   quantity(ElementBytes, Size, L), Size, L),
+                            type(Function->getParamDecl(0)->getType(), L), L));
+        chargeCall(Args, L);
+        auto Storage = temporary(type(Function->getReturnType(), L), L);
+        Body.push_back(json::Object{{"op", "call"},
+                                    {"callee", A.name(Function)},
+                                    {"args", std::move(Args)},
+                                    {"target", json::Object(Storage)},
+                                    {"loc", A.loc(L)}});
+        return snapshot(cast(std::move(Storage), type(Call->getType(), L), L),
+                        L);
+      }
+
+      if (First + 1 >= Call->getNumArgs())
+        reject(L, "allocator deallocation",
+               "A checked pointer and element count are required.");
+      auto Pointer = snapshot(expression(Call->getArg(First)), L);
+      auto Count = snapshot(expression(Call->getArg(First + 1)), L);
+      const auto *Function =
+          A.allocatorHeapFunction(false, Info.Allocator.ElementType, L);
+      json::Array Args;
+      Args.push_back(cast(std::move(Pointer),
+                          type(Function->getParamDecl(0)->getType(), L), L));
+      if (Function->getNumParams() == 2)
+        Args.push_back(cast(binary("*", std::move(Count),
+                                   quantity(ElementBytes, Size, L), Size, L),
+                            type(Function->getParamDecl(1)->getType(), L), L));
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Function)},
+                                  {"args", std::move(Args)},
+                                  {"loc", A.loc(L)}});
+      return Expression();
+    };
+    switch (Operation) {
+    case UtilityOperation::CStringLength:
+    case UtilityOperation::CStringSpan:
+    case UtilityOperation::CStringComplementSpan:
+    case UtilityOperation::CStringCompare:
+    case UtilityOperation::CStringCompareN:
+    case UtilityOperation::CStringMemoryCompare:
+    case UtilityOperation::CStringMemoryFind:
+    case UtilityOperation::CStringCharacterFind:
+    case UtilityOperation::CStringCharacterFindLast:
+    case UtilityOperation::CStringCharacterSetFind:
+    case UtilityOperation::CStringSubstringFind:
+    case UtilityOperation::CStringCopy:
+    case UtilityOperation::CStringCopyN:
+    case UtilityOperation::CStringConcat:
+    case UtilityOperation::CStringConcatN:
+    case UtilityOperation::CStringMemoryCopy:
+    case UtilityOperation::CStringMemoryMove:
+    case UtilityOperation::CStringMemorySet:
+      return utilityCStringOperation(Call, Operation, Destination, L);
+    case UtilityOperation::Move:
+    case UtilityOperation::Forward:
+    case UtilityOperation::MoveIfNoexcept:
+    case UtilityOperation::AsConst:
+    case UtilityOperation::FunctionTraitValue:
+    case UtilityOperation::FunctionalInvoke:
+    case UtilityOperation::FunctionalInvokeObject:
+    case UtilityOperation::FunctionalInvokeUserObject:
+    case UtilityOperation::FunctionalInvokeReference:
+    case UtilityOperation::FunctionalInvokeMember:
+    case UtilityOperation::FunctionalReferenceFactory:
+    case UtilityOperation::FunctionalReferenceAccess:
+    case UtilityOperation::NewLaunder:
+    case UtilityOperation::MemoryDefaultDelete:
+    case UtilityOperation::MemoryMakeUnique:
+    case UtilityOperation::MemoryUniquePtrGet:
+    case UtilityOperation::MemoryUniquePtrGetDeleter:
+    case UtilityOperation::MemoryUniquePtrArrow:
+    case UtilityOperation::MemoryUniquePtrDereference:
+    case UtilityOperation::MemoryUniquePtrSubscript:
+    case UtilityOperation::MemoryUniquePtrBoolean:
+    case UtilityOperation::MemoryUniquePtrRelease:
+    case UtilityOperation::MemoryUniquePtrReset:
+    case UtilityOperation::MemoryUniquePtrMoveAssign:
+    case UtilityOperation::MemoryUniquePtrConvertingMoveAssign:
+    case UtilityOperation::MemoryUniquePtrNullAssign:
+    case UtilityOperation::MemoryUniquePtrMemberSwap:
+    case UtilityOperation::MemoryUniquePtrSwap:
+    case UtilityOperation::MemoryUniquePtrEqual:
+    case UtilityOperation::MemoryUniquePtrNotEqual:
+    case UtilityOperation::MemoryUniquePtrLess:
+    case UtilityOperation::MemoryUniquePtrGreater:
+    case UtilityOperation::MemoryUniquePtrLessEqual:
+    case UtilityOperation::MemoryUniquePtrGreaterEqual:
+    case UtilityOperation::MemoryAllocatorAddress:
+    case UtilityOperation::MemoryAllocatorAllocate:
+    case UtilityOperation::MemoryAllocatorDeallocate:
+    case UtilityOperation::MemoryAllocatorMaxSize:
+    case UtilityOperation::MemoryAllocatorConstruct:
+    case UtilityOperation::MemoryAllocatorDestroy:
+    case UtilityOperation::MemoryAllocatorTraitsConstruct:
+    case UtilityOperation::MemoryAllocatorTraitsAllocate:
+    case UtilityOperation::MemoryAllocatorTraitsDeallocate:
+    case UtilityOperation::MemoryAllocatorTraitsDestroy:
+    case UtilityOperation::MemoryAllocatorTraitsMaxSize:
+    case UtilityOperation::MemoryAllocatorTraitsSelectOnCopy:
+    case UtilityOperation::StringGetAllocator:
+    case UtilityOperation::VectorGetAllocator:
+    case UtilityOperation::MemoryAllocatorEqual:
+    case UtilityOperation::MemoryAllocatorNotEqual:
+    case UtilityOperation::MemoryAddressof:
+    case UtilityOperation::MemoryPointerTo:
+    case UtilityOperation::MemoryDestroyAt:
+    case UtilityOperation::MemoryDestroy:
+    case UtilityOperation::MemoryUninitializedDefaultConstruct:
+    case UtilityOperation::MemoryDestroyN:
+    case UtilityOperation::MemoryUninitializedDefaultConstructN:
+    case UtilityOperation::MemoryUninitializedValueConstruct:
+    case UtilityOperation::MemoryUninitializedValueConstructN:
+    case UtilityOperation::UniquePtrExchange:
+    case UtilityOperation::Exchange:
+    case UtilityOperation::Swap:
+    case UtilityOperation::NativeArraySwap:
+    case UtilityOperation::NativeOwnedArraySwap:
+    case UtilityOperation::OwnedSwap:
+      return utilityMemoryOperation(Call, Operation, Destination, L, StringFor, VectorFor, MemberObject, UniquePtrMember, ReferenceMember, AllocatorMaximum, ConstructAt, AllocatorConstruct, AllocatorHeap);
+    case UtilityOperation::NumericIota:
+    case UtilityOperation::NumericAccumulate:
+    case UtilityOperation::NumericInnerProduct:
+    case UtilityOperation::NumericReduce:
+    case UtilityOperation::NumericTransformReduce:
+    case UtilityOperation::NumericPartialSum:
+    case UtilityOperation::NumericAdjacentDifference:
+    case UtilityOperation::NumericInclusiveScan:
+    case UtilityOperation::NumericExclusiveScan:
+    case UtilityOperation::NumericTransformInclusiveScan:
+    case UtilityOperation::NumericTransformExclusiveScan:
+    case UtilityOperation::NumericGcd:
+    case UtilityOperation::NumericLcm:
+      return utilityNumericOperation(Call, Operation, Destination, L, AlgorithmRangeValue, AlgorithmIteratorResult);
+    case UtilityOperation::AlgorithmFind:
+    case UtilityOperation::AlgorithmCount:
+    case UtilityOperation::AlgorithmEqual:
+    case UtilityOperation::AlgorithmCopy:
+    case UtilityOperation::AlgorithmMove:
+    case UtilityOperation::MemoryUninitializedCopy:
+    case UtilityOperation::MemoryUninitializedMove:
+    case UtilityOperation::AlgorithmCopyBackward:
+    case UtilityOperation::AlgorithmMoveBackward:
+    case UtilityOperation::AlgorithmFill:
+    case UtilityOperation::AlgorithmOwnedFill:
+    case UtilityOperation::AlgorithmFillN:
+    case UtilityOperation::AlgorithmOwnedFillN:
+    case UtilityOperation::MemoryUninitializedFill:
+    case UtilityOperation::MemoryUninitializedFillN:
+    case UtilityOperation::AlgorithmSwapRanges:
+    case UtilityOperation::AlgorithmReverse:
+    case UtilityOperation::AlgorithmReverseCopy:
+    case UtilityOperation::AlgorithmMinElement:
+    case UtilityOperation::AlgorithmMaxElement:
+    case UtilityOperation::AlgorithmLowerBound:
+    case UtilityOperation::AlgorithmUpperBound:
+    case UtilityOperation::AlgorithmBinarySearch:
+    case UtilityOperation::AlgorithmIsSorted:
+    case UtilityOperation::AlgorithmIsSortedUntil:
+    case UtilityOperation::AlgorithmAdjacentFind:
+    case UtilityOperation::AlgorithmRemove:
+    case UtilityOperation::AlgorithmRemoveCopy:
+    case UtilityOperation::AlgorithmReplace:
+    case UtilityOperation::AlgorithmReplaceCopy:
+    case UtilityOperation::AlgorithmUnique:
+    case UtilityOperation::AlgorithmUniqueCopy:
+      return utilityAlgorithmRangeOperation(Call, Operation, Destination, L, CompareUtilityValues, AlgorithmEqual, AlgorithmLess, AlgorithmRangeValueLess, AlgorithmRangeValue, AlgorithmIteratorResult);
+    case UtilityOperation::AlgorithmSearch:
+    case UtilityOperation::AlgorithmFindEnd:
+    case UtilityOperation::AlgorithmFindFirstOf:
+    case UtilityOperation::AlgorithmSearchN:
+    case UtilityOperation::AlgorithmMismatch:
+    case UtilityOperation::AlgorithmCopyN:
+    case UtilityOperation::MemoryUninitializedCopyN:
+    case UtilityOperation::MemoryUninitializedMoveN:
+    case UtilityOperation::AlgorithmIterSwap:
+    case UtilityOperation::AlgorithmRotate:
+    case UtilityOperation::AlgorithmRotateCopy:
+    case UtilityOperation::AlgorithmEqualRange:
+    case UtilityOperation::AlgorithmLexicographicalCompare:
+    case UtilityOperation::AlgorithmIncludes:
+    case UtilityOperation::AlgorithmMerge:
+    case UtilityOperation::AlgorithmSetUnion:
+    case UtilityOperation::AlgorithmSetIntersection:
+    case UtilityOperation::AlgorithmSetDifference:
+    case UtilityOperation::AlgorithmSetSymmetricDifference:
+      return utilityAlgorithmSearchOperation(Call, Operation, Destination, L, ReferenceMember, CompareUtilityValues, AlgorithmEqual, AlgorithmLess, AlgorithmRangeValueLess, AlgorithmRangeValue, AlgorithmIteratorResult, AlgorithmPairIteratorField);
+    case UtilityOperation::AlgorithmMin:
+    case UtilityOperation::AlgorithmMax:
+    case UtilityOperation::AlgorithmClamp:
+    case UtilityOperation::AlgorithmMinmax:
+    case UtilityOperation::AlgorithmMinmaxList:
+    case UtilityOperation::AlgorithmMinmaxElement:
+      return utilityAlgorithmSelectionOperation(Call, Operation, Destination, L, InitializerListFor, CompareUtilityValues, AlgorithmLess, AlgorithmReferenceLess, AlgorithmRangeValue, AlgorithmPairIteratorField);
+    case UtilityOperation::AlgorithmIsHeap:
+    case UtilityOperation::AlgorithmIsHeapUntil:
+    case UtilityOperation::AlgorithmMakeHeap:
+    case UtilityOperation::AlgorithmPushHeap:
+    case UtilityOperation::AlgorithmPopHeap:
+    case UtilityOperation::AlgorithmSortHeap:
+    case UtilityOperation::AlgorithmSort:
+    case UtilityOperation::AlgorithmStableSort:
+    case UtilityOperation::AlgorithmInplaceMerge:
+    case UtilityOperation::AlgorithmPartialSort:
+    case UtilityOperation::AlgorithmPartialSortCopy:
+    case UtilityOperation::AlgorithmNthElement:
+    case UtilityOperation::AlgorithmNextPermutation:
+    case UtilityOperation::AlgorithmPrevPermutation:
+    case UtilityOperation::AlgorithmIsPermutation:
+      return utilityAlgorithmOrderingOperation(Call, Operation, Destination, L, CompareUtilityValues, AlgorithmEqual, AlgorithmLess, AlgorithmRangeValue, AlgorithmIteratorResult);
+    case UtilityOperation::AlgorithmFindIf:
+    case UtilityOperation::AlgorithmFindIfNot:
+    case UtilityOperation::AlgorithmCountIf:
+    case UtilityOperation::AlgorithmAllOf:
+    case UtilityOperation::AlgorithmAnyOf:
+    case UtilityOperation::AlgorithmNoneOf:
+    case UtilityOperation::AlgorithmCopyIf:
+    case UtilityOperation::AlgorithmRemoveCopyIf:
+    case UtilityOperation::AlgorithmRemoveIf:
+    case UtilityOperation::AlgorithmReplaceIf:
+    case UtilityOperation::AlgorithmReplaceCopyIf:
+      return utilityAlgorithmPredicateOperation(Call, Operation, Destination, L, AlgorithmRangeValue, AlgorithmIteratorResult);
+    case UtilityOperation::AlgorithmIsPartitioned:
+    case UtilityOperation::AlgorithmPartition:
+    case UtilityOperation::AlgorithmStablePartition:
+    case UtilityOperation::AlgorithmPartitionCopy:
+    case UtilityOperation::AlgorithmPartitionPoint:
+    case UtilityOperation::AlgorithmForEach:
+    case UtilityOperation::AlgorithmForEachN:
+      return utilityAlgorithmPartitionOperation(Call, Operation, Destination, L, AlgorithmRangeValue, AlgorithmIteratorResult, AlgorithmPairIteratorField);
+    case UtilityOperation::AlgorithmTransformUnary:
+    case UtilityOperation::AlgorithmTransformBinary:
+      return utilityAlgorithmTransformOperation(Call, Operation, Destination, L, AlgorithmRangeValue, AlgorithmIteratorResult);
+    case UtilityOperation::AlgorithmShuffle:
+    case UtilityOperation::AlgorithmSample:
+    case UtilityOperation::AlgorithmGenerate:
+    case UtilityOperation::AlgorithmGenerateN:
+      return utilityAlgorithmGeneratorOperation(Call, Operation, Destination, L, AlgorithmRangeValue, AlgorithmIteratorResult);
+    case UtilityOperation::MakeOptional:
+    case UtilityOperation::MakePair:
+    case UtilityOperation::MakeTuple:
+    case UtilityOperation::Tie:
+    case UtilityOperation::ForwardAsTuple:
+    case UtilityOperation::TupleCat:
+    case UtilityOperation::MakeFromTuple:
+    case UtilityOperation::TupleApply:
+    case UtilityOperation::TupleSwap:
+    case UtilityOperation::PairSwap:
+    case UtilityOperation::TupleMemberSwap:
+    case UtilityOperation::PairMemberSwap:
+    case UtilityOperation::TupleGet:
+    case UtilityOperation::PairGetFirst:
+    case UtilityOperation::PairGetSecond:
+    case UtilityOperation::PairEqual:
+    case UtilityOperation::PairNotEqual:
+    case UtilityOperation::PairLess:
+    case UtilityOperation::PairGreater:
+    case UtilityOperation::PairLessEqual:
+    case UtilityOperation::PairGreaterEqual:
+    case UtilityOperation::TupleEqual:
+    case UtilityOperation::TupleNotEqual:
+    case UtilityOperation::TupleLess:
+    case UtilityOperation::TupleGreater:
+    case UtilityOperation::TupleLessEqual:
+    case UtilityOperation::TupleGreaterEqual:
+      return utilityTupleOperation(Call, Operation, Destination, L, OptionalFor, TupleFor, TupleElement, ReferenceMember, ArrayElement, CompareUtilityValues, UtilityComparisonOperator);
+    case UtilityOperation::IteratorBegin:
+    case UtilityOperation::IteratorEnd:
+    case UtilityOperation::IteratorSize:
+    case UtilityOperation::IteratorEmpty:
+    case UtilityOperation::IteratorData:
+    case UtilityOperation::IteratorAdvance:
+    case UtilityOperation::IteratorDistance:
+    case UtilityOperation::IteratorNext:
+    case UtilityOperation::IteratorPrev:
+    case UtilityOperation::IteratorRBegin:
+    case UtilityOperation::IteratorREnd:
+    case UtilityOperation::ArrayRBegin:
+    case UtilityOperation::ArrayREnd:
+    case UtilityOperation::MakeReverseIterator:
+    case UtilityOperation::ReverseBase:
+    case UtilityOperation::ReverseDereference:
+    case UtilityOperation::ReverseArrow:
+    case UtilityOperation::ReversePreIncrement:
+    case UtilityOperation::ReversePostIncrement:
+    case UtilityOperation::ReversePreDecrement:
+    case UtilityOperation::ReversePostDecrement:
+    case UtilityOperation::ReverseAdd:
+    case UtilityOperation::ReverseAddAssign:
+    case UtilityOperation::ReverseSubtract:
+    case UtilityOperation::ReverseSubtractAssign:
+    case UtilityOperation::ReverseSubscript:
+    case UtilityOperation::ReverseEqual:
+    case UtilityOperation::ReverseNotEqual:
+    case UtilityOperation::ReverseLess:
+    case UtilityOperation::ReverseGreater:
+    case UtilityOperation::ReverseLessEqual:
+    case UtilityOperation::ReverseGreaterEqual:
+    case UtilityOperation::ReverseDifference:
+    case UtilityOperation::ReverseAddLeft:
+      return utilityIteratorOperation(Call, Operation, Destination, L, ArrayFor, MemberObject, AlgorithmRangeValue, AlgorithmIteratorResult, ReverseFor, ReverseCurrent, ReverseValue);
+    case UtilityOperation::OptionalEqual:
+    case UtilityOperation::OptionalNotEqual:
+    case UtilityOperation::OptionalLess:
+    case UtilityOperation::OptionalGreater:
+    case UtilityOperation::OptionalLessEqual:
+    case UtilityOperation::OptionalGreaterEqual:
+    case UtilityOperation::OptionalHasValue:
+    case UtilityOperation::OptionalDereference:
+    case UtilityOperation::OptionalArrow:
+    case UtilityOperation::OptionalReset:
+    case UtilityOperation::OptionalEmplace:
+    case UtilityOperation::OptionalEmplaceDefault:
+    case UtilityOperation::OptionalValueOr:
+    case UtilityOperation::OptionalMemberSwap:
+    case UtilityOperation::OptionalSwap:
+      return utilityOptionalOperation(Call, Operation, Destination, L, OptionalFor, OptionalObject, CompareUtilityValues);
+    case UtilityOperation::InitializerListSize:
+    case UtilityOperation::InitializerListEmpty:
+    case UtilityOperation::InitializerListBegin:
+    case UtilityOperation::InitializerListEnd:
+    case UtilityOperation::InitializerListRBegin:
+    case UtilityOperation::InitializerListREnd:
+    case UtilityOperation::WrapIteratorOffsetLeft:
+    case UtilityOperation::WrapIteratorEqual:
+    case UtilityOperation::WrapIteratorNotEqual:
+    case UtilityOperation::WrapIteratorDifference:
+    case UtilityOperation::WrapIteratorBase:
+    case UtilityOperation::WrapIteratorDereference:
+    case UtilityOperation::WrapIteratorArrow:
+    case UtilityOperation::WrapIteratorSubscript:
+    case UtilityOperation::WrapIteratorPreIncrement:
+    case UtilityOperation::WrapIteratorPreDecrement:
+    case UtilityOperation::WrapIteratorPostIncrement:
+    case UtilityOperation::WrapIteratorPostDecrement:
+    case UtilityOperation::WrapIteratorAddOffset:
+    case UtilityOperation::WrapIteratorSubtractOffset:
+    case UtilityOperation::WrapIteratorAddAssign:
+    case UtilityOperation::WrapIteratorSubtractAssign:
+      return utilityWrappedIteratorOperation(Call, Operation, Destination, L, InitializerListFor, MemberObject, ReverseFor, ReverseValue);
+    case UtilityOperation::StringAssignPointer:
+    case UtilityOperation::StringAssignCString:
+    case UtilityOperation::StringAssignString:
+    case UtilityOperation::StringAssignStringSlice:
+    case UtilityOperation::StringAssignView:
+    case UtilityOperation::StringAssignViewSlice:
+    case UtilityOperation::StringAssignList:
+    case UtilityOperation::StringAssignRange:
+    case UtilityOperation::StringAssignFill:
+    case UtilityOperation::StringAssignOperatorCString:
+    case UtilityOperation::StringAssignOperatorCharacter:
+    case UtilityOperation::StringAssignOperatorList:
+    case UtilityOperation::StringInsertPointer:
+    case UtilityOperation::StringInsertCString:
+    case UtilityOperation::StringInsertString:
+    case UtilityOperation::StringInsertStringSlice:
+    case UtilityOperation::StringInsertView:
+    case UtilityOperation::StringInsertViewSlice:
+    case UtilityOperation::StringInsertFill:
+    case UtilityOperation::StringInsertIteratorCharacter:
+    case UtilityOperation::StringInsertIteratorFill:
+    case UtilityOperation::StringInsertIteratorRange:
+    case UtilityOperation::StringInsertIteratorList:
+    case UtilityOperation::StringReplacePointer:
+    case UtilityOperation::StringReplaceCString:
+    case UtilityOperation::StringReplaceString:
+    case UtilityOperation::StringReplaceStringSlice:
+    case UtilityOperation::StringReplaceView:
+    case UtilityOperation::StringReplaceViewSlice:
+    case UtilityOperation::StringReplaceFill:
+    case UtilityOperation::StringReplaceIteratorPointer:
+    case UtilityOperation::StringReplaceIteratorCString:
+    case UtilityOperation::StringReplaceIteratorString:
+    case UtilityOperation::StringReplaceIteratorFill:
+    case UtilityOperation::StringReplaceIteratorRange:
+    case UtilityOperation::StringReplaceIteratorList:
+      return utilityStringAssignmentOperation(Call, Operation, Destination, L, StringFor, ReadStringAt, SliceStringBytes, ReadStringSlice, ReadStringViewAt, StringSliceArgument, MemberObject);
+    case UtilityOperation::StringMemberSwap:
+    case UtilityOperation::StringSwap:
+    case UtilityOperation::StringBegin:
+    case UtilityOperation::StringEnd:
+    case UtilityOperation::StringRBegin:
+    case UtilityOperation::StringREnd:
+    case UtilityOperation::StringShrinkToFit:
+    case UtilityOperation::StringSize:
+    case UtilityOperation::StringCapacity:
+    case UtilityOperation::StringMaxSize:
+    case UtilityOperation::StringEmpty:
+    case UtilityOperation::StringData:
+    case UtilityOperation::StringSubscript:
+    case UtilityOperation::StringFront:
+    case UtilityOperation::StringBack:
+    case UtilityOperation::StringClear:
+    case UtilityOperation::StringPushBack:
+    case UtilityOperation::StringPopBack:
+    case UtilityOperation::StringReserve:
+    case UtilityOperation::StringResize:
+    case UtilityOperation::StringAppendPointer:
+    case UtilityOperation::StringAppendCString:
+    case UtilityOperation::StringAppendString:
+    case UtilityOperation::StringAppendStringSlice:
+    case UtilityOperation::StringAppendView:
+    case UtilityOperation::StringAppendViewSlice:
+    case UtilityOperation::StringAppendList:
+    case UtilityOperation::StringAppendRange:
+    case UtilityOperation::StringAppendFill:
+    case UtilityOperation::StringAppendCharacter:
+    case UtilityOperation::StringErase:
+    case UtilityOperation::StringEraseIterator:
+      return utilityStringStorageOperation(Call, Operation, Destination, L, StringFor, ReadStringAt, SliceStringBytes, ReadStringSlice, ReadStringViewAt, StringSliceArgument, MemberObject, ReverseFor, ReverseValue);
+    case UtilityOperation::VectorInsert:
+    case UtilityOperation::VectorInsertRange:
+    case UtilityOperation::VectorEmplace:
+    case UtilityOperation::VectorAssignFill:
+    case UtilityOperation::VectorAssignRange:
+    case UtilityOperation::VectorAssignList:
+    case UtilityOperation::VectorErase:
+    case UtilityOperation::VectorMemberSwap:
+    case UtilityOperation::VectorSwap:
+    case UtilityOperation::VectorRelation:
+      return utilityVectorInsertionOperation(Call, Operation, Destination, L, StringFor, VectorFor, MemberObject, UniquePtrMember);
+    case UtilityOperation::VectorSize:
+    case UtilityOperation::VectorCapacity:
+    case UtilityOperation::VectorMaxSize:
+    case UtilityOperation::VectorEmpty:
+    case UtilityOperation::VectorData:
+    case UtilityOperation::VectorSubscript:
+    case UtilityOperation::VectorFront:
+    case UtilityOperation::VectorBack:
+    case UtilityOperation::VectorClear:
+    case UtilityOperation::VectorBegin:
+    case UtilityOperation::VectorEnd:
+    case UtilityOperation::VectorRBegin:
+    case UtilityOperation::VectorREnd:
+    case UtilityOperation::VectorPushBack:
+    case UtilityOperation::VectorEmplaceBack:
+    case UtilityOperation::VectorPopBack:
+    case UtilityOperation::VectorShrinkToFit:
+    case UtilityOperation::VectorReserve:
+    case UtilityOperation::VectorResize:
+    case UtilityOperation::VectorResizeFill:
+      return utilityVectorStorageOperation(Call, Operation, Destination, L, VectorFor, MemberObject, ReverseFor, ReverseValue, AllocatorMaximum);
+    case UtilityOperation::StringConcat:
+    case UtilityOperation::StringToView:
+    case UtilityOperation::StringSubstr:
+    case UtilityOperation::StringCopy:
+    case UtilityOperation::StringViewCopy:
+    case UtilityOperation::StringViewSubstr:
+    case UtilityOperation::StringViewSize:
+    case UtilityOperation::StringViewMaxSize:
+    case UtilityOperation::StringViewEmpty:
+    case UtilityOperation::StringViewData:
+    case UtilityOperation::StringViewBegin:
+    case UtilityOperation::StringViewEnd:
+    case UtilityOperation::StringViewRBegin:
+    case UtilityOperation::StringViewREnd:
+    case UtilityOperation::StringViewSubscript:
+    case UtilityOperation::StringViewFront:
+    case UtilityOperation::StringViewBack:
+    case UtilityOperation::StringViewRemovePrefix:
+    case UtilityOperation::StringViewRemoveSuffix:
+    case UtilityOperation::StringViewSwap:
+    case UtilityOperation::StringCompare:
+    case UtilityOperation::StringCompareCString:
+    case UtilityOperation::StringCompareSlice:
+    case UtilityOperation::StringCStringRelation:
+    case UtilityOperation::StringEqual:
+    case UtilityOperation::StringNotEqual:
+    case UtilityOperation::StringLess:
+    case UtilityOperation::StringGreater:
+    case UtilityOperation::StringLessEqual:
+    case UtilityOperation::StringGreaterEqual:
+    case UtilityOperation::StringViewCompare:
+    case UtilityOperation::StringViewCompareSlice:
+    case UtilityOperation::StringViewEqual:
+    case UtilityOperation::StringViewNotEqual:
+    case UtilityOperation::StringViewLess:
+    case UtilityOperation::StringViewGreater:
+    case UtilityOperation::StringViewLessEqual:
+    case UtilityOperation::StringViewGreaterEqual:
+    case UtilityOperation::StringFindCharacter:
+    case UtilityOperation::StringViewFindCharacter:
+    case UtilityOperation::StringRFindCharacter:
+    case UtilityOperation::StringViewRFindCharacter:
+    case UtilityOperation::StringFindSubstring:
+    case UtilityOperation::StringRFindSubstring:
+    case UtilityOperation::StringViewFindView:
+    case UtilityOperation::StringViewRFindView:
+    case UtilityOperation::StringFindFirstOf:
+    case UtilityOperation::StringFindLastOf:
+    case UtilityOperation::StringFindFirstNotOf:
+    case UtilityOperation::StringFindLastNotOf:
+    case UtilityOperation::StringViewFindFirstOf:
+    case UtilityOperation::StringViewFindLastOf:
+    case UtilityOperation::StringViewFindFirstNotOf:
+    case UtilityOperation::StringViewFindLastNotOf:
+      return utilityStringViewOperation(Call, Operation, Destination, L, StringViewFor, StringFor, ReadStringAt, ReadCStringAt, MemberObject, ReverseFor, ReverseValue);
+    case UtilityOperation::ArraySize:
+    case UtilityOperation::ArrayMaxSize:
+    case UtilityOperation::ArrayEmpty:
+    case UtilityOperation::ArrayData:
+    case UtilityOperation::ArrayBegin:
+    case UtilityOperation::ArrayEnd:
+    case UtilityOperation::ArraySubscript:
+    case UtilityOperation::ArrayAt:
+    case UtilityOperation::ArrayFront:
+    case UtilityOperation::ArrayBack:
+    case UtilityOperation::ArrayGet:
+    case UtilityOperation::ArrayFill:
+    case UtilityOperation::ArraySwap:
+    case UtilityOperation::ArrayMemberSwap:
+    case UtilityOperation::ArrayEqual:
+    case UtilityOperation::ArrayNotEqual:
+    case UtilityOperation::ArrayLess:
+    case UtilityOperation::ArrayGreater:
+    case UtilityOperation::ArrayLessEqual:
+    case UtilityOperation::ArrayGreaterEqual:
+      return utilityArrayOperation(Call, Operation, Destination, L, ArrayFor, MemberObject, ArrayElement, CompareUtilityValues, UtilityComparisonOperator);
     }
     reject(L, "utility operation", "Unknown approved utility operation.");
   }
@@ -27820,7 +28781,7 @@ class FunctionLowering {
         label(End, L);
         return dereference(std::move(LeftAddress), L);
       }
-      std::vector<const CXXOperatorCallExpr *> PairAssignments;
+      std::vector<UtilityPairElementAssignment> PairAssignments;
       if (auto Pair = approvedUtilityPairAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context,
               &PairAssignments)) {
@@ -27867,9 +28828,43 @@ class FunctionLowering {
                 DestinationField->getType()->isReferenceType()
                     ? DestinationField->getType()->getPointeeType()
                     : DestinationField->getType();
-            if (PairAssignments.size() == 2 && PairAssignments[I]) {
-              const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
-                  PairAssignments[I]->getDirectCallee());
+            if (PairAssignments.size() == 2 && PairAssignments[I].Call) {
+              const auto &Selected = PairAssignments[I];
+              const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Selected.Call->getDirectCallee());
+              if (Selected.Kind == UtilityPairElementAssignmentKind::StringCopy ||
+                  Selected.Kind == UtilityPairElementAssignmentKind::StringMove) {
+                const auto String = approvedUtilityStringRecord(A.S, A.Sources,
+                    DestinationType->getAsCXXRecordDecl(), A.Context);
+                if (!String) reject(L, "pair string assignment", "The checked string layout is missing.");
+                // Copy sources retain the selected const-reference parameter.
+                const auto SourceType = Method->getParamDecl(0)->getType()->getPointeeType();
+                auto Source = snapshot(address(std::move(Value), SourceType, L), L);
+                auto Target = snapshot(address(std::move(Destination), DestinationType, L), L);
+                assignSelectedString(*String,
+                    Selected.Kind == UtilityPairElementAssignmentKind::StringCopy
+                        ? UtilityStringAssignment::Copy : UtilityStringAssignment::Move,
+                    std::move(Target), std::move(Source), L);
+                continue;
+              }
+              if (Selected.Kind == UtilityPairElementAssignmentKind::ViewCopy) {
+                assign(std::move(Destination), std::move(Value), L);
+                continue;
+              }
+              if (Selected.Kind == UtilityPairElementAssignmentKind::OwnerMove) {
+                const auto Owner = approvedUtilityUniquePtrRecord(A.S, A.Sources,
+                    DestinationType->getAsCXXRecordDecl(), A.Context);
+                if (!Owner) reject(L, "pair owner assignment", "The checked owner layout is missing.");
+                auto Source = snapshot(address(std::move(Value), DestinationType, L), L);
+                auto Target = snapshot(address(std::move(Destination), DestinationType, L), L);
+                auto SourceMember = [&] { return uniquePtrStoredPointer(dereference(json::Object(Source), L), *Owner, L); };
+                auto TargetMember = [&] { return uniquePtrStoredPointer(dereference(json::Object(Target), L), *Owner, L); };
+                auto Pointer = snapshot(SourceMember(), L);
+                assign(SourceMember(), A.zero(Owner->PointerType, L), L);
+                auto Previous = snapshot(TargetMember(), L);
+                assign(TargetMember(), std::move(Pointer), L);
+                deallocateUniquePtr(std::move(Previous), std::move(Target), *Owner, L);
+                continue;
+              }
               assignMemorySource(std::move(Destination), DestinationType,
                                  Method, std::move(Value), L);
               continue;
@@ -28075,263 +29070,9 @@ class FunctionLowering {
         auto LeftAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto Left = dereference(json::Object(LeftAddress), L);
-        const auto SizeType = type(A.Context.getSizeType(), L);
-        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-        const auto PointerType = type(String->PointerType, L);
-        const auto ConstPointerType =
-            type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
-        const auto LongFlag = String->AlternateLayout
-                                  ? uint64_t(1)
-                                        << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
-                                  : uint64_t(1);
-        const char *FlagName = String->AlternateLayout
-                                   ? "nct_string_word2" : "nct_string_word0";
-        const char *PointerName = String->AlternateLayout
-                                      ? "nct_string_word0" : "nct_string_word2";
-        auto WordType = [&](const char *Name) {
-          return llvm::StringRef(Name) == PointerName
-                     ? String->PointerType : A.Context.getSizeType();
-        };
-        auto Member = [&](const Expression &Address, const char *Name) {
-          return Expression{{"kind", "member"},
-                            {"type", type(WordType(Name), L)},
-                            {"name", Name},
-                            {"args", json::Array{dereference(
-                                         json::Object(Address), L)}},
-                            {"loc", A.loc(L)}};
-        };
-        auto LeftWord = [&](const char *Name) {
-          return Member(LeftAddress, Name);
-        };
-        auto RightWord = [&](const char *Name) {
-          return Member(RightAddress, Name);
-        };
-        auto IsLong = [&](Expression Flag) {
-          return binary("!=", binary("&", std::move(Flag),
-                                      quantity(LongFlag, SizeType, L),
-                                      SizeType, L),
-                        quantity(0, SizeType, L), "bool", L);
-        };
-        auto ShortData = [&](const Expression &Address,
-                             llvm::StringRef ResultType) {
-          auto Pointer = cast(cast(json::Object(Address), "ptr:void", L),
-                              ResultType, L);
-          return String->AlternateLayout
-                     ? std::move(Pointer)
-                     : binary("+", std::move(Pointer),
-                              quantity(1, DifferenceType, L), ResultType, L);
-        };
-        auto ReleaseLeft = [&] {
-          auto Flag = snapshot(LeftWord(FlagName), L);
-          const auto Release = labelName(), Done = labelName();
-          branch(IsLong(json::Object(Flag)), Release, Done, L);
-          label(Release, L);
-          const auto *Delete =
-              A.allocatorHeapFunction(false, A.Context.CharTy, L);
-          json::Array Args;
-          Args.push_back(cast(LeftWord(PointerName),
-                              type(Delete->getParamDecl(0)->getType(), L), L));
-          if (Delete->getNumParams() == 2)
-            Args.push_back(cast(binary("-", json::Object(Flag),
-                                       quantity(LongFlag, SizeType, L),
-                                       SizeType, L),
-                                type(Delete->getParamDecl(1)->getType(), L), L));
-          chargeCall(Args, L);
-          Body.push_back(json::Object{{"op", "call"},
-                                      {"callee", A.name(Delete)},
-                                      {"args", std::move(Args)},
-                                      {"loc", A.loc(L)}});
-          jump(Done, L);
-          label(Done, L);
-        };
-        const auto Same = labelName(), Apply = labelName(), End = labelName();
-        branch(binary("==", cast(json::Object(LeftAddress), "ptr:void", L),
-                      cast(json::Object(RightAddress), "ptr:void", L),
-                      "bool", L), Same, Apply, L);
-        label(Same, L);
-        jump(End, L);
-        label(Apply, L);
-        if (*Assignment == UtilityStringAssignment::Move) {
-          ReleaseLeft();
-          const auto BytePointerType = std::string("ptr:u8");
-          auto SourceBytes = temporary(BytePointerType, L);
-          auto TargetBytes = temporary(BytePointerType, L);
-          auto Count = temporary(SizeType, L);
-          assign(SourceBytes,
-                 cast(cast(json::Object(RightAddress), "ptr:void", L),
-                      BytePointerType, L), L);
-          assign(TargetBytes,
-                 cast(cast(json::Object(LeftAddress), "ptr:void", L),
-                      BytePointerType, L), L);
-          assign(Count, quantity(0, SizeType, L), L);
-          const auto Check = labelName(), Advance = labelName(), Done = labelName();
-          jump(Check, L);
-          label(Check, L);
-          branch(binary("<", json::Object(Count),
-                        quantity(A.Context.getTypeSizeInChars(
-                                     A.Context.getRecordType(String->Record))
-                                     .getQuantity(),
-                                 SizeType, L), "bool", L), Advance, Done, L);
-          label(Advance, L);
-          assign(dereference(json::Object(TargetBytes), L),
-                 dereference(json::Object(SourceBytes), L), L);
-          assign(SourceBytes,
-                 binary("+", json::Object(SourceBytes),
-                        quantity(1, DifferenceType, L), BytePointerType, L), L);
-          assign(TargetBytes,
-                 binary("+", json::Object(TargetBytes),
-                        quantity(1, DifferenceType, L), BytePointerType, L), L);
-          assign(Count,
-                 binary("+", json::Object(Count), quantity(1, SizeType, L),
-                        SizeType, L), L);
-          jump(Check, L);
-          label(Done, L);
-          for (const char *Name : {"nct_string_word0", "nct_string_word1",
-                                   "nct_string_word2"})
-            initializeZero(RightWord(Name), WordType(Name), L);
-        } else {
-          auto SourceSize = temporary(SizeType, L);
-          auto SourceData = temporary(ConstPointerType, L);
-          auto SourceFlag = snapshot(RightWord(FlagName), L);
-          const auto SourceLong = labelName(), SourceShort = labelName(),
-                     SourceReady = labelName();
-          branch(IsLong(json::Object(SourceFlag)), SourceLong, SourceShort, L);
-          label(SourceLong, L);
-          assign(SourceSize, RightWord("nct_string_word1"), L);
-          assign(SourceData, cast(RightWord(PointerName), ConstPointerType, L),
-                 L);
-          jump(SourceReady, L);
-          label(SourceShort, L);
-          assign(SourceSize,
-                 stringShortSize(json::Object(SourceFlag),
-                                 String->AlternateLayout, L),
-                 L);
-          assign(SourceData, ShortData(RightAddress, ConstPointerType), L);
-          jump(SourceReady, L);
-          label(SourceReady, L);
-          auto OldFlag = snapshot(LeftWord(FlagName), L);
-          auto OldLong = snapshot(IsLong(json::Object(OldFlag)), L);
-          auto Capacity = temporary(SizeType, L);
-          auto TargetData = temporary(PointerType, L);
-          const auto TargetLong = labelName(), TargetShort = labelName(),
-                     TargetReady = labelName();
-          branch(json::Object(OldLong), TargetLong, TargetShort, L);
-          label(TargetLong, L);
-          assign(Capacity,
-                 binary("-", binary("-", json::Object(OldFlag),
-                                    quantity(LongFlag, SizeType, L),
-                                    SizeType, L),
-                        quantity(1, SizeType, L), SizeType, L), L);
-          assign(TargetData, LeftWord(PointerName), L);
-          jump(TargetReady, L);
-          label(TargetShort, L);
-          assign(Capacity, quantity(String->ShortCapacity, SizeType, L), L);
-          assign(TargetData, ShortData(LeftAddress, PointerType), L);
-          jump(TargetReady, L);
-          label(TargetReady, L);
-          const auto Reuse = labelName(), Grow = labelName(), Copy = labelName();
-          branch(binary("<=", json::Object(SourceSize), json::Object(Capacity),
-                        "bool", L), Reuse, Grow, L);
-          label(Reuse, L);
-          const auto ReuseLong = labelName(), ReuseShort = labelName();
-          branch(json::Object(OldLong), ReuseLong, ReuseShort, L);
-          label(ReuseLong, L);
-          assign(LeftWord("nct_string_word1"), json::Object(SourceSize), L);
-          jump(Copy, L);
-          label(ReuseShort, L);
-          assign(LeftWord(FlagName),
-                 String->AlternateLayout
-                     ? binary("<<", json::Object(SourceSize),
-                              quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                                       SizeType, L), SizeType, L)
-                     : binary("*", json::Object(SourceSize),
-                              quantity(2, SizeType, L), SizeType, L), L);
-          jump(Copy, L);
-          label(Grow, L);
-          auto DesiredCapacity = temporary(SizeType, L);
-          assign(DesiredCapacity,
-                 binary("*", json::Object(Capacity), quantity(2, SizeType, L),
-                        SizeType, L),
-                 L);
-          const auto UseSourceSize = labelName(), DesiredReady = labelName();
-          branch(binary(">", json::Object(SourceSize),
-                        json::Object(DesiredCapacity), "bool", L),
-                 UseSourceSize, DesiredReady, L);
-          label(UseSourceSize, L);
-          assign(DesiredCapacity, json::Object(SourceSize), L);
-          jump(DesiredReady, L);
-          label(DesiredReady, L);
-          auto AllocationBytes = temporary(SizeType, L);
-          assign(AllocationBytes,
-                 binary("*",
-                        binary("/",
-                               binary("+", json::Object(DesiredCapacity),
-                                      quantity(8, SizeType, L), SizeType, L),
-                               quantity(8, SizeType, L), SizeType, L),
-                        quantity(8, SizeType, L), SizeType, L),
-                 L);
-          const auto Adjust = labelName(), Allocate = labelName();
-          branch(binary("==", json::Object(AllocationBytes),
-                        quantity(String->ShortCapacity + 2, SizeType, L),
-                        "bool", L), Adjust, Allocate, L);
-          label(Adjust, L);
-          assign(AllocationBytes,
-                 binary("+", json::Object(AllocationBytes),
-                        quantity(String->AlternateLayout ? 1 : 2, SizeType, L),
-                        SizeType, L),
-                 L);
-          jump(Allocate, L);
-          label(Allocate, L);
-          const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
-          json::Array Args;
-          Args.push_back(json::Object(AllocationBytes));
-          chargeCall(Args, L);
-          auto Allocation = temporary(type(New->getReturnType(), L), L);
-          Body.push_back(json::Object{{"op", "call"},
-                                      {"callee", A.name(New)},
-                                      {"args", std::move(Args)},
-                                      {"target", json::Object(Allocation)},
-                                      {"loc", A.loc(L)}});
-          ReleaseLeft();
-          assign(TargetData, cast(std::move(Allocation), PointerType, L), L);
-          assign(LeftWord(PointerName), json::Object(TargetData), L);
-          assign(LeftWord("nct_string_word1"), json::Object(SourceSize), L);
-          assign(LeftWord(FlagName),
-                 binary("|", json::Object(AllocationBytes),
-                        quantity(LongFlag, SizeType, L), SizeType, L), L);
-          jump(Copy, L);
-          label(Copy, L);
-          auto SourceCurrent = temporary(ConstPointerType, L);
-          auto TargetCurrent = temporary(PointerType, L);
-          auto Count = temporary(SizeType, L);
-          assign(SourceCurrent, json::Object(SourceData), L);
-          assign(TargetCurrent, json::Object(TargetData), L);
-          assign(Count, quantity(0, SizeType, L), L);
-          const auto Check = labelName(), Advance = labelName(), Finish = labelName();
-          jump(Check, L);
-          label(Check, L);
-          branch(binary("<", json::Object(Count), json::Object(SourceSize),
-                        "bool", L), Advance, Finish, L);
-          label(Advance, L);
-          assign(dereference(json::Object(TargetCurrent), L),
-                 dereference(json::Object(SourceCurrent), L), L);
-          assign(SourceCurrent,
-                 binary("+", json::Object(SourceCurrent),
-                        quantity(1, DifferenceType, L), ConstPointerType, L), L);
-          assign(TargetCurrent,
-                 binary("+", json::Object(TargetCurrent),
-                        quantity(1, DifferenceType, L), PointerType, L), L);
-          assign(Count,
-                 binary("+", json::Object(Count), quantity(1, SizeType, L),
-                        SizeType, L), L);
-          jump(Check, L);
-          label(Finish, L);
-          assign(dereference(std::move(TargetCurrent), L),
-                 quantity(0, type(A.Context.CharTy, L), L), L);
-        }
-        jump(End, L);
-        label(End, L);
-        return Left;
+        return assignSelectedString(*String, *Assignment,
+                                    std::move(LeftAddress),
+                                    std::move(RightAddress), L);
       }
       if (auto Assignment = approvedUtilityVectorAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
@@ -30412,7 +31153,7 @@ class FunctionLowering {
     jump(Ready, L);
     label(Short, L);
     auto ShortPointer =
-        cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
+        cast(cast(json::Object(Address), "cptr:void", L), PointerType, L);
     assign(Data,
            String.AlternateLayout
                ? std::move(ShortPointer)
@@ -30432,6 +31173,38 @@ class FunctionLowering {
                                     SourceLocation L) {
     auto Left = readStringAt(std::move(LeftCurrent), String, L);
     auto Right = readStringAt(std::move(RightCurrent), String, L);
+    return compareByteRanges(std::move(Left.first), std::move(Left.second),
+                             std::move(Right.first), std::move(Right.second), L);
+  }
+
+  Expression comparePairByteRanges(llvm::StringRef Relation,
+                                   Expression LeftData, Expression LeftSize,
+                                   Expression RightData, Expression RightSize,
+                                   SourceLocation L) {
+    if (Relation != "==") {
+      auto Order = compareByteRanges(std::move(LeftData), std::move(LeftSize),
+                                     std::move(RightData), std::move(RightSize), L);
+      return binary(Relation, std::move(Order), quantity(0, "int", L), "bool", L);
+    }
+    auto Result = temporary("bool", L);
+    const auto Bytes = labelName(), Different = labelName(), End = labelName();
+    branch(binary("==", json::Object(LeftSize), json::Object(RightSize), "bool", L),
+           Bytes, Different, L);
+    label(Bytes, L);
+    auto Order = compareByteRanges(std::move(LeftData), std::move(LeftSize),
+                                   std::move(RightData), std::move(RightSize), L);
+    assign(Result, binary("==", std::move(Order), quantity(0, "int", L), "bool", L), L);
+    jump(End, L);
+    label(Different, L);
+    assign(Result, boolean(false, L), L);
+    jump(End, L);
+    label(End, L);
+    return Result;
+  }
+
+  Expression compareByteRanges(Expression LeftData, Expression LeftSize,
+                               Expression RightData, Expression RightSize,
+                               SourceLocation L) {
     const auto SizeType = type(A.Context.getSizeType(), L);
     auto Position = temporary(SizeType, L);
     auto Order = temporary("int", L);
@@ -30444,21 +31217,21 @@ class FunctionLowering {
     const auto Compared = labelName();
     jump(CheckLeftByte, L);
     label(CheckLeftByte, L);
-    branch(binary("<", json::Object(Position), json::Object(Left.second),
+    branch(binary("<", json::Object(Position), json::Object(LeftSize),
                   "bool", L),
            CheckRightByte, CompareSizes, L);
     label(CheckRightByte, L);
-    branch(binary("<", json::Object(Position), json::Object(Right.second),
+    branch(binary("<", json::Object(Position), json::Object(RightSize),
                   "bool", L),
            CompareByte, CompareSizes, L);
     label(CompareByte, L);
     auto LeftByte =
-        snapshot(cast(index(json::Object(Left.first), json::Object(Position),
+        snapshot(cast(index(json::Object(LeftData), json::Object(Position),
                             type(A.Context.CharTy, L), L),
                       "u8", L),
                  L);
     auto RightByte =
-        snapshot(cast(index(json::Object(Right.first), json::Object(Position),
+        snapshot(cast(index(json::Object(RightData), json::Object(Position),
                             type(A.Context.CharTy, L), L),
                       "u8", L),
                  L);
@@ -30475,11 +31248,11 @@ class FunctionLowering {
            L);
     jump(CheckLeftByte, L);
     label(CompareSizes, L);
-    branch(binary("<", json::Object(Left.second), json::Object(Right.second),
+    branch(binary("<", json::Object(LeftSize), json::Object(RightSize),
                   "bool", L),
            Less, CheckGreater, L);
     label(CheckGreater, L);
-    branch(binary(">", json::Object(Left.second), json::Object(Right.second),
+    branch(binary(">", json::Object(LeftSize), json::Object(RightSize),
                   "bool", L),
            Greater, Equal, L);
     label(Less, L);
@@ -31675,6 +32448,269 @@ class FunctionLowering {
                           std::move(SourcePointer), L, Construction);
     endFullExpression();
   }
+  Expression assignSelectedString(const UtilityStringRecord &String,
+                                  UtilityStringAssignment Assignment,
+                                  Expression LeftAddress,
+                                  Expression RightAddress, SourceLocation L) {
+    auto Left = dereference(json::Object(LeftAddress), L);
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(String.PointerType, L);
+    const auto ConstPointerType =
+        type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    const auto LongFlag = String.AlternateLayout
+                              ? uint64_t(1)
+                                    << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
+                              : uint64_t(1);
+    const char *FlagName = String.AlternateLayout
+                               ? "nct_string_word2" : "nct_string_word0";
+    const char *PointerName = String.AlternateLayout
+                                  ? "nct_string_word0" : "nct_string_word2";
+    auto WordType = [&](const char *Name) {
+      return llvm::StringRef(Name) == PointerName
+                 ? String.PointerType : A.Context.getSizeType();
+    };
+    auto Member = [&](const Expression &Address, const char *Name) {
+      return Expression{{"kind", "member"},
+                        {"type", type(WordType(Name), L)},
+                        {"name", Name},
+                        {"args", json::Array{dereference(
+                                     json::Object(Address), L)}},
+                        {"loc", A.loc(L)}};
+    };
+    auto LeftWord = [&](const char *Name) {
+      return Member(LeftAddress, Name);
+    };
+    auto RightWord = [&](const char *Name) {
+      return Member(RightAddress, Name);
+    };
+    auto IsLong = [&](Expression Flag) {
+      return binary("!=", binary("&", std::move(Flag),
+                                  quantity(LongFlag, SizeType, L),
+                                  SizeType, L),
+                    quantity(0, SizeType, L), "bool", L);
+    };
+    auto ShortData = [&](const Expression &Address,
+                         llvm::StringRef ResultType) {
+      auto Pointer = cast(cast(json::Object(Address), "ptr:void", L),
+                          ResultType, L);
+      return String.AlternateLayout
+                 ? std::move(Pointer)
+                 : binary("+", std::move(Pointer),
+                          quantity(1, DifferenceType, L), ResultType, L);
+    };
+    auto ReleaseLeft = [&] {
+      auto Flag = snapshot(LeftWord(FlagName), L);
+      const auto Release = labelName(), Done = labelName();
+      branch(IsLong(json::Object(Flag)), Release, Done, L);
+      label(Release, L);
+      const auto *Delete =
+          A.allocatorHeapFunction(false, A.Context.CharTy, L);
+      json::Array Args;
+      Args.push_back(cast(LeftWord(PointerName),
+                          type(Delete->getParamDecl(0)->getType(), L), L));
+      if (Delete->getNumParams() == 2)
+        Args.push_back(cast(binary("-", json::Object(Flag),
+                                   quantity(LongFlag, SizeType, L),
+                                   SizeType, L),
+                            type(Delete->getParamDecl(1)->getType(), L), L));
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Delete)},
+                                  {"args", std::move(Args)},
+                                  {"loc", A.loc(L)}});
+      jump(Done, L);
+      label(Done, L);
+    };
+    const auto Same = labelName(), Apply = labelName(), End = labelName();
+    branch(binary("==", cast(json::Object(LeftAddress), "ptr:void", L),
+                  cast(json::Object(RightAddress), "ptr:void", L),
+                  "bool", L), Same, Apply, L);
+    label(Same, L);
+    jump(End, L);
+    label(Apply, L);
+    if (Assignment == UtilityStringAssignment::Move) {
+      ReleaseLeft();
+      const auto BytePointerType = std::string("ptr:u8");
+      auto SourceBytes = temporary(BytePointerType, L);
+      auto TargetBytes = temporary(BytePointerType, L);
+      auto Count = temporary(SizeType, L);
+      assign(SourceBytes,
+             cast(cast(json::Object(RightAddress), "ptr:void", L),
+                  BytePointerType, L), L);
+      assign(TargetBytes,
+             cast(cast(json::Object(LeftAddress), "ptr:void", L),
+                  BytePointerType, L), L);
+      assign(Count, quantity(0, SizeType, L), L);
+      const auto Check = labelName(), Advance = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", json::Object(Count),
+                    quantity(A.Context.getTypeSizeInChars(
+                                 A.Context.getRecordType(String.Record))
+                                 .getQuantity(),
+                             SizeType, L), "bool", L), Advance, Done, L);
+      label(Advance, L);
+      assign(dereference(json::Object(TargetBytes), L),
+             dereference(json::Object(SourceBytes), L), L);
+      assign(SourceBytes,
+             binary("+", json::Object(SourceBytes),
+                    quantity(1, DifferenceType, L), BytePointerType, L), L);
+      assign(TargetBytes,
+             binary("+", json::Object(TargetBytes),
+                    quantity(1, DifferenceType, L), BytePointerType, L), L);
+      assign(Count,
+             binary("+", json::Object(Count), quantity(1, SizeType, L),
+                    SizeType, L), L);
+      jump(Check, L);
+      label(Done, L);
+      for (const char *Name : {"nct_string_word0", "nct_string_word1",
+                               "nct_string_word2"})
+        initializeZero(RightWord(Name), WordType(Name), L);
+    } else {
+      auto SourceSize = temporary(SizeType, L);
+      auto SourceData = temporary(ConstPointerType, L);
+      auto SourceFlag = snapshot(RightWord(FlagName), L);
+      const auto SourceLong = labelName(), SourceShort = labelName(),
+                 SourceReady = labelName();
+      branch(IsLong(json::Object(SourceFlag)), SourceLong, SourceShort, L);
+      label(SourceLong, L);
+      assign(SourceSize, RightWord("nct_string_word1"), L);
+      assign(SourceData, cast(RightWord(PointerName), ConstPointerType, L),
+             L);
+      jump(SourceReady, L);
+      label(SourceShort, L);
+      assign(SourceSize,
+             stringShortSize(json::Object(SourceFlag),
+                             String.AlternateLayout, L),
+             L);
+      assign(SourceData, ShortData(RightAddress, ConstPointerType), L);
+      jump(SourceReady, L);
+      label(SourceReady, L);
+      auto OldFlag = snapshot(LeftWord(FlagName), L);
+      auto OldLong = snapshot(IsLong(json::Object(OldFlag)), L);
+      auto Capacity = temporary(SizeType, L);
+      auto TargetData = temporary(PointerType, L);
+      const auto TargetLong = labelName(), TargetShort = labelName(),
+                 TargetReady = labelName();
+      branch(json::Object(OldLong), TargetLong, TargetShort, L);
+      label(TargetLong, L);
+      assign(Capacity,
+             binary("-", binary("-", json::Object(OldFlag),
+                                quantity(LongFlag, SizeType, L),
+                                SizeType, L),
+                    quantity(1, SizeType, L), SizeType, L), L);
+      assign(TargetData, LeftWord(PointerName), L);
+      jump(TargetReady, L);
+      label(TargetShort, L);
+      assign(Capacity, quantity(String.ShortCapacity, SizeType, L), L);
+      assign(TargetData, ShortData(LeftAddress, PointerType), L);
+      jump(TargetReady, L);
+      label(TargetReady, L);
+      const auto Reuse = labelName(), Grow = labelName(), Copy = labelName();
+      branch(binary("<=", json::Object(SourceSize), json::Object(Capacity),
+                    "bool", L), Reuse, Grow, L);
+      label(Reuse, L);
+      const auto ReuseLong = labelName(), ReuseShort = labelName();
+      branch(json::Object(OldLong), ReuseLong, ReuseShort, L);
+      label(ReuseLong, L);
+      assign(LeftWord("nct_string_word1"), json::Object(SourceSize), L);
+      jump(Copy, L);
+      label(ReuseShort, L);
+      assign(LeftWord(FlagName),
+             String.AlternateLayout
+                 ? binary("<<", json::Object(SourceSize),
+                          quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                                   SizeType, L), SizeType, L)
+                 : binary("*", json::Object(SourceSize),
+                          quantity(2, SizeType, L), SizeType, L), L);
+      jump(Copy, L);
+      label(Grow, L);
+      auto DesiredCapacity = temporary(SizeType, L);
+      assign(DesiredCapacity,
+             binary("*", json::Object(Capacity), quantity(2, SizeType, L),
+                    SizeType, L),
+             L);
+      const auto UseSourceSize = labelName(), DesiredReady = labelName();
+      branch(binary(">", json::Object(SourceSize),
+                    json::Object(DesiredCapacity), "bool", L),
+             UseSourceSize, DesiredReady, L);
+      label(UseSourceSize, L);
+      assign(DesiredCapacity, json::Object(SourceSize), L);
+      jump(DesiredReady, L);
+      label(DesiredReady, L);
+      auto AllocationBytes = temporary(SizeType, L);
+      assign(AllocationBytes,
+             binary("*",
+                    binary("/",
+                           binary("+", json::Object(DesiredCapacity),
+                                  quantity(8, SizeType, L), SizeType, L),
+                           quantity(8, SizeType, L), SizeType, L),
+                    quantity(8, SizeType, L), SizeType, L),
+             L);
+      const auto Adjust = labelName(), Allocate = labelName();
+      branch(binary("==", json::Object(AllocationBytes),
+                    quantity(String.ShortCapacity + 2, SizeType, L),
+                    "bool", L), Adjust, Allocate, L);
+      label(Adjust, L);
+      assign(AllocationBytes,
+             binary("+", json::Object(AllocationBytes),
+                    quantity(String.AlternateLayout ? 1 : 2, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(Allocate, L);
+      label(Allocate, L);
+      const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
+      json::Array Args;
+      Args.push_back(json::Object(AllocationBytes));
+      chargeCall(Args, L);
+      auto Allocation = temporary(type(New->getReturnType(), L), L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(New)},
+                                  {"args", std::move(Args)},
+                                  {"target", json::Object(Allocation)},
+                                  {"loc", A.loc(L)}});
+      ReleaseLeft();
+      assign(TargetData, cast(std::move(Allocation), PointerType, L), L);
+      assign(LeftWord(PointerName), json::Object(TargetData), L);
+      assign(LeftWord("nct_string_word1"), json::Object(SourceSize), L);
+      assign(LeftWord(FlagName),
+             binary("|", json::Object(AllocationBytes),
+                    quantity(LongFlag, SizeType, L), SizeType, L), L);
+      jump(Copy, L);
+      label(Copy, L);
+      auto SourceCurrent = temporary(ConstPointerType, L);
+      auto TargetCurrent = temporary(PointerType, L);
+      auto Count = temporary(SizeType, L);
+      assign(SourceCurrent, json::Object(SourceData), L);
+      assign(TargetCurrent, json::Object(TargetData), L);
+      assign(Count, quantity(0, SizeType, L), L);
+      const auto Check = labelName(), Advance = labelName(), Finish = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", json::Object(Count), json::Object(SourceSize),
+                    "bool", L), Advance, Finish, L);
+      label(Advance, L);
+      assign(dereference(json::Object(TargetCurrent), L),
+             dereference(json::Object(SourceCurrent), L), L);
+      assign(SourceCurrent,
+             binary("+", json::Object(SourceCurrent),
+                    quantity(1, DifferenceType, L), ConstPointerType, L), L);
+      assign(TargetCurrent,
+             binary("+", json::Object(TargetCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L), L);
+      assign(Count,
+             binary("+", json::Object(Count), quantity(1, SizeType, L),
+                    SizeType, L), L);
+      jump(Check, L);
+      label(Finish, L);
+      assign(dereference(std::move(TargetCurrent), L),
+             quantity(0, type(A.Context.CharTy, L), L), L);
+    }
+    jump(End, L);
+    label(End, L);
+    return Left;
+  }
   void assignMemorySource(Expression Place, QualType T,
                           const CXXMethodDecl *Method, Expression Source,
                           SourceLocation L) {
@@ -32667,6 +33703,63 @@ class FunctionLowering {
       assign(std::move(Place), A.zero(T, L), L);
       return;
     }
+    // Draft insertion at the selected pair construction boundary. A completed
+// frontend certificate is mandatory; the metadata descriptor is insufficient.
+if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
+        A.S, A.Sources, C, A.Context)) {
+  if (!A.VerifiedPairPiecewiseConstructions.count(C) ||
+      Piecewise->Elements.size() != 2)
+    reject(L, "pair piecewise construction",
+           "Both selected SDK constructor layers need completed sources.");
+  CleanupFrame Parameters;
+  std::vector<Expression> Tuples;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Parameter = C->getConstructor()->getParamDecl(I + 1)->getType();
+    // These are real by-value parameters, including each selected caller copy
+    // or move. argument() directly initializes a prvalue in its final parameter.
+    auto Pointer = snapshot(argument(C->getArg(I + 1), Parameter), L);
+    auto Tuple = dereference(std::move(Pointer), L);
+    own(json::Object(Tuple), Parameter, L, Parameters);
+    Tuples.push_back(std::move(Tuple));
+  }
+  auto SavedElements = TupleFactoryElements;
+  auto RestoreElements = llvm::make_scope_exit([&] {
+    TupleFactoryElements = std::move(SavedElements);
+  });
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Element = Piecewise->Elements[I];
+    if (Element.Getters.size() != Element.Tuple.Elements.size() ||
+        Element.Forwarders.size() != Element.Getters.size())
+      reject(L, "pair piecewise arguments",
+             "Each tuple index needs its exact selected get and forward.");
+    for (unsigned J = 0; J < Element.Getters.size(); ++J) {
+      const auto &[Get, Index] = Element.Getters[J];
+      const auto &Stored = Element.Tuple.Elements[Index];
+      if (Stored.EmptyBase)
+        reject(L, "pair piecewise empty tuple element",
+               "An empty base needs a separately proved live projection.");
+      auto Value = fieldStorage(json::Object(Tuples[I]), Stored, L);
+      if (Stored.getType()->isReferenceType())
+        Value = dereference(std::move(Value), L);
+      // Bind storage, so first's construction can mutate a referent subsequently
+      // read by second. Neither get nor forward makes an early value snapshot.
+      TupleFactoryElements.insert_or_assign(Get, json::Object(Value));
+      TupleFactoryElements.insert_or_assign(Element.Forwarders[J], std::move(Value));
+    }
+    beginFullExpression();
+    auto Destination = fieldStorage(json::Object(Place), Element.Field, L);
+    const auto FieldType = Element.Field->getType();
+    if (FieldType->isReferenceType())
+      assign(std::move(Destination), bind(Element.Initializer, FieldType), L);
+    else
+      initialize(std::move(Destination), Element.Initializer, L);
+    // Defaults and their temporary cleanup belong to this one field initializer.
+    endFullExpression();
+  }
+  cleanup(Parameters);
+  return;
+}
+
     std::vector<const CXXConstructExpr *> PairCopies;
     if (auto Kind = approvedUtilityPairConstruction(A.S, A.Sources, C,
                                                     A.Context, &PairCopies)) {

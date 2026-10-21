@@ -4,6 +4,8 @@
 
 # C++를 NeverC로 변환
 
+Linux에서 부동 소수점 분포를 샘플링하는 생성 C23 프로그램을 링크할 때는 `-lm`을 지정하세요. 네이티브 비교 프로그램과 생성 프로그램은 모두 `-fno-fast-math -ffp-contract=off`로 컴파일하세요.
+
 Core v2는 지원하는 원시 포인터 또는 인증된 래핑 반복자의 스칼라 범위에서 `std::shuffle`과 C++17 `std::sample`을 직접 낮춥니다. 생성기는 소스 소유의 표준 레이아웃 레코드이며, 복사와 소멸이 trivial해야 합니다. bool을 제외한 최대 64비트 부호 없는 `result_type`을 직접 선언하고, 같은 타입을 반환하는 무인자 호출 연산자와 단일 상수 return으로 `min() < max()`를 만족하는 static constexpr `min()`/`max()`를 정의해야 합니다. 생성기를 참조로 전달하여 상태, libc++의 정확한 거부 재추출 횟수와 독립 비트 조합을 유지합니다. Sample은 최대 64비트의 음이 아닌 내장 정수 개수를 받아 입력 순서를 유지하고 쓰기 가능한 출력의 끝 포인터를 반환합니다. 빈 범위나 단일 요소 shuffle, 개수가 0이거나 입력이 빈 sample은 생성기를 호출하지 않습니다. 선택된 SDK의 소스 대체는 거부하며, 다른 `<random>` 기능, 사용자 정의 반복자와 레코드 요소는 이 지원 범위 밖입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
 Core v2는 인증된 `std::linear_congruential_engine`과 `std::mersenne_twister_engine`도 지원합니다. 부호 없는 결과 타입은 최대 64비트이며 `minstd_rand0`, `minstd_rand`, `default_random_engine`, `mt19937`, `mt19937_64`를 포함합니다. 기본 및 정수 시드 생성, 복사, 대입, `seed`, `operator()`, `discard`, `min`/`max`, 동등 비교는 고정 SDK의 상태와 대상 레이아웃을 보존합니다. 래핑된 범위를 포함하여 `shuffle`/`sample`에 전달할 수 있습니다. 선택된 SDK의 소스 대체는 거부합니다. 다른 분포, 스트림 직렬화와 `random_device`는 추가 지원이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
@@ -959,3 +961,9 @@ merge는 동일한 기본 int/int unordered_map의 좌·우측값 원본을 받�
 `cpp-core-v2`: std::make_pair는 인증된 SDK 팩터리와 선택된 pair 생성자를 통해 허용된 string, string_view 및 unique_ptr 원소를 생성합니다. 각 호출은 독립적인 문자열 복사, 이동 원본 비우기, 뷰와 ref/cref의 빌린 바인딩, 인수 부작용 및 결과 정리를 유지합니다. 기본 인수, 제약 조건, 명시성, noexcept 및 선택된 래퍼 변환에는 정확한 소스가 필요하며, 다른 연산은 각자의 요구 사항을 유지합니다.
 
 `cpp-core-v2`: std::pair의 선택된 기본 생성은 지원되는 비 const char 문자열, 문자열 뷰 및 고유 소유자 필드를 실제로 선택된 하위 생성자로 초기화합니다. 원래 SDK 제약, 암시적 기본 생성 경로 및 예외 명세의 소스를 검증하며 스칼라 0, 빈 문자열, 널 뷰와 소유자 및 재귀적 정리를 보존합니다. 빈 사용자 지정 삭제자는 기존의 자명한 생성 범위를 유지합니다.
+
+`cpp-core-v2`: 선택된 std::pair 대입과 멤버/비멤버 swap은 원래 선택된 string, string_view, unique_ptr 연산을 사용합니다. 대입은 대상 참조, 독립적인 문자열 복사, 이동 후 비워진 원본 owner 및 이전 대상 해제를 보존하며, 교환은 빌린 바인딩, 필드 순서, owner 주소와 정리를 보존합니다. 제약, 예외 식, 전달 및 각 하위 연산에는 정확한 SDK 또는 소스 요구 사항이 계속 적용됩니다.
+
+`cpp-core-v2`: 선택된 std::pair 비교는 허용된 char 문자열, string_view 및 unique_ptr 요소의 원래 필드 순서와 단락 평가를 유지합니다. 문자열과 뷰는 부호 없는 바이트, 내장된 0 및 길이를 비교하고, 소유자는 이동이나 삭제 없이 관찰한 포인터를 비교합니다. 참조 바인딩과 바깥 피연산자를 한 번씩 평가하는 부수 효과를 유지합니다. 선택된 pair 연산자, 하위 비교 및 사용된 SDK 보조 함수에는 원래 소스가 필요합니다.
+
+`cpp-core-v2`: 선택된 std::pair의 piecewise 생성은 두 tuple 매개변수 객체에서 허용된 스칼라, 소스 레코드, string, string_view 및 unique_ptr 필드를 초기화합니다. 인수 부수 효과, 값 tuple의 독립 복사, first 다음 second의 생성 순서, 선택된 후행 기본 인수와 정리를 보존합니다. 두 SDK 생성자 계층, get/forward 사용, 추론 및 예외 명세의 소스를 각각 검사합니다. 참조 필드에는 살아 있는 호출자 객체가 필요하며, 값 tuple 매개변수에 대한 참조와 검증되지 않은 빈 기반 tuple 투영은 거부합니다.

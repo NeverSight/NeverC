@@ -4,6 +4,8 @@
 
 # 将 C++ 转译为 NeverC
 
+在 Linux 上，使用浮点分布采样的生成 C23 程序需要用 `-lm` 链接。原生对照程序和生成程序均须使用 `-fno-fast-math -ffp-contract=off` 编译。
+
 Core v2 现可直接降低原始指针或经认证的包装迭代器标量范围上的 `std::shuffle` 和 C++17 `std::sample`。生成器须为源码自有、标准布局、可平凡复制且析构平凡的记录，直接声明最多 64 位的非 bool 无符号 `result_type`、返回相同类型的零参数调用运算符，以及各含一个常量返回语句且满足 `min() < max()` 的静态 constexpr `min()`/`max()`。生成器按引用绑定，保留状态、libc++ 的精确拒绝重抽次数及独立位拼接。Sample 接受最多 64 位的非负内置整数数量，保留输入顺序并返回可写输出的结束指针。空／单元素 shuffle 和零数量／空输入 sample 不调用生成器。所选 SDK 的源码替换仍被拒绝；其他 `<random>` 功能、自定义迭代器及记录元素尚不在此支持范围内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#algorithm-header-from-algorithm).
 
 Core v2 还支持经认证的 `std::linear_congruential_engine` 和 `std::mersenne_twister_engine` 实例，无符号结果类型最多 64 位，包含 `minstd_rand0`、`minstd_rand`、`default_random_engine`、`mt19937`、`mt19937_64`。默认及标量种子构造、复制、赋值、`seed`、`operator()`、`discard`、`min`/`max` 和相等比较保留固定 SDK 的状态语义与目标布局；这些引擎可直接用于 `shuffle`/`sample`，包括包装迭代器范围。所选 SDK 的源码替换仍被拒绝。其他分布、流序列化及 `random_device` 仍待支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#standard-random-engines-from-random).
@@ -959,3 +961,9 @@ merge 接受同一默认 int/int unordered_map 的左值或右值源容器。成
 `cpp-core-v2`: std::make_pair 通过已认证的 SDK 工厂及其选定的 pair 构造函数，构造准入范围内的 string、string_view 和 unique_ptr 元素。每个调用都保留字符串的独立复制、移动源清空、视图和 ref/cref 的借用绑定、实参副作用及结果清理。默认参数、约束、显式性、noexcept 和选定的包装器转换均需验证确切源码；其他操作继续遵守各自要求。
 
 `cpp-core-v2`: std::pair 的选定默认构造通过准确的子构造函数初始化已准入的非 const char 字符串、字符串视图和唯一所有者字段。原始 SDK 约束、隐式默认构造路径及异常规范源码均需验证；标量零值、空字符串、空视图和所有者以及递归清理保持原有语义。空自定义删除器沿用现有的平凡构造边界。
+
+`cpp-core-v2`：选定的 std::pair 赋值及成员/非成员 swap 使用原始选中的 string、string_view 和 unique_ptr 操作。赋值保留目标引用、独立字符串副本、移后源 owner 清空及旧目标释放；交换保留借用绑定、字段顺序、owner 地址与清理。约束、异常表达式、转发及各子操作均保留其精确 SDK 或源码要求。
+
+`cpp-core-v2`: 选定的 std::pair 比较对已接纳的 char 字符串、string_view 和 unique_ptr 元素保留原有字段顺序与短路行为。字符串和视图按无符号字节、嵌入零及长度比较；所有者比较观察到的指针，不移动或删除对象。引用绑定与外层操作数仅求值一次的副作用保持不变。选定的 pair 运算符、子比较及所使用的 SDK 辅助函数均须验证原始源码。
+
+`cpp-core-v2`: 选定的 std::pair 分段构造从两个 tuple 参数对象初始化已接纳的标量、源代码记录、string、string_view 和 unique_ptr 字段，保留参数副作用、值 tuple 的独立副本、先 first 后 second 的构造顺序、选定的尾部默认参数及清理。两层 SDK 构造函数、get/forward 使用、推导和异常规格来源均须独立检查。引用字段必须指向仍然存活的调用方对象；指向按值 tuple 参数的引用及尚未证明的空基类 tuple 投影仍被拒绝。

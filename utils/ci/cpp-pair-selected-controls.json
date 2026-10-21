@@ -1,0 +1,191 @@
+{
+  "expected_cases": 31,
+  "cases": [
+    {
+      "name": "combined-positive-v3",
+      "source": "#include <array>\n#include <functional>\n#include <utility>\nint unary(int n) { return n + 2; }\nint binary(int a, int b) { return a + b; }\nstruct Storage { int value; };\nstruct ImplicitDefault { ImplicitDefault() = default; int value; };\nstruct ExplicitDefault { explicit ExplicitDefault() = default; int value; };\nstruct ExplicitEmpty { explicit ExplicitEmpty() = default; };\nint main() {\n  std::pair<int, int> scalar{};\n  std::pair<ImplicitDefault, int> implicit{};\n  std::pair<ExplicitDefault, int> direct{};\n  std::pair<ExplicitEmpty, int> empty{};\n  std::pair<std::pair<int, int>, long> nested{};\n  std::pair<std::pair<std::pair<int, int>, long>, short> deep{};\n  std::pair<std::reference_wrapper<int(int)>, int> one(std::ref(unary), 3);\n  auto oneCopy = one;\n  std::pair<std::reference_wrapper<int(int, int)>, int> two(std::ref(binary), 4);\n  auto twoCopy = two;\n  Storage referent{7};\n  std::array<Storage, 2> row{{Storage{1}, Storage{2}}};\n  std::pair<std::reference_wrapper<Storage>, std::array<Storage, 2>> bound(std::ref(referent), row);\n  std::array<Storage, 0> zero{};\n  std::pair<std::reference_wrapper<Storage>, std::array<Storage, 0>> emptyBound(std::ref(referent), zero);\n  if (oneCopy.first(4) != 6 || oneCopy.second != 3 ||\n      twoCopy.first(4, 5) != 9 || twoCopy.second != 4 ||\n      &bound.first.get() != &referent || bound.second[1].value != 2 ||\n      &emptyBound.first.get() != &referent || emptyBound.second.size() != 0)\n    return 1;\n  return scalar.first || scalar.second || implicit.first.value ||\n         implicit.second || direct.first.value || direct.second || empty.second ||\n         nested.first.first || nested.first.second || nested.second ||\n         deep.first.first.first || deep.first.first.second ||\n         deep.first.second || deep.second;\n}\n",
+      "source_sha256": "fffbbf377972cf4487a10e5cc6f4fb4e1e6959efd3ee70c61f49e5f18427f2bd",
+      "expected_accept": true
+    },
+    {
+      "name": "default-implicit-test-identity-macro",
+      "source": "#define __test_implicit_default_constructible __test_implicit_default_constructible\n#include <utility>\nint main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}\n",
+      "source_sha256": "f74e418955c0e66b4f5efd3091297e7c0fe9b69bf91f2a54dcd40a4cb9af120f",
+      "expected_accept": false
+    },
+    {
+      "name": "default-implicit-test-source",
+      "source": "#include <utility>\nnamespace std { template<> void __test_implicit_default_constructible<const int&>(const int&); }\nint main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}\n",
+      "source_sha256": "d6f35993880b857d08405b3312599913675ac91fd8fcad83f7a1a225bedcdbb9",
+      "expected_accept": false
+    },
+    {
+      "name": "default-constraint-source",
+      "source": "#include <utility>\nnamespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_default<>(){return true;}}\nint main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}\n",
+      "source_sha256": "763603ecdf2bf9acb7addca7c934d00b40083feebcbdfbfbb9c0017e696b8e39",
+      "expected_accept": false
+    },
+    {
+      "name": "default-implicit-source",
+      "source": "#include <utility>\nnamespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_implicit_default<>(){return true;}}\nint main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}\n",
+      "source_sha256": "2af7dcb336ddffee952f421f37c6d85b535d02927bd0d06a3fd793d65ce33531",
+      "expected_accept": false
+    },
+    {
+      "name": "default-checkargs-dep-identity-macro",
+      "source": "#define _CheckArgsDep _CheckArgsDep\n#include <utility>\nint main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}\n",
+      "source_sha256": "c6f9d15d1efe4bab1951a6af71a83234407b8f7e9755dc19a0f4049a3edd039c",
+      "expected_accept": false
+    },
+    {
+      "name": "default-exception-trait-identity-macro",
+      "source": "#define is_nothrow_default_constructible is_nothrow_default_constructible\n#include <utility>\nint main(){std::pair<int,int> p{};return p.first==0&&p.second==0?0:1;}\n",
+      "source_sha256": "9cbaa2accc98c4fb622db100c125a3d4f2223c92df676fbbcfa61250c8afb94f",
+      "expected_accept": false
+    },
+    {
+      "name": "deleted-helper-primary-fallback",
+      "source": "#include <utility>\nstruct E{E()=default;int n;};\nnamespace std{template<>void __test_implicit_default_constructible<const E&>(const E&)=delete;}\nint main(){std::pair<E,int> p{};return p.first.n||p.second;}\n",
+      "source_sha256": "8f95ab03cb0bb61891cce22b1603b9b73db1460da82925ef6e78dbb184640645",
+      "expected_accept": false
+    },
+    {
+      "name": "nested-default-inner-constraint-source",
+      "source": "#include <utility>\nnamespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_default<>(){return true;}}\nint main(){std::pair<std::pair<int,int>,long> p{};return p.first.first||p.first.second||p.second;}\n",
+      "source_sha256": "6d74b67dff335d1cdd7c4d3c5324ba5a3c4e1e130257d06e3f90dd44e2ab7157",
+      "expected_accept": false
+    },
+    {
+      "name": "nested-default-inner-implicit-source",
+      "source": "#include <utility>\nnamespace std {template<> template<> constexpr bool pair<int,int>::_CheckArgs::__enable_implicit_default<>(){return true;}}\nint main(){std::pair<std::pair<int,int>,long> p{};return p.first.first||p.first.second||p.second;}\n",
+      "source_sha256": "7d0ac54a221a1687ab132111924454525cb8fe670d5b0dafcf1f447d2750441a",
+      "expected_accept": false
+    },
+    {
+      "name": "wrapper-base-use-identity-macro",
+      "source": "#include <__functional/weak_result_type.h>\n#define __weak_result_type __weak_result_type\n#include <array>\n#include <functional>\n#include <utility>\nstruct Item{int value;};\nint main(){Item a{7};std::array<Item,2> row{{Item{1},Item{2}}};std::pair<std::reference_wrapper<Item>,std::array<Item,2>> p(std::ref(a),row);return &p.first.get()!=&a||p.second[1].value!=2;}\n",
+      "source_sha256": "3ac4fb47bd2d7380ab433911799d91343e55d80a8d171c414b10ab263919f89e",
+      "expected_accept": false
+    },
+    {
+      "name": "zero-storage-use-identity-macro",
+      "source": "#include <__utility/empty.h>\n#define __empty __empty\n#include <array>\n#include <functional>\n#include <utility>\nstruct Item{int value;};\nint main(){Item a{7};std::array<Item,0> row{};std::pair<std::reference_wrapper<Item>,std::array<Item,0>> p(std::ref(a),row);return &p.first.get()!=&a||p.second.size()!=0;}\n",
+      "source_sha256": "0216fabd0d95f811129b7fce0c554e0ad739a9a52b9fe6c4a542aa8ef8b27313",
+      "expected_accept": false
+    },
+    {
+      "name": "nested-source-copy",
+      "source": "#include <array>\n#include <functional>\n#include <utility>\nstruct Item{int value;};\nint main(){using P=std::pair<Item,int>;using R=std::array<Item,2>;using G=std::array<R,2>;P a(Item{1},2);G g{};std::pair<P,G> v(a,g);return v.first.first.value!=1;}\n",
+      "source_sha256": "85cfb18ff2d00320d1930d459fbf08c20681322aba25f4cdf09cfc8a22e32de3",
+      "expected_accept": true
+    },
+    {
+      "name": "wrapped-source-array",
+      "source": "#include <array>\n#include <functional>\n#include <utility>\nstruct Item{int value;};\nint main(){Item a{7};std::array<Item,2> row{{Item{1},Item{2}}};std::pair<std::reference_wrapper<Item>,std::array<Item,2>> p(std::ref(a),row);return &p.first.get()!=&a||p.second[1].value!=2;}\n",
+      "source_sha256": "fa8fbea8fde14492ff1543a2e9ef45c1ac65c358c4bbe7718491cede1f1182c0",
+      "expected_accept": true
+    },
+    {
+      "name": "mixed-source-array",
+      "source": "#include <array>\n#include <functional>\n#include <utility>\nstruct Item{int value;};\nint main(){Item a{7};std::array<Item,2> row{{Item{1},Item{2}}};std::pair<Item&,std::array<Item,2>> p(a,row);return &p.first!=&a||p.second[1].value!=2;}\n",
+      "source_sha256": "46c14799e54031f5c217cfadad445198f7d037948cdf83db73a4035b1603f2fe",
+      "expected_accept": true
+    },
+    {
+      "name": "wrapped-zero-array",
+      "source": "#include <array>\n#include <functional>\n#include <utility>\nstruct Item{int value;};\nint main(){Item a{7};std::array<Item,0> row{};std::pair<std::reference_wrapper<Item>,std::array<Item,0>> p(std::ref(a),row);return &p.first.get()!=&a||p.second.size()!=0;}\n",
+      "source_sha256": "3dd15c7ce4d2cecaa110cba18d864b5fdcfddea3cb72aaf4e19c6877d577b6e8",
+      "expected_accept": true
+    },
+    {
+      "name": "unary-wrapper-pair",
+      "source": "#include <functional>\n#include <utility>\nint f(int n){return n+2;}\nint main(){std::pair<std::reference_wrapper<int(int)>,int> p(std::ref(f),3);auto q=p;return q.first(4)!=6||q.second!=3;}\n",
+      "source_sha256": "289fae9c6fbd2ffec26338c1a05cd031b4edf2bc3646ef3dd4c82e702ed43f09",
+      "expected_accept": true
+    },
+    {
+      "name": "binary-wrapper-pair",
+      "source": "#include <functional>\n#include <utility>\nint f(int a,int b){return a+b;}\nint main(){std::pair<std::reference_wrapper<int(int,int)>,int> p(std::ref(f),3);auto q=p;return q.first(4,5)!=9||q.second!=3;}\n",
+      "source_sha256": "4b96934e9f33e77bec1a42fce1be3281b2074d0697de2af5e400a2865b2dd6ab",
+      "expected_accept": true
+    },
+    {
+      "name": "array-two",
+      "source": "#include <array>\n#include <utility>\nint main(){std::pair<std::array<int,2>,int> p{};return p.first[0]||p.first[1]||p.second;}\n",
+      "source_sha256": "70a3b1f23f2dd79234634f29eb96aa2ee9ffc0471b7841877ded063c844c743c",
+      "expected_accept": true
+    },
+    {
+      "name": "array-zero",
+      "source": "#include <array>\n#include <utility>\nint main(){std::pair<std::array<int,0>,int> p{};return p.first.size()||p.second;}\n",
+      "source_sha256": "8ca6599d66a11bfd0e8f538a042d89264f3dc26a57b22c44ca21507be4b29d8e",
+      "expected_accept": true
+    },
+    {
+      "name": "array-nested",
+      "source": "#include <array>\n#include <utility>\nint main(){std::pair<std::array<std::array<int,2>,2>,long> p{};return p.first[0][1]||p.first[1][0]||p.second;}\n",
+      "source_sha256": "dbe965ff7082a9d3703478d7b67f7ad3cea547e9c450b50e7d91c9bb2ce7ac3f",
+      "expected_accept": true
+    },
+    {
+      "name": "optional",
+      "source": "#include <optional>\n#include <utility>\nint main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}\n",
+      "source_sha256": "d2b399c675f529fbfd0e460c877ac6411576c7ab044b19fe8ecfcd65857a6ae3",
+      "expected_accept": true
+    },
+    {
+      "name": "optional-array",
+      "source": "#include <optional>\n#include <array>\n#include <utility>\nint main(){std::pair<std::array<std::optional<int>,2>,int> p{};return p.first[0].has_value()||p.first[1].has_value()||p.second;}\n",
+      "source_sha256": "d9a2cac6b29755729f9e511f4eac52a004b7ce9e03d56758f72d2a13f52fa9f9",
+      "expected_accept": true
+    },
+    {
+      "name": "optional-direct-copy",
+      "source": "#include <optional>\n#include <utility>\nint main(){std::optional<int> o(7);std::pair<std::optional<int>,int> p(o,3);return !p.first.has_value()||*p.first!=7||p.second!=3;}\n",
+      "source_sha256": "d64ab227185f250faa52daaa7d2b8dc7ec2c08a830c98c2ca49671a0f131c0c5",
+      "expected_accept": true
+    },
+    {
+      "name": "nested-optional-default",
+      "source": "#include <optional>\n#include <utility>\nint main(){std::pair<std::optional<std::optional<int>>,int> p{};return p.first.has_value()||p.second;}\n",
+      "source_sha256": "aaab6cd6694af1cfd578de4ef51e07657f534fb3af2135296c58730980a72f29",
+      "expected_accept": true
+    },
+    {
+      "name": "optional-record-copy",
+      "source": "#include <optional>\n#include <utility>\nstruct Item{int value;};\nint main(){std::optional<Item> o(Item{7});std::pair<std::optional<Item>,int> p(o,3);return !p.first.has_value()||(*p.first).value!=7||p.second!=3;}\n",
+      "source_sha256": "0b11c893c10e93f747fe14b0bed4248daea07b48f3d7b13793a883a59e587e9b",
+      "expected_accept": true
+    },
+    {
+      "name": "optional-array-copy",
+      "source": "#include <array>\n#include <optional>\n#include <utility>\nint main(){std::array<int,2> a{{2,7}};std::optional<std::array<int,2>> o(a);std::pair<std::optional<std::array<int,2>>,int> p(o,3);return !p.first.has_value()||(*p.first)[1]!=7||p.second!=3;}\n",
+      "source_sha256": "8191f55e551ce6497e5263d51e668fa602bc8ea0b922448c22b9729ed8bf5ef7",
+      "expected_accept": true
+    },
+    {
+      "name": "optional-base-alias-identity-macro",
+      "source": "#define __optional_sfinae_ctor_base_t __optional_sfinae_ctor_base_t\n#include <optional>\n#include <utility>\nint main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}\n",
+      "source_sha256": "6a12e149c27814add3ec5937d36046e258d4e99c979d892c5ae26236fe3ec22d",
+      "expected_accept": false
+    },
+    {
+      "name": "optional-storage-identity-macro",
+      "source": "#define __optional_destruct_base __optional_destruct_base\n#include <optional>\n#include <utility>\nint main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}\n",
+      "source_sha256": "92d35226a26ab564c99efd7b65ea08528b32275a8e8abba37f1fe87f07bcbe36",
+      "expected_accept": false
+    },
+    {
+      "name": "optional-default-source",
+      "source": "#include <optional>\n#include <utility>\nnamespace std {template<> constexpr optional<int>::optional() noexcept {}}\nint main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}\n",
+      "source_sha256": "f06799e760a505367622d4a5993864b7741fed29e79f7963f95ee6f5da87ae9e",
+      "expected_accept": false
+    },
+    {
+      "name": "optional-value-type-use-identity-macro",
+      "source": "#include <type_traits>\n#define remove_cv_t remove_cv_t\n#include <optional>\n#include <utility>\nint main(){std::pair<std::optional<int>,int> p{};return p.first.has_value()||p.second;}\n",
+      "source_sha256": "ea645f9c9728286dd2341ae679c6bc60267ddef111ee1b4894af8fb46abb5401",
+      "expected_accept": false
+    }
+  ]
+}

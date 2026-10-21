@@ -1,5 +1,7 @@
 # C++ core v2: scalar types, declarations and object storage
 
+On Linux, link generated C23 programs that sample floating-point distributions with `-lm`. Compile native comparison programs and generated programs with `-fno-fast-math -ffp-contract=off`.
+
 `cpp-core-v2` is an experimental, explicitly selected extension of the
 single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
 and reference operations, fixed arrays, integer and floating types, size queries and ordinary
@@ -17287,3 +17289,9 @@ Selected std::pair element, whole-pair move and converting constructors transfer
 std::make_pair constructs admitted string, string_view and unique_ptr elements through the authenticated SDK factory and its selected pair constructor. Each call preserves independent string copies, move-source clearing, borrowed view and ref/cref bindings, argument effects and result cleanup. Defaults, constraints, explicitness, noexcept and selected wrapper conversions require their exact source; other operations retain their own requirements.
 
 `cpp-core-v2`: Selected std::pair default construction initializes admitted non-const char string, string-view and std::unique_ptr fields through their exact child constructors. It validates the original SDK constraints, implicit-default path and exception source, preserving scalar zero values, empty strings, null views/owners and recursive cleanup. Empty custom deleters retain their existing trivial-construction boundary.
+
+`cpp-core-v2`: Selected std::pair assignment and member/free swap use the original selected string, string_view and unique_ptr operations. Assignments preserve destination references, independent string copies, cleared moved owners and deletion of previous targets; swaps preserve borrowed bindings, field order, owner addresses and cleanup. Constraints, exception expressions, forwarding and each child operation retain their exact SDK or source requirements.
+
+`cpp-core-v2`: Selected std::pair comparisons preserve the original field order and short-circuit behavior for admitted char string, string_view and unique_ptr elements. String and view relations compare unsigned bytes, embedded zeros and lengths; owner relations compare the observed pointers without moving or deleting them. Reference bindings and once-only outer operand effects are preserved. Each selected pair operator, child comparison and consumed SDK helper requires its original source.
+
+`cpp-core-v2`: Selected std::pair piecewise construction initializes admitted scalar, source-owned record, string, string_view and unique_ptr fields from two tuple parameter objects. It preserves argument effects, value-tuple copies, first-before-second construction, selected trailing defaults and cleanup. Both SDK constructor layers, get/forward uses, deductions and exception sources require independent checks. Reference fields require live caller referents; references into by-value tuple parameters and unproved empty-base tuple projections remain refused.
