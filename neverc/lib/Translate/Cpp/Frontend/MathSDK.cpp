@@ -7599,6 +7599,7 @@ class UtilityTupleQueryGraph
   unsigned Depth = 0, Nodes = 0;
   bool Failed = false;
   const UtilityTupleQueryMode Mode;
+  const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
   const CXXConstructorDecl *PairConstructor = nullptr;
   std::set<const Type *> PairInputTypes;
   std::set<const CXXRecordDecl *> PairInputRecords;
@@ -9952,6 +9953,12 @@ public:
                         const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
                         UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
       : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+  bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
+      return false;
+    NotFnFactoryDefaults = &Factory;
+    return true;
+  }
   bool TraverseTemplateSpecializationType(TemplateSpecializationType *T) {
     if (isa_and_nonnull<BuiltinTemplateDecl>(T->getTemplateName().getAsTemplateDecl()))
       return catPackElement(T);
@@ -10030,7 +10037,10 @@ public:
         }
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
       const auto Origin = S.sdkFile(SM, L);
-      if (!Origin || Origin->Root != "libcxx") return false;
+      if ((!Origin || Origin->Root != "libcxx") &&
+          !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
+            functionalNotFnFactorySplitTypeEnd(
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -11988,6 +11998,92 @@ bool retainFunctionalNotFnConstraintRoot(
   return Check.family(Template, {Path});
 }
 
+bool functionalNotFnFactorySplitTypeEnd(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory, TypeLoc Location,
+    SourceLocation End) {
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Function = Factory.Selected.Factory;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+  const auto *Parameter = Parameters && Parameters->size() == 2
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+  if (!Function || Factory.Primary != Primary || !Parameter ||
+      !Parameter->hasDefaultArgument() ||
+      Parameter->getDefaultArgument().getTypeSourceInfo() != Factory.PrimaryDefault ||
+      Factory.Use.Template != Primary || Factory.Use.Declaration != Function ||
+      Factory.Use.Kind != TemplateSourceKind::Function ||
+      !Factory.Use.FunctionalNotFnConstraint || Factory.Use.DefaultsOverflow ||
+      Factory.Use.Defaults.size() != 1 ||
+      Factory.Use.Defaults.front().Parameter != Parameter ||
+      Factory.Use.Defaults.front().Written.getArgument().getKind() != TemplateArgument::Type ||
+      Factory.Use.Defaults.front().Converted.getArgument().getKind() != TemplateArgument::Type ||
+      Factory.Use.Defaults.front().Written.getTypeSourceInfo() != Factory.SubstitutedDefault ||
+      Factory.Use.Defaults.front().Converted.getTypeSourceInfo() != Factory.ConvertedDefault ||
+      !Check.family(Function, {"__functional/not_fn.h"})) return false;
+  const TypeSourceInfo *Roles[] = {Factory.PrimaryDefault,
+      Factory.SubstitutedDefault, Factory.ConvertedDefault};
+  for (const auto *Role : Roles)
+    if (!Check.factoryDefaultSource(Role, Factory.PrimaryDefault)) return false;
+
+  if (Location.isNull() || End != Location.getEndLoc()) return false;
+  auto Named = Location;
+  if (const auto Wrapper = Named.getAs<ElaboratedTypeLoc>()) {
+    if (Wrapper.getBeginLoc() != Wrapper.getNamedTypeLoc().getBeginLoc()) return false;
+    Named = Wrapper.getNamedTypeLoc();
+  }
+  const auto Decay = Named.getAs<TemplateSpecializationTypeLoc>();
+  const auto *Alias = Decay.isNull() ? nullptr
+      : dyn_cast_or_null<TypeAliasTemplateDecl>(
+          Decay.getTypePtr()->getTemplateName().getAsTemplateDecl());
+  if (!Alias || !Alias->getIdentifier() || Alias->getName() != "decay_t" ||
+      Decay.getNumArgs() != 1 ||
+      Decay.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
+      Decay.getRAngleLoc() != End ||
+      !Check.family(Alias, {"__type_traits/decay.h"}) ||
+      !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"})) return false;
+
+  // Match an actual TypeLoc node in the original AST, including its data and
+  // unsugared identity. Canonical types or copied source ranges are insufficient.
+  class ActualDefaultNode : public RecursiveASTVisitor<ActualDefaultNode> {
+    TypeLoc Target;
+    unsigned Nodes = 0;
+  public:
+    bool Found = false;
+    explicit ActualDefaultNode(TypeLoc Target) : Target(Target) {}
+    bool shouldWalkTypesOfTypeLocs() const { return false; }
+    bool TraverseTypeLoc(TypeLoc Node) {
+      if (Node.isNull()) return true;
+      if (++Nodes > 4096) return false;
+      if (Node.getType() == Target.getType() &&
+          Node.getOpaqueData() == Target.getOpaqueData() &&
+          Node.getSourceRange() == Target.getSourceRange()) Found = true;
+      return RecursiveASTVisitor<ActualDefaultNode>::TraverseTypeLoc(Node);
+    }
+  };
+  bool Found = false;
+  for (const auto *Role : Roles) {
+    ActualDefaultNode Nodes(Location);
+    if (!Nodes.TraverseTypeLoc(Role->getTypeLoc())) return false;
+    Found |= Nodes.Found;
+  }
+  if (!Found || !End.isMacroID()) return false;
+  const auto Spell = SM.getSpellingLoc(End);
+  const auto Range = SM.getImmediateExpansionRange(End);
+  const auto Begin = Range.getBegin();
+  if (!Spell.isFileID() || SM.getImmediateSpellingLoc(End) != Spell ||
+      !SM.isWrittenInScratchSpace(Spell) || Range.isTokenRange() ||
+      !Begin.isFileID() || !Range.getEnd().isFileID() ||
+      Range.getEnd() != Begin.getLocWithOffset(1) ||
+      SM.getExpansionLoc(End) != Begin ||
+      !Check.location(Begin, {"__functional/not_fn.h"})) return false;
+  bool Invalid = false;
+  const char *Written = SM.getCharacterData(Begin, &Invalid);
+  if (Invalid || *Written != '>') return false;
+  const char *Split = SM.getCharacterData(Spell, &Invalid);
+  return !Invalid && *Split == '>';
+}
+
 bool matchesFunctionalNotFnSelectedSource(
     const State &S, const SourceManager &SM,
     const SelectedTemplateCallSource &Source, const ASTContext &Context) {
@@ -12341,7 +12437,8 @@ public:
   bool factory(const FunctionalNotFnFactoryTemplateSource &Factory) {
     const auto Pointer = approvedFunctionalNotFnPointerStorage(
         S, SM, Factory.Selected.Storage.Record, Context);
-    if (!Pointer || Factory.Selected.CallableConstruction) return false;
+    if (!Pointer || Factory.Selected.CallableConstruction ||
+        !Graph.bindNotFnFactoryDefaults(Factory)) return false;
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no

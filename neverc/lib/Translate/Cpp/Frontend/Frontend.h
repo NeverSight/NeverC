@@ -38,6 +38,7 @@ class SizeOfPackExpr;
 class InitListExpr;
 class StringLiteral;
 class TypeTraitExpr;
+class TypeLoc;
 class Expr;
 class UnaryExprOrTypeTraitExpr;
 struct ASTTemplateArgumentListInfo;
@@ -1800,6 +1801,14 @@ describeFunctionalNotFnFactoryTemplateSource(
     const SelectedTemplateCallSource &Selection, const TemplateUseSource &Use,
     const clang::ASTContext &Context);
 
+
+// Bind only the actual nested decay_t end token in the three independently
+// authenticated default spellings. This does not complete their type graph.
+bool functionalNotFnFactorySplitTypeEnd(
+    const State &S, const clang::SourceManager &SM,
+    const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory, clang::TypeLoc Location,
+    clang::SourceLocation End);
 
 // Collection is purpose-bound and inert. Consuming the selected factory's
 // default/alias/trait source and granting runtime use remain separate checks.
