@@ -10598,8 +10598,7 @@ public:
         !T || !T->isTypeAlias()) { if (Mode == UtilityTupleQueryMode::NotFnSignature && T) {
       const auto *ObservedAlias = T->getTemplateName().getAsTemplateDecl();
       if (ObservedAlias && ObservedAlias->getIdentifier() && ObservedAlias->getName() == "_IsNotSame")
-        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10598
-");
+        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10598\n");
     } return nullptr; }
     const auto *Alias = dyn_cast_or_null<TypeAliasTemplateDecl>(T->getTemplateName().getAsTemplateDecl());
     const auto Arguments = T->template_arguments();
@@ -10609,8 +10608,7 @@ public:
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature && T) {
       const auto *ObservedAlias = T->getTemplateName().getAsTemplateDecl();
       if (ObservedAlias && ObservedAlias->getIdentifier() && ObservedAlias->getName() == "_IsNotSame")
-        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10604
-");
+        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10604\n");
     } return nullptr; }
     const auto *Expansion = dyn_cast<ElaboratedType>(T->getAliasedType().getTypePtr());
     const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
@@ -10622,8 +10620,7 @@ public:
         !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature && T) {
       const auto *ObservedAlias = T->getTemplateName().getAsTemplateDecl();
       if (ObservedAlias && ObservedAlias->getIdentifier() && ObservedAlias->getName() == "_IsNotSame")
-        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10612
-");
+        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10612\n");
     } return nullptr; }
     const Expr *Expression = Constant->template_arguments()[0].getAsExpr();
     if (const auto *Value = dyn_cast<ConstantExpr>(Expression)) Expression = Value->getSubExpr();
@@ -10634,8 +10631,7 @@ public:
     if (!Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature && T) {
       const auto *ObservedAlias = T->getTemplateName().getAsTemplateDecl();
       if (ObservedAlias && ObservedAlias->getIdentifier() && ObservedAlias->getName() == "_IsNotSame")
-        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10619
-");
+        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10619\n");
     } return nullptr; }
     const auto *First = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(0)->getType().getTypePtr());
     const auto *Second = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(1)->getType().getTypePtr());
@@ -10644,8 +10640,7 @@ public:
         Second->getReplacementType() != Arguments[1].getAsType()) { if (Mode == UtilityTupleQueryMode::NotFnSignature && T) {
       const auto *ObservedAlias = T->getTemplateName().getAsTemplateDecl();
       if (ObservedAlias && ObservedAlias->getIdentifier() && ObservedAlias->getName() == "_IsNotSame")
-        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10624
-");
+        std::fprintf(stderr, "NOT_FN_SENTINEL_ALIAS_EDGE line=10624\n");
     } return nullptr; }
     // Do not consume a folded boolean as a source witness. This is the actual
     // negated builtin and its exact two substitutions inside the real alias.
@@ -10985,8 +10980,7 @@ public:
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
         if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=10898\n"); return false; }
-      std::fprintf(stderr, "NOT_FN_SENTINEL_WRITTEN_BOUND alias=%p first=%p second=%p record=%p data=%p
-",
+      std::fprintf(stderr, "NOT_FN_SENTINEL_WRITTEN_BOUND alias=%p first=%p second=%p record=%p data=%p\n",
           static_cast<const void *>(Location.getTypePtr()), static_cast<const void *>(First),
           static_cast<const void *>(Second), static_cast<const void *>(Sentinel), Second->getTypeLoc().getOpaqueData());
       NotFnResultWrittenArgument = Second;
@@ -11096,8 +11090,7 @@ public:
       // Keep the original TypeLoc traversal and every source check. Only this
       // exact second argument's TSI can use its independently closed sentinel.
       const bool Actual = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTemplateArgumentLoc(Location);
-      std::fprintf(stderr, "NOT_FN_SENTINEL_WRITTEN_CONSUME source=%p record=%p result=%u
-",
+      std::fprintf(stderr, "NOT_FN_SENTINEL_WRITTEN_CONSUME source=%p record=%p result=%u\n",
           static_cast<const void *>(NotFnResultWrittenArgument), static_cast<const void *>(NotFnResultWrittenSentinel),
           static_cast<unsigned>(Actual));
       return Actual;
