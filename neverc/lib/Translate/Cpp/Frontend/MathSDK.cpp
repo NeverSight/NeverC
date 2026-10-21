@@ -18,6 +18,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include <functional>
 #include <set>
 
 using namespace clang;
@@ -7600,6 +7601,7 @@ class UtilityTupleQueryGraph
   bool Failed = false;
   const UtilityTupleQueryMode Mode;
   const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
+  std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXConstructorDecl *PairConstructor = nullptr;
   std::set<const Type *> PairInputTypes;
   std::set<const CXXRecordDecl *> PairInputRecords;
@@ -9911,7 +9913,7 @@ class UtilityTupleQueryGraph
     // metadata's unselected constructors or manufacture a definition.
     return Definition->field_empty();
   }
-  bool value(const ValueDecl *D) {
+  bool value(const ValueDecl *D, const DeclRefExpr *Reference = nullptr) {
     if (!family(D) || !TraverseType(D->getType())) return false;
     if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
       if (Mode == UtilityTupleQueryMode::CatSignature)
@@ -9936,7 +9938,15 @@ class UtilityTupleQueryGraph
     if (const auto *R = dyn_cast<CXXRecordDecl>(D->getDeclContext()))
       if (!record(R)) return false;
     if (const auto *V = dyn_cast<VarDecl>(D)) {
-      if (!V->isConstexpr() || !V->isStaticDataMember()) return false;
+      if (!V->isConstexpr()) return false;
+      if (!V->isStaticDataMember()) {
+        // Only the bound not_fn proof can consume this exact retained use
+        // and its selected initializer. No namespace constant joins the
+        // ordinary SDK metadata permissions or any other graph mode.
+        return Mode == UtilityTupleQueryMode::NotFnSignature && Reference &&
+            Reference->getDecl() == V && NotFnConstraintVariableSource &&
+            NotFnConstraintVariableSource(Reference);
+      }
       const VarDecl *Holder = nullptr;
       const auto *Initializer = V->getAnyInitializer(Holder);
       return Initializer && Holder && family(Holder) &&
@@ -9953,6 +9963,12 @@ public:
                         const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
                         UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
       : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+  bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature ||
+        NotFnConstraintVariableSource || !Source) return false;
+    NotFnConstraintVariableSource = std::move(Source);
+    return true;
+  }
   bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
       return false;
@@ -10128,7 +10144,7 @@ public:
           if (!TraverseTemplateArgument(A)) return false;
       return true;
     }
-    return value(D);
+    return value(D, E);
   }
   bool VisitMemberExpr(MemberExpr *E) { return value(E->getMemberDecl()); }
   bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
@@ -12438,6 +12454,8 @@ public:
         SpecialMembers(Members), OperationTraits(Traits),
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature),
         Sources(Sources), Selections(Selections) {}
+  NotFnPointerSourceProof(const NotFnPointerSourceProof &) = delete;
+  NotFnPointerSourceProof &operator=(const NotFnPointerSourceProof &) = delete;
 
   bool factory(const FunctionalNotFnFactoryTemplateSource &Factory) {
     const auto Pointer = approvedFunctionalNotFnPointerStorage(
@@ -12453,6 +12471,20 @@ public:
         ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
     if ((!InputValue->isFunctionPointerType() && !InputValue->isFunctionType()) ||
         !Context.hasSameType(Decayed, Callable)) return false;
+    if (!Graph.bindNotFnConstraintVariables(
+            [this, Callable, Input](const DeclRefExpr *Reference) {
+              if (!Reference || !Check.location(Reference->getExprLoc(),
+                      {"__functional/not_fn.h"})) return false;
+              const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
+              const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
+              if (!Primary || !Primary->getIdentifier() ||
+                  (Primary->getName() != "is_constructible_v" &&
+                   Primary->getName() != "is_move_constructible_v")) return false;
+              // Reuse the complete packet/argument/redeclaration/initializer
+              // proof below; neither the variable's name nor its folded bool
+              // can stand in for an actual retained constraint source.
+              return variableUse(Reference, Primary->getName(), Callable, Input);
+            })) return false;
     const auto Primary = specialization(Factory.PrimaryDefault);
     const auto *PrimaryCondition = Primary.isNull() ? nullptr
         : Primary.getArgLoc(0).getArgument().getAsExpr();
