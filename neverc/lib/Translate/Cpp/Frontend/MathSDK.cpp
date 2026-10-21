@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -10025,12 +10026,12 @@ public:
             // Repair only this authenticated original projection wrapper.
             // The real builtin/alias name token must remain SDK source.
             if (!cstddefOrigin(S, SM, Named.getTemplateNameLoc(), "libcxx",
-                               "__tuple/make_tuple_types.h")) return false;
+                               "__tuple/make_tuple_types.h")) { std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=10028\n"); return false; }
             for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
-              if (L.isInvalid()) return false;
+              if (L.isInvalid()) { std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=10030\n"); return false; }
               const auto Origin = S.sdkFile(SM, L);
               if ((!Origin || Origin->Root != "libcxx") &&
-                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return false;
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) { std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=10033\n"); return false; }
             }
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
@@ -10040,7 +10041,19 @@ public:
       if ((!Origin || Origin->Root != "libcxx") &&
           !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
             functionalNotFnFactorySplitTypeEnd(
-                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
+                S, SM, Context, *NotFnFactoryDefaults, Location, L)))
+        {
+        std::fprintf(stderr, "NOT_FN_TYPELOC_REJECT_BEGIN kind=%u type=%s\n",
+            static_cast<unsigned>(Location.getTypeLocClass()), Location.getType().getAsString().c_str());
+        std::fprintf(stderr, "NOT_FN_TYPELOC_POINT point=%s begin=%s end=%s spelling=%s expansion=%s macro=%u mode=%u factory=%u\n",
+            L.printToString(SM).c_str(), Location.getBeginLoc().printToString(SM).c_str(),
+            Location.getEndLoc().printToString(SM).c_str(), SM.getSpellingLoc(L).printToString(SM).c_str(),
+            SM.getExpansionLoc(L).printToString(SM).c_str(), static_cast<unsigned>(L.isMacroID()),
+            static_cast<unsigned>(Mode), static_cast<unsigned>(NotFnFactoryDefaults != nullptr));
+        Location.getType().dump();
+        std::fprintf(stderr, "NOT_FN_TYPELOC_REJECT_END\n");
+        std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=10043\n"); return false;
+      }
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -12008,7 +12021,7 @@ bool functionalNotFnFactorySplitTypeEnd(
   if (!Call || Call->getDirectCallee() != Function ||
       Factory.Selection.Function != Function ||
       Factory.Selection.Location != Factory.Use.Location ||
-      !S.owns(SM, Factory.Selection.Location)) return false;
+      !S.owns(SM, Factory.Selection.Location)) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12011\n"); return false; }
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
   const auto *Parameter = Parameters && Parameters->size() == 2
@@ -12025,16 +12038,16 @@ bool functionalNotFnFactorySplitTypeEnd(
       Factory.Use.Defaults.front().Converted.getArgument().getKind() != TemplateArgument::Type ||
       Factory.Use.Defaults.front().Written.getTypeSourceInfo() != Factory.SubstitutedDefault ||
       Factory.Use.Defaults.front().Converted.getTypeSourceInfo() != Factory.ConvertedDefault ||
-      !Check.family(Function, {"__functional/not_fn.h"})) return false;
+      !Check.family(Function, {"__functional/not_fn.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12028\n"); return false; }
   const TypeSourceInfo *Roles[] = {Factory.PrimaryDefault,
       Factory.SubstitutedDefault, Factory.ConvertedDefault};
   for (const auto *Role : Roles)
-    if (!Check.factoryDefaultSource(Role, Factory.PrimaryDefault)) return false;
+    if (!Check.factoryDefaultSource(Role, Factory.PrimaryDefault)) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12032\n"); return false; }
 
-  if (Location.isNull() || End != Location.getEndLoc()) return false;
+  if (Location.isNull() || End != Location.getEndLoc()) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12034\n"); return false; }
   auto Named = Location;
   if (const auto Wrapper = Named.getAs<ElaboratedTypeLoc>()) {
-    if (Wrapper.getBeginLoc() != Wrapper.getNamedTypeLoc().getBeginLoc()) return false;
+    if (Wrapper.getBeginLoc() != Wrapper.getNamedTypeLoc().getBeginLoc()) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12037\n"); return false; }
     Named = Wrapper.getNamedTypeLoc();
   }
   const auto Decay = Named.getAs<TemplateSpecializationTypeLoc>();
@@ -12046,7 +12059,7 @@ bool functionalNotFnFactorySplitTypeEnd(
       Decay.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
       Decay.getRAngleLoc() != End ||
       !Check.family(Alias, {"__type_traits/decay.h"}) ||
-      !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"})) return false;
+      !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12049\n"); return false; }
 
   // Match an actual TypeLoc node in the original AST, including its data and
   // unsugared identity. Canonical types or copied source ranges are insufficient.
@@ -12056,10 +12069,10 @@ bool functionalNotFnFactorySplitTypeEnd(
   public:
     bool Found = false;
     explicit ActualDefaultNode(TypeLoc Target) : Target(Target) {}
-    bool shouldWalkTypesOfTypeLocs() const { return false; }
+    bool shouldWalkTypesOfTypeLocs() const { { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12059\n"); return false; } }
     bool TraverseTypeLoc(TypeLoc Node) {
       if (Node.isNull()) return true;
-      if (++Nodes > 4096) return false;
+      if (++Nodes > 4096) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12062\n"); return false; }
       if (Node.getType() == Target.getType() &&
           Node.getOpaqueData() == Target.getOpaqueData() &&
           Node.getSourceRange() == Target.getSourceRange()) Found = true;
@@ -12069,10 +12082,10 @@ bool functionalNotFnFactorySplitTypeEnd(
   bool Found = false;
   for (const auto *Role : Roles) {
     ActualDefaultNode Nodes(Location);
-    if (!Nodes.TraverseTypeLoc(Role->getTypeLoc())) return false;
+    if (!Nodes.TraverseTypeLoc(Role->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12072\n"); return false; }
     Found |= Nodes.Found;
   }
-  if (!Found || !End.isMacroID()) return false;
+  if (!Found || !End.isMacroID()) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12075\n"); return false; }
   const auto Spell = SM.getSpellingLoc(End);
   const auto Range = SM.getImmediateExpansionRange(End);
   const auto Begin = Range.getBegin();
@@ -12081,10 +12094,10 @@ bool functionalNotFnFactorySplitTypeEnd(
       !Begin.isFileID() || !Range.getEnd().isFileID() ||
       Range.getEnd() != Begin.getLocWithOffset(1) ||
       SM.getExpansionLoc(End) != Begin ||
-      !Check.location(Begin, {"__functional/not_fn.h"})) return false;
+      !Check.location(Begin, {"__functional/not_fn.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12084\n"); return false; }
   bool Invalid = false;
   const char *Written = SM.getCharacterData(Begin, &Invalid);
-  if (Invalid || *Written != '>') return false;
+  if (Invalid || *Written != '>') { std::fprintf(stderr, "NOT_FN_EDGE scope=SPLIT line=12087\n"); return false; }
   const char *Split = SM.getCharacterData(Spell, &Invalid);
   return !Invalid && *Split == '>';
 }
@@ -12293,10 +12306,10 @@ class NotFnPointerSourceProof {
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() > 64 || Source.Defaults.size() > 64 ||
         Source.ParameterTypes.size() > 4096 || Source.Instantiation ||
-        Source.Origin || Source.WrittenStorageClass || Source.Selection) return false;
+        Source.Origin || Source.WrittenStorageClass || Source.Selection) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12296\n"); return false; }
     for (unsigned I = 0; I < Source.Canonical->size(); ++I)
       if (!Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12299\n"); return false; }
     return true;
   }
   const TemplateUseSource *typeUse(TemplateSpecializationTypeLoc Root) const {
@@ -12329,7 +12342,7 @@ class NotFnPointerSourceProof {
       if (!Parameter || !Type.Type || !Parameter->getTypeSourceInfo() ||
           Parameter->isParameterPack() || Type.PackIndex != 0 ||
           !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) return false;
+          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12332\n"); return false; }
     }
     return true;
   }
@@ -12337,7 +12350,7 @@ class NotFnPointerSourceProof {
     const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Source.Template);
     const auto *Parameters = Alias ? Alias->getTemplateParameters() : nullptr;
     if (!Parameters || Parameters->size() != 2 ||
-        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) return false;
+        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12340\n"); return false; }
     const auto *Condition = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto &Use = Source.Defaults.front();
@@ -12346,7 +12359,7 @@ class NotFnPointerSourceProof {
         !Default || !Default->hasDefaultArgument() || Default->isParameterPack() ||
         Use.Parameter != Default || Source.ParameterTypes.front().Parameter != Condition ||
         Use.Written.getArgument().getKind() != TemplateArgument::Type ||
-        Use.Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+        Use.Converted.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12349\n"); return false; }
     // Original, substituted and converted void spellings are inspected as
     // independent source nodes. The canonical void result is insufficient.
     const auto *Original = Default->getDefaultArgument().getTypeSourceInfo();
@@ -12356,7 +12369,7 @@ class NotFnPointerSourceProof {
       if (!Info || !Info->getType()->isVoidType() ||
           !Info->getTypeLoc().getAs<BuiltinTypeLoc>() ||
           !Check.location(Info->getTypeLoc().getBeginLoc(), {"__type_traits/enable_if.h"}) ||
-          !Graph.TraverseTypeLoc(Info->getTypeLoc())) return false;
+          !Graph.TraverseTypeLoc(Info->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12359\n"); return false; }
     return parameterTypes(Source);
   }
   bool constraintType(const TypeSourceInfo *Info) {
@@ -12364,7 +12377,7 @@ class NotFnPointerSourceProof {
     const auto *Source = typeUse(Root);
     if (!Source || !Root.getTypePtr()->isTypeAlias() ||
         !Check.family(Source->Template, {"__type_traits/enable_if.h"}) ||
-        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) return false;
+        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12367\n"); return false; }
     // The retained Sema Underlying contains the selected partial/typedef.
     // The metadata walker follows its original alias definitions and every
     // selected SDK declaration chain and its real operation-query roots.
@@ -12380,15 +12393,15 @@ class NotFnPointerSourceProof {
         Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
         !Variable->isConstexpr() || !Variable->getType()->isBooleanType() ||
         !Variable->hasInit() ||
-        !Check.family(Primary, {"__type_traits/is_constructible.h"})) return false;
+        !Check.family(Primary, {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12383\n"); return false; }
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) return false;
+      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12385\n"); return false; }
     const auto &Arguments = Variable->getTemplateArgs();
     const bool Move = Name == "is_move_constructible_v";
     if (Arguments.size() != (Move ? 1U : 2U) ||
         Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Callable) ||
-        (!Move && !Check.oneTypePack(Arguments[1], Input))) return false;
+        (!Move && !Check.oneTypePack(Arguments[1], Input))) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12391\n"); return false; }
     bool Found = false;
     for (const auto *Source : Sources) {
       if (!Source || Source->Kind != TemplateSourceKind::VariableUse ||
@@ -12396,9 +12409,9 @@ class NotFnPointerSourceProof {
       if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
           Source->Type || Source->Underlying || !arguments(*Source) ||
           !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-          Source->Canonical->size() != Arguments.size()) return false;
+          Source->Canonical->size() != Arguments.size()) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12399\n"); return false; }
       for (unsigned I = 0; I < Arguments.size(); ++I)
-        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return false;
+        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12401\n"); return false; }
       Found = true;
     }
     // Follow the actual selected initializer (including is_move_constructible's
@@ -12413,7 +12426,7 @@ class NotFnPointerSourceProof {
         !Check.family(Alias, {"__type_traits/decay.h"}) || Root.getNumArgs() != 1 ||
         Root.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Root.getArgLoc(0).getArgument().getAsType(), Input) ||
-        !Context.hasSameType(Source->Underlying->getType(), Output)) return false;
+        !Context.hasSameType(Source->Underlying->getType(), Output)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12416\n"); return false; }
     const auto *Inner = specialization(Source->Underlying->getType());
     const auto *Template = Inner ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Inner->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -12423,7 +12436,7 @@ class NotFnPointerSourceProof {
         !Check.family(Template, {"__type_traits/decay.h"}) || !Transform ||
         Transform->getUTTKind() != UnaryTransformType::Decay ||
         !Context.hasSameType(Transform->getBaseType(), Input) ||
-        !Context.hasSameType(Transform->getUnderlyingType(), Output)) return false;
+        !Context.hasSameType(Transform->getUnderlyingType(), Output)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12426\n"); return false; }
     return Graph.TraverseTypeLoc(Source->Underlying->getTypeLoc()) &&
            Graph.TraverseTypeLoc(Alias->getTemplatedDecl()->getTypeSourceInfo()->getTypeLoc());
   }
@@ -12443,7 +12456,7 @@ public:
     const auto Pointer = approvedFunctionalNotFnPointerStorage(
         S, SM, Factory.Selected.Storage.Record, Context);
     if (!Pointer || Factory.Selected.CallableConstruction ||
-        !Graph.bindNotFnFactoryDefaults(Factory)) return false;
+        !Graph.bindNotFnFactoryDefaults(Factory)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12446\n"); return false; }
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no
@@ -12452,22 +12465,31 @@ public:
     const auto Decayed = InputValue->isFunctionType()
         ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
     if ((!InputValue->isFunctionPointerType() && !InputValue->isFunctionType()) ||
-        !Context.hasSameType(Decayed, Callable)) return false;
+        !Context.hasSameType(Decayed, Callable)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12455\n"); return false; }
     const auto Primary = specialization(Factory.PrimaryDefault);
     const auto *PrimaryCondition = Primary.isNull() ? nullptr
         : Primary.getArgLoc(0).getArgument().getAsExpr();
     const auto *Original = PrimaryCondition
         ? dyn_cast<BinaryOperator>(PrimaryCondition->IgnoreParenImpCasts()) : nullptr;
-    if (!Original || Original->getOpcode() != BO_LAnd) return false;
+    if (!Original || Original->getOpcode() != BO_LAnd) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12461\n"); return false; }
     for (const auto *Expression : {Original->getLHS(), Original->getRHS()}) {
       const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Expression->IgnoreParenImpCasts());
       if (!Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
-          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) return false;
+          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12465\n"); return false; }
     }
     // Traverse the actual dependent primary, then each concrete retained role.
-    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) return false;
+    const TypeSourceInfo *DefaultRoles[] = {Factory.PrimaryDefault,
+        Factory.SubstitutedDefault, Factory.ConvertedDefault};
+    for (unsigned Role = 0; Role != 3; ++Role) {
+      const auto *Info = DefaultRoles[Role];
+      std::fprintf(stderr, "NOT_FN_PRIMARY_DEFAULT role=%u begin=%s end=%s\n", Role,
+          Info->getTypeLoc().getBeginLoc().printToString(SM).c_str(),
+          Info->getTypeLoc().getEndLoc().printToString(SM).c_str());
+      Info->getType().dump();
+    }
+    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12468\n"); return false; }
     for (const auto *Info : {Factory.SubstitutedDefault, Factory.ConvertedDefault}) {
-      if (!constraintType(Info)) return false;
+      if (!constraintType(Info)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12470\n"); return false; }
       const auto Root = specialization(Info);
       const auto *Expression = Root.getArgLoc(0).getArgument().getAsExpr();
       const auto *And = Expression ? dyn_cast<BinaryOperator>(Expression->IgnoreParenImpCasts()) : nullptr;
@@ -12475,21 +12497,21 @@ public:
       const auto *Move = And ? dyn_cast<DeclRefExpr>(And->getRHS()->IgnoreParenImpCasts()) : nullptr;
       if (!And || And->getOpcode() != BO_LAnd ||
           !variableUse(Constructible, "is_constructible_v", Callable, Input) ||
-          !variableUse(Move, "is_move_constructible_v", Callable, Input)) return false;
+          !variableUse(Move, "is_move_constructible_v", Callable, Input)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12478\n"); return false; }
       for (const auto *Reference : {Constructible, Move}) {
-        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) return false;
+        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12480\n"); return false; }
         const auto &Argument = Reference->template_arguments()[0];
-        if (Argument.getArgument().getKind() != TemplateArgument::Type) return false;
+        if (Argument.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12482\n"); return false; }
         const auto Decay = specialization(Argument.getTypeSourceInfo());
-        if (!decay(Decay, Input, Callable)) return false;
+        if (!decay(Decay, Input, Callable)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12484\n"); return false; }
       }
     }
     const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
-    if (!Tags || Tags->size() != 4) return false;
+    if (!Tags || Tags->size() != 4) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12488\n"); return false; }
     UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
                                 UtilityTupleQueryMode::CatSignature);
     for (const auto &Tag : *Tags)
-      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
+      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12492\n"); return false; }
     // Every selected construction keeps its actual signature. The exact
     // constructor template/default packets must also be present; the pointer
     // layout never supplies their missing source.
@@ -12497,15 +12519,15 @@ public:
       const auto *Constructor = Construction->getConstructor();
       if (Constructor->isInheritingConstructor()) {
         if (Constructor->getParent()->getCanonicalDecl() != Pointer->Record->getCanonicalDecl())
-          return false;
+          { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12500\n"); return false; }
         Constructor = Constructor->getInheritedConstructor().getConstructor();
         if (!Constructor || Constructor->getParent()->getCanonicalDecl() !=
-                Pointer->Forwarder->getCanonicalDecl()) return false;
+                Pointer->Forwarder->getCanonicalDecl()) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12503\n"); return false; }
       }
       const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
-      if (!PrimaryTemplate || !Graph.function(Constructor)) return false;
+      if (!PrimaryTemplate || !Graph.function(Constructor)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12506\n"); return false; }
       if (const auto *Written = Constructor->getTypeSourceInfo())
-        if (!Graph.TraverseTypeLoc(Written->getTypeLoc())) return false;
+        if (!Graph.TraverseTypeLoc(Written->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12508\n"); return false; }
       bool Found = false;
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
@@ -12517,7 +12539,7 @@ public:
               Selection->Location == Source->Location &&
               matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
         if (!Selected) continue;
-        if (Source->Template != PrimaryTemplate || !arguments(*Source)) return false;
+        if (Source->Template != PrimaryTemplate || !arguments(*Source)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12520\n"); return false; }
         for (const auto &Default : Source->Defaults) {
           const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
           if (Parameter) {
@@ -12526,14 +12548,14 @@ public:
                 Default.Converted.getArgument().getKind() != TemplateArgument::Type ||
                 !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
                 !constraintType(Default.Written.getTypeSourceInfo()) ||
-                !constraintType(Default.Converted.getTypeSourceInfo())) return false;
+                !constraintType(Default.Converted.getTypeSourceInfo())) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12529\n"); return false; }
           } else if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
-                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) return false;
+                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12531\n"); return false; }
         }
-        if (!parameterTypes(*Source)) return false;
+        if (!parameterTypes(*Source)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12533\n"); return false; }
         Found = true;
       }
-      if (!Found) return false;
+      if (!Found) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12536\n"); return false; }
     }
     return true;
   }
@@ -12546,12 +12568,30 @@ public:
       if (Selection && Selection->FunctionalNotFnConstraint &&
           Selection->Function == Method && Selection->Location == Use.Location &&
           isa_and_nonnull<CallExpr>(Selection->Expression)) Selected = true;
+    unsigned MethodSelections = 0;
+    for (const auto *Selection : Selections)
+      if (Selection && Selection->Function == Method) ++MethodSelections;
+    std::fprintf(stderr, "NOT_FN_CALL_BOUNDARY selected=%u primary=%u arguments=%u template_matches=%u declaration_matches=%u function_kind=%u retained_flag=%u selections=%zu method_selections=%u defaults=%zu parameter_types=%zu canonical=%u sugared=%u overflow=%u instantiation=%u origin=%u storage=%u selection=%u\n",
+        static_cast<unsigned>(Selected), static_cast<unsigned>(Primary != nullptr),
+        static_cast<unsigned>(Arguments != nullptr), static_cast<unsigned>(Use.Template == Primary),
+        static_cast<unsigned>(Use.Declaration == Method), static_cast<unsigned>(Use.Kind == TemplateSourceKind::Function),
+        static_cast<unsigned>(Use.FunctionalNotFnConstraint), Selections.size(), MethodSelections,
+        Use.Defaults.size(), Use.ParameterTypes.size(), static_cast<unsigned>(Use.Canonical != nullptr),
+        static_cast<unsigned>(Use.Sugared != nullptr), static_cast<unsigned>(Use.DefaultsOverflow),
+        static_cast<unsigned>(Use.Instantiation), static_cast<unsigned>(Use.Origin != nullptr),
+        static_cast<unsigned>(Use.WrittenStorageClass), static_cast<unsigned>(Use.Selection != nullptr));
+    std::fprintf(stderr, "NOT_FN_CALL_POINT use=%s object=%s\n",
+        Use.Location.printToString(SM).c_str(),
+        Call.Object ? Call.Object->getExprLoc().printToString(SM).c_str() : "null");
+    std::fprintf(stderr, "NOT_FN_CALL_METHOD_AST\n");
+    if (Method) Method->dump();
+    std::fprintf(stderr, "NOT_FN_CALL_BOUNDARY_END\n");
     if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
-        Use.Canonical->size() != Arguments->size()) return false;
+        Use.Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12552\n"); return false; }
     for (unsigned I = 0; I < Arguments->size(); ++I)
-      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
+      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12554\n"); return false; }
     const auto &Default = Use.Defaults.front();
     const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
     if (!Parameter || !Parameter->hasDefaultArgument() ||
@@ -12560,7 +12600,7 @@ public:
         !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
         !constraintType(Default.Written.getTypeSourceInfo()) ||
         !constraintType(Default.Converted.getTypeSourceInfo()) ||
-        !parameterTypes(Use)) return false;
+        !parameterTypes(Use)) { std::fprintf(stderr, "NOT_FN_EDGE scope=PROOF line=12563\n"); return false; }
     return true;
   }
 };
