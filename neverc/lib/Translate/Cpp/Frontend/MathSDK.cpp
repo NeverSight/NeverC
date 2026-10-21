@@ -7605,6 +7605,8 @@ class UtilityTupleQueryGraph
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
   QualType NotFnCallableType;
+  const CXXRecordDecl *NotFnConstraintBaseOwner = nullptr;
+  const CXXBaseSpecifier *NotFnConstraintBase = nullptr;
   std::map<const CXXRecordDecl *, std::pair<const TemplateSpecializationType *, unsigned>>
       NotFnTupleTagSlices;
   std::optional<FunctionalNotFnStorage> NotFnTupleTagStorage;
@@ -9962,9 +9964,20 @@ class UtilityTupleQueryGraph
     if (!family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumVBases())
       return false;
-    for (const auto &Base : Definition->bases())
+    for (const auto &Base : Definition->bases()) {
+      const auto *SavedOwner = NotFnConstraintBaseOwner;
+      const auto *SavedBase = NotFnConstraintBase;
+      if (Mode == UtilityTupleQueryMode::NotFnSignature) {
+        NotFnConstraintBaseOwner = Definition;
+        NotFnConstraintBase = &Base;
+      }
+      auto Restore = llvm::make_scope_exit([&] {
+        NotFnConstraintBaseOwner = SavedOwner;
+        NotFnConstraintBase = SavedBase;
+      });
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
           !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+    }
     // Only referenced value/alias members are consumed below. Never walk
     // metadata's unselected constructors or manufacture a definition.
     return Definition->field_empty();
@@ -10129,6 +10142,11 @@ public:
     NotFnConstructorReturn = Return;
     auto Restore = llvm::make_scope_exit([&] { NotFnConstructorReturn = TypeLoc(); });
     return TraverseTypeLoc(Written->getTypeLoc());
+  }
+  std::pair<const CXXRecordDecl *, const CXXBaseSpecifier *>
+  notFnConstraintBase() const {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature) return {};
+    return {NotFnConstraintBaseOwner, NotFnConstraintBase};
   }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
@@ -12628,13 +12646,70 @@ class NotFnPointerSourceProof {
         Check.family(Holder, {"__type_traits/invoke.h"}) &&
         Graph.TraverseStmt(const_cast<Expr *>(Initializer));
   }
+  bool invocationBaseReference(const DeclRefExpr *Reference,
+      const FunctionalNotFnCallSource &Call) {
+    const auto [BaseOwner, Base] = Graph.notFnConstraintBase();
+    const auto *Owner = dyn_cast_or_null<ClassTemplateSpecializationDecl>(BaseOwner);
+    const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
+    if (!Reference || !Owner || !Base || !Primary || !Primary->getIdentifier() ||
+        Primary->getName() != "__invoke_result" ||
+        Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary ||
+        Owner->getDefinition() != Owner || Owner->getNumBases() != 1 ||
+        Owner->getNumVBases() || Base->isVirtual() || Base->getAccessSpecifier() != AS_public ||
+        !Check.family(Owner, {"__type_traits/invoke.h"}) ||
+        !Check.family(Primary, {"__type_traits/invoke.h"})) return false;
+    bool ActualBase = false;
+    for (const auto &Candidate : Owner->bases())
+      ActualBase |= &Candidate == Base;
+    if (!ActualBase) return false;
+    const auto *Method = Call.Method;
+    const auto *Selected = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+    if (!Method || !Selected || Selected->size() != 2 ||
+        Selected->get(0).getKind() != TemplateArgument::Pack ||
+        Selected->get(0).pack_size() != Method->getNumParams() ||
+        !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
+    auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
+                                 : Call.Storage.CallableType;
+    if (Method->getRefQualifier() == RQ_LValue)
+      Bound = Context.getLValueReferenceType(Bound);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    const auto &Arguments = Owner->getTemplateArgs();
+    if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments[0].getAsType(), Bound) ||
+        Arguments[1].getKind() != TemplateArgument::Pack ||
+        Arguments[1].pack_size() != Method->getNumParams()) return false;
+    const auto Actual = Arguments[1].pack_elements();
+    const auto Expected = Selected->get(0).pack_elements();
+    for (unsigned I = 0; I < Expected.size(); ++I)
+      if (Actual[I].getKind() != TemplateArgument::Type ||
+          Expected[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return false;
+    const auto *Written = Base->getTypeSourceInfo();
+    const auto Root = specialization(Written);
+    const auto *EnableIf = Root ? dyn_cast_or_null<ClassTemplateDecl>(
+        Root.getTypePtr()->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Written || !Root || !EnableIf || EnableIf->getName() != "enable_if" ||
+        !Check.family(EnableIf, {"__type_traits/enable_if.h"}) || Root.getNumArgs() != 2 ||
+        Root.getArgLoc(0).getArgument().getKind() != TemplateArgument::Expression ||
+        Root.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type ||
+        !Check.location(Written->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) ||
+        !Check.location(Written->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"}) ||
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+    const auto *Condition = Root.getArgLoc(0).getArgument().getAsExpr();
+    // This is the actual dependent base's selected expression, not a folded
+    // bool or a namespace variable admitted by name. Its variable primary,
+    // initializer, aliases and the independent result type still close below.
+    return Condition && Condition->IgnoreParenImpCasts() == Reference;
+  }
   bool invocationVariableUse(const DeclRefExpr *Reference,
       const FunctionalNotFnCallSource &Call) {
     if (InvocableValueReferences.count(Reference)) return invocationValueUse(Reference);
     const auto *Variable = Reference
         ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
     const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
-    const bool Internal = InvocableVariableChildren.count(Reference);
+    const bool DirectCallable = invocationBaseReference(Reference, Call);
+    const bool Internal = DirectCallable || InvocableVariableChildren.count(Reference);
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto *First = Parameters && Parameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
@@ -12663,22 +12738,24 @@ class NotFnPointerSourceProof {
         !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Arguments[0].getAsType(), Context.getRecordType(Call.Storage.Operation)) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Method->getNumParams() + 1) return false;
+        Arguments[1].pack_size() != Method->getNumParams() + (DirectCallable ? 0 : 1)) return false;
     auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
                                  : Call.Storage.CallableType;
     if (Method->getRefQualifier() == RQ_LValue)
       Bound = Context.getLValueReferenceType(Bound);
     else if (Method->getRefQualifier() != RQ_RValue) return false;
     const auto Pack = Arguments[1].pack_elements();
-    if (Pack[0].getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Pack[0].getAsType(), Bound)) return false;
+    const unsigned Offset = DirectCallable ? 0 : 1;
+    if (!Context.hasSameType(Arguments[0].getAsType(), DirectCallable
+            ? Bound : Context.getRecordType(Call.Storage.Operation))) return false;
+    if (!DirectCallable && (Pack[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Pack[0].getAsType(), Bound))) return false;
     const auto Selected = CallArguments->get(0).pack_elements();
     for (unsigned I = 0; I < Selected.size(); ++I)
       if (Selected[I].getKind() != TemplateArgument::Type ||
-          Pack[I + 1].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I + 1].getAsType(), Selected[I].getAsType())) return false;
+          Pack[I + Offset].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Pack[I + Offset].getAsType(), Selected[I].getAsType())) return false;
     if (!Internal) {
       bool Found = false;
       for (const auto *Source : Sources) {
