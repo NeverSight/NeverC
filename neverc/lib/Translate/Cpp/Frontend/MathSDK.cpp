@@ -7614,6 +7614,8 @@ class UtilityTupleQueryGraph
   std::set<const CallExpr *> NotFnInvokeUses;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
   std::map<const CallExpr *, const FunctionDecl *> NotFnTryResultUses;
+  std::map<const TypeAliasDecl *, const CXXRecordDecl *> NotFnResultSentinels;
+  const CXXRecordDecl *NotFnResultComparisonRecord = nullptr;
   const FunctionDecl *NotFnInvokeSignature = nullptr;
   const FunctionDecl *NotFnInvokeWrittenPattern = nullptr;
   const CallExpr *NotFnInvokeReturn = nullptr, *NotFnInvokeException = nullptr;
@@ -10119,6 +10121,19 @@ class UtilityTupleQueryGraph
           Definition->hasTrivialDefaultConstructor() &&
           Definition->hasTrivialDestructor();
     }
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation &&
+        NotFnResultComparisonRecord &&
+        R->getCanonicalDecl() == NotFnResultComparisonRecord) {
+      // Only the actual second _IsNotSame operand consumes this already
+      // authenticated, deleted SDK sentinel. No value, call, construction or
+      // lifetime source is registered by a metadata type comparison.
+      const auto *Definition = R->getDefinition();
+      const bool Complete = Definition && family(R) && family(Definition) &&
+          !Definition->isUnion() && !Definition->isDynamicClass() &&
+          !Definition->getNumBases() && Definition->field_empty();
+      if (!Complete) Failed = true;
+      return Complete;
+    }
     if (!family(R)) return false;
     if (!Records.insert(R).second) return true;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
@@ -10294,6 +10309,7 @@ public:
                            std::function<bool()> Proof) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnInvocation ||
         !NotFnSignatureDeclvals.empty() || !NotFnTryResultUses.empty() ||
+        !NotFnResultSentinels.empty() || NotFnResultComparisonRecord ||
         !Proof || !Call.Method || !Call.SourceCall ||
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
@@ -10305,6 +10321,8 @@ public:
       NotFnInvokeUses.clear();
       CompletedNotFnInvokeSignatures.clear();
       NotFnTryResultUses.clear();
+      NotFnResultSentinels.clear();
+      NotFnResultComparisonRecord = nullptr;
     });
     return Proof() && !Failed;
   }
@@ -10442,6 +10460,76 @@ public:
     NotFnInvokeUses = std::move(Uses);
     return !Failed;
   }
+  bool notFnResultSentinelDefinition(const CXXRecordDecl *R) {
+    const auto *Definition = R ? R->getDefinition() : nullptr;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
+        !Definition || !R->getIdentifier() || R->getName() != "__nat" ||
+        isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
+        !family(R) || !family(Definition) || Definition->isUnion() ||
+        Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+    const auto Self = Context.getRecordType(Definition);
+    const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
+    unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
+    for (const auto *Declaration : Definition->decls()) {
+      if (!step()) return false;
+      if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
+        if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
+            Name->getDeclContext() != Definition || !family(Name)) return false;
+        continue;
+      }
+      const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
+      if (!Member || !family(Member) || Member->isImplicit() || Member->isInvalidDecl() ||
+          !Member->isDeleted() || !Member->isDeletedAsWritten() || Member->hasBody() || Member->isStatic() || Member->isVirtual() ||
+          Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
+          Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
+          Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+      for (const auto *Parameter : Member->parameters())
+        if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) return false;
+      if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
+        if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
+        else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
+        else return false;
+      } else if (isa<CXXDestructorDecl>(Member)) {
+        if (Member->getNumParams()) return false;
+        ++Destroy;
+      } else {
+        if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return false;
+        ++Assign;
+      }
+    }
+    return Injected == 1 && Default == 1 && Copy == 1 && Assign == 1 && Destroy == 1;
+  }
+  const CXXRecordDecl *notFnResultSentinelArgument(const TypeTraitExpr *E) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !E ||
+        E->getTrait() != BTT_IsSame || E->getNumArgs() != 2 ||
+        E->isTypeDependent() || E->isValueDependent() ||
+        !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return nullptr;
+    const auto *First = dyn_cast<SubstTemplateTypeParmType>(E->getArg(0)->getType().getTypePtr());
+    const auto *Second = dyn_cast<SubstTemplateTypeParmType>(E->getArg(1)->getType().getTypePtr());
+    const auto *Alias = First ? dyn_cast_or_null<TypeAliasTemplateDecl>(First->getAssociatedDecl()) : nullptr;
+    if (!Alias || !Second || Second->getAssociatedDecl() != Alias || !Alias->getIdentifier() ||
+        Alias->getName() != "_IsNotSame" || !family(Alias) ||
+        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h")) return nullptr;
+    const auto *Parameters = Alias->getTemplateParameters();
+    if (Parameters->size() != 2 || First->getReplacedParameter() != Parameters->getParam(0) ||
+        Second->getReplacedParameter() != Parameters->getParam(1)) return nullptr;
+    for (const auto *Parameter : *Parameters) {
+      const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+      if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() || !family(Type)) return nullptr;
+    }
+    const auto *Written = dyn_cast<ElaboratedType>(First->getReplacementType().getTypePtr());
+    const auto *Name = Written ? dyn_cast<TypedefType>(Written->getNamedType().getTypePtr()) : nullptr;
+    const auto *Result = Name ? dyn_cast<TypeAliasDecl>(Name->getDecl()) : nullptr;
+    const auto Found = Result ? NotFnResultSentinels.find(Result) : NotFnResultSentinels.end();
+    const auto *Sentinel = Second->getReplacementType()->getAsCXXRecordDecl();
+    if (Found == NotFnResultSentinels.end() || !Sentinel ||
+        Sentinel->getCanonicalDecl() != Found->second || !family(Result)) return nullptr;
+    return Found->second;
+  }
   bool prepareNotFnTryResultSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections) {
     const auto *Method = NotFnInvocation ? NotFnInvocation->Method : nullptr;
@@ -10577,6 +10665,74 @@ public:
             !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
             !function(Declaration)) return false;
       }
+      const CXXMethodDecl *Fallback = nullptr;
+      const CXXRecordDecl *Sentinel = nullptr;
+      for (const auto *Witness : Sources) {
+        if (!step()) return false;
+        const auto *Candidate = Witness ? dyn_cast_or_null<CXXMethodDecl>(Witness->Declaration) : nullptr;
+        if (!Candidate || Candidate->getParent() != Owner || Candidate->getDeclName() != F->getDeclName() ||
+            !Candidate->isVariadic() || Candidate->getNumParams() ||
+            !BoundArguments(Candidate->getTemplateSpecializationArgs())) continue;
+        const auto *Template = Candidate->getPrimaryTemplate();
+        const auto *R = Candidate->getReturnType()->getAsCXXRecordDecl();
+        if ((Fallback && Fallback != Candidate) || !Template || !R || !Candidate->isStatic() ||
+            Candidate->isInvalidDecl() || Candidate->isDeleted() || Candidate->hasBody() ||
+            Candidate->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+            Witness->Kind != TemplateSourceKind::Function || Witness->Template != Template ||
+            !Witness->FunctionalNotFnConstraint || Witness->Type || Witness->Underlying || Witness->Written ||
+            Witness->DefaultsOverflow || !Witness->Defaults.empty() || !Witness->ParameterTypes.empty() ||
+            Witness->Instantiation || Witness->Origin || Witness->WrittenStorageClass || Witness->Selection ||
+            !BoundArguments(Witness->Canonical) || !BoundArguments(Witness->Sugared) ||
+            !family(Candidate) || !notFnResultSentinelDefinition(R) ||
+            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return false;
+        for (unsigned I = 0; I < Witness->Canonical->size(); ++I)
+          if (!Witness->Canonical->get(I).structurallyEquals(Candidate->getTemplateSpecializationArgs()->get(I)) ||
+              !Witness->Canonical->get(I).structurallyEquals(
+                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return false;
+        // The unselected ellipsis candidate supplies a type identity only.
+        // Its actual packet and every original member-template declaration
+        // must close; no call selection or runtime body is invented for it.
+        for (const auto *Current = Template; Current;
+             Current = Current->getInstantiatedFromMemberTemplate()) {
+          const auto *Parameters = Current->getTemplateParameters();
+          const auto *First = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+          const auto *Rest = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+          const auto *Pattern = dyn_cast<CXXMethodDecl>(Current->getTemplatedDecl());
+          if (!step() || !family(Current) || !First || !Rest || First->isParameterPack() ||
+              !Rest->isParameterPack() || First->getIndex() != 0 || Rest->getIndex() != 1 ||
+              First->hasDefaultArgument() || Rest->hasDefaultArgument() || !family(First) || !family(Rest) ||
+              !Pattern || (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
+              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return false;
+          for (const auto *Declaration : Pattern->redecls()) {
+            const auto *Info = Declaration->getTypeSourceInfo();
+            const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+            const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+            if (!step() || !family(Declaration) || !Location || !Prototype ||
+                !Prototype->isVariadic() || Prototype->getNumParams() ||
+                Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+                !Context.hasSameType(Info->getType(), Declaration->getType()) ||
+                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
+            for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
+                                    Prototype->getEllipsisLoc()})
+              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+          }
+        }
+        const auto *Info = Candidate->getTypeSourceInfo();
+        const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+        const auto *Prototype = Candidate->getType()->getAs<FunctionProtoType>();
+        if (!Location || !Prototype || !Prototype->isVariadic() || Prototype->getNumParams() ||
+            Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
+            !Context.hasSameType(Info->getType(), Candidate->getType()) ||
+            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
+        for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
+                                Prototype->getEllipsisLoc()})
+          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        Fallback = Candidate;
+        Sentinel = R->getCanonicalDecl();
+      }
+      if (!Fallback || !Sentinel) return false;
+      const auto Inserted = NotFnResultSentinels.emplace(Result, Sentinel);
+      if (!Inserted.second && Inserted.first->second != Sentinel) return false;
       Uses.emplace(E, F);
       Functions.insert(F);
     }
@@ -11525,6 +11681,9 @@ public:
   }
 
   bool VisitTypeTraitExpr(TypeTraitExpr *E) {
+    const auto *SavedSentinel = NotFnResultComparisonRecord;
+    NotFnResultComparisonRecord = notFnResultSentinelArgument(E);
+    auto RestoreSentinel = llvm::make_scope_exit([&] { NotFnResultComparisonRecord = SavedSentinel; });
     for (const auto *Argument : E->getArgs())
       if (!TraverseType(Argument->getType())) return false;
     const bool Construction = E->getTrait() == TT_IsConstructible ||
