@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -30048,6 +30049,17 @@ public:
   void HandleNeverCSelectedTemplateCallSource(
       Expr *Expression, FunctionDecl *Function,
       const SourceLocation &Location) override {
+    if (S.coreV2() && Function && Function->getIdentifier() &&
+        (Function->getName() == "__invoke" || Function->getName() == "__try_call")) {
+      auto &ObservedSM = Function->getASTContext().getSourceManager();
+      const auto File = S.sdkFile(ObservedSM, Function->getLocation());
+      if (File && File->Root == "libcxx" && File->Path == "__type_traits/invoke.h") {
+        std::fprintf(stderr, "NOT_FN_RAW_HELPER_SELECTION name=%s function=%p primary=%p expression=%p diagnostics=%zu location=%s\n",
+            Function->getQualifiedNameAsString().c_str(), static_cast<const void *>(Function),
+            static_cast<const void *>(Function->getPrimaryTemplate()), static_cast<const void *>(Expression),
+            S.Diagnostics.size(), Location.printToString(ObservedSM).c_str());
+      }
+    }
     if (!S.coreV2() || !Function || !Function->getPrimaryTemplate())
       return;
     auto &Sources = Function->getASTContext().getSourceManager();
@@ -30072,6 +30084,18 @@ public:
       NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
       const unsigned *PackIndices, unsigned TypeCount,
       bool Overflow, const SourceLocation &Location) override {
+    if (S.coreV2() && Function && Function->getIdentifier() &&
+        (Function->getName() == "__invoke" || Function->getName() == "__try_call")) {
+      auto &ObservedSM = Function->getASTContext().getSourceManager();
+      const auto File = S.sdkFile(ObservedSM, Function->getLocation());
+      if (File && File->Root == "libcxx" && File->Path == "__type_traits/invoke.h") {
+        std::fprintf(stderr, "NOT_FN_RAW_HELPER_TEMPLATE name=%s function=%p primary=%p count=%u defaults=%u params=%u overflow=%u diagnostics=%zu location=%s\n",
+            Function->getQualifiedNameAsString().c_str(), static_cast<const void *>(Function),
+            static_cast<const void *>(Function->getPrimaryTemplate()), Count, DefaultCount,
+            TypeCount, static_cast<unsigned>(Overflow), S.Diagnostics.size(),
+            Location.printToString(ObservedSM).c_str());
+      }
+    }
     retainTemplateUse(TemplateSourceKind::Function,
                       Function ? Function->getPrimaryTemplate() : nullptr,
                       Function, nullptr, nullptr, nullptr,
