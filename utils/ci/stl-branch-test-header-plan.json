@@ -1,0 +1,30 @@
+{
+  "source_basis": "34e84818bd7362e1066bde08ac571766ad46975d",
+  "source_parent": "d27e5701cbcee231567c80a85294a669a1f3c543",
+  "group": "branch-test-header",
+  "test": "tests/neverc/MachODataConstTests.cpp",
+  "original_source_sha256": "3de91faf5b3f7f7a8c69f41dd313003e2e5be3b0870fc3f833e0c5e0905a4e69",
+  "fixed_source_sha256": "9778be7dc76a68a5bc02a1ed1ef9f8c363a7d6c577beec5590023eaf4463bbee",
+  "header": "neverc/include/neverc/Linker/MachO/DataConst.h",
+  "header_sha256": "99bcded1fd09a14eada3a7ca1ac6978c2b15c828667ea825d771e80c0e165d69",
+  "original_include": "#include \"Linker/MachO/DataConst.h\"\n",
+  "fixed_include": "#include \"neverc/Linker/MachO/DataConst.h\"\n",
+  "original_body_unchanged": true,
+  "required_real_gtest_cases": 6,
+  "required_real_programs": 2,
+  "actual_failure_logs": [
+    {
+      "run": 39566301464,
+      "job": 119109450395,
+      "log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/pair-ci-failure-39566301464-job-119109450395.log",
+      "log_sha256": "1f0261694f1e77ca749973cfee0f3989f619ccbe61523c2ac4a02b2ab6ef345b"
+    },
+    {
+      "run": 39566301448,
+      "job": 119109388970,
+      "log": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/pair-ci-failure-39566301448-job-119109388970.log",
+      "log_sha256": "44bad69a58fe14e749d806797776ec269e7de2a6b2b69141d9348fbd8dc10f83"
+    }
+  ],
+  "no_production_implementation_changes": true
+}
