@@ -25900,8 +25900,12 @@ public:
       // This bounded walker follows actual selected aliases, partials, trait
       // roots and all original declaration chains. No ordinary permission leaks.
       std::vector<const SelectedTemplateCallSource *> Selections;
-      const auto Found = NotFnSelectedCallSources.find(Call);
-      if (Found != NotFnSelectedCallSources.end()) Selections = Found->second;
+      // The selected operator and its actual unevaluated helper calls have
+      // distinct expression keys. Snapshot the inert owned selections here;
+      // the proof still binds each helper's exact function, expression, use
+      // location and arguments, and independently requires this root call.
+      for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
+        Selections.insert(Selections.end(), Entries.begin(), Entries.end());
       SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
           A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
           A.SpecialMembers, A.OperationTraits);
