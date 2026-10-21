@@ -7604,6 +7604,7 @@ class UtilityTupleQueryGraph
   TypeLoc NotFnConstructorReturn;
   std::function<bool(const DeclRefExpr *)> NotFnConstraintVariableSource;
   const CXXRecordDecl *NotFnOperationRecord = nullptr;
+  QualType NotFnCallableType;
   std::map<const CXXRecordDecl *, std::pair<const TemplateSpecializationType *, unsigned>>
       NotFnTupleTagSlices;
   std::optional<FunctionalNotFnStorage> NotFnTupleTagStorage;
@@ -8855,6 +8856,13 @@ class UtilityTupleQueryGraph
       return false;
     if (T->isReferenceType())
       return carrier(T->getPointeeType(), Nesting + 1);
+    // Only the callable independently certified in this not_fn storage may
+    // enter its signature graph. General tuple_cat and runtime calls keep
+    // their own type, source, body and lifetime requirements.
+    if (Mode == UtilityTupleQueryMode::NotFnSignature &&
+        !NotFnCallableType.isNull() && T->isFunctionPointerType() &&
+        Context.hasSameType(T.getUnqualifiedType(), NotFnCallableType))
+      return true;
     if (utilityScalar(Context, T) || T->isVoidType())
       return true;
     const auto *R = T->getAsCXXRecordDecl();
@@ -10093,6 +10101,7 @@ public:
     if (!Pointer || Pointer->Operation != Storage.Operation ||
         !Context.hasSameType(Pointer->CallableType, Storage.CallableType)) return false;
     NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
+    NotFnCallableType = Pointer->CallableType;
     return true;
   }
   bool TraverseNotFnConstructorSignature(const CXXConstructorDecl *Constructor,
