@@ -13,7 +13,23 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPOSITORY / ".github" / "workflows"
 SETUP_PYTHON_COMMIT = "a26af69be951a213d495a4c3e4e4022e16d87065"
 OFFICIAL_CPYTHON_VERSION = "3.12.10"
-EXPECTED_PRODUCERS = 12
+EXPECTED_PRODUCERS = frozenset(
+    {
+        "build-linux-arm64.yml",
+        "build-linux-x64.yml",
+        "build-macos-arm64.yml",
+        "build-windows-arm64-clang-lto.yml",
+        "build-windows-arm64.yml",
+        "build-windows-x64-clang-lto.yml",
+        "build-windows-x64.yml",
+        "diagnose-cpp-template-source.yml",
+        "release-linux-arm64.yml",
+        "release-linux-x64.yml",
+        "release-macos-arm64.yml",
+        "release-windows-arm64.yml",
+        "release-windows-x64.yml",
+    }
+)
 REQUIRED_COMMON = (
     SETUP_PYTHON_COMMIT,
     f'python-version: "{OFFICIAL_CPYTHON_VERSION}"',
@@ -266,11 +282,11 @@ def main() -> int:
         if is_producer(text):
             producers.append((path, text))
     failures: list[str] = []
-    if len(producers) != EXPECTED_PRODUCERS:
-        failures.append(
-            f"producer discovery changed: expected {EXPECTED_PRODUCERS}, found {len(producers)} "
-            f"({', '.join(path.name for path, _ in producers)})"
-        )
+    actual_producers = {path.name for path, _ in producers}
+    for missing in sorted(EXPECTED_PRODUCERS - actual_producers):
+        failures.append(f"compiler artifact producer is missing: {missing}")
+    for unexpected in sorted(actual_producers - EXPECTED_PRODUCERS):
+        failures.append(f"unclassified compiler artifact producer: {unexpected}")
     for path, text in producers:
         for failure in check_producer(path, text):
             failures.append(f"{path.relative_to(REPOSITORY)}: {failure}")
