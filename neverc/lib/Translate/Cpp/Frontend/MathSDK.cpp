@@ -7584,7 +7584,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
 // This proof consumes SDK signature metadata only. Carrier storage has an
 // independent descriptor; a trait containing a carrier is never itself a
 // carrier, and no selected runtime body or lifetime permission is produced.
-enum class UtilityTupleQueryMode { Construction, CatSignature, PairConstruction };
+enum class UtilityTupleQueryMode { Construction, CatSignature, PairConstruction, NotFnSignature };
 
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
@@ -7599,6 +7599,7 @@ class UtilityTupleQueryGraph
   unsigned Depth = 0, Nodes = 0;
   bool Failed = false;
   const UtilityTupleQueryMode Mode;
+  const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
   const CXXConstructorDecl *PairConstructor = nullptr;
   std::set<const Type *> PairInputTypes;
   std::set<const CXXRecordDecl *> PairInputRecords;
@@ -7702,6 +7703,13 @@ class UtilityTupleQueryGraph
     return Origin && Origin->Root == "libcxx" &&
            (DefaultEqualityFamilies.count(D) ||
             Origin->Path == "tuple" || Origin->Path == "__config" ||
+            (Mode == UtilityTupleQueryMode::NotFnSignature &&
+             (Origin->Path == "__functional/not_fn.h" ||
+              Origin->Path == "__functional/perfect_forward.h" ||
+              Origin->Path == "__functional/invoke.h" ||
+              Origin->Path == "__utility/integer_sequence.h" ||
+              Origin->Path == "__utility/forward.h" ||
+              Origin->Path == "__utility/move.h")) ||
             llvm::StringRef(Origin->Path).starts_with("__tuple/") ||
             llvm::StringRef(Origin->Path).starts_with("__type_traits/") ||
             Origin->Path == "__utility/declval.h" ||
@@ -9945,6 +9953,12 @@ public:
                         const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
                         UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
       : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+  bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
+      return false;
+    NotFnFactoryDefaults = &Factory;
+    return true;
+  }
   bool TraverseTemplateSpecializationType(TemplateSpecializationType *T) {
     if (isa_and_nonnull<BuiltinTemplateDecl>(T->getTemplateName().getAsTemplateDecl()))
       return catPackElement(T);
@@ -10023,7 +10037,10 @@ public:
         }
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
       const auto Origin = S.sdkFile(SM, L);
-      if (!Origin || Origin->Root != "libcxx") return false;
+      if ((!Origin || Origin->Root != "libcxx") &&
+          !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
+            functionalNotFnFactorySplitTypeEnd(
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -11473,6 +11490,12 @@ public:
   const Expr *resultSource(const FunctionDecl *F, FunctionalNotFnSourceMode Mode) const {
     if (!F) return nullptr;
     if (Mode == FunctionalNotFnSourceMode::Runtime) return returned(F);
+    if (Mode == FunctionalNotFnSourceMode::Exception) {
+      const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
+      const auto *Query = Prototype
+          ? dyn_cast_or_null<CXXNoexceptExpr>(Prototype->getNoexceptExpr()) : nullptr;
+      return Query ? Query->getOperand() : nullptr;
+    }
     const auto *Result = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
     return Result ? Result->getUnderlyingExpr() : nullptr;
   }
@@ -11916,11 +11939,45 @@ bool retainFunctionalNotFnConstraintRoot(
     const State &S, const SourceManager &SM, TemplateSourceKind Kind,
     const NamedDecl *Template, const Decl *Declaration, const Type *Type,
     const TypeSourceInfo *Underlying, SourceLocation Location) {
-  if (!S.coreV2() || !Template || !Template->getIdentifier() ||
-      S.owns(SM, Location)) return false;
+  if (!S.coreV2() || !Template ||
+      (!Template->getIdentifier() && Kind != TemplateSourceKind::Function)) return false;
   const auto Use = S.sdkFile(SM, Location);
-  if (!Use || Use->Root != "libcxx" || Use->Path != "__functional/not_fn.h")
+  if (Kind != TemplateSourceKind::Function &&
+      (S.owns(SM, Location) || !Use || Use->Root != "libcxx" ||
+       (Use->Path != "__functional/not_fn.h" && Use->Path != "__functional/perfect_forward.h")))
     return false;
+  NotFnSelectedSource Check(S, SM, Template->getASTContext());
+  if (Kind == TemplateSourceKind::Function) {
+    const auto *Function = dyn_cast_or_null<CXXMethodDecl>(Declaration);
+    const auto *Owner = Function
+        ? dyn_cast<ClassTemplateSpecializationDecl>(Function->getParent()) : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    if (Function && Owner && Primary && Template == Primary && !Type && !Underlying &&
+        isa<CXXConstructorDecl>(Function) && Owner->getIdentifier() &&
+        Use && Use->Root == "libcxx" &&
+        (Use->Path == "tuple" || Use->Path == "__functional/perfect_forward.h")) {
+      const auto &Arguments = Owner->getTemplateArgs();
+      const auto Name = Owner->getName();
+      bool PointerTuple = false;
+      if (Name == "tuple" && Arguments.size() == 1 && Arguments[0].getKind() == TemplateArgument::Pack &&
+          Arguments[0].pack_size() == 1 && Arguments[0].pack_elements()[0].getKind() == TemplateArgument::Type)
+        PointerTuple = Arguments[0].pack_elements()[0].getAsType()->isFunctionPointerType();
+      else if (Name == "__tuple_impl" && Arguments.size() == 2 && Arguments[1].getKind() == TemplateArgument::Pack &&
+               Arguments[1].pack_size() == 1 && Arguments[1].pack_elements()[0].getKind() == TemplateArgument::Type)
+        PointerTuple = Arguments[1].pack_elements()[0].getAsType()->isFunctionPointerType();
+      else if (Name == "__tuple_leaf" && Arguments.size() == 3 && Arguments[1].getKind() == TemplateArgument::Type)
+        PointerTuple = Arguments[1].getAsType()->isFunctionPointerType();
+      if (PointerTuple) return Check.family(Function, {"tuple"});
+    }
+    if (!Function || !Owner || !Primary || Template != Primary || Type || Underlying ||
+        !Owner->getIdentifier() || Owner->getName() != "__perfect_forward_impl" ||
+        Owner->getTemplateArgs().size() != 3 ||
+        Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type) return false;
+    const auto *Operation = Owner->getTemplateArgs()[0].getAsType()->getAsCXXRecordDecl();
+    return Operation && Operation->getIdentifier() && Operation->getName() == "__not_fn_op" &&
+        Check.family(Operation, {"__functional/not_fn.h"}) &&
+        Check.family(Function, {"__functional/perfect_forward.h"});
+  }
   llvm::StringRef Path;
   const auto Name = Template->getName();
   if (Kind == TemplateSourceKind::Type) {
@@ -11934,12 +11991,147 @@ bool retainFunctionalNotFnConstraintRoot(
     const auto *Selected = dyn_cast_or_null<VarTemplateSpecializationDecl>(Declaration);
     if (!Primary || !Selected || Selected->getSpecializedTemplate() != Primary ||
         Type || Underlying ||
-        (Name != "is_constructible_v" && Name != "is_move_constructible_v"))
-      return false;
-    Path = "__type_traits/is_constructible.h";
+        (Name != "is_constructible_v" && Name != "is_move_constructible_v" &&
+         Name != "is_invocable_v")) return false;
+    Path = Name == "is_invocable_v" ? "__type_traits/invoke.h" : "__type_traits/is_constructible.h";
   } else return false;
-  NotFnSelectedSource Check(S, SM, Template->getASTContext());
   return Check.family(Template, {Path});
+}
+
+bool functionalNotFnFactorySplitTypeEnd(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory, TypeLoc Location,
+    SourceLocation End) {
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Function = Factory.Selected.Factory;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+  const auto *Parameter = Parameters && Parameters->size() == 2
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+  if (!Function || Factory.Primary != Primary || !Parameter ||
+      !Parameter->hasDefaultArgument() ||
+      Parameter->getDefaultArgument().getTypeSourceInfo() != Factory.PrimaryDefault ||
+      Factory.Use.Template != Primary || Factory.Use.Declaration != Function ||
+      Factory.Use.Kind != TemplateSourceKind::Function ||
+      !Factory.Use.FunctionalNotFnConstraint || Factory.Use.DefaultsOverflow ||
+      Factory.Use.Defaults.size() != 1 ||
+      Factory.Use.Defaults.front().Parameter != Parameter ||
+      Factory.Use.Defaults.front().Written.getArgument().getKind() != TemplateArgument::Type ||
+      Factory.Use.Defaults.front().Converted.getArgument().getKind() != TemplateArgument::Type ||
+      Factory.Use.Defaults.front().Written.getTypeSourceInfo() != Factory.SubstitutedDefault ||
+      Factory.Use.Defaults.front().Converted.getTypeSourceInfo() != Factory.ConvertedDefault ||
+      !Check.family(Function, {"__functional/not_fn.h"})) return false;
+  const TypeSourceInfo *Roles[] = {Factory.PrimaryDefault,
+      Factory.SubstitutedDefault, Factory.ConvertedDefault};
+  for (const auto *Role : Roles)
+    if (!Check.factoryDefaultSource(Role, Factory.PrimaryDefault)) return false;
+
+  if (Location.isNull() || End != Location.getEndLoc()) return false;
+  auto Named = Location;
+  if (const auto Wrapper = Named.getAs<ElaboratedTypeLoc>()) {
+    if (Wrapper.getBeginLoc() != Wrapper.getNamedTypeLoc().getBeginLoc()) return false;
+    Named = Wrapper.getNamedTypeLoc();
+  }
+  const auto Decay = Named.getAs<TemplateSpecializationTypeLoc>();
+  const auto *Alias = Decay.isNull() ? nullptr
+      : dyn_cast_or_null<TypeAliasTemplateDecl>(
+          Decay.getTypePtr()->getTemplateName().getAsTemplateDecl());
+  if (!Alias || !Alias->getIdentifier() || Alias->getName() != "decay_t" ||
+      Decay.getNumArgs() != 1 ||
+      Decay.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
+      Decay.getRAngleLoc() != End ||
+      !Check.family(Alias, {"__type_traits/decay.h"}) ||
+      !Check.location(Location.getBeginLoc(), {"__functional/not_fn.h"})) return false;
+
+  // Match an actual TypeLoc node in the original AST, including its data and
+  // unsugared identity. Canonical types or copied source ranges are insufficient.
+  class ActualDefaultNode : public RecursiveASTVisitor<ActualDefaultNode> {
+    TypeLoc Target;
+    unsigned Nodes = 0;
+  public:
+    bool Found = false;
+    explicit ActualDefaultNode(TypeLoc Target) : Target(Target) {}
+    bool shouldWalkTypesOfTypeLocs() const { return false; }
+    bool TraverseTypeLoc(TypeLoc Node) {
+      if (Node.isNull()) return true;
+      if (++Nodes > 4096) return false;
+      if (Node.getType() == Target.getType() &&
+          Node.getOpaqueData() == Target.getOpaqueData() &&
+          Node.getSourceRange() == Target.getSourceRange()) Found = true;
+      return RecursiveASTVisitor<ActualDefaultNode>::TraverseTypeLoc(Node);
+    }
+  };
+  bool Found = false;
+  for (const auto *Role : Roles) {
+    ActualDefaultNode Nodes(Location);
+    if (!Nodes.TraverseTypeLoc(Role->getTypeLoc())) return false;
+    Found |= Nodes.Found;
+  }
+  if (!Found || !End.isMacroID()) return false;
+  const auto Spell = SM.getSpellingLoc(End);
+  const auto Range = SM.getImmediateExpansionRange(End);
+  const auto Begin = Range.getBegin();
+  if (!Spell.isFileID() || SM.getImmediateSpellingLoc(End) != Spell ||
+      !SM.isWrittenInScratchSpace(Spell) || Range.isTokenRange() ||
+      !Begin.isFileID() || !Range.getEnd().isFileID() ||
+      Range.getEnd() != Begin.getLocWithOffset(1) ||
+      SM.getExpansionLoc(End) != Begin ||
+      !Check.location(Begin, {"__functional/not_fn.h"})) return false;
+  bool Invalid = false;
+  const char *Written = SM.getCharacterData(Begin, &Invalid);
+  if (Invalid || *Written != '>') return false;
+  const char *Split = SM.getCharacterData(Spell, &Invalid);
+  return !Invalid && *Split == '>';
+}
+
+bool matchesFunctionalNotFnSelectedSource(
+    const State &S, const SourceManager &SM,
+    const SelectedTemplateCallSource &Source, const ASTContext &Context) {
+  if (!Source.FunctionalNotFnConstraint || !Source.Expression || !Source.Function ||
+      !retainFunctionalNotFnConstraintRoot(S, SM, TemplateSourceKind::Function,
+          Source.Function->getPrimaryTemplate(), Source.Function,
+          nullptr, nullptr, Source.Location)) return false;
+  const FunctionDecl *Selected = nullptr;
+  if (const auto *Construction = dyn_cast<CXXConstructExpr>(Source.Expression))
+    Selected = Construction->getConstructor();
+  else if (const auto *Call = dyn_cast<CallExpr>(Source.Expression))
+    Selected = Call->getDirectCallee();
+  else if (const auto *Allocation = dyn_cast<CXXNewExpr>(Source.Expression))
+    Selected = Allocation->getOperatorNew();
+  if (Selected == Source.Function) return true;
+
+  // Sema reports the selected base template for this derived construction.
+  // Preserve both original identities; a canonical type or SDK file alone
+  // cannot turn an unrelated constructor callback into this selection.
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Source.Expression);
+  const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Owner = Actual
+      ? dyn_cast<ClassTemplateSpecializationDecl>(Actual->getParent()) : nullptr;
+  const auto *Base = dyn_cast<CXXConstructorDecl>(Source.Function);
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Actual || !Owner || !Base || Base->getNumParams() != 1 || !Actual->isImplicit() ||
+      !Actual->isInheritingConstructor() || Actual->isDeleted() ||
+      Actual->getPrimaryTemplate() || Actual->getNumParams() != 1 ||
+      Actual->getNumCtorInitializers() != 1 || Construction->getNumArgs() != 1 ||
+      !Owner->getIdentifier() || Owner->getName() != "__not_fn_t" ||
+      Owner->getTemplateArgs().size() != 1 ||
+      Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Owner->getTemplateArgs()[0].getAsType()->isFunctionPointerType() ||
+      Source.Location != Construction->getExprLoc() ||
+      !Check.location(Source.Location, {"__functional/not_fn.h"}) ||
+      !Check.family(Actual, {"__functional/not_fn.h"}) ||
+      !Check.family(Owner, {"__functional/not_fn.h"})) return false;
+  const auto Inherited = Actual->getInheritedConstructor();
+  if (!Inherited || Inherited.getConstructor() != Base ||
+      !Check.family(Inherited.getShadowDecl(), {"__functional/not_fn.h"}) ||
+      !Check.family(Base, {"__functional/perfect_forward.h"})) return false;
+  const auto *Initializer = *Actual->init_begin();
+  const auto *InheritedExpression = dyn_cast<CXXInheritedCtorInitExpr>(Initializer->getInit());
+  return Initializer->isBaseInitializer() && !Initializer->isBaseVirtual() &&
+      InheritedExpression && InheritedExpression->getConstructor() == Base &&
+      !InheritedExpression->constructsVBase() && !InheritedExpression->inheritedFromVBase() &&
+      Context.hasSameType(InheritedExpression->getType(), Context.getRecordType(Base->getParent())) &&
+      Context.hasSameType(Actual->getParamDecl(0)->getType(), Base->getParamDecl(0)->getType());
 }
 
 std::optional<std::vector<FunctionalNotFnTupleTagSource>>
@@ -12061,6 +12253,347 @@ bool shouldRetainFunctionalNotFnSpecialMemberSource(
   return NotFnSignatureMember;
 }
 
+
+// A purpose-bound proof for the first not_fn runtime slice. Nothing in this
+// walker enters the ordinary source indexes or approves another SDK call.
+namespace {
+class NotFnPointerSourceProof {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  NotFnSelectedSource Check;
+  const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
+  const std::map<const TypeTraitExpr *, OperationTraitSource> &OperationTraits;
+  UtilityTupleQueryGraph Graph;
+  llvm::ArrayRef<const TemplateUseSource *> Sources;
+  llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
+
+  static const TemplateSpecializationType *specialization(QualType Type) {
+    if (Type.isNull()) return nullptr;
+    if (const auto *E = dyn_cast<ElaboratedType>(Type.getTypePtr()))
+      Type = E->getNamedType();
+    return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+  }
+  static TemplateSpecializationTypeLoc specialization(const TypeSourceInfo *Info) {
+    if (!Info) return {};
+    auto Location = Info->getTypeLoc();
+    if (const auto E = Location.getAs<ElaboratedTypeLoc>()) {
+      if (E.getBeginLoc() != E.getNamedTypeLoc().getBeginLoc()) return {};
+      Location = E.getNamedTypeLoc();
+    }
+    return Location.getAs<TemplateSpecializationTypeLoc>();
+  }
+  bool arguments(const TemplateUseSource &Source) const {
+    if (!Source.Canonical || !Source.Sugared || Source.DefaultsOverflow ||
+        Source.Canonical->size() != Source.Sugared->size() ||
+        Source.Canonical->size() > 64 || Source.Defaults.size() > 64 ||
+        Source.ParameterTypes.size() > 4096 || Source.Instantiation ||
+        Source.Origin || Source.WrittenStorageClass || Source.Selection) return false;
+    for (unsigned I = 0; I < Source.Canonical->size(); ++I)
+      if (!Source.Canonical->get(I).structurallyEquals(
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+    return true;
+  }
+  const TemplateUseSource *typeUse(TemplateSpecializationTypeLoc Root) const {
+    if (Root.isNull()) return nullptr;
+    const auto *Template = Root.getTypePtr()->getTemplateName().getAsTemplateDecl();
+    const TemplateUseSource *Result = nullptr;
+    for (const auto *Source : Sources) {
+      if (!Source || Source->Kind != TemplateSourceKind::Type ||
+          Source->Template != Template || Source->Location != Root.getTemplateNameLoc()) continue;
+      if (!Source->FunctionalNotFnConstraint || !Source->Underlying ||
+          Source->Declaration || !Source->Type || !Source->Written ||
+          Source->Written->getNumTemplateArgs() != Root.getNumArgs() || !arguments(*Source)) return nullptr;
+      for (unsigned I = 0; I < Root.getNumArgs(); ++I) {
+        const auto &Written = Source->Written->arguments()[I];
+        const auto Actual = Root.getArgLoc(I);
+        if (!Written.getArgument().structurallyEquals(Actual.getArgument()) ||
+            Written.getSourceRange() != Actual.getSourceRange()) return nullptr;
+      }
+      // Every duplicate is a separate original occurrence. An incompatible
+      // callback cannot be hidden by a canonical result or a first cache hit.
+      if (Result && (Result->Type != Source->Type ||
+                     Result->Underlying != Source->Underlying)) return nullptr;
+      Result = Source;
+    }
+    return Result;
+  }
+  bool parameterTypes(const TemplateUseSource &Source) {
+    for (const auto &Type : Source.ParameterTypes) {
+      const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Type.Parameter);
+      if (!Parameter || !Type.Type || !Parameter->getTypeSourceInfo() ||
+          Parameter->isParameterPack() || Type.PackIndex != 0 ||
+          !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) ||
+          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) return false;
+    }
+    return true;
+  }
+  bool aliasDefault(const TemplateUseSource &Source) {
+    const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Source.Template);
+    const auto *Parameters = Alias ? Alias->getTemplateParameters() : nullptr;
+    if (!Parameters || Parameters->size() != 2 ||
+        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) return false;
+    const auto *Condition = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
+    const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
+    const auto &Use = Source.Defaults.front();
+    if (!Condition || !Condition->getType()->isBooleanType() ||
+        Condition->hasDefaultArgument() || Condition->isParameterPack() ||
+        !Default || !Default->hasDefaultArgument() || Default->isParameterPack() ||
+        Use.Parameter != Default || Source.ParameterTypes.front().Parameter != Condition ||
+        Use.Written.getArgument().getKind() != TemplateArgument::Type ||
+        Use.Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+    // Original, substituted and converted void spellings are inspected as
+    // independent source nodes. The canonical void result is insufficient.
+    const auto *Original = Default->getDefaultArgument().getTypeSourceInfo();
+    const TypeSourceInfo *Spellings[] = {Original,
+        Use.Written.getTypeSourceInfo(), Use.Converted.getTypeSourceInfo()};
+    for (const auto *Info : Spellings)
+      if (!Info || !Info->getType()->isVoidType() ||
+          !Info->getTypeLoc().getAs<BuiltinTypeLoc>() ||
+          !Check.location(Info->getTypeLoc().getBeginLoc(), {"__type_traits/enable_if.h"}) ||
+          !Graph.TraverseTypeLoc(Info->getTypeLoc())) return false;
+    return parameterTypes(Source);
+  }
+  bool constraintType(const TypeSourceInfo *Info) {
+    const auto Root = specialization(Info);
+    const auto *Source = typeUse(Root);
+    if (!Source || !Root.getTypePtr()->isTypeAlias() ||
+        !Check.family(Source->Template, {"__type_traits/enable_if.h"}) ||
+        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) return false;
+    // The retained Sema Underlying contains the selected partial/typedef.
+    // The metadata walker follows its original alias definitions and every
+    // selected SDK declaration chain and its real operation-query roots.
+    return Graph.TraverseType(Info->getType()) &&
+           Graph.TraverseTypeLoc(Source->Underlying->getTypeLoc());
+  }
+  bool variableUse(const DeclRefExpr *Reference, llvm::StringRef Name,
+                   QualType Callable, QualType Input) {
+    const auto *Variable = Reference
+        ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
+    const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
+    if (!Variable || !Primary || !Primary->getIdentifier() || Primary->getName() != Name ||
+        Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Variable->isConstexpr() || !Variable->getType()->isBooleanType() ||
+        !Variable->hasInit() ||
+        !Check.family(Primary, {"__type_traits/is_constructible.h"})) return false;
+    for (const auto *Redeclaration : Variable->redecls())
+      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) return false;
+    const auto &Arguments = Variable->getTemplateArgs();
+    const bool Move = Name == "is_move_constructible_v";
+    if (Arguments.size() != (Move ? 1U : 2U) ||
+        Arguments[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments[0].getAsType(), Callable) ||
+        (!Move && !Check.oneTypePack(Arguments[1], Input))) return false;
+    bool Found = false;
+    for (const auto *Source : Sources) {
+      if (!Source || Source->Kind != TemplateSourceKind::VariableUse ||
+          Source->Declaration != Variable || Source->Location != Reference->getExprLoc()) continue;
+      if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
+          Source->Type || Source->Underlying || !arguments(*Source) ||
+          !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
+          Source->Canonical->size() != Arguments.size()) return false;
+      for (unsigned I = 0; I < Arguments.size(); ++I)
+        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return false;
+      Found = true;
+    }
+    // Follow the actual selected initializer (including is_move_constructible's
+    // selected class/base/trait), not its folded true value alone.
+    return Found && Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+  }
+  bool decay(TemplateSpecializationTypeLoc Root, QualType Input, QualType Output) {
+    const auto *Source = typeUse(Root);
+    const auto *Alias = Source ? dyn_cast<TypeAliasTemplateDecl>(Source->Template) : nullptr;
+    if (!Source || !Alias || Alias->getName() != "decay_t" ||
+        !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
+        !Check.family(Alias, {"__type_traits/decay.h"}) || Root.getNumArgs() != 1 ||
+        Root.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Root.getArgLoc(0).getArgument().getAsType(), Input) ||
+        !Context.hasSameType(Source->Underlying->getType(), Output)) return false;
+    const auto *Inner = specialization(Source->Underlying->getType());
+    const auto *Template = Inner ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        Inner->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *Transform = Inner && Inner->isTypeAlias()
+        ? dyn_cast<UnaryTransformType>(Inner->getAliasedType().getTypePtr()) : nullptr;
+    if (!Template || Template->getName() != "__decay_t" ||
+        !Check.family(Template, {"__type_traits/decay.h"}) || !Transform ||
+        Transform->getUTTKind() != UnaryTransformType::Decay ||
+        !Context.hasSameType(Transform->getBaseType(), Input) ||
+        !Context.hasSameType(Transform->getUnderlyingType(), Output)) return false;
+    return Graph.TraverseTypeLoc(Source->Underlying->getTypeLoc()) &&
+           Graph.TraverseTypeLoc(Alias->getTemplatedDecl()->getTypeSourceInfo()->getTypeLoc());
+  }
+
+public:
+  NotFnPointerSourceProof(const State &S, const SourceManager &SM,
+      const ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+      llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+      const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+      const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits)
+      : S(S), SM(SM), Context(Context), Check(S, SM, Context),
+        SpecialMembers(Members), OperationTraits(Traits),
+        Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature),
+        Sources(Sources), Selections(Selections) {}
+
+  bool factory(const FunctionalNotFnFactoryTemplateSource &Factory) {
+    const auto Pointer = approvedFunctionalNotFnPointerStorage(
+        S, SM, Factory.Selected.Storage.Record, Context);
+    if (!Pointer || Factory.Selected.CallableConstruction ||
+        !Graph.bindNotFnFactoryDefaults(Factory)) return false;
+    const auto Input = Factory.Use.Canonical->get(0).getAsType();
+    const auto Callable = Pointer->CallableType;
+    // This first slice stores only an actual function pointer, with no
+    // user-defined construction, conversion, negation or destruction.
+    const auto InputValue = Input.getNonReferenceType();
+    const auto Decayed = InputValue->isFunctionType()
+        ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
+    if ((!InputValue->isFunctionPointerType() && !InputValue->isFunctionType()) ||
+        !Context.hasSameType(Decayed, Callable)) return false;
+    const auto Primary = specialization(Factory.PrimaryDefault);
+    const auto *PrimaryCondition = Primary.isNull() ? nullptr
+        : Primary.getArgLoc(0).getArgument().getAsExpr();
+    const auto *Original = PrimaryCondition
+        ? dyn_cast<BinaryOperator>(PrimaryCondition->IgnoreParenImpCasts()) : nullptr;
+    if (!Original || Original->getOpcode() != BO_LAnd) return false;
+    for (const auto *Expression : {Original->getLHS(), Original->getRHS()}) {
+      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Expression->IgnoreParenImpCasts());
+      if (!Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
+          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) return false;
+    }
+    // Traverse the actual dependent primary, then each concrete retained role.
+    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) return false;
+    for (const auto *Info : {Factory.SubstitutedDefault, Factory.ConvertedDefault}) {
+      if (!constraintType(Info)) return false;
+      const auto Root = specialization(Info);
+      const auto *Expression = Root.getArgLoc(0).getArgument().getAsExpr();
+      const auto *And = Expression ? dyn_cast<BinaryOperator>(Expression->IgnoreParenImpCasts()) : nullptr;
+      const auto *Constructible = And ? dyn_cast<DeclRefExpr>(And->getLHS()->IgnoreParenImpCasts()) : nullptr;
+      const auto *Move = And ? dyn_cast<DeclRefExpr>(And->getRHS()->IgnoreParenImpCasts()) : nullptr;
+      if (!And || And->getOpcode() != BO_LAnd ||
+          !variableUse(Constructible, "is_constructible_v", Callable, Input) ||
+          !variableUse(Move, "is_move_constructible_v", Callable, Input)) return false;
+      for (const auto *Reference : {Constructible, Move}) {
+        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) return false;
+        const auto &Argument = Reference->template_arguments()[0];
+        if (Argument.getArgument().getKind() != TemplateArgument::Type) return false;
+        const auto Decay = specialization(Argument.getTypeSourceInfo());
+        if (!decay(Decay, Input, Callable)) return false;
+      }
+    }
+    const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
+    if (!Tags || Tags->size() != 4) return false;
+    UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
+                                UtilityTupleQueryMode::CatSignature);
+    for (const auto &Tag : *Tags)
+      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
+    // Every selected construction keeps its actual signature. The exact
+    // constructor template/default packets must also be present; the pointer
+    // layout never supplies their missing source.
+    for (const auto *Construction : Factory.Selected.SelectedConstructions) {
+      const auto *Constructor = Construction->getConstructor();
+      if (Constructor->isInheritingConstructor()) {
+        if (Constructor->getParent()->getCanonicalDecl() != Pointer->Record->getCanonicalDecl())
+          return false;
+        Constructor = Constructor->getInheritedConstructor().getConstructor();
+        if (!Constructor || Constructor->getParent()->getCanonicalDecl() !=
+                Pointer->Forwarder->getCanonicalDecl()) return false;
+      }
+      const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
+      if (!PrimaryTemplate || !Graph.function(Constructor)) return false;
+      if (const auto *Written = Constructor->getTypeSourceInfo())
+        if (!Graph.TraverseTypeLoc(Written->getTypeLoc())) return false;
+      bool Found = false;
+      for (const auto *Source : Sources) {
+        if (!Source || Source->Kind != TemplateSourceKind::Function ||
+            Source->Declaration != Constructor) continue;
+        bool Selected = false;
+        for (const auto *Selection : Selections)
+          if (Selection && Selection->FunctionalNotFnConstraint &&
+              Selection->Expression == Construction && Selection->Function == Constructor &&
+              Selection->Location == Source->Location &&
+              matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
+        if (!Selected) continue;
+        if (Source->Template != PrimaryTemplate || !arguments(*Source)) return false;
+        for (const auto &Default : Source->Defaults) {
+          const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
+          if (Parameter) {
+            if (!Parameter->hasDefaultArgument() ||
+                Default.Written.getArgument().getKind() != TemplateArgument::Type ||
+                Default.Converted.getArgument().getKind() != TemplateArgument::Type ||
+                !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
+                !constraintType(Default.Written.getTypeSourceInfo()) ||
+                !constraintType(Default.Converted.getTypeSourceInfo())) return false;
+          } else if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
+                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) return false;
+        }
+        if (!parameterTypes(*Source)) return false;
+        Found = true;
+      }
+      if (!Found) return false;
+    }
+    return true;
+  }
+  bool callDefaults(const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use) {
+    const auto *Method = Call.Method;
+    const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
+    const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+    bool Selected = false;
+    for (const auto *Selection : Selections)
+      if (Selection && Selection->FunctionalNotFnConstraint &&
+          Selection->Function == Method && Selection->Location == Use.Location &&
+          isa_and_nonnull<CallExpr>(Selection->Expression)) Selected = true;
+    if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
+        Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
+        !arguments(Use) || Use.Defaults.size() != 1 ||
+        Use.Canonical->size() != Arguments->size()) return false;
+    for (unsigned I = 0; I < Arguments->size(); ++I)
+      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
+    const auto &Default = Use.Defaults.front();
+    const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
+    if (!Parameter || !Parameter->hasDefaultArgument() ||
+        Default.Written.getArgument().getKind() != TemplateArgument::Type ||
+        Default.Converted.getArgument().getKind() != TemplateArgument::Type ||
+        !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
+        !constraintType(Default.Written.getTypeSourceInfo()) ||
+        !constraintType(Default.Converted.getTypeSourceInfo()) ||
+        !parameterTypes(Use)) return false;
+    return true;
+  }
+};
+} // namespace
+
+std::optional<FunctionalNotFnStorage>
+approvedFunctionalNotFnPointerStorage(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context) {
+  const auto Storage = describeFunctionalNotFnStorage(S, SM, Record, Context);
+  if (!Storage || !Storage->CallableType->isFunctionPointerType() ||
+      !Storage->Record->hasTrivialCopyConstructor() ||
+      !Storage->Record->hasTrivialMoveConstructor() ||
+      !Storage->Record->hasTrivialDestructor() ||
+      !ordinaryCallbackPrototype(Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()) ||
+      !Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType()->isArithmeticType())
+    return std::nullopt;
+  return Storage;
+}
+
+bool approvedFunctionalNotFnPointerFactorySource(const State &S,
+    const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits).factory(Factory);
+}
+
+bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
+    const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits).callDefaults(Call, Use);
+}
 
 bool approvedUtilityTupleCatSignatureQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
