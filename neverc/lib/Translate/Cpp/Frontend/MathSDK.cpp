@@ -10209,8 +10209,11 @@ public:
     if (!E) return true;
     if (!step()) return false;
     if (!Expressions.insert(E).second) return true;
-    ++Depth;
-    auto Restore = llvm::make_scope_exit([&] { --Depth; });
+    // RAV's dataTraverseStmtPre/Post already own this statement's depth.
+    // Preserve existing accounting for the other query modes.
+    const bool OwnDepth = Mode != UtilityTupleQueryMode::NotFnSignature;
+    if (OwnDepth) ++Depth;
+    auto Restore = llvm::make_scope_exit([&] { if (OwnDepth) --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseStmt(E);
     return Complete && !Failed;
   }
