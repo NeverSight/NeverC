@@ -82,7 +82,8 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture_group != 'ci-recovery' && inputs.fixture_group != 'windows-arm-source-repair'
       && inputs.fixture_group != 'fastlink-request-ownership' && inputs.fixture_group != 'session-cache-ownership' && inputs.fixture_group
       != 'private-frontend-protocol' && inputs.fixture_group != 'ordinary-template-call-component' && inputs.fixture_group
-      != 'ordinary-call-isolation-audit' && inputs.fixture_group != 'not-fn-operator-component' }}
+      != 'ordinary-call-isolation-audit' && inputs.fixture_group != 'not-fn-operator-component' && inputs.fixture_group !=
+      'not-fn-pointer-extra-native' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -876,6 +877,50 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
         compression-level: 1
+  inspect-not-fn-pointer-extra-native:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-extra-native' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install the original native Clang20 and libc++20 reference toolchain
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-not-fn-pointer-extra-native/bootstrap"
+
+        set -o pipefail
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-pointer-extra-native/bootstrap/compiler-install.log"
+
+        sudo apt-get install -y libc++-20-dev libc++abi-20-dev 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-pointer-extra-native/bootstrap/dependencies.log"
+
+        '
+    - name: Run two new native pointer reference programs at O0 and O2
+      run: python3 utils/ci/check-not-fn-pointer-extra-native.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-not-fn-pointer-extra-native"
+    - name: Upload only bounded native reference text evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-pointer-extra-native-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-not-fn-pointer-extra-native
+
+          !${{ runner.temp }}/cpp-not-fn-pointer-extra-native/**/native-O*'
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain four real native programs remotely only
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-pointer-extra-native-binaries-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-not-fn-pointer-extra-native/**/native-O*
+        if-no-files-found: warn
+        retention-days: 7
+        compression-level: 0
 'on':
   workflow_dispatch:
     inputs:
@@ -894,6 +939,7 @@ jobs:
         - ordinary-template-call-component
         - ordinary-call-isolation-audit
         - not-fn-operator-component
+        - not-fn-pointer-extra-native
   push:
     branches:
     - dev
