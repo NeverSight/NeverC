@@ -69,6 +69,7 @@ def main():
                 'target_include_directories(' + target + ' BEFORE PRIVATE "' + (root / 'neverc/include').as_posix() + '" "' + (root / 'llvm/include').as_posix() + '" "${CMAKE_BINARY_DIR}/include")',
                 'target_compile_options(' + target + ' PRIVATE ' + mode + ' -g0 -fno-fast-math -ffp-contract=off)',
                 'target_link_libraries(' + target + ' PRIVATE LLVMSupport GTest::gtest_main GTest::gtest)']
+        lines.append('file(GENERATE OUTPUT \"' + (out / 'build/llvm-support-target.txt').as_posix() + '\" CONTENT \"$<TARGET_FILE:LLVMSupport>\\n\")')
         hook.write_text('\n'.join(lines) + '\n')
         report['cmake_owner'] = {'path': str(hook.relative_to(out)), 'sha256': sha(hook),
                                  'libraries': ['LLVMSupport', 'GTest::gtest_main', 'GTest::gtest']}
@@ -94,8 +95,10 @@ def main():
         report['actual_test_compile_commands'] = selected
         run(['cmake', '--build', build, '--target', *targets, '--verbose', '--parallel', '4'],
             'build/actual-policy-and-gtest', 1800)
-        support, = build.rglob('libLLVMCSupport.a')
-        report['actual_root_support_archive'] = {'path':str(support.relative_to(out)), 'sha256':sha(support), 'bytes':support.stat().st_size}
+        support_marker = out / 'build/llvm-support-target.txt'
+        support = Path(support_marker.read_text().strip()).resolve()
+        assert support.is_relative_to(build.resolve()) and support.is_file()
+        report['actual_root_support_archive'] = {'path':str(support.relative_to(out)), 'sha256':sha(support), 'bytes':support.stat().st_size, 'cmake_target':'LLVMSupport', 'target_marker':str(support_marker.relative_to(out)), 'target_marker_sha256':sha(support_marker)}
         run(['ar', 't', support], 'build/actual-root-support-members')
         expected = {'MachODataConstTest.SpecialImageKindsHaveWritableDataByDefault',
                     'MachODataConstTest.ExistingExecutableAndLibraryDefaultsArePreserved',
