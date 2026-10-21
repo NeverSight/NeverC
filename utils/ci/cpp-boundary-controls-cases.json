@@ -1,0 +1,286 @@
+{
+  "base_commit": "89574033312b3bf5946cecf4a3d59903792c99d5",
+  "baseline_revision": "1617f18ead74a8fa719e3d1bd02f9c84a10de551",
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "private_frontend_changed": false,
+  "full_ci_passed": false,
+  "promoted": [
+    {
+      "name": "UniquePtrReset-original",
+      "test": "CoreV2UniquePtrResetSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "8b8d53ec8a877770c0421ff67d6aff5821b6762102be4c3bdeb59ca6497dd996"
+    },
+    {
+      "name": "UniquePtrReset-runtime",
+      "test": "CoreV2UniquePtrResetSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){U p(new int(7));return f(p)||p.get()!=nullptr;}\n",
+      "source_sha256": "470b1c1159d35827628be6b77dbdadfc113cc3415b561759a19bda7311402cb9"
+    },
+    {
+      "name": "UniquePtrMemberSwap-original",
+      "test": "CoreV2UniquePtrMemberSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int f(U&p,U&q){using V=decltype(p.swap(q));static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "3c9e621c96a579e3c8a883a6056ee6ccf6642e213c58da1f17c61995886b32ff"
+    },
+    {
+      "name": "UniquePtrMemberSwap-runtime",
+      "test": "CoreV2UniquePtrMemberSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int f(U&p,U&q){using V=decltype(p.swap(q));static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return f(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}\n",
+      "source_sha256": "daa95aac4228f8b1f9fca642656a2138b1a7ea7472f26396007bdf9152dc4752"
+    },
+    {
+      "name": "UniquePtrFreeSwap-original",
+      "test": "CoreV2UniquePtrFreeSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "3d766dec007f76e48344dd3e455ecc50ef2b95dd2792d91d5bf43a9335ee500f"
+    },
+    {
+      "name": "UniquePtrFreeSwap-runtime",
+      "test": "CoreV2UniquePtrFreeSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return inspect(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}\n",
+      "source_sha256": "c003574a70385fb42c6777561bc22c25a371e1357b3f8daa6d8acaa6322375a3"
+    },
+    {
+      "name": "UniquePtrNullAssignment-original",
+      "test": "CoreV2UniquePtrNullAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p){static_assert(noexcept(p=nullptr));p=nullptr;return 0;}int main(){return 0;}\n",
+      "source_sha256": "412f1fc22fb4328bd4b12c6afd7aeec7c401007cf8e9d9bb6013aa39bb97fb09"
+    },
+    {
+      "name": "UniquePtrNullAssignment-runtime",
+      "test": "CoreV2UniquePtrNullAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p){static_assert(noexcept(p=nullptr));p=nullptr;return 0;}int main(){U p(new int(7));return inspect(p)||p.get()!=nullptr;}\n",
+      "source_sha256": "3a9b0a9bf206ba2029f85a1d8ced614e9b5a84b88a2b91731110af3a0b07c9a2"
+    },
+    {
+      "name": "UniquePtrMoveAssignment-original",
+      "test": "CoreV2UniquePtrMoveAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));p=std::move(q);return 0;}int main(){return 0;}\n",
+      "source_sha256": "158231c1f7c576b27ebc324f5a28bc515ba9ebedb16ec02262ac21a6c3b8f146"
+    },
+    {
+      "name": "UniquePtrMoveAssignment-runtime",
+      "test": "CoreV2UniquePtrMoveAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));p=std::move(q);return 0;}int main(){U p(new int(7)),q(new int(8));int*expected=q.get();return inspect(p,q)||q.get()!=nullptr||p.get()!=expected||*p!=8;}\n",
+      "source_sha256": "74f9ecdeff778691ba0eecd1d45530f9f25c36897e204da10b32e2002b9c1293"
+    },
+    {
+      "name": "UniquePtrEquality-original",
+      "test": "CoreV2UniquePtrEqualitySignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "29558e8ee0c133fd7ebeb2e271db80b331ac74a514a23a3b392a6e6f608fd1e3"
+    },
+    {
+      "name": "UniquePtrEquality-runtime",
+      "test": "CoreV2UniquePtrEqualitySignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return inspect(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}\n",
+      "source_sha256": "3c3e99fe3308172aa3315e4d3a8c75693c3e71f4866ade520db642a0e58c8885"
+    },
+    {
+      "name": "UniquePtrOrdering-original",
+      "test": "CoreV2UniquePtrOrderingSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "7576eff66113ba9693117df5b5b0e1c8ca7c5a52fa0444edab9efc2497295514"
+    },
+    {
+      "name": "UniquePtrOrdering-runtime",
+      "test": "CoreV2UniquePtrOrderingSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){U p(new int(7)),q(new int(8));return inspect(p,q)||p.get()!=nullptr||q.get()==nullptr||*q!=8;}\n",
+      "source_sha256": "fe0b8cbb4428d5f30e0c5819bc1b09bb26a498dacdd153813e632c7ca0136ba0"
+    },
+    {
+      "name": "UniquePtrNullComparison-original",
+      "test": "CoreV2UniquePtrNullComparisonSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p){using R=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "2331c2b27625aad4fbfb196f8211383b95d60548aecd91f688e04768aa027336"
+    },
+    {
+      "name": "UniquePtrNullComparison-runtime",
+      "test": "CoreV2UniquePtrNullComparisonSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p){using R=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){U p(new int(7));return inspect(p)||p.get()!=nullptr;}\n",
+      "source_sha256": "d0a69c395d51ea3b16b19aa1957f8b2dc3933bdfd70208d445c10ad20da8a856"
+    },
+    {
+      "name": "DefaultDeleteCall-original",
+      "test": "CoreV2DefaultDeleteCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nstruct S{int n;~S()noexcept{}};using D=std::default_delete<S>;int inspect(D&d,S*p){using R=decltype(d(p));static_assert(std::is_same_v<R,void>);d(p);return 0;}int main(){return 0;}\n",
+      "source_sha256": "6049db764af52a99381061c10d78c6b1449b09089a10b931227e2ef2e1cbf934"
+    },
+    {
+      "name": "DefaultDeleteCall-runtime",
+      "test": "CoreV2DefaultDeleteCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nstruct S{int n;~S()noexcept{}};using D=std::default_delete<S>;int inspect(D&d,S*p){using R=decltype(d(p));static_assert(std::is_same_v<R,void>);d(p);return 0;}int main(){D d;return inspect(d,new S{7});}\n",
+      "source_sha256": "8131949b8fa711c116b1c205f3b51048554c917fa70780ed08965a448189f688"
+    },
+    {
+      "name": "AllocatorCall-original",
+      "test": "CoreV2AllocatorCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing A=std::allocator<int>;int inspect(A&a){using R=decltype(a.allocate(3));static_assert(std::is_same_v<R,int*>);return a.allocate(3)==nullptr;}int main(){return 0;}\n",
+      "source_sha256": "a9fd665313f1e2925505ee0edd1b04a6358e6b80ebaa205619d204dfa6c0e10c"
+    },
+    {
+      "name": "AllocatorCall-runtime",
+      "test": "CoreV2AllocatorCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing A=std::allocator<int>;int inspect(A&a){using R=decltype(a.allocate(3));static_assert(std::is_same_v<R,int*>);return a.allocate(3)==nullptr;}int main(){A a;return inspect(a);}\n",
+      "source_sha256": "2ba25b3bbb66140e932eed5e6651bce8efe51ca421f7c4b1bd9af817099c7035"
+    },
+    {
+      "name": "AllocatorTraitsCall-original",
+      "test": "CoreV2AllocatorTraitsCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <memory>\n#include <utility>\n#include <type_traits>\nusing A=std::allocator<int>;using T=std::allocator_traits<A>;\nusing R=decltype(T::allocate(std::declval<A&>(),3));int* evaluate(A&a){return T::allocate(a,3);}int main(){return 0;}\n",
+      "source_sha256": "389356456f98f484723223fe5ffddd9022d6abeeeb006fa83a0a7d73e5bbbe91"
+    },
+    {
+      "name": "AllocatorTraitsCall-runtime",
+      "test": "CoreV2AllocatorTraitsCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <memory>\n#include <utility>\n#include <type_traits>\nusing A=std::allocator<int>;using T=std::allocator_traits<A>;\nusing R=decltype(T::allocate(std::declval<A&>(),3));int* evaluate(A&a){return T::allocate(a,3);}int main(){A a;int*p=evaluate(a);p[0]=3;p[1]=4;p[2]=5;int result=p[0]+p[1]+p[2]!=12;T::deallocate(a,p,3);return result;}\n",
+      "source_sha256": "98c02a6df5b956d8120b214951ebba2c08ab8a704b63449412849b8cc6edfb69"
+    },
+    {
+      "name": "SeedSequence-original",
+      "test": "CoreV2SeedSequencesRetainRuntimeBoundaries",
+      "category": "original",
+      "source": "#include <random>\nint main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return 0;}\n",
+      "source_sha256": "691e94816c8aa9263122b34f79f32b8700ecd3315fca2682311de0aca8b99405"
+    },
+    {
+      "name": "SeedSequence-runtime",
+      "test": "CoreV2SeedSequencesRetainRuntimeBoundaries",
+      "category": "runtime",
+      "source": "#include <random>\nint main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return q.size()!=2||(!out[0]&&!out[1]&&!out[2]&&!out[3]);}\n",
+      "source_sha256": "f4ff22afe8d1b13554a08917c43ef3925e786126a52dc991d3c545050eb63885"
+    }
+  ],
+  "guards": [
+    {
+      "name": "UniquePtrReset-missing-source-heap-body",
+      "test": "CoreV2UniquePtrResetSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "92f9e19b8847ac9af9bd4ca0c4b30a24b7e8283af0feff4a726abd0f300a2cdb"
+    },
+    {
+      "name": "UniquePtrMemberSwap-missing-source-heap-body",
+      "test": "CoreV2UniquePtrMemberSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int f(U&p,U&q){using V=decltype(p.swap(q));static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "2675fe2b43ba3ba9dd0d4f9453eb2ee8c8b00f7e81937a74e8ef9fafbbc1faf8"
+    },
+    {
+      "name": "UniquePtrFreeSwap-missing-source-heap-body",
+      "test": "CoreV2UniquePtrFreeSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "ffbe6ca294f91f94178431e281d93de9c76caf0702b4754ab4973be2ce19563c"
+    },
+    {
+      "name": "UniquePtrNullAssignment-missing-source-heap-body",
+      "test": "CoreV2UniquePtrNullAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p){static_assert(noexcept(p=nullptr));p=nullptr;return 0;}int main(){return 0;}\n",
+      "source_sha256": "926079bfbd4e68a4d0095a34f49647502c8f8862843a4485b3f77b08925f096e"
+    },
+    {
+      "name": "UniquePtrMoveAssignment-missing-source-heap-body",
+      "test": "CoreV2UniquePtrMoveAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));p=std::move(q);return 0;}int main(){return 0;}\n",
+      "source_sha256": "af71abcc45194ad969213e75e6b6c0dc299dbbafa1eb4e5c2f01b01a9b9ccd5e"
+    },
+    {
+      "name": "UniquePtrEquality-missing-source-heap-body",
+      "test": "CoreV2UniquePtrEqualitySignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "2864d709d1d1fe2c8fa96520160e19045ef3f4df52b54e5730789430a229a169"
+    },
+    {
+      "name": "UniquePtrOrdering-missing-source-heap-body",
+      "test": "CoreV2UniquePtrOrderingSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "e871bbb5ee6ef8e4ced577d7370e2243742387123980c470a9883f73e39d6013"
+    },
+    {
+      "name": "UniquePtrNullComparison-missing-source-heap-body",
+      "test": "CoreV2UniquePtrNullComparisonSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing U=std::unique_ptr<int>;int inspect(U&p){using R=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}\n",
+      "source_sha256": "dab384947194574d9b76261aee11ec88329ba76e3e6fadf65bef73226afb9375"
+    },
+    {
+      "name": "DefaultDeleteCall-missing-source-heap-body",
+      "test": "CoreV2DefaultDeleteCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void operator delete(void*) noexcept;\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nstruct S{int n;~S()noexcept{}};using D=std::default_delete<S>;int inspect(D&d,S*p){using R=decltype(d(p));static_assert(std::is_same_v<R,void>);d(p);return 0;}int main(){return 0;}\n",
+      "source_sha256": "5bef0f38beba55c659538bdf89b08e19ef7c7b2cd20d9fbaf706c9072f89f1c6"
+    },
+    {
+      "name": "AllocatorCall-missing-source-heap-body",
+      "test": "CoreV2AllocatorCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void*operator new(decltype(sizeof(0)));\n\n#include <memory>\n#include <functional>\n#include <utility>\n#include <type_traits>\nusing A=std::allocator<int>;int inspect(A&a){using R=decltype(a.allocate(3));static_assert(std::is_same_v<R,int*>);return a.allocate(3)==nullptr;}int main(){return 0;}\n",
+      "source_sha256": "c063bf7d838d51a33ff9506d403caa7546ed8c86bc051a2ab2af69ccfa68e227"
+    },
+    {
+      "name": "AllocatorTraitsCall-missing-source-heap-body",
+      "test": "CoreV2AllocatorTraitsCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "void*operator new(decltype(sizeof(0)));\n\n#include <memory>\n#include <utility>\n#include <type_traits>\nusing A=std::allocator<int>;using T=std::allocator_traits<A>;\nusing R=decltype(T::allocate(std::declval<A&>(),3));int* evaluate(A&a){return T::allocate(a,3);}int main(){return 0;}\n",
+      "source_sha256": "7ee8f8dfeb18f0753ffea421c1302ebd051c2a048f0e7dd020d27fe9a725fc15"
+    },
+    {
+      "name": "SeedSequence-missing-source-heap-body",
+      "test": "CoreV2SeedSequencesRetainRuntimeBoundaries",
+      "category": "guard",
+      "source": "void*operator new(decltype(sizeof(0)));\n#include <random>\nint main(){std::seed_seq q{1,2};unsigned out[4]{};q.generate(out,out+4);return 0;}\n",
+      "source_sha256": "4cff1ca3ad4b681e0fd5b235f5c048a7e32fafaf5b2ac083e85cc402b37e65fb"
+    },
+    {
+      "name": "ShuffleOrder-selected-floating-body",
+      "test": "CoreV2RandomAdaptorsAndSeedSequencesRetainSelectedSDK",
+      "category": "guard",
+      "source": "#include <random>\nusing E=std::shuffle_order_engine<std::mt19937_64,17>;\nnamespace std {template<> template<> E::result_type E::__evalf<17,0>(){return 7;}}\nint main(){E e;return e()==7?0:1;}\n",
+      "source_sha256": "9eaa07be3200a73c0eb55953dad4fa3ee5dbb36442aae6a884d1326227d15e39"
+    }
+  ],
+  "affected_tests": [
+    "CoreV2UniquePtrResetSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrMemberSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrFreeSwapSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrNullAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrMoveAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrEqualitySignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrOrderingSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2UniquePtrNullComparisonSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2DefaultDeleteCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2AllocatorCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2AllocatorTraitsCallSignatureQueryRetainsSourceAndLifetimeBoundaries",
+    "CoreV2SeedSequencesRetainRuntimeBoundaries"
+  ],
+  "former_tests_sha256": "f27573e9d2c141a18bc8f2aef397ac2700752d63ea0bcd54b7527b4c685ba66b",
+  "corrected_tests_sha256": "4d9188d7bd6cb010b788a5e046509b5c5874825ca921977e8d41b13a1e713484"
+}
