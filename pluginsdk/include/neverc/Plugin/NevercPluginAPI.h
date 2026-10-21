@@ -8,7 +8,7 @@
 |*  build against one self-contained pure-C header.                           *|
 \*===----------------------------------------------------------------------===*/
 
-/* generated-from-digest: bb555918c5a1d946d3b2c6401fd9932c066abc3e143992a8e73095b2b8bab80b */
+/* generated-from-digest: 7ed5cee4c5f0232b8201237e6786f5f47381acddf9041fd5af19ecaedeb2f7a7 */
 
 #ifndef NEVERC_PLUGIN_NEVERCPLUGINAPI_H
 #define NEVERC_PLUGIN_NEVERCPLUGINAPI_H
@@ -15496,6 +15496,8 @@ typedef uint64_t NevercDynCodeRequestFlags;
 #define NEVERC_DYNCODE_REQUEST_ALL_BLR (UINT64_C(1) << 2)
 #define NEVERC_DYNCODE_REQUEST_KEEP_OBJECT (UINT64_C(1) << 3)
 #define NEVERC_DYNCODE_REQUEST_DETERMINISTIC (UINT64_C(1) << 4)
+#define NEVERC_DYNCODE_REQUEST_KEEP_UNWIND (UINT64_C(1) << 5)
+#define NEVERC_DYNCODE_REQUEST_HOSTED (UINT64_C(1) << 6)
 
 typedef uint64_t NevercDynCodeTargetFlags;
 #define NEVERC_DYNCODE_TARGET_SUPPORTS_USER (UINT64_C(1) << 0)
