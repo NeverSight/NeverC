@@ -14626,17 +14626,26 @@ public:
         SourceCall->getOperator() != OO_Call ||
         SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
-        !S.owns(SM, Reference->getExprLoc()) || !S.owns(SM, Use.Location)) return false;
+        !S.owns(SM, Reference->getExprLoc()) || !Use.Location.isValid()) return false;
     bool Selected = false;
-    for (const auto *Selection : Selections)
-      if (Selection && Selection->FunctionalNotFnConstraint &&
-          Selection->Expression == SourceCall && Selection->Function == Method &&
-          Selection->Location == Reference->getExprLoc() &&
-          matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
+    bool DefaultOccurrence = false;
+    for (const auto *Selection : Selections) {
+      if (!Selection || !Selection->FunctionalNotFnConstraint ||
+          Selection->Function != Method ||
+          !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) continue;
+      if (Selection->Expression == SourceCall &&
+          Selection->Location == Reference->getExprLoc()) Selected = true;
+      // A packet retains its own deduction occurrence. SDK signature queries
+      // can retain another occurrence of this same specialization; both that
+      // event and the independent owned call must be authenticated. This
+      // metadata binding grants no SDK runtime body or lifetime permission.
+      if (Selection->Location == Use.Location) DefaultOccurrence = true;
+    }
     // Deduction/default packets belong to this exact instantiated method and
     // canonical/sugared arguments below. Repeated uses retain their own call
     // selections; their source location need not equal the first deduction.
-    if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
+    if (!Selected || !DefaultOccurrence || !Primary || !Arguments ||
+        Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
         Use.Canonical->size() != Arguments->size()) return false;
