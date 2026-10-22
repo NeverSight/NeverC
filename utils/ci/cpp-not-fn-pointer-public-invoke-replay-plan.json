@@ -280,8 +280,7 @@
   "corrected_diagnostic_decl_dump_only": true,
   "actual_written_primary_parameter_observation_only": true,
   "actual_traversal_observation_only": true,
-  "public_invoke_real_callback_observation_only": true,
-  "actual_original_five_parent": "a2f8b26beda16afc16f32e0365c3f63b2b48472d",
-  "actual_original_five_report_sha256": "29244de4b0685ac108e2e7432d6d38451b9ff3bb3b91a9556eb73cd07c975354",
-  "public_invoke_selected_source_binding_required": true
+  "public_invoke_selected_source_binding_required": true,
+  "actual_public_invoke_parent_trace_commit": "7a00466e54291090e274b04d7e78aa9fabdc04fc",
+  "original_five_all_acceptance_expectations_preserved": true
 }
