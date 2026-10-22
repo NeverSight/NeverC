@@ -1,0 +1,1038 @@
+{
+  "observed_utc": "2026-10-22T12:58:13.021288+00:00",
+  "actual_dev_before": "78898d78986fd3391bb4e5261a96447c4996532b",
+  "source": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+  "captured_pending_heads": [
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+      "commit": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+      "commit": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+      "commit": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+      "commit": "7fda589ddc6d77202af594861330b1c09478086f",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+      "commit": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+      "commit": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+      "commit": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+      "ancestor_of_actual_dev": false
+    },
+    {
+      "branch": "codex/cpp-stl-private-runtime-formal-ci",
+      "commit": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+      "ancestor_of_actual_dev": false
+    }
+  ],
+  "source19": {
+    "Frontend.cpp": "89bf7cb9d96089060a395fdf6dc6c5811abbc4875c629aec9b7738921a448bb7",
+    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "a997b344a7e974f5fc8d7e1af35b7638f32fcf879dcd91f199c2a17be7aa1363",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "ab65f87dc78ecc8950ae982c270e9a0ec6c57c2664483a412023028b6309ee5f",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "formal128": {
+    "passed": true,
+    "commit": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+    "run_id": 39766890399,
+    "job_id": 119784465589,
+    "run_attempt": 1,
+    "artifact_id": 12421377140,
+    "report_sha256": "a8503607171a4b7ca668c209e0ae2a4ac6f4041bf16dee36f8080e9e71ad753f",
+    "proof_sha256": "d266cdd17bfb60cebd5a701c76733f37e8f39492e5da7cf9745802921ac2787b",
+    "archive_sha256": "557eee198eb896b56992103e3c6843fd5bc2c1c78682e2300299d44551379a28",
+    "actual_original_formal_passed": 124,
+    "actual_not_fn_formal_passed": 4,
+    "actual_not_fn_generated_o0_o2_products": 8,
+    "actual_host_abi_audit_verified": true
+  },
+  "regression808": {
+    "commit": "7fda589ddc6d77202af594861330b1c09478086f",
+    "run_id": 39769767604,
+    "job_id": 119794091451,
+    "run_attempt": 1,
+    "status": "queued",
+    "conclusion": null,
+    "labels": [
+      "ubuntu-24.04"
+    ],
+    "runner_name": "",
+    "runner_id": 0,
+    "steps": [],
+    "observed_utc": "2026-10-22T12:56:14.637981+00:00"
+  },
+  "delivery_authorization": {
+    "mode": "merge_all_remaining_now_then_investigate",
+    "authorization_path": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/dev-pr-integration/not-fn-pointer-user-directed-merge-authorization.json",
+    "authorization_sha256": "23dafc884fdec98089976cad3a9baf45121294501024f6c160fa41d3f517c6d0",
+    "exact_user_instruction": "你直接合并吧，一起合并，再排查",
+    "source": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+    "actual808_observation": {
+      "commit": "7fda589ddc6d77202af594861330b1c09478086f",
+      "run_id": 39769767604,
+      "job_id": 119794091451,
+      "run_attempt": 1,
+      "status": "queued",
+      "conclusion": null,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "runner_name": "",
+      "runner_id": 0,
+      "steps": [],
+      "observed_utc": "2026-10-22T12:56:14.637981+00:00"
+    },
+    "actual808_passed": null,
+    "affected808_still_required": true,
+    "whole_ci_passed": false,
+    "clean216_commit": "77d77bcf652e797b931720cd176b0370c6b5fba5",
+    "clean216_proof_sha256": "3c855a039aa825dae67e48e6369a962ce6ad84a84aaf78a549232e69d68cdec8",
+    "clean216_report_sha256": "a1cdafbe73f02e287fdadadb6d37d90a487221279e514da9c72041fd7c2ae48e"
+  },
+  "affected808_passed": null,
+  "affected808_still_required": true,
+  "source_resolution": {
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp": "Exact clean source authenticated by six/216/formal128;808 pending and explicitly delivered first at human request.",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp": "Exact clean source authenticated by six/216/formal128;808 pending and explicitly delivered first at human request.",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h": "Exact clean source authenticated by six/216/formal128;808 pending and explicitly delivered first at human request.",
+    "utils/ci/check-cpp-not-fn-pointer-statement-depth-trace.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-not-fn-pointer-statement-depth-trace-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-current-elf-combined-808.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-current216-elf-combined-808.py": "Exact tested current formal/regression helper.",
+    "utils/ci/check-cpp-not-fn-pointer-clean-200.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-not-fn-pointer-clean-216.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-not-fn-pointer-input-alias-forwarding-trace.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-not-fn-pointer-public-forwarding-trace.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-not-fn-pointer-storage-layout-trace.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-current-elf-combined-808-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-current216-elf-combined-808-plan.json": "Exact tested current formal/regression helper.",
+    "utils/ci/cpp-not-fn-pointer-clean-200-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-not-fn-pointer-clean-216-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-not-fn-pointer-input-alias-forwarding-trace-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-not-fn-pointer-public-forwarding-trace-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-not-fn-pointer-storage-layout-trace-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/check-cpp-not-fn-pointer-direct-invocation-trace.py": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/cpp-not-fn-pointer-direct-invocation-trace-plan.json": "Retained historical diagnostic at original path; every variant remains in parent history.",
+    "utils/ci/not-fn-pointer-four-formal-additions.cpp": "Exact tested current formal/regression helper.",
+    "utils/ci/check-cpp-not-fn-source-syntax.py": "Exact tested current formal/regression helper.",
+    "utils/ci/prepare-cpp-not-fn-syntax-headers.py": "Exact tested current formal/regression helper.",
+    "utils/ci/extract_cpp_gtests.py": "Exact tested current formal/regression helper.",
+    "utils/ci/PrivateFrontendRuntimeDriver.cpp": "Exact tested current formal/regression helper.",
+    "utils/ci/cpp_private_runtime_gtest.py": "Exact tested current formal/regression helper.",
+    "utils/ci/check-private-frontend-runtime.py": "Exact tested current formal/regression helper.",
+    "utils/ci/download-private-runtime-component.py": "Exact tested current formal/regression helper.",
+    "utils/ci/run-private-runtime-ci.py": "Exact tested current formal/regression helper.",
+    "utils/ci/download-cpp-linux-baseline.py": "Exact tested current formal/regression helper.",
+    "utils/ci/cpp-private-runtime-plan.json": "Exact tested current formal/regression helper.",
+    ".github/workflows/diagnose-cpp-template-source.yml": "Preserve all dev jobs/push selectors; retain diagnostic jobs and exact current formal/regression jobs.",
+    "tests/neverc/TranslateTests.cpp": "Register exactly the four golden bodies already passed in actual128 GTests; original7493 source bytes unchanged.",
+    "docs/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/zh-CN/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/zh-TW/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/ja/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/ko/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/fr/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/de/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/es/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/it/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/ru/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "docs/ar/translate.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "utils/translate-frontends/cpp/README.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "utils/translate-frontends/docs/cpp-core-v2.md": "Append verified pointer-only support slice; preserve every original documentation byte.",
+    "utils/translate-frontends/docs/support-matrix.md": "Append verified pointer-only support slice; preserve every original documentation byte."
+  },
+  "historical_variants": {
+    ".github/workflows/diagnose-cpp-template-source.yml": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "13da68f8dff9a1996d2b7db48702ee63543920c7"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d5a5dd824a25227ad2571cab15fdb1d89864359f"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "056b94ca5405cd83cdf4a968be4d0752fafd57ee"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "b83b57aefd22b023342a52cdd401853c048a9d09"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "b47a1f31d38d8510baa6ae315d8e718006046296"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "13da68f8dff9a1996d2b7db48702ee63543920c7"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "16197b6f36c728534422ee12680187c9ae7493eb"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7bc15ba679ca9ce2829be08d017ede5fcdae663e"
+      }
+    ],
+    "PROGRESS.md": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1a2b6ff1ea285b4d9630443f5ba1a2fdde3eef76"
+      }
+    ],
+    "neverc/lib/Plugin/Python/PythonPluginTrampolines.inc": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "f163e89a041a37dff53355d011e38193624df407"
+      }
+    ],
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "490a3c9a27b79fde79245ea070814ed2b998ecd9"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "6c7ba1b2ec29ff75341adfb034b7dbc00518bcaa"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "a7033ba2bc786ea88fbdada2d039d7f7a7560e97"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "a7033ba2bc786ea88fbdada2d039d7f7a7560e97"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "a7033ba2bc786ea88fbdada2d039d7f7a7560e97"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "bf1e3e57f119345d0954e1409329df7ca632265d"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "a8da95735ce2169b2ea29bff0c99e0044f04295a"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "a7033ba2bc786ea88fbdada2d039d7f7a7560e97"
+      }
+    ],
+    "pluginsdk/python/neverc_plugin/abi.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "7e7f870fd628372c853da2dc87dcff58bac44bfc"
+      }
+    ],
+    "tests/neverc/MachODataConstTests.cpp": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "2ad8ea7823c395dd3cb3a76b761b36f1e02ee279"
+      }
+    ],
+    "utils/ci/check-private-frontend-runtime.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55fe484bf668981cf3ca8a5545dc1709f18d671e"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "b5eec3242452a2e2d6172ff6df4501b04ffbaf7b"
+      }
+    ],
+    "utils/ci/cpp-private-runtime-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "d40905138067f59b1da8da3c9a9d910b18a8c24e"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "0bfe605c6cf67116af13b6cea295650d01dd84a8"
+      }
+    ],
+    "utils/ci/download-private-runtime-component.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-const-member-syntax",
+        "revision": "25dc7464f8132565fa3c83c2a9a7a691f578adea",
+        "snapshot_timestamp": 1792570728,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-syntax",
+        "revision": "0e195818323fc7940f3cf43ef6b40b9f9de04804",
+        "snapshot_timestamp": 1792572844,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ff5400906b47c8a7cd4c3a6937f76b43f85d5b81"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1fb91a3e3ccee97231dd791fd2beb353b4702e5f"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-statement-depth-trace.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "fa04d5d98e396f8d746c1f6693026455263cff45"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-statement-depth-trace-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-constructor-signature-trace",
+        "revision": "b7f52d855593f8e5b0a21420f7d14b9f83bac5df",
+        "snapshot_timestamp": 1792577587,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "54ed52cf7bc50ade0fb4097aa00b6c16764b206b"
+      }
+    ],
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "83d448035494991533ed658a6288d48868564621"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "83d448035494991533ed658a6288d48868564621"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "83d448035494991533ed658a6288d48868564621"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "83d448035494991533ed658a6288d48868564621"
+      }
+    ],
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-syntax",
+        "revision": "c08196af1c9f31f6c0840a34c290439d031e6e64",
+        "snapshot_timestamp": 1792665250,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "54def8160cc8411d74cb1ec3386ad00bb0000982"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "54def8160cc8411d74cb1ec3386ad00bb0000982"
+      },
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-source",
+        "revision": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+        "snapshot_timestamp": 1792665203,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "54def8160cc8411d74cb1ec3386ad00bb0000982"
+      },
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "54def8160cc8411d74cb1ec3386ad00bb0000982"
+      }
+    ],
+    "utils/ci/check-cpp-current-elf-combined-808.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "aa277353ba958e7c4db3f8e3e85f784fe70e3b5c"
+      }
+    ],
+    "utils/ci/check-cpp-current216-elf-combined-808.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "bb8f5bac18a7ab025204237531b53d713a36989e"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-clean-200.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "373da51f6676384aa47e2f9baf8cb9e0914c081d"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-clean-216.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "3fea2636d3ceed4d1bcf5ed0702fdb792110a62d"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-input-alias-forwarding-trace.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "18c16f004616716294ba898b10d3747379bbb868"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-public-forwarding-trace.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "a4969f3d9f3f2a22c8da8a9aca2c290f353b3381"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-storage-layout-trace.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "80912bbc3dfbb67338c76f7f9ca92a8ccc786526"
+      }
+    ],
+    "utils/ci/cpp-current-elf-combined-808-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "ef87152d6f155cd4ed6df8ed9310367efd3985f8"
+      }
+    ],
+    "utils/ci/cpp-current216-elf-combined-808-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "5f94eb223a163a130f6b1d84258c214668865f12"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-clean-200-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "90213905584b258e2b64611158fe03bc7c724c97"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-clean-216-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "41867cffed74ada6cad4d9cc3d4f5064b5da0884"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-input-alias-forwarding-trace-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "3807364c06bef709e5a84a9a667938e7358216bd"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-public-forwarding-trace-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "57503c846144fe93e65e58f0a048b3d1507bbb15"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-storage-layout-trace-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-exact-source-key-trace",
+        "revision": "7fda589ddc6d77202af594861330b1c09478086f",
+        "snapshot_timestamp": 1792667920,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "e6d4e2743ece9aad49978ab33e539c16908b8289"
+      }
+    ],
+    "utils/ci/check-cpp-not-fn-pointer-direct-invocation-trace.py": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "69251eef6e7c27d1bff08f309970e0e14d8fa984"
+      }
+    ],
+    "utils/ci/cpp-not-fn-pointer-direct-invocation-trace-plan.json": [
+      {
+        "branch": "codex/cpp-stl-not-fn-pointer-invocation-root-trace",
+        "revision": "4a5e51386acc02c72bef13f2d4f90b4da6de1f1b",
+        "snapshot_timestamp": 1792572870,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "c8e3afeec46235efead23e6f42b9aeddb1ffeb56"
+      }
+    ],
+    "utils/ci/not-fn-pointer-four-formal-additions.cpp": [
+      {
+        "branch": "codex/cpp-stl-private-runtime-formal-ci",
+        "revision": "2d3d61f057da743a21b3e0af8c83eadcbd5b9425",
+        "snapshot_timestamp": 1792666553,
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "8e149f8a4a4993e709dc0f3b3d22aad22edf942d"
+      }
+    ]
+  },
+  "original7493_source_sha256": "0099922e5f92464dde0ea0c4d9cd0359d0659eeb886a099d6f558c17ef8e70b5",
+  "four_registered_golden_suffix_sha256": "a4be872bcc824c43b7962f2a341247286fe363b78f60beab56b28892e3905137",
+  "supported_scope": "Admitted ordinary function-pointer not_fn slice; full STL and other callables remain incomplete.",
+  "full_ci_passed": false,
+  "full_stl_complete": false,
+  "branches_deleted": false
+}

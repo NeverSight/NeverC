@@ -1,0 +1,134 @@
+{
+  "cases": [
+    {
+      "name": "ordinary-source-not-fn-copied-state",
+      "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
+      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { ++calls; state += x; return state > 5; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
+      "owned_names": [
+        "P",
+        "copies",
+        "moves",
+        "calls",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-four-cvref-calls",
+      "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
+      "source": "#include <functional>\n#include <utility>\nint path;\nstruct P {\n  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }\n  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }\n  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }\n  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }\n};\nint main() {\n  auto a = std::not_fn(P{});\n  const auto b = std::not_fn(P{});\n  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;\n  return path != 1234;\n}\n",
+      "owned_names": [
+        "P",
+        "path",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-reference-wrapper",
+      "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
+      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x) { value += x; return value > 4; }\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
+      "owned_names": [
+        "P",
+        "C",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-custom-negation-result",
+      "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
+      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
+      "owned_names": [
+        "R",
+        "value",
+        "negations",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-move-only-cleanup",
+      "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
+      "source": "#include <functional>\n#include <utility>\nint moves, live, destroyed;\nstruct P {\n  int value;\n  P(int x) : value(x) { ++live; }\n  P(const P &) = delete;\n  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }\n  ~P() { --live; ++destroyed; }\n  bool operator()(int x) { return value == x; }\n};\nint main() {\n  {\n    P source(5);\n    auto f = std::not_fn(std::move(source));\n    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;\n  }\n  return live != 0 || destroyed != 2;\n}\n",
+      "owned_names": [
+        "P",
+        "moves",
+        "live",
+        "destroyed",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-nested-adapters",
+      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
+      "source": "#include <functional>\nint calls;\nint value(int x) { ++calls; return x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(&value));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
+      "owned_names": [
+        "value",
+        "calls",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-factory-effects",
+      "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
+      "source": "#include <functional>\nint builds, calls, destroyed;\nstruct P {\n  int value;\n  bool operator()(int x) { ++calls; return x == value; }\n  ~P() { ++destroyed; }\n};\nP make(int &n) { ++n; ++builds; return P{n}; }\nint main() {\n  int n = 3;\n  {\n    auto f = std::not_fn(make(n));\n    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;\n    if (destroyed != 1) return 2;\n  }\n  return destroyed != 2;\n}\n",
+      "owned_names": [
+        "P",
+        "make",
+        "builds",
+        "calls",
+        "destroyed",
+        "main"
+      ]
+    },
+    {
+      "name": "ordinary-source-not-fn-signature-queries",
+      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
+      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nbool value(int x) noexcept { return x > 0; }\nint main() {\n  auto f = std::not_fn(&value);\n  using F = decltype(f);\n  static_assert(std::is_same<decltype(f(1)), bool>::value, \"negation result\");\n  static_assert(std::is_nothrow_invocable<F &,int>::value, \"mutable lvalue\");\n  static_assert(std::is_nothrow_invocable<const F &,int>::value, \"const lvalue\");\n  static_assert(std::is_nothrow_invocable<F &&,int>::value, \"mutable rvalue\");\n  static_assert(std::is_nothrow_invocable<const F &&,int>::value, \"const rvalue\");\n  static_assert(!noexcept(std::not_fn(&value)), \"factory exception signature\");\n  if (f(1) || !f(0)) return 1;\n  return 0;\n}\n",
+      "owned_names": [
+        "value",
+        "main"
+      ]
+    }
+  ],
+  "source_paths": [
+    "utils/ci/observe-not-fn-next-callable-sources.py",
+    "utils/ci/not-fn-next-callable-source-ast-plan.json",
+    ".github/workflows/diagnose-not-fn-next-callable-sources.yml"
+  ],
+  "clean_source_basis": "e0ac902f9364b36f088633662f7a452f40d9f78d",
+  "original_clean216_plan": "utils/ci/cpp-not-fn-pointer-clean-216-plan.json",
+  "exact_private_input_sha256": {
+    "Frontend.cpp": "89bf7cb9d96089060a395fdf6dc6c5811abbc4875c629aec9b7738921a448bb7",
+    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "a997b344a7e974f5fc8d7e1af35b7638f32fcf879dcd91f199c2a17be7aa1363",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "ab65f87dc78ecc8950ae982c270e9a0ec6c57c2664483a412023028b6309ee5f",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "actual_clean216_reference": {
+    "commit": "77d77bcf652e797b931720cd176b0370c6b5fba5",
+    "run": 39765796859,
+    "artifact": 12419859470,
+    "report_sha256": "a1cdafbe73f02e287fdadadb6d37d90a487221279e514da9c72041fd7c2ae48e"
+  },
+  "actual808_reference": {
+    "run": 39791024105,
+    "artifact": 12431457310,
+    "report_sha256": "8bc3c5006f647b9b5bf35308593355ad75f22f11a1c8a7ef8619140c9d931d5c"
+  },
+  "observation_only": true,
+  "private_or_native_or_generated_support_proven": false,
+  "original_case_bytes_and_acceptance_obligations_unchanged": true
+}

@@ -1,5 +1,50 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-22
+
+- Cutoff: **2026-10-22T01:05:23Z**. Reviewed dev: [3348b87369af877d7e2873d7543a54ac31db2140](https://github.com/NeverSight/NeverC/commit/3348b87369af877d7e2873d7543a54ac31db2140).
+- Since the previous report commit [e13b9b1d](https://github.com/NeverSight/NeverC/commit/e13b9b1d863eac992526ed96e2b45a3acfb36c13), the [comparison](https://github.com/NeverSight/NeverC/compare/e13b9b1d863eac992526ed96e2b45a3acfb36c13...3348b87369af877d7e2873d7543a54ac31db2140) contains **316 commits / 209 changed paths**. All four commit pages were retrieved (100/100/100/16). This includes merged branch and diagnostic history, not 316 independent product features. PROGRESS.md has no net change in this range; report maintenance is not product progress.
+- Confirmed and proposed one **artifact-policy/YAML serialization repair**, in draft [PR #21](https://github.com/NeverSight/NeverC/pull/21), commit [b3833cad](https://github.com/NeverSight/NeverC/commit/b3833cadd7e0b0b4eed8118d5397a395967e1e8f). It is **not merged into dev**. No compiler/runtime defect was newly proven in the bounded source sample.
+- Read root AGENTS.md, README contribution guidance, docs/local-dev.md and .github/ci-policy.md. No root CONTRIBUTING.md; complete neverc, tests, pluginsdk, .github and .agents subtree inventories contain no nested AGENTS/CONTRIBUTING files. dev is default, push-enabled and unprotected; the returned ruleset is disabled.
+- Strict static-only restriction overrides execution guidance: no project, build, test, benchmark, repository script, dynamic analysis or manual CI action was run.
+
+## Activity and review queue
+
+Before this review: **9 ordinary open issues / 0 open PRs**, unchanged since **2026-10-21T01:08:00Z**. Complete all-state inventories returned 18 issue entries (including historical PRs) and 8 PRs, with empty second pages; interval issue comments and PR review comments were empty. No pre-existing opening, closure or merge was found.
+
+This review opened draft **#21**, making the queue **9 ordinary open issues / 1 open draft PR**. It has no reviews or requested reviewers at the cutoff. Its blocker is independent review and completed exact-head CI, not an assumed approval. No issue states, labels or assignees were changed.
+
+## Bounded static review and repair evidence
+
+- **Session.cpp / Session.h:** reviewed the complete current files and changed ownership logic: context-owned worker-cache records, constructor allocation before TLS mutation, guard save/restore, physical-thread slot lookup, fallback allocator storage, worker join before cleanup, cache invalidation and abandon restoration. Traced callers through LinkerParallel.h and Allocator.h. Reviewed SessionCacheOwnershipTests.cpp fixtures for nested unwind, reused context addresses, cache overflow, cleanup order, concurrent contexts and crash/abandon restoration. Fixtures were not executed; thread safety and ABI compatibility are not certified.
+- **FastLink.cpp / FastLinkSupport.h:** reviewed aggregate invocation-ownership and capture changes plus the worker-pool section, including serial and exceptional ordinal restoration. Read FastLinkRequestIsolation.cpp fixture source for serial, nested, concurrent and declined requests. Did not audit every relocation, parser, mapping or allocation path.
+- **Mach-O:** read DataConst.h and MachODataConstTests.cpp, and changed MachODriver.cpp/MachOImageEmitter.cpp hunks. Checked special-image default cases and preservation of explicit policy delegation; inspected the new per-atom TLV alignment adjustment. Full object emission and runtime loading remain unverified.
+- **Python artifact gate, confirmed issue:** the exact dev [job 119339874215](https://github.com/NeverSight/NeverC/actions/runs/39634113625/job/119339874215) reports three textual-policy failures. The scanner requires a quoted 3.12.10 token and literal whitespace around archive verifier arguments; the diagnostic workflow already contains the same version and verifier commands as unquoted/escaped YAML. Read the full scanner and relevant workflow source to establish the mismatch.
+- **Minimal repair in #21:** quote the unchanged ARM64 producer version and replace only two double-quoted escaped command scalars with literal blocks. Statically decoded the old scalars and compared both command strings byte-for-byte with the replacement block values. The complete remote file, parent and three-hunk diff were re-read and verified: **one file, +9/-5**. No policy requirement, command, archive name, step, trigger, permission or dependency was changed. No scanner or test was executed.
+- SDK source comparison shows new KEEP_UNWIND/HOSTED constants and matching source-digest text in the header/manifest; the Python abi.py retrieval returned empty content, so complete generated-SDK parity is **not established**.
+- The very large translator Lowering/Frontend/MathSDK changes, diagnostic tooling, remaining 209-path delta and unrelated modules are not exhaustively reviewed. The historical uncertain piecewise publication was not retried and no resolution of its exact prior write is claimed. Previous output-stream concern remains unconfirmed and was not re-audited.
+
+## Existing CI, exact heads only
+
+Sampled **2026-10-22T01:02:03Z–2026-10-22T01:05:23Z**; these are GitHub's existing/automatic results, not tests executed by this review.
+
+- **dev 3348b873:** 10 completed workflow runs: **2 success / 3 failure / 5 cancelled**. All 28 checks: **3 success / 3 failure / 5 cancelled / 17 skipped**; both second pages empty.
+- Python bindings [run 39634113625](https://github.com/NeverSight/NeverC/actions/runs/39634113625) fails at its artifact-policy gate; downstream matrix/OFF jobs are skipped. The complete gate log supports the serialization diagnosis above.
+- Linux ARM64 [run 39634113620](https://github.com/NeverSight/NeverC/actions/runs/39634113620), job 119340498851, fails at **Install neverc**. Linux x64 [run 39634113773](https://github.com/NeverSight/NeverC/actions/runs/39634113773), job 119340376775, fails at **Fail if tests failed**. Both full log calls returned transport errors; their root causes remain unknown.
+- The successful diagnostic workflow has only its metadata check successful and many inspection jobs skipped; its success is not evidence that all diagnostic suites ran. Windows/macOS cancellations do not prove build recovery. Old C1053/global-state/sanitizer failures are not attributed to this new source head without current evidence.
+- **PR #21 head b3833cad:** 16 automatic workflow records at sampling: **7 running / 2 queued / 7 skipped**. Check sampling already shows one **Official artifact policy** success, while another event's gate and matrix checks are queued. This is partial external evidence only; no complete build/test pass is claimed. Push and PR event records must not be conflated. No workflow was manually triggered, rerun or disabled.
+
+## Suggested priorities (not delivery commitments)
+
+1. **Review #21 and wait for exact-head validation.** Dependency: reviewer and automatic artifact-policy/affected CI results. Acceptance: confirm serialization-only semantics and passing required checks before an authorized merge; do not weaken the scanner.
+2. **Diagnose current Linux failures.** Dependency: full diagnostics for jobs 119340498851 and 119340376775. Acceptance: identify actual install/test failure before proposing a minimal fix; do not substitute older-head causes.
+3. **Complete targeted review of merged translation and SDK boundaries.** Dependency: complete Lowering/Frontend/MathSDK and generated abi.py retrieval, selected source/provenance callers and historical publication reconciliation. Acceptance: documented bounded evidence and separately authorized validation for any proven repair.
+
+<details>
+<summary>Previous progress snapshots and daily records (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-21
 
 - Cutoff: **2026-10-21T01:08:00Z**. Current dev: [6a3c501e](https://github.com/NeverSight/NeverC/commit/6a3c501ea92bbfb1ae7e8783769ec5f817fe1818); last implementation source remains [ee83c2e1](https://github.com/NeverSight/NeverC/commit/ee83c2e1916cb640d6791f56648f99af41b681aa).
@@ -1484,3 +1529,9 @@ Reviewed ecfd4a0b…ee83c2e1 with the bounded pair-adapter scope above; recorded
 ## Daily record — 2026-10-21
 
 No implementation changes since ee83c2e1; two progress-only commits excluded from product progress. Recorded 9 open issues and no open PRs with complete pagination. Rotated static review to plugin output/VFS boundaries and selected fixture source; no newly proven defect or source repair. Current-head scheduled sanitizer failure remains undiagnosed because its full log could not be retrieved. Preserved all prior progress text and human edits. No builds/tests/scripts/manual CI, issue mutations, merges or deployments.
+
+</details>
+
+## Daily record — 2026-10-22
+
+Inventoried 316 incoming commits and 209 net changed paths; reviewed the bounded linker ownership, Mach-O policy, fixture source and artifact-gate contracts above. Published the statically proven serialization-only gate repair as draft #21, not into dev. Recorded complete initial activity counts and the new review-created PR separately. Current dev has three failed workflows with one diagnosed textual gate and two inaccessible root-cause logs. Preserved all prior progress text and human edits. No execution, manual CI, issue mutation, merge or deployment.
