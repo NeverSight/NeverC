@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "name": "not-fn-signature-queries",
+      "original_name": "ordinary-source-not-fn-signature-queries",
+      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nbool value(int x) noexcept { return x > 0; }\nint main() {\n  auto f = std::not_fn(&value);\n  using F = decltype(f);\n  static_assert(std::is_same<decltype(f(1)), bool>::value, \"negation result\");\n  static_assert(std::is_nothrow_invocable<F &,int>::value, \"mutable lvalue\");\n  static_assert(std::is_nothrow_invocable<const F &,int>::value, \"const lvalue\");\n  static_assert(std::is_nothrow_invocable<F &&,int>::value, \"mutable rvalue\");\n  static_assert(std::is_nothrow_invocable<const F &&,int>::value, \"const rvalue\");\n  static_assert(!noexcept(std::not_fn(&value)), \"factory exception signature\");\n  if (f(1) || !f(0)) return 1;\n  return 0;\n}\n",
+      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1"
+    }
+  ],
+  "required_cases": 1,
+  "required_native_executions": 2,
+  "reference_native_only": true,
+  "original_source_byte_identical": true,
+  "previous_four_native_sources_not_rerun": true,
+  "private_frontend_verified": false,
+  "generated_programs_verified": false,
+  "formal_xml": 0,
+  "full_stl_complete": false
+}
