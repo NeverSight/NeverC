@@ -2061,7 +2061,7 @@ jobs:
         retention-days: 14
   inspect-current216-elf-combined-808:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'current216-elf-combined-808' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
