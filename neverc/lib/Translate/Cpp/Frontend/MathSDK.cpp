@@ -14539,8 +14539,7 @@ public:
         Operation->getNumParams() > 64 || Arguments->size() != 2 ||
         Arguments->get(0).getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Pack ||
-        Arguments->get(1).pack_size() + 1 != Operation->getNumParams() ||
-        !Context.hasSameType(Arguments->get(0).getAsType(), Operation->getParamDecl(0)->getType())) return false;
+        Arguments->get(1).pack_size() + 1 != Operation->getNumParams()) return false;
     for (const auto *Redeclaration : Function->redecls())
       if (!Check.family(Redeclaration, {"__functional/invoke.h"})) return false;
     const auto Pack = Arguments->get(1).pack_elements();
@@ -14548,9 +14547,14 @@ public:
       const auto Input = Operation->getParamDecl(I)->getType();
       if (!Input->isReferenceType() || Function->getParamDecl(I)->hasDefaultArg() ||
           !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) return false;
-      if (I && (Pack[I - 1].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I - 1].getAsType(), Input->isLValueReferenceType()
-              ? Input : Input->getPointeeType()))) return false;
+      // Both SDK calls forward the same parameter. Deduction keeps an
+      // lvalue reference but removes the reference from an xvalue; the
+      // independently checked function parameter still has Input's exact
+      // reference and const qualification. Apply this to the callable too.
+      const auto &Deduced = I ? Pack[I - 1] : Arguments->get(0);
+      if (Deduced.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Deduced.getAsType(), Input->isLValueReferenceType()
+              ? Input : Input->getPointeeType())) return false;
     }
     std::vector<const CallExpr *> Roots, Forwards;
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
