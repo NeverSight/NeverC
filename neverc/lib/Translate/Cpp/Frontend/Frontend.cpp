@@ -26032,12 +26032,21 @@ public:
     for (const auto *Use : NotFnConstraintSources) {
       if (Use->Kind != TemplateSourceKind::Function || Use->Declaration != Runtime->Method) continue;
       if (Use->Template != Runtime->Method->getPrimaryTemplate() ||
-          Use->Defaults.size() != 1 || Use->DefaultsOverflow) { Source = false; break; }
+          Use->Defaults.size() != 1 || Use->DefaultsOverflow) {
+        std::fprintf(stderr, "NOT_FN_RUNTIME_PACKET_REJECT stage=shape call=%p use=%p template=%p primary=%p defaults=%zu overflow=%u\n",
+            static_cast<const void *>(Call), static_cast<const void *>(Use), static_cast<const void *>(Use->Template),
+            static_cast<const void *>(Runtime->Method->getPrimaryTemplate()), Use->Defaults.size(), static_cast<unsigned>(Use->DefaultsOverflow));
+        Source = false; break;
+      }
       const auto &Default = Use->Defaults.front();
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
       if (!Parameter || !Parameter->hasDefaultArgument() ||
           Default.Written.getArgument().getKind() != TemplateArgument::Type ||
-          Default.Converted.getArgument().getKind() != TemplateArgument::Type) { Source = false; break; }
+          Default.Converted.getArgument().getKind() != TemplateArgument::Type) {
+        std::fprintf(stderr, "NOT_FN_RUNTIME_PACKET_REJECT stage=default call=%p use=%p parameter=%p\n",
+            static_cast<const void *>(Call), static_cast<const void *>(Use), static_cast<const void *>(Parameter));
+        Source = false; break;
+      }
       // This bounded walker follows actual selected aliases, partials, trait
       // roots and all original declaration chains. No ordinary permission leaks.
       std::vector<const SelectedTemplateCallSource *> Selections;
@@ -26050,9 +26059,16 @@ public:
       SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
           A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
           A.SpecialMembers, A.OperationTraits);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_DEFAULT_DECISION result=%u call=%p use=%p\n",
+          static_cast<unsigned>(SelectedDefault), static_cast<const void *>(Call), static_cast<const void *>(Use));
       if (!SelectedDefault) { Source = false; break; }
     }
-    if (!Source || !SelectedDefault || !Call->getType()->isBooleanType()) {
+    if (!Source || !SelectedDefault || !([&] {
+      const bool Observed = Call->getType()->isBooleanType();
+      std::fprintf(stderr, "NOT_FN_RUNTIME_CALL_BOOL_TYPE result=%u call=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call));
+      return Observed;
+    })()) {
       std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_REJECT source=%u selected_default=%u call=%p method=%p\n",
           static_cast<unsigned>(Source), static_cast<unsigned>(SelectedDefault),
           static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
