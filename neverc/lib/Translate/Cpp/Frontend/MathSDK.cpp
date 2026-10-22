@@ -7607,6 +7607,9 @@ class UtilityTupleQueryGraph
   const CXXRecordDecl *NotFnTupleLeafRecord = nullptr;
   const FieldDecl *NotFnTupleLeafValue = nullptr;
   QualType NotFnCallableType;
+  // Caller aliases are not SDK families. Only this factory's exact sugared
+  // input may delegate its original written source to the ordinary checker.
+  std::map<const TypedefNameDecl *, const TypeSourceInfo *> NotFnOwnedInputAliases;
   const TypeTraitExpr *NotFnConstructorQuery = nullptr;
   const CXXConstructExpr *NotFnConstructorRoot = nullptr;
   const FunctionalNotFnCallSource *NotFnInvocation = nullptr;
@@ -10301,6 +10304,47 @@ public:
     NotFnTupleTagStorage = *Pointer;
     return true;
   }
+  bool bindNotFnOwnedInputAliases(
+      const FunctionalNotFnFactoryTemplateSource &Factory,
+      const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature ||
+        NotFnFactoryDefaults != &Factory || NotFnCallableType.isNull() ||
+        !NotFnOwnedInputAliases.empty() || !Factory.Use.Canonical ||
+        !Factory.Use.Sugared || Factory.Use.Canonical->size() != 2 ||
+        Factory.Use.Sugared->size() != 2 ||
+        Factory.Use.Canonical->get(0).getKind() != TemplateArgument::Type ||
+        Factory.Use.Sugared->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Factory.Use.Canonical->get(0).getAsType(),
+                             Factory.Use.Sugared->get(0).getAsType())) return false;
+    auto Input = Factory.Use.Sugared->get(0).getAsType().getNonReferenceType();
+    std::map<const TypedefNameDecl *, const TypeSourceInfo *> Pending;
+    for (unsigned I = 0; ; ++I) {
+      if (I >= 64 || !step() || Input.isNull()) return false;
+      if (const auto *Elaborated = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
+        Input = Elaborated->getNamedType();
+        continue;
+      }
+      const auto *Type = dyn_cast<TypedefType>(Input.getTypePtr());
+      if (!Type) break;
+      const auto *Alias = Type->getDecl();
+      const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
+      const auto *Named = dyn_cast_or_null<TypeAliasDecl>(Alias);
+      if (!Alias || !Info || Alias->isInvalidDecl() || Alias->hasAttrs() ||
+          !Alias->getDeclContext()->isFileContext() ||
+          Alias->getLocation().isMacroID() || !S.owns(SM, Alias->getLocation()) ||
+          approvedStandardSDKDeclaration(S, SM, Alias) ||
+          (Named && Named->getDescribedAliasTemplate()) ||
+          !Alias->getUnderlyingType()->isFunctionPointerType() ||
+          !Context.hasSameType(Alias->getUnderlyingType(), NotFnCallableType) ||
+          !Pending.emplace(Alias, Info).second) return false;
+      // Complete the actual alias TSI, callback signature and owned spelling
+      // before exposing this one raw typedef identity to the metadata graph.
+      if (!SourceAlias || !SourceAlias(Alias)) return false;
+      Input = Alias->getUnderlyingType();
+    }
+    NotFnOwnedInputAliases = std::move(Pending);
+    return true;
+  }
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
       return false;
@@ -10470,7 +10514,11 @@ public:
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
                 Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Bound)) return false;
+      // _Fp is the deduction result; the actual parameter is _Fp&&.
+      // Reference collapsing preserves lvalues and forwards rvalues with the
+      // original const qualification. Do not change the template argument.
+      const auto ForwardedCallable = Context.getRValueReferenceType(Bound);
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return false;
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
@@ -11299,6 +11347,17 @@ public:
   bool VisitRecordType(RecordType *T) { return record(dyn_cast<CXXRecordDecl>(T->getDecl())); }
   bool VisitTypedefType(TypedefType *T) {
     const auto *Declaration = T->getDecl();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults) {
+      const auto Found = NotFnOwnedInputAliases.find(Declaration);
+      if (Found != NotFnOwnedInputAliases.end()) {
+        // The ordinary checker already consumed this exact owned TSI. It
+        // supplies no SDK declaration, value, initializer or body permission.
+        return Found->second == Declaration->getTypeSourceInfo() &&
+            S.owns(SM, Declaration->getLocation()) &&
+            Context.hasSameType(Declaration->getUnderlyingType(), NotFnCallableType) &&
+            TraverseType(Declaration->getUnderlyingType());
+      }
+    }
     if (!family(Declaration)) return false;
     if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
       if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
@@ -13721,6 +13780,7 @@ class NotFnPointerSourceProof {
   UtilityTupleQueryGraph Graph;
   llvm::ArrayRef<const TemplateUseSource *> Sources;
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
+  std::function<bool(const TypedefNameDecl *)> OwnedInputAliasSource;
   std::set<const DeclRefExpr *> InvocableVariableChildren;
   std::map<const DeclRefExpr *, const ClassTemplateSpecializationDecl *> InvocableValueReferences;
   const CXXConstructorDecl *ConstructorDefaultOwner = nullptr;
@@ -14314,11 +14374,12 @@ public:
       const ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
       const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
-      const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits)
+      const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+      std::function<bool(const TypedefNameDecl *)> SourceAlias = {})
       : S(S), SM(SM), Context(Context), Check(S, SM, Context),
         SpecialMembers(Members), OperationTraits(Traits),
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature),
-        Sources(Sources), Selections(Selections) {}
+        Sources(Sources), Selections(Selections), OwnedInputAliasSource(std::move(SourceAlias)) {}
   NotFnPointerSourceProof(const NotFnPointerSourceProof &) = delete;
   NotFnPointerSourceProof &operator=(const NotFnPointerSourceProof &) = delete;
 
@@ -14336,7 +14397,8 @@ public:
     const auto Decayed = InputValue->isFunctionType()
         ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
     if ((!InputValue->isFunctionPointerType() && !InputValue->isFunctionType()) ||
-        !Context.hasSameType(Decayed, Callable)) return false;
+        !Context.hasSameType(Decayed, Callable) ||
+        !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) return false;
     if (!Graph.bindNotFnConstraintVariables(
             [this, Callable, Input, Storage = *Pointer](const DeclRefExpr *Reference) {
               if (!Reference) return false;
@@ -14641,8 +14703,9 @@ bool approvedFunctionalNotFnPointerFactorySource(const State &S,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
     llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
-    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
-  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits).factory(Factory);
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits, SourceAlias).factory(Factory);
 }
 
 bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
