@@ -1,0 +1,52 @@
+name: not-fn-next-callable-source-observation
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  observe-next-callable-sources:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.10'
+      - name: Install Clang 20 for source observation only
+        run: |
+          mkdir -p "$RUNNER_TEMP/not-fn-next-callable-source-ast/bootstrap"
+          set -o pipefail
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/not-fn-next-callable-source-ast/bootstrap/llvm.sh"
+          sudo bash "$RUNNER_TEMP/not-fn-next-callable-source-ast/bootstrap/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/not-fn-next-callable-source-ast/bootstrap/compiler-install.log"
+      - name: Observe the eight unchanged callable sources with frozen SDK headers
+        run: |
+          python3 utils/ci/observe-not-fn-next-callable-sources.py --repo "$GITHUB_WORKSPACE" --plan "$GITHUB_WORKSPACE/utils/ci/not-fn-next-callable-source-ast-plan.json" --output "$RUNNER_TEMP/not-fn-next-callable-source-ast"
+      - name: Preserve bounded source excerpts and actual command evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: not-fn-next-callable-source-ast-text-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/results.json
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/clang-version.*
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/bootstrap/*.log
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/**/input.cpp
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/**/selected-ast.json
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/**/*.stderr
+      - name: Keep the complete original AST streams remotely
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: not-fn-next-callable-full-ast-remote-only-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/**/full-ast.json.gz
+            ${{ runner.temp }}/not-fn-next-callable-source-ast/**/ast.stdout
