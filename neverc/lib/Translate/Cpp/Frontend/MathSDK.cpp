@@ -7614,6 +7614,7 @@ class UtilityTupleQueryGraph
   std::set<const CallExpr *> NotFnInvokeUses;
   const FunctionDecl *NotFnPublicInvoke = nullptr;
   const CXXMethodDecl *NotFnPublicOperation = nullptr;
+  const DeclRefExpr *NotFnOperationQuery = nullptr;
   std::set<const CallExpr *> NotFnPublicInvokeUses, NotFnPublicForwards;
   std::set<const ParmVarDecl *> NotFnPublicParameters;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
@@ -10315,7 +10316,7 @@ public:
                            std::function<bool()> Proof) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnInvocation ||
         !NotFnSignatureDeclvals.empty() || !NotFnTryResultUses.empty() ||
-        NotFnPublicInvoke || NotFnPublicOperation || !NotFnPublicInvokeUses.empty() ||
+        NotFnPublicInvoke || NotFnPublicOperation || NotFnOperationQuery || !NotFnPublicInvokeUses.empty() ||
         !NotFnPublicForwards.empty() || !NotFnPublicParameters.empty() ||
         !NotFnResultSentinels.empty() || NotFnResultComparisonRecord ||
         NotFnResultWrittenArgument || NotFnResultWrittenSentinel ||
@@ -10330,6 +10331,7 @@ public:
       NotFnInvokeUses.clear();
       NotFnPublicInvoke = nullptr;
       NotFnPublicOperation = nullptr;
+      NotFnOperationQuery = nullptr;
       NotFnPublicInvokeUses.clear();
       NotFnPublicForwards.clear();
       NotFnPublicParameters.clear();
@@ -10364,6 +10366,41 @@ public:
     NotFnPublicInvoke = Function;
     NotFnPublicOperation = Operation;
     return true;
+  }
+  bool withNotFnOperationQuery(const DeclRefExpr *Reference, std::function<bool()> Proof) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return false;
+    if (!Reference) return Proof();
+    const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
+    const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
+    const auto *Operation = NotFnPublicOperation;
+    const auto *Selected = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
+    if (NotFnOperationQuery || !Variable || !Primary || !Primary->getIdentifier() ||
+        Primary->getName() != "__is_invocable_v" ||
+        Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Variable->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary ||
+        !Operation || !Selected || Selected->size() != 1 ||
+        Selected->get(0).getKind() != TemplateArgument::Pack ||
+        Selected->get(0).pack_size() != Operation->getNumParams() ||
+        !NotFnInvocation->OperationCall ||
+        Operation != NotFnInvocation->OperationCall->getDirectCallee() ||
+        Operation->getParent()->getCanonicalDecl() != NotFnInvocation->Storage.Operation->getCanonicalDecl() ||
+        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return false;
+    const auto &Arguments = Variable->getTemplateArgs();
+    if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments[0].getAsType(), Context.getRecordType(Operation->getParent())) ||
+        Arguments[1].getKind() != TemplateArgument::Pack ||
+        Arguments[1].pack_size() != Operation->getNumParams()) return false;
+    const auto Actual = Arguments[1].pack_elements();
+    const auto Expected = Selected->get(0).pack_elements();
+    for (unsigned I = 0; I < Actual.size(); ++I)
+      if (Actual[I].getKind() != TemplateArgument::Type || Expected[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return false;
+    // The caller independently authenticated this real initializer, selected
+    // SDK primary and original written-void alias. This scope grants only the
+    // corresponding unevaluated operation query, never a runtime body.
+    NotFnOperationQuery = Reference;
+    auto Restore = llvm::make_scope_exit([&] { NotFnOperationQuery = nullptr; });
+    return Proof() && !Failed;
   }
   bool prepareNotFnInvokeSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections) {
@@ -11189,8 +11226,49 @@ public:
     return family(Method) && TraverseType(Method->getType()) &&
         TraverseType(E->getType()) && !Failed;
   }
+  bool notFnOperationQueryCall(const CallExpr *Expression) {
+    const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(Expression);
+    const auto *Operation = NotFnPublicOperation;
+    const auto *Reference = Call ? dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Types = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !NotFnOperationQuery ||
+        !Call || Call->getOperator() != OO_Call || !Operation || !Reference ||
+        Reference->getDecl() != Operation || Call->getDirectCallee() != Operation ||
+        !NotFnInvocation->OperationCall ||
+        Operation != NotFnInvocation->OperationCall->getDirectCallee() ||
+        !Operation->isConst() || Operation->isVolatile() || Operation->isStatic() ||
+        Operation->getRefQualifier() != RQ_None || Call->isTypeDependent() || Call->isValueDependent() ||
+        !Types || Types->size() != 1 || Types->get(0).getKind() != TemplateArgument::Pack ||
+        Types->get(0).pack_size() != Operation->getNumParams() ||
+        Call->getNumArgs() != Operation->getNumParams() + 1 ||
+        !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
+    const auto Object = Context.getRecordType(Operation->getParent());
+    const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
+    if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
+        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return false;
+    std::vector<const CallExpr *> Declvals;
+    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return false;
+    const auto Inputs = Types->get(0).pack_elements();
+    for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
+      const auto Parameter = Operation->getParamDecl(I)->getType();
+      const auto *Operand = Call->getArg(I + 1);
+      if (Inputs[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Operand->getType(), Parameter.getNonLValueExprType(Context)) ||
+          Operand->getValueKind() != Expr::getValueKindForType(Parameter) ||
+          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return false;
+    }
+    if (!family(Operation)) return false;
+    // Exact original SDK declval nodes, owned by this proven metadata query.
+    // Their bodies and all user/runtime calls retain their original rules.
+    NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
+    return true;
+  }
   bool VisitCallExpr(CallExpr *E) {
     const auto *F = E->getDirectCallee();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnOperationQuery &&
+        NotFnPublicOperation && F == NotFnPublicOperation)
+      return notFnOperationQueryCall(E);
     if (!F) return E->isTypeDependent() || E->isValueDependent() ||
         notFnInvokeForwardedCall(E) || notFnIndirectSignature(E);
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation &&
@@ -13960,11 +14038,13 @@ class NotFnPointerSourceProof {
           !Context.hasSameType(ActualPack[I].getAsType(), Pack[I].getAsType())) return false;
     // The actual __is_invocable alias keeps its written void return argument.
     // Closing that TypeLoc is independent of its canonical void value.
-    const auto Qualifier = Value->getQualifierLoc();
-    if (!Qualifier || !Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) ||
-        !InvocableValueReferences.emplace(Value, Owner).second) return false;
-    auto Restore = llvm::make_scope_exit([&] { InvocableValueReferences.erase(Value); });
-    return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+    return Graph.withNotFnOperationQuery(DirectCallable ? nullptr : Reference, [&] {
+      const auto Qualifier = Value->getQualifierLoc();
+      if (!Qualifier || !Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) ||
+          !InvocableValueReferences.emplace(Value, Owner).second) return false;
+      auto Restore = llvm::make_scope_exit([&] { InvocableValueReferences.erase(Value); });
+      return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+    });
   }
   bool decay(TemplateSpecializationTypeLoc Root, QualType Input, QualType Output) {
     const auto *Source = typeUse(Root);
