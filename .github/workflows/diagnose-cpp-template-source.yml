@@ -3,7 +3,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}${{ inputs.fixture_group == 'current216-elf-combined-808' && '-current216-808' || '' }}
   cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
 jobs:
   inspect-source-metadata:
