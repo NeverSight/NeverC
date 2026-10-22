@@ -29287,7 +29287,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                      : Context.getTypeSize(UtilityVector->PointerType);
         for (unsigned I = 0; I != 3; ++I)
           Offsets.push_back(I * PointerBits);
-      } else if (FunctionalObject || UtilityUniquePtr ||
+      } else if (NotFn || FunctionalObject || UtilityUniquePtr ||
           UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
