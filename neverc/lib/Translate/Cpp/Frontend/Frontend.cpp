@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -29730,6 +29731,42 @@ class Consumer : public ASTConsumer {
     auto &Sources = Context.getSourceManager();
     const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
         S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
+    if (Kind == TemplateSourceKind::Function) {
+      const auto *Observed = dyn_cast_or_null<FunctionDecl>(Declaration);
+      const auto Origin = Observed ? S.sdkFile(Sources, Observed->getLocation()) : std::nullopt;
+      if (Observed && Observed->getIdentifier() && Observed->getName() == "invoke" &&
+          Origin && Origin->Root == "libcxx" && Origin->Path == "__functional/invoke.h") {
+        std::fprintf(stderr, "NOT_FN_PUBLIC_INVOKE_EVENT_BEGIN function=%p template=%p count=%u defaults=%u parameter_types=%u location=%u retained=%u overflow=%u\n",
+            static_cast<const void *>(Observed), static_cast<const void *>(Template),
+            Count, DefaultCount, TypeCount, Location.getRawEncoding(),
+            static_cast<unsigned>(NotFnConstraint), static_cast<unsigned>(Overflow));
+        Observed->dump(llvm::errs());
+        if (const auto *Primary = Observed->getPrimaryTemplate())
+          Primary->getTemplatedDecl()->dump(llvm::errs());
+        for (unsigned I = 0; I < Count && I < 64 && Canonical && Sugared; ++I) {
+          if (Canonical[I].getKind() == TemplateArgument::Type)
+            Canonical[I].getAsType().dump(llvm::errs(), Context);
+          if (Sugared[I].getKind() == TemplateArgument::Type)
+            Sugared[I].getAsType().dump(llvm::errs(), Context);
+        }
+        for (unsigned I = 0; I < DefaultCount && I < 64 &&
+             DefaultParameters && OriginalDefaults && ConvertedDefaults; ++I) {
+          const auto *Parameter = dyn_cast_or_null<TemplateTypeParmDecl>(DefaultParameters[I]);
+          const auto *Primary = Parameter && Parameter->hasDefaultArgument()
+              ? Parameter->getDefaultArgument().getTypeSourceInfo() : nullptr;
+          const auto *Written = OriginalDefaults[I].getArgument().getKind() == TemplateArgument::Type
+              ? OriginalDefaults[I].getTypeSourceInfo() : nullptr;
+          const auto *Converted = ConvertedDefaults[I].getArgument().getKind() == TemplateArgument::Type
+              ? ConvertedDefaults[I].getTypeSourceInfo() : nullptr;
+          std::fprintf(stderr, "NOT_FN_PUBLIC_INVOKE_EVENT_DEFAULT index=%u parameter=%p primary=%p written=%p converted=%p\n",
+              I, static_cast<const void *>(Parameter), static_cast<const void *>(Primary),
+              static_cast<const void *>(Written), static_cast<const void *>(Converted));
+          for (const auto *Info : {Primary, Written, Converted})
+            if (Info) Info->getType().dump(llvm::errs(), Context);
+        }
+        std::fprintf(stderr, "NOT_FN_PUBLIC_INVOKE_EVENT_END\n");
+      }
+    }
     if (!S.owns(Sources, Location) && !NotFnConstraint &&
         !(Kind == TemplateSourceKind::Function &&
           (tupleFactorySelectionLocation(S, Sources, Location,
@@ -30057,6 +30094,16 @@ public:
     auto &Sources = Function->getASTContext().getSourceManager();
     const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
         Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
+    const auto ObservedOrigin = S.sdkFile(Sources, Function->getLocation());
+    if (Function->getIdentifier() && Function->getName() == "invoke" && ObservedOrigin &&
+        ObservedOrigin->Root == "libcxx" && ObservedOrigin->Path == "__functional/invoke.h") {
+      std::fprintf(stderr, "NOT_FN_PUBLIC_INVOKE_SELECTION_BEGIN function=%p expression=%p location=%u retained=%u\n",
+          static_cast<const void *>(Function), static_cast<const void *>(Expression),
+          Location.getRawEncoding(), static_cast<unsigned>(NotFn));
+      Function->dump(llvm::errs());
+      if (Expression) Expression->dump(llvm::errs(), Function->getASTContext());
+      std::fprintf(stderr, "NOT_FN_PUBLIC_INVOKE_SELECTION_END\n");
+    }
     if ((!S.owns(Sources, Location) && !NotFn &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
