@@ -14628,7 +14628,9 @@ public:
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
         !S.owns(SM, Reference->getExprLoc()) || !Use.Location.isValid()) return false;
     bool Selected = false;
-    bool DefaultOccurrence = false;
+    // Retain the original owned-source proof. Only an SDK-origin packet
+    // needs the additional exact retained selection of this same method.
+    bool DefaultOccurrence = S.owns(SM, Use.Location);
     for (const auto *Selection : Selections) {
       if (!Selection || !Selection->FunctionalNotFnConstraint ||
           Selection->Function != Method ||
