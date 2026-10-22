@@ -7622,6 +7622,7 @@ class UtilityTupleQueryGraph
   std::set<const ParmVarDecl *> NotFnPublicParameters;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
   std::map<const CallExpr *, const FunctionDecl *> NotFnTryResultUses;
+  std::map<const CallExpr *, const FunctionDecl *> NotFnOperationTryResultUses;
   std::map<const TypeAliasDecl *, const CXXRecordDecl *> NotFnResultSentinels;
   const CXXRecordDecl *NotFnResultComparisonRecord = nullptr;
   const TypeSourceInfo *NotFnResultWrittenArgument = nullptr;
@@ -10319,6 +10320,7 @@ public:
                            std::function<bool()> Proof) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnInvocation ||
         !NotFnSignatureDeclvals.empty() || !NotFnTryResultUses.empty() ||
+        !NotFnOperationTryResultUses.empty() ||
         NotFnPublicInvoke || NotFnPublicOperation || NotFnOperationQuery ||
         NotFnOperationInvokeFunction || !NotFnOperationInvokeUses.empty() ||
         NotFnOperationInvokeSignatureActive || !NotFnPublicInvokeUses.empty() ||
@@ -10345,6 +10347,7 @@ public:
       NotFnPublicParameters.clear();
       CompletedNotFnInvokeSignatures.clear();
       NotFnTryResultUses.clear();
+      NotFnOperationTryResultUses.clear();
       NotFnResultSentinels.clear();
       NotFnResultComparisonRecord = nullptr;
       NotFnResultWrittenArgument = nullptr;
@@ -10807,17 +10810,28 @@ public:
     return Sentinel;
   }
   bool prepareNotFnTryResultSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
-      llvm::ArrayRef<const SelectedTemplateCallSource *> Selections) {
+      llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+      bool OperationDependency = false) {
     const auto *Method = NotFnInvocation ? NotFnInvocation->Method : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
         Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
-        !NotFnTryResultUses.empty()) return false;
+        (OperationDependency ? !NotFnOperationTryResultUses.empty()
+                             : !NotFnTryResultUses.empty())) return false;
+    const auto *Operation = OperationDependency ? NotFnPublicOperation : nullptr;
+    const auto *OperationArguments = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
+    if (OperationDependency && (Depth != 0 || Failed || NotFnOperationQuery ||
+        !Operation || !OperationArguments || OperationArguments->size() != 1 ||
+        OperationArguments->get(0).getKind() != TemplateArgument::Pack ||
+        OperationArguments->get(0).pack_size() != Operation->getNumParams() ||
+        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return false;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
     else if (Method->getRefQualifier() != RQ_RValue) return false;
-    const auto Pack = Arguments->get(0).pack_elements();
+    if (OperationDependency) Bound = Context.getRecordType(Operation->getParent());
+    const auto Pack = OperationDependency ? OperationArguments->get(0).pack_elements()
+                                          : Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
@@ -10905,8 +10919,11 @@ public:
       if (!Selected) return false;
       const auto *Return = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
       const auto *Invoke = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
-      if (!Invoke || !NotFnInvokeUses.count(Invoke) ||
-          !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())) return false;
+      if (!Invoke || (OperationDependency
+          ? (!NotFnOperationInvokeUses.count(Invoke) ||
+             Invoke->getDirectCallee() != NotFnOperationInvokeFunction)
+          : (!NotFnInvokeUses.count(Invoke) ||
+             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return false;
       // This declaration-only probe is used solely by the actual _Result
       // decltype. Close every real signature and member-template ancestor;
       // no runtime body is supplied or approved. The original class arguments
@@ -11013,7 +11030,11 @@ public:
       Functions.insert(F);
     }
     if (Functions.size() != 1 || Uses.empty() || Failed) return false;
-    NotFnTryResultUses = std::move(Uses);
+    // The operation dependency has a distinct selected identity and use set.
+    // Reuse all original packet, primary, signature and sentinel obligations;
+    // a helper name or a matching result type supplies no permission.
+    if (OperationDependency) NotFnOperationTryResultUses = std::move(Uses);
+    else NotFnTryResultUses = std::move(Uses);
     return true;
   }
   bool withNotFnConstructorQuery(const DeclRefExpr *Reference,
@@ -11499,6 +11520,9 @@ public:
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation) {
       const auto Found = NotFnTryResultUses.find(E);
       if (Found != NotFnTryResultUses.end() && Found->second == F) return family(F);
+      const auto OperationUse = NotFnOperationTryResultUses.find(E);
+      if (OperationUse != NotFnOperationTryResultUses.end() && OperationUse->second == F)
+        return family(F);
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairHelper(F))
       return true;
@@ -14578,6 +14602,10 @@ public:
     // Close this selected dependency at the original graph root, after its
     // public operation is authenticated and before the independent defaults.
     if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) return false;
+    // The outer invocability probe is a separate real selected member call.
+    // Close its original primary, result alias and ellipsis witness at this
+    // same root, after the precise operation invoke dependency is complete.
+    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) return false;
     const auto &Default = Use.Defaults.front();
     const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
     if (!Parameter || !Parameter->hasDefaultArgument() ||
