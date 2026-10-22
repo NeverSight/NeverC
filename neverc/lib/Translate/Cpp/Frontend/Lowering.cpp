@@ -28651,7 +28651,7 @@ class FunctionLowering {
         auto Value = emitIndirectCall(std::move(Callable), std::move(Args),
                                       Prototype->getReturnType(), L);
         if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source.Negation)) {
-          const auto *Method = cast<CXXMethodDecl>(Negation->getDirectCallee());
+          const auto *Method = llvm::cast<CXXMethodDecl>(Negation->getDirectCallee());
           json::Array NegationArgs;
           NegationArgs.push_back(snapshot(cast(
               address(std::move(Value), Prototype->getReturnType(), L),
