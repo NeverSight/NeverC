@@ -10517,7 +10517,8 @@ public:
       // _Fp is the deduction result; the actual parameter is _Fp&&.
       // Reference collapsing preserves lvalues and forwards rvalues with the
       // original const qualification. Do not change the template argument.
-      const auto ForwardedCallable = Context.getRValueReferenceType(Bound);
+      const auto ForwardedCallable = Method->getRefQualifier() == RQ_RValue
+          ? Context.getRValueReferenceType(Bound) : Bound;
       if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return false;
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
