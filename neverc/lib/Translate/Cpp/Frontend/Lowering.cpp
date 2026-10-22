@@ -28650,6 +28650,18 @@ class FunctionLowering {
           Args.push_back(argument(Call->getArg(I + 1), Prototype->getParamType(I)));
         auto Value = emitIndirectCall(std::move(Callable), std::move(Args),
                                       Prototype->getReturnType(), L);
+        if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source.Negation)) {
+          const auto *Method = cast<CXXMethodDecl>(Negation->getDirectCallee());
+          json::Array NegationArgs;
+          NegationArgs.push_back(snapshot(cast(
+              address(std::move(Value), Prototype->getReturnType(), L),
+              type(Method->getThisType(), L), L), L));
+          chargeCall(NegationArgs, L);
+          auto Result = temporary(T, L);
+          Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Method)},
+              {"args", std::move(NegationArgs)}, {"target", json::Object(Result)}, {"loc", A.loc(L)}});
+          return Result;
+        }
         return Expression{{"kind", "unary"}, {"type", "bool"},
             {"operator", "!"}, {"args", json::Array{std::move(Value)}}, {"loc", A.loc(L)}};
       }

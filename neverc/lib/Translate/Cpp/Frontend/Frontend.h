@@ -1834,6 +1834,14 @@ std::optional<FunctionalNotFnStorage>
 approvedFunctionalNotFnPointerStorage(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
+// These descriptions bind one ordinary callback result and its selected
+// negation. The ordinary checker must still complete their source and body.
+const clang::CXXRecordDecl *approvedFunctionalNotFnPointerResultRecord(
+    const State &S, const clang::SourceManager &SM, clang::QualType Result,
+    const clang::ASTContext &Context);
+const clang::CXXMethodDecl *approvedFunctionalNotFnPointerNegation(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalNotFnCallSource &Call, const clang::ASTContext &Context);
 bool approvedFunctionalNotFnPointerFactorySource(const State &S,
     const clang::SourceManager &SM, const clang::ASTContext &Context,
     const FunctionalNotFnFactoryTemplateSource &Factory,

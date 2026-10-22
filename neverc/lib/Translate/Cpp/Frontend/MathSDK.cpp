@@ -7607,6 +7607,7 @@ class UtilityTupleQueryGraph
   const CXXRecordDecl *NotFnTupleLeafRecord = nullptr;
   const FieldDecl *NotFnTupleLeafValue = nullptr;
   QualType NotFnCallableType;
+  const CXXRecordDecl *NotFnCallbackResultRecord = nullptr;
   // Caller aliases are not SDK families. Only this factory's exact sugared
   // input may delegate its original written source to the ordinary checker.
   std::map<const TypedefNameDecl *, const TypeSourceInfo *> NotFnOwnedInputAliases;
@@ -7622,6 +7623,7 @@ class UtilityTupleQueryGraph
   std::set<const CallExpr *> NotFnOperationInvokeUses;
   bool NotFnOperationInvokeSignatureActive = false;
   std::set<const CallExpr *> NotFnPublicInvokeUses, NotFnPublicForwards;
+  std::map<const CXXOperatorCallExpr *, const CallExpr *> NotFnNegationUses;
   std::set<const ParmVarDecl *> NotFnPublicParameters;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
   std::map<const CallExpr *, const FunctionDecl *> NotFnTryResultUses;
@@ -9039,6 +9041,10 @@ class UtilityTupleQueryGraph
     if (utilityScalar(Context, T) || T->isVoidType())
       return true;
     const auto *R = T->getAsCXXRecordDecl();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature &&
+        NotFnCallbackResultRecord && R &&
+        R->getCanonicalDecl() == NotFnCallbackResultRecord)
+      return approvedFunctionalNotFnPointerResultRecord(S, SM, T.getUnqualifiedType(), Context);
     if (approvedUtilityStringRecord(S, SM, R, Context) ||
         approvedUtilityStringViewRecord(S, SM, R, Context))
       return true;
@@ -10073,6 +10079,15 @@ class UtilityTupleQueryGraph
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairHelperOwner(R))
       return true;
+    if (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage) {
+      const auto *Target = NotFnTupleTagStorage->CallableType->getPointeeType()->getAs<FunctionProtoType>();
+      const auto *Result = Target ? approvedFunctionalNotFnPointerResultRecord(
+          S, SM, Target->getReturnType(), Context) : nullptr;
+      // These constructor-tag slices name only the callback already retained
+      // by this wrapper. Its ordinary result identity supplies metadata here;
+      // it supplies no tuple_cat carrier, method, constructor or body grant.
+      if (Result && R->getCanonicalDecl() == Result->getCanonicalDecl()) return true;
+    }
     if (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage &&
         R->getCanonicalDecl() == NotFnTupleTagStorage->Tuple->getCanonicalDecl()) {
       // This exact tuple was independently authenticated as the pointer
@@ -10358,6 +10373,9 @@ public:
     NotFnTupleLeafRecord = Pointer->TupleLeaf->getCanonicalDecl();
     NotFnTupleLeafValue = Pointer->Callable.Field;
     NotFnCallableType = Pointer->CallableType;
+    if (const auto *Result = approvedFunctionalNotFnPointerResultRecord(S, SM,
+            NotFnCallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType(), Context))
+      NotFnCallbackResultRecord = Result->getCanonicalDecl();
     return true;
   }
   bool withNotFnInvocation(const FunctionalNotFnCallSource &Call,
@@ -10368,7 +10386,7 @@ public:
         NotFnPublicInvoke || NotFnPublicOperation || NotFnOperationQuery ||
         NotFnOperationInvokeFunction || !NotFnOperationInvokeUses.empty() ||
         NotFnOperationInvokeSignatureActive || !NotFnPublicInvokeUses.empty() ||
-        !NotFnPublicForwards.empty() || !NotFnPublicParameters.empty() ||
+        !NotFnPublicForwards.empty() || !NotFnPublicParameters.empty() || !NotFnNegationUses.empty() ||
         !NotFnResultSentinels.empty() || NotFnResultComparisonRecord ||
         NotFnResultWrittenArgument || NotFnResultWrittenSentinel ||
         !Proof || !Call.Method || !Call.SourceCall ||
@@ -10389,6 +10407,7 @@ public:
       NotFnPublicInvokeUses.clear();
       NotFnPublicForwards.clear();
       NotFnPublicParameters.clear();
+      NotFnNegationUses.clear();
       CompletedNotFnInvokeSignatures.clear();
       NotFnTryResultUses.clear();
       NotFnOperationTryResultUses.clear();
@@ -10417,6 +10436,21 @@ public:
     for (const auto *Parameter : Operation->parameters()) {
       if (!Parameter || Parameter->getDeclContext() != Operation ||
           !NotFnPublicParameters.insert(Parameter).second) return false;
+    }
+    // Only the three original result/noexcept/body expressions of this exact
+    // operation can refer to the owned negation. No SDK family or user body
+    // is admitted by this metadata binding.
+    for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
+                           FunctionalNotFnSourceMode::Exception, FunctionalNotFnSourceMode::Runtime}) {
+      const auto Source = describeFunctionalNotFnCallSource(S, SM,
+          NotFnInvocation->SourceCall, Context, Mode);
+      if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
+          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return false;
+      if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source->Negation)) {
+        const auto *Method = approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context);
+        if (!Method || Method != approvedFunctionalNotFnPointerNegation(S, SM, *NotFnInvocation, Context) ||
+            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return false;
+      } else if (NotFnCallbackResultRecord) return false;
     }
     NotFnPublicInvoke = Function;
     NotFnPublicOperation = Operation;
@@ -11420,6 +11454,18 @@ public:
     return value(D, E);
   }
   bool VisitMemberExpr(MemberExpr *E) { return value(E->getMemberDecl()); }
+  bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *E, DataRecursionQueue *Queue = nullptr) {
+    const auto Found = NotFnNegationUses.find(E);
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
+        Found == NotFnNegationUses.end())
+      return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseCXXOperatorCallExpr(E, Queue);
+    // Its exact callee declaration/reference and materialized receiver were
+    // bound above. Traverse the real receiver and nested invoke; the ordinary
+    // source checker independently finishes the selected method signature/body.
+    if (!step() || !VisitExpr(E) || !step() || !step() ||
+        E->getNumArgs() != 1 || !Found->second) return false;
+    return TraverseStmt(E->getArg(0));
+  }
   bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
     for (const auto *D : E->decls()) if (!family(D)) return false;
     return true;
@@ -14559,9 +14605,12 @@ public:
     std::vector<const CallExpr *> Roots, Forwards;
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
                            FunctionalNotFnSourceMode::Exception, FunctionalNotFnSourceMode::Runtime}) {
-      const auto *Negation = dyn_cast_or_null<UnaryOperator>(Check.core(Check.resultSource(Operation, Mode)));
-      const auto *Root = Negation && Negation->getOpcode() == UO_LNot
-          ? dyn_cast_or_null<CallExpr>(Check.core(Negation->getSubExpr())) : nullptr;
+      const auto Source = describeFunctionalNotFnCallSource(S, SM, Call.SourceCall, Context, Mode);
+      const auto *Negation = Source ? dyn_cast_or_null<UnaryOperator>(Source->Negation) : nullptr;
+      if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
+          (Negation ? Negation->getOpcode() != UO_LNot
+                    : !approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context))) return false;
+      const auto *Root = Source->InvokeCall;
       const auto *Reference = Root ? dyn_cast<DeclRefExpr>(Root->getCallee()->IgnoreParenImpCasts()) : nullptr;
       if (!Root || !Reference || Reference->getDecl() != Function || Root->getDirectCallee() != Function ||
           Root->isTypeDependent() || Root->isValueDependent() || Root->getNumArgs() != Operation->getNumParams() ||
@@ -14708,9 +14757,78 @@ approvedFunctionalNotFnPointerStorage(const State &S, const SourceManager &SM,
       !Storage->Record->hasTrivialMoveConstructor() ||
       !Storage->Record->hasTrivialDestructor() ||
       !ordinaryCallbackPrototype(Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()) ||
-      !Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType()->isArithmeticType())
+      (!Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType()->isArithmeticType() &&
+       !approvedFunctionalNotFnPointerResultRecord(S, SM,
+           Storage->CallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType(), Context)))
     return std::nullopt;
   return Storage;
+}
+
+const CXXRecordDecl *approvedFunctionalNotFnPointerResultRecord(const State &S,
+    const SourceManager &SM, QualType Result, const ASTContext &Context) {
+  if (Result.isNull() || Result.hasQualifiers() || !Result->isRecordType()) return nullptr;
+  const auto *Record = Result->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  if (!Definition || !S.owns(SM, Definition->getLocation()) || Definition->hasAttrs() ||
+      isa<ClassTemplateSpecializationDecl>(Definition) || Definition->getDescribedClassTemplate() ||
+      Definition->isUnion() || Definition->isLambda() || Definition->isDynamicClass() ||
+      Definition->getNumBases() || !Definition->isAggregate() || !Definition->isStandardLayout() ||
+      !Definition->isTriviallyCopyable() || !Definition->hasTrivialCopyConstructor() ||
+      !Definition->hasTrivialMoveConstructor() || !Definition->hasTrivialDestructor() ||
+      !Context.hasSameType(Context.getRecordType(Definition), Result)) return nullptr;
+  for (const auto *Declaration : Record->redecls())
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return nullptr;
+  unsigned Fields = 0;
+  for (const auto *Field : Definition->fields())
+    if (++Fields > 64 || !S.owns(SM, Field->getLocation()) || Field->hasAttrs() ||
+        Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
+        Field->hasInClassInitializer() || Field->getType().hasQualifiers() ||
+        !Field->getType()->isArithmeticType()) return nullptr;
+  return Definition;
+}
+
+const CXXMethodDecl *approvedFunctionalNotFnPointerNegation(const State &S,
+    const SourceManager &SM, const FunctionalNotFnCallSource &Call,
+    const ASTContext &Context) {
+  const auto *Target = Call.Storage.CallableType->isFunctionPointerType()
+      ? Call.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Record = Target
+      ? approvedFunctionalNotFnPointerResultRecord(S, SM, Target->getReturnType(), Context) : nullptr;
+  const auto *Negation = dyn_cast_or_null<CXXOperatorCallExpr>(Call.Negation);
+  const auto *Method = Negation ? dyn_cast_or_null<CXXMethodDecl>(Negation->getDirectCallee()) : nullptr;
+  const auto *Reference = Negation
+      ? dyn_cast<DeclRefExpr>(Negation->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Definition = Method ? Method->getDefinition() : nullptr;
+  const auto *Prototype = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Record || !Negation || !Method || !Reference || Reference->getDecl() != Method ||
+      Negation->getOperator() != OO_Exclaim || Negation->getNumArgs() != 1 ||
+      Negation->isTypeDependent() || Negation->isValueDependent() || Negation->isInstantiationDependent() ||
+      !Check.location(Negation->getExprLoc(), {"__functional/not_fn.h"}) ||
+      !Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}) ||
+      !ordinaryOperator(Method) || Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Method->hasAttrs() || Method->getAccess() != AS_public || Method->getNumParams() ||
+      !Method->isConst() || Method->getRefQualifier() != RQ_None || !Prototype ||
+      !Method->getReturnType()->isArithmeticType() ||
+      !Context.hasSameType(Reference->getType(), Method->getType()) ||
+      !Context.hasSameType(Negation->getType(), Method->getReturnType()) || !Negation->isPRValue() ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Definition || !Definition->getBody() || !S.owns(SM, Definition->getLocation()) ||
+      !S.owns(SM, Definition->getBody()->getBeginLoc())) return nullptr;
+  for (const auto *Declaration : Method->redecls())
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
+        !Declaration->getTypeSourceInfo()) return nullptr;
+  const auto *Receiver = dyn_cast<ImplicitCastExpr>(Negation->getArg(0)->IgnoreParens());
+  const auto *Temporary = Receiver && Receiver->getCastKind() == CK_NoOp
+      ? dyn_cast<MaterializeTemporaryExpr>(Receiver->getSubExpr()->IgnoreParens()) : nullptr;
+  if (!Receiver || !Receiver->isLValue() ||
+      !Context.hasSameType(Receiver->getType(), Context.getConstType(Target->getReturnType())) ||
+      !Temporary || Temporary->getExtendingDecl() || !Temporary->isLValue() ||
+      !Context.hasSameType(Temporary->getType(), Target->getReturnType()) ||
+      Temporary->getSubExpr()->IgnoreParens() != Call.InvokeCall ||
+      !Call.InvokeCall || !Call.InvokeCall->isPRValue() ||
+      !Context.hasSameType(Call.InvokeCall->getType(), Target->getReturnType())) return nullptr;
+  return Method;
 }
 
 bool approvedFunctionalNotFnPointerFactorySource(const State &S,
