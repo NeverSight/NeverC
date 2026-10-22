@@ -10450,6 +10450,52 @@ public:
             !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_EDGE scope=GRAPH line=10426\n"); return false; }
       return true;
     };
+    // Read-only observations of existing immutable packets; no new events.
+    for (const auto *ObservedSource : Sources) {
+      const auto *ObservedFunction = ObservedSource
+          ? dyn_cast_or_null<FunctionDecl>(ObservedSource->Declaration) : nullptr;
+      const auto *ObservedArguments = ObservedFunction
+          ? ObservedFunction->getTemplateSpecializationArgs() : nullptr;
+      const auto *ObservedOwner = ObservedArguments && ObservedArguments->size() == 2 &&
+          ObservedArguments->get(0).getKind() == TemplateArgument::Type
+          ? ObservedArguments->get(0).getAsType()->getAsCXXRecordDecl() : nullptr;
+      if (!ObservedFunction || !ObservedFunction->getIdentifier() ||
+          ObservedFunction->getName() != "__invoke" || !ObservedOwner ||
+          ObservedOwner->getCanonicalDecl() != NotFnInvocation->Storage.Operation->getCanonicalDecl())
+        continue;
+      const auto *ObservedPrimary = ObservedFunction->getPrimaryTemplate();
+      std::fprintf(stderr, "NOT_FN_OPERATION_INVOKE_PACKET_BEGIN function=%p template=%p source=%p location=%u kind=%u constraint=%u type=%u underlying=%u written=%u overflow=%u defaults=%zu parameters=%zu instantiation=%u origin=%u storage=%u selection=%u canonical=%u sugared=%u\n",
+          static_cast<const void *>(ObservedFunction), static_cast<const void *>(ObservedPrimary),
+          static_cast<const void *>(ObservedSource), ObservedSource->Location.getRawEncoding(),
+          static_cast<unsigned>(ObservedSource->Kind), static_cast<unsigned>(ObservedSource->FunctionalNotFnConstraint),
+          static_cast<unsigned>(ObservedSource->Type != nullptr), static_cast<unsigned>(ObservedSource->Underlying != nullptr),
+          static_cast<unsigned>(ObservedSource->Written != nullptr), static_cast<unsigned>(ObservedSource->DefaultsOverflow),
+          ObservedSource->Defaults.size(), ObservedSource->ParameterTypes.size(),
+          static_cast<unsigned>(ObservedSource->Instantiation), static_cast<unsigned>(ObservedSource->Origin != nullptr),
+          static_cast<unsigned>(ObservedSource->WrittenStorageClass), static_cast<unsigned>(ObservedSource->Selection != nullptr),
+          static_cast<unsigned>(ObservedSource->Canonical != nullptr), static_cast<unsigned>(ObservedSource->Sugared != nullptr));
+      ObservedFunction->dump(llvm::errs());
+      if (ObservedPrimary) ObservedPrimary->dump(llvm::errs());
+      if (const auto *ObservedInfo = ObservedFunction->getTypeSourceInfo())
+        ObservedInfo->getType().dump(llvm::errs(), Context);
+      if (const auto *ObservedPrototype = ObservedFunction->getType()->getAs<FunctionProtoType>())
+        if (const auto *ObservedException = ObservedPrototype->getNoexceptExpr())
+          ObservedException->dump(llvm::errs(), Context);
+      for (const auto *ObservedSelection : Selections) {
+        if (!ObservedSelection || ObservedSelection->Function != ObservedFunction) continue;
+        const auto *ObservedExpression = dyn_cast_or_null<CallExpr>(ObservedSelection->Expression);
+        const auto *ObservedReference = ObservedExpression
+            ? dyn_cast<DeclRefExpr>(ObservedExpression->getCallee()->IgnoreParenImpCasts()) : nullptr;
+        std::fprintf(stderr, "NOT_FN_OPERATION_INVOKE_SELECTION function=%p expression=%p location=%u constraint=%u reference=%p callee=%p reference_function=%p\n",
+            static_cast<const void *>(ObservedFunction), static_cast<const void *>(ObservedExpression),
+            ObservedSelection->Location.getRawEncoding(), static_cast<unsigned>(ObservedSelection->FunctionalNotFnConstraint),
+            static_cast<const void *>(ObservedReference),
+            static_cast<const void *>(ObservedExpression ? ObservedExpression->getDirectCallee() : nullptr),
+            static_cast<const void *>(ObservedReference ? ObservedReference->getDecl() : nullptr));
+        if (ObservedExpression) ObservedExpression->dump(llvm::errs(), Context);
+      }
+      std::fprintf(stderr, "NOT_FN_OPERATION_INVOKE_PACKET_END\n");
+    }
     std::set<const FunctionDecl *> Functions;
     std::set<const CallExpr *> Uses;
     for (const auto *Source : Sources) {
