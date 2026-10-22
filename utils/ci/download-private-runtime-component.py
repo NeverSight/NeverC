@@ -65,14 +65,14 @@ def main():
     plan = json.loads(args.plan.read_text())
     run = api('actions/runs/' + str(plan['component_run_id']))
     assert run['head_sha'] == plan['component_commit']
-    assert run['status'] == 'completed' and run['conclusion'] == 'failure'
+    assert run['status'] == 'completed' and run['conclusion'] == 'success'
     actual_jobs = api('actions/runs/' + str(run['id']) + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100')
-    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-ordinary-selected-call-replay']
+    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-not-fn-pointer-clean-216']
     assert len(selected) == 1
     job = api('actions/jobs/' + str(selected[0]['id']))
-    assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'failure'
+    assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
     assert job['id'] == plan['component_actual_job'] and run['run_attempt'] == plan['component_attempt']
-    for name, expected in [('Check original pair matrix and ordinary-call source regression over eight ABIs', 'failure'),
+    for name, expected in [('Observe actual residual not_fn defaults and operator source proofs', 'success'),
                            ('Retain actual current private archive remotely for source diagnosis', 'success')]:
         assert any(step['name'] == name and step['conclusion'] == expected for step in job['steps'])
     downloads = []
@@ -104,11 +104,11 @@ def main():
     report = reports[0]
     assert sha(report) == plan['component_report_sha256']
     r = json.loads(report.read_text())
-    assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is False and r['not_fn_private_support_complete'] is False
+    assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is True and r['not_fn_private_support_complete'] is False
     assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed']
-    assert len(r['requests']) == 808 and all(row['expectation_satisfied'] for row in r['requests'])
-    assert sum(row['expected'] == 'accept' for row in r['requests']) == 560
-    assert sum(row['expected'] == 'reject' for row in r['requests']) == 240
+    assert len(r['requests']) == 216 and all(row['expectation_satisfied'] for row in r['requests'])
+    assert sum(row['expected'] == 'accept' for row in r['requests']) == 64
+    assert sum(row['expected'] == 'reject' for row in r['requests']) == 144
     assert sum(row['expected'] == 'invalid' for row in r['requests']) == 8
     assert len(r['exact_private_input_sha256']) == 19
     for name, identity in r['exact_private_input_sha256'].items():
