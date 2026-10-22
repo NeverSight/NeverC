@@ -67,7 +67,7 @@ def main():
     assert run['head_sha'] == plan['component_commit']
     assert run['status'] == 'completed' and run['conclusion'] == 'success'
     actual_jobs = api('actions/runs/' + str(run['id']) + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100')
-    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-not-fn-pointer-clean-200']
+    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-not-fn-pointer-clean-216']
     assert len(selected) == 1
     job = api('actions/jobs/' + str(selected[0]['id']))
     assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
@@ -106,8 +106,8 @@ def main():
     r = json.loads(report.read_text())
     assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is True and r['not_fn_private_support_complete'] is False
     assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed']
-    assert len(r['requests']) == 200 and all(row['expectation_satisfied'] for row in r['requests'])
-    assert sum(row['expected'] == 'accept' for row in r['requests']) == 48
+    assert len(r['requests']) == 216 and all(row['expectation_satisfied'] for row in r['requests'])
+    assert sum(row['expected'] == 'accept' for row in r['requests']) == 64
     assert sum(row['expected'] == 'reject' for row in r['requests']) == 144
     assert sum(row['expected'] == 'invalid' for row in r['requests']) == 8
     assert len(r['exact_private_input_sha256']) == 19

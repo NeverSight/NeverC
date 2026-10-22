@@ -25964,7 +25964,16 @@ public:
           Selections.insert(Selections.end(), Entries.begin(), Entries.end());
         if (!Source || !approvedFunctionalNotFnPointerFactorySource(
                 A.S, A.Sources, A.Context, *Source, Dependencies, Selections,
-                A.SpecialMembers, A.OperationTraits)) {
+                A.SpecialMembers, A.OperationTraits,
+                [this](const TypedefNameDecl *Alias) {
+                  const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
+                  if (!Alias || !Info || !A.S.owns(A.Sources, Alias->getLocation()) ||
+                      Alias->isInvalidDecl() || Alias->hasAttrs()) return false;
+                  A.checkTypeOnly(Alias->getUnderlyingType(), Alias->getLocation());
+                  return A.S.Diagnostics.empty() &&
+                      retainFunctionTypeSource(Alias->getUnderlyingType(), Info, Alias->getLocation()) &&
+                      TraverseTypeLoc(Info->getTypeLoc()) && A.S.Diagnostics.empty();
+                })) {
           A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
                    "The selected default, alias, trait and constructor source graph must be complete.");
           return true;
@@ -29287,7 +29296,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                      : Context.getTypeSize(UtilityVector->PointerType);
         for (unsigned I = 0; I != 3; ++I)
           Offsets.push_back(I * PointerBits);
-      } else if (FunctionalObject || UtilityUniquePtr ||
+      } else if (NotFn || FunctionalObject || UtilityUniquePtr ||
           UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
