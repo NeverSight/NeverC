@@ -12525,13 +12525,41 @@ public:
     }
     return nullptr;
   }
+  const Expr *exceptionSource(const FunctionDecl *F) const {
+    const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *Source = Prototype ? Prototype->getNoexceptExpr() : nullptr;
+    if (const auto *Cached = dyn_cast_or_null<ConstantExpr>(Source)) {
+      const auto *Written = Cached->getSubExpr();
+      // Resolution caches the value while retaining this original expression.
+      // Recover only that child at the same SDK spelling; the cached value is
+      // never a source proof. Full type, selection, body and lifetime checks
+      // still traverse the original function and its expression graph.
+      if (!Written || isa<ConstantExpr>(Written) ||
+          !Cached->getType()->isBooleanType() || !Written->getType()->isBooleanType() ||
+          Cached->isTypeDependent() || Cached->isValueDependent() ||
+          Written->isTypeDependent() || Written->isValueDependent() ||
+          !Context.hasSameType(Cached->getType(), Written->getType()) ||
+          Cached->getValueKind() != Written->getValueKind() ||
+          Cached->getBeginLoc() != Written->getBeginLoc() ||
+          Cached->getEndLoc() != Written->getEndLoc()) return nullptr;
+      bool Owned = false;
+      for (const auto Path : {"__functional/not_fn.h", "__functional/perfect_forward.h",
+                              "__functional/invoke.h"})
+        if (location(F->getLocation(), {Path}) &&
+            location(Cached->getBeginLoc(), {Path}) && location(Cached->getEndLoc(), {Path})) {
+          Owned = true;
+          break;
+        }
+      if (!Owned) return nullptr;
+      return Written;
+    }
+    return Source;
+  }
   const Expr *resultSource(const FunctionDecl *F, FunctionalNotFnSourceMode Mode) const {
     if (!F) return nullptr;
     if (Mode == FunctionalNotFnSourceMode::Runtime) return returned(F);
     if (Mode == FunctionalNotFnSourceMode::Exception) {
-      const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
-      const auto *Query = Prototype
-          ? dyn_cast_or_null<CXXNoexceptExpr>(Prototype->getNoexceptExpr()) : nullptr;
+      const auto *Query = dyn_cast_or_null<CXXNoexceptExpr>(exceptionSource(F));
       return Query ? Query->getOperand() : nullptr;
     }
     const auto *Result = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
@@ -13775,9 +13803,8 @@ class NotFnPointerSourceProof {
   }
   bool publicNothrowVariableUse(const DeclRefExpr *Reference) {
     const auto *Function = PublicInvokeFunction;
-    const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
-    const auto *Root = Prototype && Prototype->getNoexceptExpr()
-        ? dyn_cast<DeclRefExpr>(Prototype->getNoexceptExpr()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Exception = Check.exceptionSource(Function);
+    const auto *Root = Exception ? dyn_cast<DeclRefExpr>(Exception->IgnoreParenImpCasts()) : nullptr;
     const auto *Expected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     const auto *Variable = Reference ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
     const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
