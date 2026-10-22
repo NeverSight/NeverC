@@ -107,7 +107,8 @@ jobs:
       != 'not-fn-pointer-statement-depth-trace' && inputs.fixture_group != 'not-fn-pointer-clean-200'
       && inputs.fixture_group != 'current-elf-combined-808' && inputs.fixture_group
       != 'not-fn-pointer-storage-layout-trace' && inputs.fixture_group != 'not-fn-pointer-input-alias-forwarding-trace'
-      && inputs.fixture_group != 'not-fn-pointer-public-forwarding-trace' }}
+      && inputs.fixture_group != 'not-fn-pointer-public-forwarding-trace' && inputs.fixture_group
+      != 'not-fn-pointer-clean-216' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -1381,6 +1382,78 @@ jobs:
         if-no-files-found: warn
         compression-level: 0
         retention-days: 7
+  inspect-not-fn-pointer-clean-216:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-clean-216'
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare isolated frontend bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install matching host compiler and archive reader
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10);
+        assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-bootstrap/dependencies.log"
+
+        '
+    - name: Observe actual residual not_fn defaults and operator source proofs
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/check-cpp-not-fn-pointer-clean-216.py --repo \"$GITHUB_WORKSPACE\"\
+        \ \\\n  --plan utils/ci/cpp-not-fn-pointer-clean-216-plan.json \\\n  --output\
+        \ \"$RUNNER_TEMP/cpp-not-fn-pointer-clean-216\" \\\n  --build \"$RUNNER_TEMP/cpp-not-fn-pointer-clean-216-rebuild\"\
+        \n"
+      id: verify_pair_requests
+    - name: Upload small actual source and request evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-pointer-clean-216-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-not-fn-pointer-clean-216
+
+          ${{ runner.temp }}/cpp-not-fn-pointer-clean-216-bootstrap
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+    - name: Keep new actual source binary remotely for further diagnosis
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-not-fn-pointer-clean-216-binary-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 7
+    - name: Retain actual current private archive remotely for source diagnosis
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-current-private-archive-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 7
 'on':
   workflow_dispatch:
     inputs:
@@ -1405,6 +1478,7 @@ jobs:
         - not-fn-pointer-storage-layout-trace
         - not-fn-pointer-input-alias-forwarding-trace
         - not-fn-pointer-public-forwarding-trace
+        - not-fn-pointer-clean-216
   push:
     branches:
     - dev
