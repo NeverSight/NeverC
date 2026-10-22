@@ -14295,11 +14295,11 @@ public:
         static_cast<const void *>(Function), static_cast<const void *>(Operation));
     Function->getType().dump(llvm::errs(), Context);
     Operation->getType().dump(llvm::errs(), Context);
-    const auto *ObservedPrototype = Function->getType()->getAs<FunctionProtoType>();
-    const auto *ObservedException = ObservedPrototype ? ObservedPrototype->getNoexceptExpr() : nullptr;
-    if (ObservedException) {
-      ObservedException->dump(llvm::errs(), Context);
-      const auto *ObservedReference = dyn_cast<DeclRefExpr>(ObservedException->IgnoreParenImpCasts());
+    const auto *PrebindPrototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *PrebindException = PrebindPrototype ? PrebindPrototype->getNoexceptExpr() : nullptr;
+    if (PrebindException) {
+      PrebindException->dump(llvm::errs(), Context);
+      const auto *ObservedReference = dyn_cast<DeclRefExpr>(PrebindException->IgnoreParenImpCasts());
       const auto *ObservedVariable = ObservedReference ? dyn_cast<VarDecl>(ObservedReference->getDecl()) : nullptr;
       if (ObservedVariable) {
         ObservedVariable->dump(llvm::errs());
