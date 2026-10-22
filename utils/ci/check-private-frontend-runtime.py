@@ -17,6 +17,7 @@ import traceback
 import xml.etree.ElementTree as ET
 from cpp_private_runtime_gtest import build_runtime_gtest
 from extract_cpp_gtests import extract
+from not_fn_registered_gtests import restore_original_gtests
 
 
 def sha(path):
@@ -118,13 +119,19 @@ def main():
         manifest = json.loads((root / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
         selected = manifest['new'] + manifest['regression']
         assert len(selected) == manifest['expected_total'] == 124
-        original = (root / 'tests/neverc/TranslateTests.cpp').read_bytes()
-        generated, source_proof = extract(original, selected)
-        original_selected = tuple(selected)
-        original_generated_sha256 = hashlib.sha256(generated).hexdigest()
+        registered = (root / 'tests/neverc/TranslateTests.cpp').read_bytes()
         additions_path = root / plan['not_fn_formal_additions_path']
         additions = additions_path.read_bytes()
         assert sha(additions_path) == plan['not_fn_formal_additions_sha256']
+        original = restore_original_gtests(registered, additions)
+        r['registered_product_source'] = dict(
+            registered_source_sha256=hashlib.sha256(registered).hexdigest(),
+            restored_original_source_sha256=hashlib.sha256(original).hexdigest(),
+            original_extractor_and_7493_guard_unchanged=True,
+            registered_goldens_replayed_once_in_formal128=True)
+        generated, source_proof = extract(original, selected)
+        original_selected = tuple(selected)
+        original_generated_sha256 = hashlib.sha256(generated).hexdigest()
         additional = plan['not_fn_formal_cases']
         assert len(additional) == 4 and len({c['formal_test_name'] for c in additional}) == 4
         assert not set(original_selected) & {c['formal_test_name'] for c in additional}

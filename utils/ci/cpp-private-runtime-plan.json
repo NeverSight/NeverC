@@ -61,7 +61,8 @@
     "utils/ci/download-cpp-linux-baseline.py",
     "utils/ci/cpp-private-runtime-plan.json",
     ".github/workflows/diagnose-cpp-template-source.yml",
-    "utils/ci/not-fn-pointer-four-formal-additions.cpp"
+    "utils/ci/not-fn-pointer-four-formal-additions.cpp",
+    "utils/ci/not_fn_registered_gtests.py"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,

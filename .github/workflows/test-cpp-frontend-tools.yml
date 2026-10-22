@@ -8,6 +8,13 @@ on:
       - 'tests/neverc/HostCoffSymbolsTests.py'
       - 'tests/neverc/CppFrontendToolchainTests.py'
       - '.github/workflows/test-cpp-frontend-tools.yml'
+      - 'utils/ci/not_fn_registered_gtests.py'
+      - 'utils/ci/check-private-frontend-runtime.py'
+      - 'utils/ci/cpp-private-runtime-plan.json'
+      - 'tests/neverc/NotFnRegisteredGTestsTests.py'
+      - 'utils/ci/extract_cpp_gtests.py'
+      - 'utils/ci/not-fn-pointer-four-formal-additions.cpp'
+      - 'tests/neverc/TranslateTests.cpp'
   pull_request:
     paths:
       - 'neverc/lib/Translate/Cpp/Frontend/**'
@@ -15,6 +22,13 @@ on:
       - 'tests/neverc/HostCoffSymbolsTests.py'
       - 'tests/neverc/CppFrontendToolchainTests.py'
       - '.github/workflows/test-cpp-frontend-tools.yml'
+      - 'utils/ci/not_fn_registered_gtests.py'
+      - 'utils/ci/check-private-frontend-runtime.py'
+      - 'utils/ci/cpp-private-runtime-plan.json'
+      - 'tests/neverc/NotFnRegisteredGTestsTests.py'
+      - 'utils/ci/extract_cpp_gtests.py'
+      - 'utils/ci/not-fn-pointer-four-formal-additions.cpp'
+      - 'tests/neverc/TranslateTests.cpp'
 
 permissions:
   contents: read
@@ -57,3 +71,16 @@ jobs:
           python -I -B tests/neverc/CppFrontendToolchainTests.py --report-self-tests
           python -I -B neverc/lib/Translate/Cpp/Frontend/CollectCrtStorageEvidenceTests.py
           python -I -B neverc/lib/Translate/Cpp/Frontend/BuiltinCppFrontendCMakeTests.py
+  registered-formal-source:
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Verify registered golden source and original124 extraction
+        run: python -I -B tests/neverc/NotFnRegisteredGTestsTests.py
