@@ -14570,18 +14570,30 @@ public:
         Operation->getNumParams() > 64 || Arguments->size() != 2 ||
         Arguments->get(0).getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Pack ||
-        Arguments->get(1).pack_size() + 1 != Operation->getNumParams() ||
-        !Context.hasSameType(Arguments->get(0).getAsType(), Operation->getParamDecl(0)->getType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14543\n"); return false; }
+        Arguments->get(1).pack_size() + 1 != Operation->getNumParams()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14542\n"); return false; }
     for (const auto *Redeclaration : Function->redecls())
-      if (!Check.family(Redeclaration, {"__functional/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14545\n"); return false; }
+      if (!Check.family(Redeclaration, {"__functional/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14544\n"); return false; }
     const auto Pack = Arguments->get(1).pack_elements();
     for (unsigned I = 0; I < Function->getNumParams(); ++I) {
       const auto Input = Operation->getParamDecl(I)->getType();
       if (!Input->isReferenceType() || Function->getParamDecl(I)->hasDefaultArg() ||
-          !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14550\n"); return false; }
-      if (I && (Pack[I - 1].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I - 1].getAsType(), Input->isLValueReferenceType()
-              ? Input : Input->getPointeeType()))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14553\n"); return false; }
+          !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14549\n"); return false; }
+      // Both SDK calls forward the same parameter. Deduction keeps an
+      // lvalue reference but removes the reference from an xvalue; the
+      // independently checked function parameter still has Input's exact
+      // reference and const qualification. Apply this to the callable too.
+      const auto &Deduced = I ? Pack[I - 1] : Arguments->get(0);
+      if (Deduced.getKind() != TemplateArgument::Type ||
+          !([&] {
+        const bool Observed = Context.hasSameType(Deduced.getAsType(), Input->isLValueReferenceType()
+              ? Input : Input->getPointeeType());
+        std::fprintf(stderr, "NOT_FN_PUBLIC_DEDUCED_PARAMETER result=%u index=%u qualifier=%s function=%p operation=%p\n",
+            static_cast<unsigned>(Observed), I, Input->isLValueReferenceType() ? "lvalue" : "rvalue",
+            static_cast<const void *>(Function), static_cast<const void *>(Operation));
+        Deduced.getAsType().dump(llvm::errs(), Context);
+        Input.dump(llvm::errs(), Context);
+        return Observed;
+      })()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14557\n"); return false; }
     }
     std::vector<const CallExpr *> Roots, Forwards;
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
@@ -14594,12 +14606,12 @@ public:
           Root->isTypeDependent() || Root->isValueDependent() || Root->getNumArgs() != Operation->getNumParams() ||
           !Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}) ||
           !Context.hasSameType(Root->getType(), Function->getReturnType().getNonLValueExprType(Context)) ||
-          Root->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14566\n"); return false; }
+          Root->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14570\n"); return false; }
       bool Selected = false, Retained = false;
       for (const auto *Selection : Selections)
         if (Selection && Selection->Expression == Root && Selection->Function == Function) {
           if (!Selection->FunctionalNotFnConstraint || Selection->Location != Reference->getExprLoc() ||
-              !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14571\n"); return false; }
+              !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14575\n"); return false; }
           Selected = true;
         }
       for (const auto *Source : Sources) {
@@ -14608,27 +14620,27 @@ public:
             !Source->FunctionalNotFnConstraint || !arguments(*Source) || Source->Type || Source->Underlying ||
             Source->Written || Source->Instantiation || Source->Origin || Source->WrittenStorageClass ||
             Source->Selection || !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-            Source->Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14580\n"); return false; }
+            Source->Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14584\n"); return false; }
         for (unsigned I = 0; I < Arguments->size(); ++I)
-          if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14582\n"); return false; }
+          if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14586\n"); return false; }
         Retained = true;
       }
-      if (!Selected || !Retained) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14585\n"); return false; }
+      if (!Selected || !Retained) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14589\n"); return false; }
       for (unsigned I = 0; I < Root->getNumArgs(); ++I) {
         const CallExpr *Forward = nullptr;
         if (!Check.forwarding(Root->getArg(I), Operation->getParamDecl(I),
-                              "__functional/not_fn.h", Forward)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14589\n"); return false; }
+                              "__functional/not_fn.h", Forward)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14593\n"); return false; }
         Forwards.push_back(Forward);
       }
       Roots.push_back(Root);
     }
-    if (!Graph.bindNotFnPublicInvoke(Function, Operation, Roots, Forwards)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14594\n"); return false; }
+    if (!Graph.bindNotFnPublicInvoke(Function, Operation, Roots, Forwards)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14598\n"); return false; }
     PublicInvokeFunction = Function;
     const auto *Pattern = Primary->getTemplatedDecl();
     const auto *Info = Function->getTypeSourceInfo();
     if (!Pattern || !Info || !Pattern->getTypeSourceInfo() ||
         !Graph.TraverseTypeLoc(Info->getTypeLoc()) || !Graph.function(Function) ||
-        !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14600\n"); return false; }
+        !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14604\n"); return false; }
     // Metadata signatures are complete; the original runtime helper bodies,
     // forwarding, negation and lifetime proofs remain independent obligations.
     return true;
@@ -14644,7 +14656,7 @@ public:
       if (const auto *Info = Default.Converted.getTypeSourceInfo()) Info->getType().dump(llvm::errs(), Context);
     }
     std::fprintf(stderr, "NOT_FN_LAYOUT_CALL_DEFAULTS_END\n");
-    if (PublicInvokeFunction || PublicNothrowInitializer) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14606\n"); return false; }
+    if (PublicInvokeFunction || PublicNothrowInitializer) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14610\n"); return false; }
     auto RestorePublicInvoke = llvm::make_scope_exit([&] {
       PublicInvokeFunction = nullptr;
       PublicNothrowInitializer = false;
@@ -14652,7 +14664,7 @@ public:
     if (!Graph.bindNotFnOperation(Call.Storage) ||
         !Graph.bindNotFnConstraintVariables([this, Call](const DeclRefExpr *Reference) {
           return invocationVariableUse(Reference, Call);
-        })) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14614\n"); return false; }
+        })) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14618\n"); return false; }
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
@@ -14663,7 +14675,7 @@ public:
         SourceCall->getOperator() != OO_Call ||
         SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
-        !S.owns(SM, Reference->getExprLoc()) || !S.owns(SM, Use.Location)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14625\n"); return false; }
+        !S.owns(SM, Reference->getExprLoc()) || !S.owns(SM, Use.Location)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14629\n"); return false; }
     bool Selected = false;
     for (const auto *Selection : Selections)
       if (Selection && Selection->FunctionalNotFnConstraint &&
@@ -14676,12 +14688,12 @@ public:
     if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
-        Use.Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14638\n"); return false; }
+        Use.Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14642\n"); return false; }
     for (unsigned I = 0; I < Arguments->size(); ++I)
-      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14640\n"); return false; }
+      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14644\n"); return false; }
     return Graph.withNotFnInvocation(Call, [&] {
     if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections) ||
-        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14643\n"); return false; }
+        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14647\n"); return false; }
     // Close the concrete inner invoke result before the outer operator's
     // constraint reaches it. Use this SAME graph and its original cumulative
     // node/depth limits; only a fully successful dependency may be cached.
@@ -14702,14 +14714,14 @@ public:
         !Alias || Alias->getName() != "invoke_result_t" ||
         !Check.family(Alias, {"__type_traits/invoke.h"}) ||
         !Context.hasSameType(Return.getType(), Callee->getReturnType()) ||
-        !Graph.TraverseTypeLoc(Return) || !publicInvokeSources(Call)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14664\n"); return false; }
+        !Graph.TraverseTypeLoc(Return) || !publicInvokeSources(Call)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14668\n"); return false; }
     // Close this selected dependency at the original graph root, after its
     // public operation is authenticated and before the independent defaults.
-    if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14667\n"); return false; }
+    if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14671\n"); return false; }
     // The outer invocability probe is a separate real selected member call.
     // Close its original primary, result alias and ellipsis witness at this
     // same root, after the precise operation invoke dependency is complete.
-    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14671\n"); return false; }
+    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14675\n"); return false; }
     const auto &Default = Use.Defaults.front();
     const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
     if (!Parameter || !Parameter->hasDefaultArgument() ||
@@ -14718,7 +14730,7 @@ public:
         !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
         !constraintType(Default.Written.getTypeSourceInfo()) ||
         !constraintType(Default.Converted.getTypeSourceInfo()) ||
-        !parameterTypes(Use)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14680\n"); return false; }
+        !parameterTypes(Use)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14684\n"); return false; }
     return true;
     });
   }
