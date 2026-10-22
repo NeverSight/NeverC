@@ -1,0 +1,43 @@
+name: not-fn-next-signature-source-diagnostics
+'on':
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  observe-original-signature-source:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Observe one original signature failure with the actual existing diagnostic
+        ELF
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python3 utils/ci/observe-not-fn-next-signature-source.py --repo "$GITHUB_WORKSPACE"
+        --plan "$GITHUB_WORKSPACE/utils/ci/not-fn-next-signature-trace-replay-plan.json"
+        --output "$RUNNER_TEMP/not-fn-next-signature-trace-replay" --build "$RUNNER_TEMP/not-fn-next-signature-trace-replay-binary-remote-only"
+    - name: Preserve source responses, raw trace and all ten PID records
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: not-fn-next-signature-trace-replay-text-${{ github.sha }}
+        path: '${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.json
+
+          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.cpp
+
+          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.log
+
+          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.txt
+
+          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.tsv'
+        if-no-files-found: error
+        retention-days: 14
