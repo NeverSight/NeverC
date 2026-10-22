@@ -1,0 +1,362 @@
+{
+  "fixture_group": "not-fn-pointer-default-clean216",
+  "producer_commit": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+  "producer_run_id": 39523812510,
+  "producer_small_artifact": {
+    "id": 12313907123,
+    "name": "cpp-not-fn-operator-component-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:0a8bd33fa518f0fe6940c8ca129385980283b266f2fd96566fa918acf0cf941e"
+  },
+  "producer_components_artifact": {
+    "id": 12313187412,
+    "name": "cpp-not-fn-operator-components-remote-only-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:9edf4623b5f8535b68b1b64865e6a71f5003bf03c3ba5b62b049a7069428a0d7"
+  },
+  "producer_report_sha256": "0d82c9f8adaab735c8cb59c16350a9aac20f842d56e065f00cd0942c1746b22a",
+  "producer_manifest_sha256": "18eb72d30afc3c44c68abfd1020f0f664de3263c25187028982470988610c151",
+  "producer_private_input_sha256": {
+    "Frontend.cpp": "d5e4732cf9499501d124ea5adbcaf192a7b6ec39915c8662cd69e331e6ddb7f6",
+    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "cb678512a78a9dcc8229202c3a5b0b95e35e4f8a1d693ffdc97db707327a1248",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "ee5b66d539d1fff7542a156575d62145d504a2832ed334647616e58963808e7f",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "allowed_bridge_source_changes": [
+    "Frontend.cpp",
+    "Frontend.h",
+    "MathSDK.cpp"
+  ],
+  "candidate_source_paths": [
+    "utils/ci/check-cpp-not-fn-pointer-default-clean216.py",
+    "utils/ci/cpp-not-fn-pointer-default-clean216-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "utils/ci/FrontendProtocolDriver.cpp",
+    "tests/neverc/TranslateTests.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/IsolateSymbols.py",
+    "neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py"
+  ],
+  "source_repair_commit": "da5e310067660bfe1cc643e62c01b9fb7ce4da2c",
+  "target_abis": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "arm64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "i686-pc-windows-msvc",
+    "i686-unknown-linux-gnu"
+  ],
+  "cases": [
+    {
+      "name": "ordinary-source-cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept",
+      "original_name": "cstddef-predefines"
+    },
+    {
+      "name": "ordinary-source-pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "expected": "accept",
+      "original_name": "pair-piecewise-scalars"
+    },
+    {
+      "name": "ordinary-source-tuple-get",
+      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
+      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
+      "expected": "accept",
+      "original_name": "tuple-get"
+    },
+    {
+      "name": "ordinary-source-not-fn-function-pointer",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || f(7) || calls != 3;\n}\n",
+      "source_sha256": "ce1ac4c7924c372992ca2c0a78575abf2961643a1324838d0558cdb8eadf71a3",
+      "expected": "accept",
+      "original_name": "not-fn-function-pointer"
+    },
+    {
+      "name": "ordinary-source-not-fn-copied-state",
+      "category": "runtime",
+      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { ++calls; state += x; return state > 5; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
+      "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
+      "expected": "reject",
+      "original_name": "not-fn-copied-state"
+    },
+    {
+      "name": "ordinary-source-not-fn-four-cvref-calls",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <utility>\nint path;\nstruct P {\n  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }\n  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }\n  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }\n  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }\n};\nint main() {\n  auto a = std::not_fn(P{});\n  const auto b = std::not_fn(P{});\n  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;\n  return path != 1234;\n}\n",
+      "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
+      "expected": "reject",
+      "original_name": "not-fn-four-cvref-calls"
+    },
+    {
+      "name": "ordinary-source-not-fn-reference-wrapper",
+      "category": "runtime",
+      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x) { value += x; return value > 4; }\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
+      "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
+      "expected": "reject",
+      "original_name": "not-fn-reference-wrapper"
+    },
+    {
+      "name": "ordinary-source-not-fn-custom-negation-result",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
+      "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
+      "expected": "reject",
+      "original_name": "not-fn-custom-negation-result"
+    },
+    {
+      "name": "ordinary-source-not-fn-reference-arguments",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nbool update(int &x, const int &y) { ++calls; x += y; return x != 0; }\nint main() {\n  auto f = std::not_fn(&update);\n  int x = -3, y = 3;\n  if (!f(x,y) || x != 0 || calls != 1) return 1;\n  if (f(x,y) || x != 3 || calls != 2) return 2;\n  return 0;\n}\n",
+      "source_sha256": "1d5fed7302c89abf23b882a064afce68f4c65bf7cf92118313f28b4499260dbc",
+      "expected": "accept",
+      "original_name": "not-fn-reference-arguments"
+    },
+    {
+      "name": "ordinary-source-not-fn-move-only-cleanup",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <utility>\nint moves, live, destroyed;\nstruct P {\n  int value;\n  P(int x) : value(x) { ++live; }\n  P(const P &) = delete;\n  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }\n  ~P() { --live; ++destroyed; }\n  bool operator()(int x) { return value == x; }\n};\nint main() {\n  {\n    P source(5);\n    auto f = std::not_fn(std::move(source));\n    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;\n  }\n  return live != 0 || destroyed != 2;\n}\n",
+      "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
+      "expected": "reject",
+      "original_name": "not-fn-move-only-cleanup"
+    },
+    {
+      "name": "ordinary-source-not-fn-nested-adapters",
+      "category": "runtime",
+      "source": "#include <functional>\nint calls;\nint value(int x) { ++calls; return x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(&value));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
+      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
+      "expected": "reject",
+      "original_name": "not-fn-nested-adapters"
+    },
+    {
+      "name": "ordinary-source-not-fn-factory-effects",
+      "category": "runtime",
+      "source": "#include <functional>\nint builds, calls, destroyed;\nstruct P {\n  int value;\n  bool operator()(int x) { ++calls; return x == value; }\n  ~P() { ++destroyed; }\n};\nP make(int &n) { ++n; ++builds; return P{n}; }\nint main() {\n  int n = 3;\n  {\n    auto f = std::not_fn(make(n));\n    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;\n    if (destroyed != 1) return 2;\n  }\n  return destroyed != 2;\n}\n",
+      "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
+      "expected": "reject",
+      "original_name": "not-fn-factory-effects"
+    },
+    {
+      "name": "ordinary-source-not-fn-signature-queries",
+      "category": "runtime",
+      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nbool value(int x) noexcept { return x > 0; }\nint main() {\n  auto f = std::not_fn(&value);\n  using F = decltype(f);\n  static_assert(std::is_same<decltype(f(1)), bool>::value, \"negation result\");\n  static_assert(std::is_nothrow_invocable<F &,int>::value, \"mutable lvalue\");\n  static_assert(std::is_nothrow_invocable<const F &,int>::value, \"const lvalue\");\n  static_assert(std::is_nothrow_invocable<F &&,int>::value, \"mutable rvalue\");\n  static_assert(std::is_nothrow_invocable<const F &&,int>::value, \"const rvalue\");\n  static_assert(!noexcept(std::not_fn(&value)), \"factory exception signature\");\n  if (f(1) || !f(0)) return 1;\n  return 0;\n}\n",
+      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
+      "expected": "accept",
+      "original_name": "not-fn-signature-queries"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-factory-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class Enable> auto not_fn(F&&);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "d4980d6869d0881646c06ea6ea8cf5155ee0c77bc51d7f2abc11ef96c60c7de6",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-factory-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-carrier-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F> struct __not_fn_t;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "dacfeb6dc00f1224b5d0a92dccc727d528239d0be826f191fdd166fa46062a4a",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-carrier-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-forwarder-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class Op, class Indices, class... Bound> struct __perfect_forward_impl;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "ef47d33af1be1f2eb373fb832b74954b886732579ac66f3fa7e9fde7e51ef5ff",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-forwarder-primary-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-operation-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct __not_fn_op;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "0c361602607eaf4ef1e0ac164ffa00f65fdcc8d22611e9886a00bdf21b96f708",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-operation-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-tuple-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class... T> class tuple;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "875434ee3e6fe376ff75bcb1837dd23b02284b14b4e2660ee0ff17ad7cd85212",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-tuple-primary-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-tuple-leaf-primary-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class T, bool Empty> class __tuple_leaf;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "7e8f593431b392e3a8ba089d543426a3bc355db4039cf3ebd518856edbd8463b",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-tuple-leaf-primary-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-forward-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr T&& forward(__libcpp_remove_reference_t<T>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "e365699a77c6f9f464a0bd8fa83c53307da7eb9c2da2e2391644cbbb046c41f6",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-forward-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-move-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr __libcpp_remove_reference_t<T>&& move(T&&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return std::move(f)(3) || !std::move(f)(4) || calls != 2;\n}\n",
+      "source_sha256": "c6f713bbf8e2fd75b9ea4b5d44e6f2b26992c868cc933b30d4f2091c967f3210",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-move-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-get-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class... T> constexpr typename tuple_element<I, tuple<T...>>::type& get(tuple<T...>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "92724d22d5ee6d91147511efe4c808379777a6031e0b5e5ad4f38a7709eb831e",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-get-redeclaration"
+    },
+    {
+      "name": "ordinary-source-not-fn-not-fn-invoke-redeclaration",
+      "category": "guards",
+      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class... A> invoke_result_t<F,A...> invoke(F&&,A&&...) noexcept(is_nothrow_invocable_v<F,A...>);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
+      "source_sha256": "963411ddb31c1a2bd86e25f6569990d93b0fa2a08604c71ca5b0ba065f30bf88",
+      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
+      "expected": "reject",
+      "original_name": "not-fn-not-fn-invoke-redeclaration"
+    },
+    {
+      "name": "ordinary-source-ordinary-default-source",
+      "expected": "accept",
+      "source": "template<class T, class U=T> int ordinary_source_default(T x){return x;}\nint main(){return ordinary_source_default(3)!=3;}\n",
+      "source_sha256": "d2b7aec9ecd08dd8a677077837ca635e57212bc431ba07d75f91748c8f7e6ac9",
+      "original_name": "ordinary-default-source",
+      "sdk_dependencies_may_be_empty": true
+    },
+    {
+      "name": "ordinary-source-ordinary-failed-source",
+      "expected": "invalid",
+      "source": "template<class T> int ordinary_source_failed(T){return 0;}\nint main(){return ordinary_source_failed();}\n",
+      "source_sha256": "50fb246eb58b5b57ade4e9dcf58c6e81677cac1e4e823ec45b369c133bd9647b",
+      "original_name": "ordinary-failed-source"
+    },
+    {
+      "name": "not-fn-pointer-factory-argument-once",
+      "source": "#include <functional>\nint builds, calls, arguments;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nusing FP = bool (*)(int);\nFP choose() { ++builds; return &odd; }\nint argument(int x) { ++arguments; return x; }\nint main() {\n  auto f = std::not_fn(choose());\n  const bool first = f(argument(3));\n  const bool second = f(argument(4));\n  return first || !second || builds != 1 || calls != 2 || arguments != 2;\n}\n",
+      "source_sha256": "2663fceaf5b2f3c446be6beb918b22f52a8a92981071ec53962d3e12a029cdbf",
+      "expected": "accept"
+    },
+    {
+      "name": "not-fn-pointer-four-cvref",
+      "source": "#include <functional>\n#include <utility>\nint calls;\nbool odd(int x) noexcept { ++calls; return (x & 1) != 0; }\nint main() {\n  auto a = std::not_fn(&odd);\n  const auto b = std::not_fn(&odd);\n  const bool lvalue = a(3);\n  const bool constant_lvalue = b(4);\n  const bool rvalue = std::move(a)(5);\n  const bool constant_rvalue = std::move(b)(6);\n  return lvalue || !constant_lvalue || rvalue || !constant_rvalue || calls != 4;\n}\n",
+      "source_sha256": "898831e9711440b59c6c1b164322388777e677e6e512d1df783f78d2b144630b",
+      "expected": "accept"
+    }
+  ],
+  "original_pair_component_commit": "f7f0bfec9885e5eea79faa2a5243d207b2eef3bc",
+  "original_pair_report_sha256": "48dbee2debc2aa113e275cfafe778527cf473166b05ff3f12faa4ab2f406d8d1",
+  "original_ordinary_component_commit": "18c5eee6a23b39af6a0244c59ba2d77e2406b71e",
+  "original_ordinary_report_sha256": "a78084c5f2ab8c8dc1bcad1443274da5efea062d8e72232c42ee6bc2ac4ac164",
+  "required_requests": 216,
+  "original_pair_requests": 0,
+  "original_pair_positive_acceptances": 0,
+  "original_pair_guard_rejections": 0,
+  "not_fn_source_requests": 25,
+  "required_acceptances": 72,
+  "required_sdk_guard_rejections": 80,
+  "required_unimplemented_not_fn_runtime_refusals": 56,
+  "required_failed_substitutions": 8,
+  "ordinary_default_positive_strengthened": true,
+  "source_trace_included": false,
+  "original_guards_modified": false,
+  "private_not_fn_admission_implemented": true,
+  "not_fn_lowering_implemented": true,
+  "original_public_c_entry_abi_unchanged": true,
+  "frontend_execution_timeout_seconds": 60,
+  "all_binaries_and_full_archives_remote_only": true,
+  "clean_source_basis": "da5e310067660bfe1cc643e62c01b9fb7ce4da2c",
+  "inverse_source_edits": {},
+  "source_matrix_parent_commit": "d8e62323e2c2d6c41e91728a0f7d6e50897e6532",
+  "source_matrix_parent_report_sha256": "aa3fc86c7df89be043bc03414fcaed3b6d579e8c7746be81849c57a4cf10e159",
+  "original_25_source_inputs_preserved": true,
+  "original_source_closure_observation_commit": "4f4c1925a8034581dd411f7a337aadcafecda5f5",
+  "original_source_closure_report_sha256": "1260f6ffa00cf2d5e264cad7786c51b38cd29ea3b68989c3736a45a9609ac908",
+  "direct_sdk_constraint_collection_implemented": true,
+  "sdk_packets_grant_generic_permission": false,
+  "actual_source_closure_verified": false,
+  "internal_frontend_header_changed": true,
+  "requires_all_five_bridge_units_recompiled": true,
+  "entry_c_abi_or_upstream_changed": false,
+  "not_fn_private_support_complete": false,
+  "function_pointer_positive_acceptance_required": true,
+  "original_constraint_collection_component": "da39600dc05b5e9b5c0b41ea6f4fe2c20a281096",
+  "original_constraint_collection_report_sha256": "8aaa6a026799fd03e4c308a21dca91f0f3e311852d6f0ef80c0dda282c756317",
+  "selected_from_original_25": false,
+  "all_selected_source_bytes_preserved": true,
+  "source_diagnostic_only": true,
+  "actual_25_failure_parent": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+  "actual_25_failure_report_sha256": "0d82c9f8adaab735c8cb59c16350a9aac20f842d56e065f00cd0942c1746b22a",
+  "producer_actual_job": 118973689496,
+  "producer_attempt": 1,
+  "producer_expected_run_conclusion": "failure",
+  "graph_budget_observation_only": false,
+  "unchanged_graph_node_limit": 200000,
+  "unchanged_graph_depth_limit": 64,
+  "actual_parent_observation_report_sha256": "c5a1752248c71b739551d17847a77d7f48ac393081bb781feadba1d2c6679627",
+  "actual_constructor_root_packet_observation": true,
+  "constructor_constraint_binding_observation": true,
+  "selected_conditional_observation_only": false,
+  "selected_constructor_and_invoke_dependency_observation": true,
+  "parent_exact_syntax_still_required": true,
+  "parameter_and_indirect_call_observation_only": false,
+  "positive_signature_source_completion_required": true,
+  "actual_leaf_and_inert_helper_collection_observation_only": false,
+  "actual_selected_invoke_signature_observation_only": false,
+  "actual_helper_parameter_observation_only": false,
+  "corrected_diagnostic_decl_dump_only": true,
+  "actual_written_primary_parameter_observation_only": false,
+  "actual_traversal_observation_only": false,
+  "public_invoke_selected_source_binding_required": true,
+  "actual_public_invoke_parent_trace_commit": "7a00466e54291090e274b04d7e78aa9fabdc04fc",
+  "original_five_all_acceptance_expectations_preserved": true,
+  "actual_original_five_proof": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/next-not-fn/not-fn-pointer-nested-invoke-replay-artifact-validation.json",
+  "actual_original_five_report_sha256": "36cb37311bf4a2e7f2479e815edd3e4c8d2ed81f14bd4e4d033609aee96ffb05",
+  "required_original_subset_requests": 200,
+  "required_original_subset_acceptances": 56,
+  "required_additional_golden_acceptances": 16,
+  "actual_same_source_six_report_sha256": "51151aa79460f22ae433c182266ac9fd8d4d50dfbb64ab1e521943e30f9e8c0e",
+  "actual_original_eight_report_sha256": "95b639cb9896b787c242fdc6084337c0673864ae46ffec54ce63afe69bdf12fb",
+  "only_signature_expectation_changed": true
+}
