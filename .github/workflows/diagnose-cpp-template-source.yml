@@ -107,7 +107,7 @@ jobs:
       != 'not-fn-pointer-statement-depth-trace' && inputs.fixture_group != 'not-fn-pointer-clean-200'
       && inputs.fixture_group != 'current-elf-combined-808' && inputs.fixture_group
       != 'not-fn-pointer-storage-layout-trace' && inputs.fixture_group != 'not-fn-pointer-input-alias-forwarding-trace'
-      }}
+      && inputs.fixture_group != 'not-fn-pointer-input-alias-forwarding-trace' }}
   recovery-macos:
     runs-on: macos-15
     strategy:
@@ -1329,6 +1329,7 @@ jobs:
         - not-fn-pointer-clean-200
         - current-elf-combined-808
         - not-fn-pointer-storage-layout-trace
+        - not-fn-pointer-input-alias-forwarding-trace
         - not-fn-pointer-input-alias-forwarding-trace
   push:
     branches:

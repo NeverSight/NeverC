@@ -10524,7 +10524,8 @@ public:
       // _Fp is the deduction result; the actual parameter is _Fp&&.
       // Reference collapsing preserves lvalues and forwards rvalues with the
       // original const qualification. Do not change the template argument.
-      const auto ForwardedCallable = Context.getRValueReferenceType(Bound);
+      const auto ForwardedCallable = Method->getRefQualifier() == RQ_RValue
+          ? Context.getRValueReferenceType(Bound) : Bound;
       if (!([&] {
         const bool Observed = Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable);
         std::fprintf(stderr, "NOT_FN_FORWARDED_PARAMETER result=%u qualifier=%s function=%p\n",
@@ -10533,12 +10534,12 @@ public:
         F->getParamDecl(0)->getType().dump(llvm::errs(), Context);
         ForwardedCallable.dump(llvm::errs(), Context);
         return Observed;
-      })()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10521\n"); return false; }
+      })()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10522\n"); return false; }
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10526\n"); return false; }
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10527\n"); return false; }
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -10550,19 +10551,19 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10538\n"); return false; }
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10539\n"); return false; }
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10540\n"); return false; }
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10541\n"); return false; }
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10542\n"); return false; }
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10543\n"); return false; }
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10547\n"); return false; }
+      if (!Selected) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10548\n"); return false; }
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10550\n"); return false; }
+    if (Functions.size() != 1 || Uses.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10551\n"); return false; }
     const auto *F = *Functions.begin();
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
@@ -10575,7 +10576,7 @@ public:
     const auto *ReturnCall = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
-        ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10563\n"); return false; }
+        ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10564\n"); return false; }
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -10586,7 +10587,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnIndirectSignature(ReturnCall) || !notFnInvokeForwardedCall(ExceptionCall))
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10574\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10575\n"); return false; }
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -10594,18 +10595,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10582\n"); return false; }
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10583\n"); return false; }
     }
-    if (!function(F)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10584\n"); return false; }
+    if (!function(F)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10585\n"); return false; }
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10591\n"); return false; }
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10592\n"); return false; }
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10593\n"); return false; }
+      if (!notFnInvokeParameter(Parameter)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10594\n"); return false; }
     CompletedNotFnInvokeSignatures.insert(F);
     NotFnInvokeUses = std::move(Uses);
     return !Failed;
@@ -10619,19 +10620,19 @@ public:
         !Operation || !Arguments || NotFnInvokeSignature || NotFnInvokeWrittenPattern ||
         NotFnOperationInvokeSignatureActive || Arguments->size() != 1 ||
         Arguments->get(0).getKind() != TemplateArgument::Pack ||
-        Arguments->get(0).pack_size() != Operation->getNumParams()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10607\n"); return false; }
+        Arguments->get(0).pack_size() != Operation->getNumParams()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10608\n"); return false; }
     const auto Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10614\n"); return false; }
+          Types->get(1).pack_size() != Pack.size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10615\n"); return false; }
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10619\n"); return false; }
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10620\n"); return false; }
       return true;
     };
     if (NotFnOperationInvokeFunction)
@@ -10664,18 +10665,18 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10652\n"); return false; }
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10653\n"); return false; }
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10657\n"); return false; }
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10658\n"); return false; }
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10658\n"); return false; }
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10659\n"); return false; }
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10663\n"); return false; }
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10664\n"); return false; }
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -10687,19 +10688,19 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10675\n"); return false; }
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10676\n"); return false; }
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10677\n"); return false; }
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10678\n"); return false; }
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10679\n"); return false; }
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10680\n"); return false; }
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10684\n"); return false; }
+      if (!Selected) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10685\n"); return false; }
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10687\n"); return false; }
+    if (Functions.size() != 1 || Uses.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10688\n"); return false; }
     const auto *F = *Functions.begin();
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
@@ -10720,7 +10721,7 @@ public:
           Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Cached->getBeginLoc(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10708\n"); return false; }
+          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10709\n"); return false; }
       ExceptionSource = Written;
     }
     const auto *Exception = ExceptionSource
@@ -10729,7 +10730,7 @@ public:
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
         !isa<CXXOperatorCallExpr>(ReturnCall) || !isa<CXXOperatorCallExpr>(ExceptionCall) ||
-        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10717\n"); return false; }
+        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10718\n"); return false; }
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -10742,7 +10743,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnOperationQueryCall(ReturnCall) || !notFnOperationInvokeForwardedCall(ExceptionCall))
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10730\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10731\n"); return false; }
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -10750,18 +10751,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10738\n"); return false; }
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10739\n"); return false; }
     }
-    if (!function(F)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10740\n"); return false; }
+    if (!function(F)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10741\n"); return false; }
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10747\n"); return false; }
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10748\n"); return false; }
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10749\n"); return false; }
+      if (!notFnInvokeParameter(Parameter)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10750\n"); return false; }
     // These exact declaration-only calls are published only after both the
     // selected and primary written signatures have passed this same graph.
     // Runtime bodies, forwarding, negation and lifetime remain separate.
@@ -10776,15 +10777,15 @@ public:
         isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
         !family(R) || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
-        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10764\n"); return false; }
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10765\n"); return false; }
     const auto Self = Context.getRecordType(Definition);
     const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
     unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
     for (const auto *Declaration : Definition->decls()) {
-      if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10769\n"); return false; }
+      if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10770\n"); return false; }
       if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
         if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
-            Name->getDeclContext() != Definition || !family(Name)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10772\n"); return false; }
+            Name->getDeclContext() != Definition || !family(Name)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10773\n"); return false; }
         continue;
       }
       const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
@@ -10793,20 +10794,20 @@ public:
           Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
           Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
           Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
-          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10781\n"); return false; }
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10782\n"); return false; }
       for (const auto *Parameter : Member->parameters())
         if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
-            !Context.hasSameType(Parameter->getType(), ConstantReference)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10784\n"); return false; }
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10785\n"); return false; }
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
         if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
         else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
-        else { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10788\n"); return false; }
+        else { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10789\n"); return false; }
       } else if (isa<CXXDestructorDecl>(Member)) {
-        if (Member->getNumParams()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10790\n"); return false; }
+        if (Member->getNumParams()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10791\n"); return false; }
         ++Destroy;
       } else {
         if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
-            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10794\n"); return false; }
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10795\n"); return false; }
         ++Assign;
       }
     }
@@ -10881,17 +10882,17 @@ public:
         Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
         (OperationDependency ? !NotFnOperationTryResultUses.empty()
-                             : !NotFnTryResultUses.empty())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10869\n"); return false; }
+                             : !NotFnTryResultUses.empty())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10870\n"); return false; }
     const auto *Operation = OperationDependency ? NotFnPublicOperation : nullptr;
     const auto *OperationArguments = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
     if (OperationDependency && (Depth != 0 || Failed || NotFnOperationQuery ||
         !Operation || !OperationArguments || OperationArguments->size() != 1 ||
         OperationArguments->get(0).getKind() != TemplateArgument::Pack ||
         OperationArguments->get(0).pack_size() != Operation->getNumParams() ||
-        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10876\n"); return false; }
+        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10877\n"); return false; }
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10879\n"); return false; }
+    else if (Method->getRefQualifier() != RQ_RValue) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10880\n"); return false; }
     if (OperationDependency) Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = OperationDependency ? OperationArguments->get(0).pack_elements()
                                           : Arguments->get(0).pack_elements();
@@ -10899,18 +10900,18 @@ public:
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10887\n"); return false; }
+          Types->get(1).pack_size() != Pack.size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10888\n"); return false; }
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10892\n"); return false; }
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10893\n"); return false; }
       return true;
     };
     std::set<const FunctionDecl *> Functions;
     std::map<const CallExpr *, const FunctionDecl *> Uses;
     for (const auto *Source : Sources) {
-      if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10898\n"); return false; }
+      if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10899\n"); return false; }
       const auto *F = Source ? dyn_cast_or_null<CXXMethodDecl>(Source->Declaration) : nullptr;
       if (!F || !F->getIdentifier() || F->getName() != "__try_call" ||
           !BoundArguments(F->getTemplateSpecializationArgs()) || F->isVariadic() ||
@@ -10940,24 +10941,24 @@ public:
           !Source->Canonical || !Source->Sugared || !BoundArguments(Source->Canonical) ||
           !BoundArguments(Source->Sugared) || !family(F) || !family(Owner) || !family(OwnerPrimary) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10928\n"); return false; }
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10929\n"); return false; }
       const auto OwnerPack = Owner->getTemplateArgs()[2].pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (OwnerPack[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10932\n"); return false; }
+            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10933\n"); return false; }
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10936\n"); return false; }
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10937\n"); return false; }
       const auto *Definition = Owner->getDefinition();
       if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
-          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10939\n"); return false; }
+          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10940\n"); return false; }
       const TypeAliasDecl *Result = nullptr;
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10942\n"); return false; }
+        if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10943\n"); return false; }
         const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
-        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10945\n"); return false; }
+        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10946\n"); return false; }
         Result = Alias;
       }
       const auto *ResultType = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
@@ -10971,22 +10972,22 @@ public:
           E->isTypeDependent() || E->isValueDependent() ||
           Reference->getExprLoc() != Source->Location ||
           !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10959\n"); return false; }
+          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10960\n"); return false; }
       bool Selected = false;
       for (const auto *Selection : Selections) {
-        if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10962\n"); return false; }
+        if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10963\n"); return false; }
         if (Selection && Selection->Function == F && Selection->Expression == E &&
             Selection->Location == Source->Location && Selection->FunctionalNotFnConstraint &&
             matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
       }
-      if (!Selected) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10967\n"); return false; }
+      if (!Selected) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10968\n"); return false; }
       const auto *Return = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
       const auto *Invoke = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
       if (!Invoke || (OperationDependency
           ? (!NotFnOperationInvokeUses.count(Invoke) ||
              Invoke->getDirectCallee() != NotFnOperationInvokeFunction)
           : (!NotFnInvokeUses.count(Invoke) ||
-             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10974\n"); return false; }
+             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10975\n"); return false; }
       // This declaration-only probe is used solely by the actual _Result
       // decltype. Close every real signature and member-template ancestor;
       // no runtime body is supplied or approved. The original class arguments
@@ -10994,7 +10995,7 @@ public:
       for (const auto *Template = Primary; Template;
            Template = Template->getInstantiatedFromMemberTemplate()) {
         if (!step() || !family(Template) ||
-            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10982\n"); return false; }
+            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10983\n"); return false; }
         const auto *Parameters = Template->getTemplateParameters();
         const auto *First = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
         const auto *Rest = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
@@ -11005,13 +11006,13 @@ public:
             (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
             !Pattern->isStatic() || Pattern->getNumParams() != 1 || Pattern->isVariadic() ||
             Pattern->hasBody() || Pattern->getParamDecl(0)->hasDefaultArg() ||
-            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10993\n"); return false; }
+            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10994\n"); return false; }
         for (const auto *Declaration : Pattern->redecls()) {
           const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
           if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
               Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
               !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-              !function(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=10999\n"); return false; }
+              !function(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11000\n"); return false; }
         }
       }
       for (const auto *Declaration : F->redecls()) {
@@ -11019,12 +11020,12 @@ public:
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-            !function(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11007\n"); return false; }
+            !function(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11008\n"); return false; }
       }
       const CXXMethodDecl *Fallback = nullptr;
       const CXXRecordDecl *Sentinel = nullptr;
       for (const auto *Witness : Sources) {
-        if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11012\n"); return false; }
+        if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11013\n"); return false; }
         const auto *Candidate = Witness ? dyn_cast_or_null<CXXMethodDecl>(Witness->Declaration) : nullptr;
         if (!Candidate || Candidate->getParent() != Owner || Candidate->getDeclName() != F->getDeclName() ||
             !Candidate->isVariadic() || Candidate->getNumParams() ||
@@ -11040,11 +11041,11 @@ public:
             Witness->Instantiation || Witness->Origin || Witness->WrittenStorageClass || Witness->Selection ||
             !BoundArguments(Witness->Canonical) || !BoundArguments(Witness->Sugared) ||
             !family(Candidate) || !notFnResultSentinelDefinition(R) ||
-            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11028\n"); return false; }
+            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11029\n"); return false; }
         for (unsigned I = 0; I < Witness->Canonical->size(); ++I)
           if (!Witness->Canonical->get(I).structurallyEquals(Candidate->getTemplateSpecializationArgs()->get(I)) ||
               !Witness->Canonical->get(I).structurallyEquals(
-                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11032\n"); return false; }
+                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11033\n"); return false; }
         // The unselected ellipsis candidate supplies a type identity only.
         // Its actual packet and every original member-template declaration
         // must close; no call selection or runtime body is invented for it.
@@ -11058,7 +11059,7 @@ public:
               !Rest->isParameterPack() || First->getIndex() != 0 || Rest->getIndex() != 1 ||
               First->hasDefaultArgument() || Rest->hasDefaultArgument() || !family(First) || !family(Rest) ||
               !Pattern || (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
-              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11046\n"); return false; }
+              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11047\n"); return false; }
           for (const auto *Declaration : Pattern->redecls()) {
             const auto *Info = Declaration->getTypeSourceInfo();
             const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -11067,10 +11068,10 @@ public:
                 !Prototype->isVariadic() || Prototype->getNumParams() ||
                 Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
                 !Context.hasSameType(Info->getType(), Declaration->getType()) ||
-                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11055\n"); return false; }
+                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11056\n"); return false; }
             for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                     Prototype->getEllipsisLoc()})
-              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11058\n"); return false; }
+              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11059\n"); return false; }
           }
         }
         const auto *Info = Candidate->getTypeSourceInfo();
@@ -11079,20 +11080,20 @@ public:
         if (!Location || !Prototype || !Prototype->isVariadic() || Prototype->getNumParams() ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !Context.hasSameType(Info->getType(), Candidate->getType()) ||
-            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11067\n"); return false; }
+            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11068\n"); return false; }
         for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                 Prototype->getEllipsisLoc()})
-          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11070\n"); return false; }
+          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11071\n"); return false; }
         Fallback = Candidate;
         Sentinel = R->getCanonicalDecl();
       }
-      if (!Fallback || !Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11074\n"); return false; }
+      if (!Fallback || !Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11075\n"); return false; }
       const auto Inserted = NotFnResultSentinels.emplace(Result, Sentinel);
-      if (!Inserted.second && Inserted.first->second != Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11076\n"); return false; }
+      if (!Inserted.second && Inserted.first->second != Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11077\n"); return false; }
       Uses.emplace(E, F);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty() || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11080\n"); return false; }
+    if (Functions.size() != 1 || Uses.empty() || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11081\n"); return false; }
     // The operation dependency has a distinct selected identity and use set.
     // Reuse all original packet, primary, signature and sentinel obligations;
     // a helper name or a matching result type supplies no permission.
@@ -11114,19 +11115,19 @@ public:
         Storage.Tuple != NotFnFactoryDefaults->Selected.Storage.Tuple ||
         !Context.hasSameType(Storage.CallableType, NotFnCallableType) ||
         !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11102\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11103\n"); return false; }
     const auto Input = Query->getArg(1)->getType();
     if (!Input->isRValueReferenceType() ||
-        !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11105\n"); return false; }
+        !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11106\n"); return false; }
     const auto Found = OperationTraits.find(Query);
-    if (Found == OperationTraits.end()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11107\n"); return false; }
+    if (Found == OperationTraits.end()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11108\n"); return false; }
     const auto &Source = Found->second;
     const auto *Root = Source.Root
         ? dyn_cast<CXXConstructExpr>(Source.Root->IgnoreParenImpCasts()) : nullptr;
     if (!Source.Attempted || !Source.Complete || !Root || Source.Operands.size() != 1 ||
         Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
         Source.DestructionExceptionAttempted ||
-        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11114\n"); return false; }
+        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11115\n"); return false; }
     const auto *Constructor = Root->getConstructor();
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
@@ -11134,7 +11135,7 @@ public:
           Constructor->getParent()->getCanonicalDecl() == Storage.Tuple->getCanonicalDecl())
         Selected = true;
     if (!Selected || Constructor->getNumParams() != 1 ||
-        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11122\n"); return false; }
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11123\n"); return false; }
     // This is the actual retained query for an already described runtime
     // construction, not a copy/move special member or a generic SDK grant.
     // The callback still authenticates the original variable packet before
@@ -11154,7 +11155,7 @@ public:
         NotFnConstructorReturn || !Constructor || !Written ||
         Written != Constructor->getTypeSourceInfo() || !family(Constructor) ||
         !Constructor->getPrimaryTemplate() || !Constructor->getReturnType()->isVoidType())
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11142\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11143\n"); return false; }
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions) {
       const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
@@ -11166,7 +11167,7 @@ public:
     const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
     if (!Selected || !Prototype || !Return ||
         !Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType())
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11154\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11155\n"); return false; }
     // Clang's actual selected constructor carries a void return TypeLoc, but
     // constructors have no written return token. Bind only that precise slot;
     // all parameters, defaults, noexcept and other locations keep their proof.
@@ -11181,13 +11182,13 @@ public:
   }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
-        NotFnConstraintVariableSource || !Source) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11169\n"); return false; }
+        NotFnConstraintVariableSource || !Source) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11170\n"); return false; }
     NotFnConstraintVariableSource = std::move(Source);
     return true;
   }
   bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11175\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11176\n"); return false; }
     NotFnFactoryDefaults = &Factory;
     return true;
   }
@@ -11206,18 +11207,18 @@ public:
     if (const auto *Sentinel = notFnResultSentinelAlias(Location.getTypePtr())) {
       if (Location.getNumArgs() != 2 ||
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
-          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11194\n"); return false; }
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11195\n"); return false; }
       const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
       const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
       const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
       if (!First || !Second || !Record ||
           First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
           Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
-          Record->getCanonicalDecl() != Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11201\n"); return false; }
+          Record->getCanonicalDecl() != Sentinel) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11202\n"); return false; }
       for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11205\n"); return false; }
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11206\n"); return false; }
       NotFnResultWrittenArgument = Second;
       NotFnResultWrittenSentinel = Sentinel;
     }
@@ -11234,7 +11235,7 @@ public:
     if (T.isNull()) return true;
     if (!step() || T.isVolatileQualified() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default)
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11222\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11223\n"); return false; }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
       return true;
     if (Mode == UtilityTupleQueryMode::CatSignature && CatInputFunction)
@@ -11245,11 +11246,11 @@ public:
         if (Bound != CatOwnerAtoms.end()) {
           for (const auto &[Owner, Slot] : Bound->second) {
             if (!CatInputOwners.count(Owner->getCanonicalDecl()) ||
-                Slot >= Owner->getTemplateArgs().size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11233\n"); return false; }
+                Slot >= Owner->getTemplateArgs().size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11234\n"); return false; }
             const auto &Argument = Owner->getTemplateArgs()[Slot];
             const auto *Input = Argument.getKind() == TemplateArgument::Type
                 ? Context.getBaseElementType(Argument.getAsType())->getAsCXXRecordDecl() : nullptr;
-            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11237\n"); return false; }
+            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11238\n"); return false; }
           }
           return true;
         }
@@ -11262,7 +11263,7 @@ public:
   }
   bool TraverseStmt(Stmt *E) {
     if (!E) return true;
-    if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11250\n"); return false; }
+    if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11251\n"); return false; }
     if (!Expressions.insert(E).second) return true;
     // RAV's dataTraverseStmtPre/Post already own this statement's depth.
     // Preserve existing accounting for the other query modes.
@@ -11284,12 +11285,12 @@ public:
             // Repair only this authenticated original projection wrapper.
             // The real builtin/alias name token must remain SDK source.
             if (!cstddefOrigin(S, SM, Named.getTemplateNameLoc(), "libcxx",
-                               "__tuple/make_tuple_types.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11272\n"); return false; }
+                               "__tuple/make_tuple_types.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11273\n"); return false; }
             for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
-              if (L.isInvalid()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11274\n"); return false; }
+              if (L.isInvalid()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11275\n"); return false; }
               const auto Origin = S.sdkFile(SM, L);
               if ((!Origin || Origin->Root != "libcxx") &&
-                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11277\n"); return false; }
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11278\n"); return false; }
             }
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
@@ -11307,7 +11308,7 @@ public:
       if ((!Origin || Origin->Root != "libcxx") &&
           !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
             functionalNotFnFactorySplitTypeEnd(
-                S, SM, Context, *NotFnFactoryDefaults, Location, L))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11295\n"); return false; }
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11296\n"); return false; }
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -11341,11 +11342,11 @@ public:
     ++Depth;
     if (step()) return true;
     --Depth;
-    { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11329\n"); return false; } // RAV skips this subtree; Failed still rejects the whole proof.
+    { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11330\n"); return false; } // RAV skips this subtree; Failed still rejects the whole proof.
   }
   bool dataTraverseStmtPost(Stmt *) { --Depth; return true; }
   bool VisitExpr(Expr *E) {
-    if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11333\n"); return false; }
+    if (!step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11334\n"); return false; }
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E))
       return Operands.count(Opaque) && !Opaque->getSourceExpr();
     const auto Origin = S.sdkFile(SM, E->getExprLoc());
@@ -11373,11 +11374,11 @@ public:
             TraverseType(Declaration->getUnderlyingType());
       }
     }
-    if (!family(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11361\n"); return false; }
+    if (!family(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11362\n"); return false; }
     if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
       if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
-        if (!*ViewAlias) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11364\n"); return false; }
-      } else if (!record(Owner)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11365\n"); return false; }
+        if (!*ViewAlias) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11365\n"); return false; }
+      } else if (!record(Owner)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11366\n"); return false; }
     }
     return Declaration->getTypeSourceInfo() &&
            TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
@@ -11391,7 +11392,7 @@ public:
   }
   bool VisitTemplateSpecializationType(TemplateSpecializationType *T) {
     const auto *Template = T->getTemplateName().getAsTemplateDecl();
-    if (!Template || !family(Template)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11379\n"); return false; }
+    if (!Template || !family(Template)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11380\n"); return false; }
     if (T->isTypeAlias()) {
       const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template);
       const auto *Declaration = Alias
@@ -11401,7 +11402,7 @@ public:
       if (Mode == UtilityTupleQueryMode::CatSignature && Alias &&
           Alias->getName() == "__make_indices_imp") return catIndexAlias(T, Alias);
       if (!Declaration || !Declaration->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11389\n"); return false; }
+          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11390\n"); return false; }
       return TraverseType(T->getAliasedType());
     }
     if (Template->getName() == "__make_tuple_types" && !T->isDependentType()) {
@@ -11411,17 +11412,17 @@ public:
       const bool NotFnTag = Mode == UtilityTupleQueryMode::CatSignature &&
           Bound != NotFnTupleTagSlices.end() && Bound->second.first == T;
       if (!NotFnTag && (T->template_arguments().size() != 1 ||
-          T->template_arguments()[0].getKind() != TemplateArgument::Type)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11399\n"); return false; }
+          T->template_arguments()[0].getKind() != TemplateArgument::Type)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11400\n"); return false; }
     }
     return T->isDependentType() || record(T->getAsCXXRecordDecl());
   }
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *D = E->getDecl();
     if (const auto *F = dyn_cast<FunctionDecl>(D)) {
-      if (!family(F) || !TraverseType(F->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11406\n"); return false; }
+      if (!family(F) || !TraverseType(F->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11407\n"); return false; }
       if (const auto *Arguments = F->getTemplateSpecializationArgs())
         for (const auto &A : Arguments->asArray())
-          if (!TraverseTemplateArgument(A)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11409\n"); return false; }
+          if (!TraverseTemplateArgument(A)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11410\n"); return false; }
       return true;
     }
     if (const auto *Parameter = dyn_cast<ParmVarDecl>(D)) {
@@ -11435,7 +11436,7 @@ public:
   }
   bool VisitMemberExpr(MemberExpr *E) { return value(E->getMemberDecl()); }
   bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
-    for (const auto *D : E->decls()) if (!family(D)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11423\n"); return false; }
+    for (const auto *D : E->decls()) if (!family(D)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11424\n"); return false; }
     return true;
   }
   bool VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
@@ -11454,7 +11455,7 @@ public:
     if (!step() || !Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != 1 || !Operand || Operand->getSourceExpr() ||
         Source.Operands[0] != Operand || !Operands.count(Operand) || Access->ObjectIsArrow ||
-        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11442\n"); return false; }
+        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11443\n"); return false; }
     // Only this actual SDK conversion family joins metadata. The SDK access
     // descriptor proves its pointer dereference; the pending ordinary query
     // must still finish the selected call and original exception source.
@@ -11462,7 +11463,7 @@ public:
     std::set<const CXXMethodDecl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11450\n"); return false; }
+      if (!Current || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11451\n"); return false; }
       if (!Family.insert(Current).second) continue;
       const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
       if (!isa<CXXConversionDecl>(Current) || !Current->isConst() || Current->isStatic() ||
@@ -11470,17 +11471,17 @@ public:
           Current->getNumParams() || Current->getPrimaryTemplate() ||
           !Prototype || !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
           !approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11458\n"); return false; }
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11459\n"); return false; }
       for (const auto *Redeclaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11463\n"); return false; }
+        if (!Member) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11464\n"); return false; }
         Pending.push_back(Member);
       }
       if (const auto *Definition = Current->getDefinition()) {
         if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
-            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11468\n"); return false; }
+            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11469\n"); return false; }
       }
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
@@ -11505,13 +11506,13 @@ public:
         Types->get(0).pack_size() != Operation->getNumParams() ||
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11493\n"); return false; }
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11494\n"); return false; }
     const auto Object = Context.getRecordType(Operation->getParent());
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
-        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11497\n"); return false; }
+        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11498\n"); return false; }
     std::vector<const CallExpr *> Declvals;
-    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11499\n"); return false; }
+    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11500\n"); return false; }
     const auto Inputs = Types->get(0).pack_elements();
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
@@ -11519,9 +11520,9 @@ public:
       if (Inputs[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Operand->getType(), Parameter.getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11507\n"); return false; }
+          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11508\n"); return false; }
     }
-    if (!family(Operation)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11509\n"); return false; }
+    if (!family(Operation)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11510\n"); return false; }
     // Exact original SDK declval nodes, owned by this proven metadata query.
     // Their bodies and all user/runtime calls retain their original rules.
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
@@ -11541,7 +11542,7 @@ public:
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         NotFnInvokeSignature->getNumParams() != Call->getNumArgs() ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11529\n"); return false; }
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11530\n"); return false; }
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParens()) : nullptr;
       const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -11559,12 +11560,12 @@ public:
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
         !Context.hasSameType(Receiver->getType(), Context.getConstType(Object)) ||
-        !Forward(Receiver->getSubExpr(), 0)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11547\n"); return false; }
+        !Forward(Receiver->getSubExpr(), 0)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11548\n"); return false; }
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
       if (!Forward(Call->getArg(I + 1), I + 1) ||
           !Context.hasSameType(Call->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
-          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11552\n"); return false; }
+          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11553\n"); return false; }
     }
     return family(Operation);
   }
@@ -11621,7 +11622,7 @@ public:
           !Context.hasSameType(Operand->getType(),
               Query->getArg(1)->getType().getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Query->getArg(1)->getType()))
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11609\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11610\n"); return false; }
       return function(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -11665,19 +11666,19 @@ public:
       if (!PairFunctions || !PairSelections || !step() ||
           PairConstructionAncestors.size() >= 64 ||
           std::find(PairConstructionAncestors.begin(), PairConstructionAncestors.end(), E) !=
-              PairConstructionAncestors.end()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11653\n"); return false; }
+              PairConstructionAncestors.end()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11654\n"); return false; }
       const auto Selected = PairSelections->find(E);
-      if (Selected == PairSelections->end() || Selected->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11655\n"); return false; }
+      if (Selected == PairSelections->end() || Selected->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11656\n"); return false; }
       for (const auto *Selection : Selected->second) {
         if (!Selection || Selection->Expression != E || Selection->Function != Constructor ||
             Selection->Location != PairTraitQuery->getExprLoc() ||
             !approvedUtilityPairTraitSelectionLocation(S, SM, Selection->Location, Constructor))
-          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11660\n"); return false; }
+          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11661\n"); return false; }
         const auto Sources = PairFunctions->find({Constructor, Selection->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11662\n"); return false; }
+        if (Sources == PairFunctions->end() || Sources->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11663\n"); return false; }
         for (const auto *Source : Sources->second)
           if (!Source || Source->Declaration != Constructor || Source->Written ||
-              Source->Location != Selection->Location) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11665\n"); return false; }
+              Source->Location != Selection->Location) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11666\n"); return false; }
       }
       const auto [Entry, Inserted] = PendingPairConstructions.emplace(E, PairTraitQuery);
       if (!Inserted) return Entry->second == PairTraitQuery && !Failed;
@@ -11728,7 +11729,7 @@ public:
           Prototype->getNoexceptExpr() ||
           approvedUtilityStringViewConstruction(S, SM, E, Context) !=
               UtilityStringViewConstruction::PointerAndSize)
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11716\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11717\n"); return false; }
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
         auto Input = PairTraitQuery->getArg(I + 1)->getType();
@@ -11738,7 +11739,7 @@ public:
             Constructor->getParamDecl(I)->hasDefaultArg() ||
             !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
             Operand->getValueKind() != Expr::getValueKindForType(Input))
-          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11726\n"); return false; }
+          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11727\n"); return false; }
       }
       return function(Constructor) && !Failed;
     }
@@ -11767,7 +11768,7 @@ public:
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           Constructor->getParamDecl(1)->hasDefaultArg() ||
           !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11755\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11756\n"); return false; }
       return function(Constructor) && !Failed;
     }
     const auto SavedOwnerUse = PairOwnerUse;
@@ -11781,13 +11782,13 @@ public:
         E->getNumArgs() != Constructor->getNumParams() ||
         !Context.hasSameUnqualifiedType(E->getType(),
             Context.getRecordType(Constructor->getParent())) ||
-        !specialMember(Constructor)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11769\n"); return false; }
+        !specialMember(Constructor)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11770\n"); return false; }
     for (const auto *Argument : E->arguments())
-      if (isa<CXXDefaultArgExpr>(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11771\n"); return false; }
+      if (isa<CXXDefaultArgExpr>(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11772\n"); return false; }
     return true;
   }
   bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
-    if (Operands.empty() || !E->getTemporary()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11775\n"); return false; }
+    if (Operands.empty() || !E->getTemporary()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11776\n"); return false; }
     const auto *Destructor = E->getTemporary()->getDestructor();
     const auto SavedOwnerUse = PairOwnerUse;
     if (Mode == UtilityTupleQueryMode::PairConstruction && PairTraitConstruction &&
@@ -11798,26 +11799,26 @@ public:
     auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
     return specialMember(Destructor);
   }
-  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11786\n"); return false; } }
-  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11787\n"); return false; } }
-  bool VisitCXXNewExpr(CXXNewExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11788\n"); return false; } }
-  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11789\n"); return false; } }
-  bool VisitLambdaExpr(LambdaExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11790\n"); return false; } }
+  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11787\n"); return false; } }
+  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11788\n"); return false; } }
+  bool VisitCXXNewExpr(CXXNewExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11789\n"); return false; } }
+  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11790\n"); return false; } }
+  bool VisitLambdaExpr(LambdaExpr *) { { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11791\n"); return false; } }
   bool pairDefaultFunctionFamily(const CXXConstructorDecl *Constructor,
                                   llvm::StringRef Path, bool OwnerPointer = false) {
     const auto *Record = Constructor ? Constructor->getParent() : nullptr;
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
-    if (!Record || !Primary) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11797\n"); return false; }
+    if (!Record || !Primary) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11798\n"); return false; }
     std::vector<const Decl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11802\n"); return false; }
+      if (!Declaration || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11803\n"); return false; }
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11805\n"); return false; }
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11806\n"); return false; }
       if (const auto *Member = dyn_cast<CXXConstructorDecl>(Declaration)) {
         const auto *Owner = Member->getParent();
         if ((OwnerPointer ? Member->isDefaultConstructor() || Member->getNumParams() != 1 ||
@@ -11826,7 +11827,7 @@ public:
             Member->isDeleted() || Member->isVariadic() ||
             (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
              Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl() &&
-             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11814\n"); return false; }
+             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11815\n"); return false; }
         for (const auto *Redeclaration : Member->redecls()) Pending.push_back(Redeclaration);
         if (OwnerPointer) Pending.push_back(Member->getParamDecl(0));
         if (const auto *Template = Member->getPrimaryTemplate()) Pending.push_back(Template);
@@ -11839,8 +11840,8 @@ public:
       } else if (const auto *Parameter = dyn_cast<ParmVarDecl>(Declaration)) {
         const auto *Owner = dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext());
         if (!OwnerPointer || !Owner || Owner->getNumParams() != 1 ||
-            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11827\n"); return false; }
-      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11828\n"); return false; }
+            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11828\n"); return false; }
+      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11829\n"); return false; }
     }
     // One exact retained element query supplies these signature identities.
     // A pointer constructor still closes its actual defaults and parameter source;
@@ -11857,7 +11858,7 @@ public:
         !Context.hasSameType(Arguments->get(0).getIntegralType(), Context.BoolTy) ||
         !Arguments->get(0).getAsIntegral().getBoolValue() ||
         Arguments->get(1).getKind() != TemplateArgument::Type ||
-        !Arguments->get(1).getAsType()->isVoidType()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11845\n"); return false; }
+        !Arguments->get(1).getAsType()->isVoidType()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11846\n"); return false; }
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto *Info = Default && Default->hasDefaultArgument()
@@ -11874,37 +11875,37 @@ public:
         Alias->getName() != "_EnableIfDeleterDefaultConstructible" ||
         Alias->getDeclContext() != Primary->getDeclContext() ||
         Use->template_arguments().size() != 1 ||
-        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11862\n"); return false; }
+        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11863\n"); return false; }
     const auto *Reference = dyn_cast<DeclRefExpr>(Use->template_arguments()[0].getAsExpr()->IgnoreParenImpCasts());
     const auto *True = dyn_cast<CXXBoolLiteralExpr>(Dummy->getDefaultArgument().getArgument().getAsExpr());
     if (!Reference || Reference->getDecl() != Dummy || !True || !True->getValue() ||
         True->getBeginLoc().isMacroID() || True->getEndLoc().isMacroID() ||
-        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11867\n"); return false; }
+        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11868\n"); return false; }
     std::vector<const Decl *> Pending{Alias};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11872\n"); return false; }
+      if (!Declaration || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11873\n"); return false; }
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11875\n"); return false; }
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11876\n"); return false; }
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Declaration)) {
-        if (Template->getTemplateParameters()->size() != 2) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11877\n"); return false; }
+        if (Template->getTemplateParameters()->size() != 2) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11878\n"); return false; }
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
         Pending.push_back(Template->getTemplatedDecl());
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11882\n"); return false; }
+      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11883\n"); return false; }
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()->getDefinition());
     const TypedefNameDecl *Deleter = nullptr;
     if (!Owner || Owner->getTemplateArgs().size() != 2 ||
-        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11888\n"); return false; }
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11889\n"); return false; }
     for (const auto *Declaration : Owner->decls())
       if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
           Named && Named->getIdentifier() && Named->getName() == "deleter_type") {
-        if (Deleter) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11892\n"); return false; }
+        if (Deleter) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11893\n"); return false; }
         Deleter = Named;
       }
     const auto *DeleterInfo = Deleter ? Deleter->getTypeSourceInfo() : nullptr;
@@ -11912,15 +11913,15 @@ public:
         !Context.hasSameType(Deleter->getUnderlyingType(), Owner->getTemplateArgs()[1].getAsType()) ||
         !Context.hasSameType(DeleterInfo->getType(), Deleter->getUnderlyingType()) ||
         !approvedStandardSDKDeclaration(S, SM, Deleter) ||
-        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11900\n"); return false; }
+        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11901\n"); return false; }
     // This actual owner default uses its own deleter alias. Authenticate the
     // declaration, substitution and original spelling before its first use.
     PairInputFamilies.insert(Deleter);
     PairStorageUseSource Source(*this);
-    if (!Source.check(DeleterInfo)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11905\n"); return false; }
+    if (!Source.check(DeleterInfo)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11906\n"); return false; }
     for (const auto *Parameter : *Alias->getTemplateParameters())
       if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
-          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11908\n"); return false; }
+          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11909\n"); return false; }
     return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
   }
   bool pairOwnerPointerAlias(const CXXConstructorDecl *Constructor) {
@@ -11930,12 +11931,12 @@ public:
     if (!Record || !PairDefaultOwnerSignature ||
         PairDefaultOwnerSignature->getConstructor() != Constructor ||
         Constructor->getNumParams() != 1 || Record->getTemplateArgs().size() != 2)
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11918\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11919\n"); return false; }
     const TypedefNameDecl *Pointer = nullptr;
     for (const auto *Declaration : Record->decls())
       if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
           Alias && Alias->getIdentifier() && Alias->getName() == "pointer") {
-        if (Pointer) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11923\n"); return false; }
+        if (Pointer) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11924\n"); return false; }
         Pointer = Alias;
       }
     auto Use = [](QualType Type) {
@@ -11963,28 +11964,28 @@ public:
         !cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
         !Alias || Alias->getName() != "__pointer" || !Original || !Original->isTypeAlias() ||
         !Detected || Detected->getName() != "__detected_or_t" || !family(Detected) ||
-        !Member || Member->getName() != "__pointer_member") { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11951\n"); return false; }
+        !Member || Member->getName() != "__pointer_member") { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11952\n"); return false; }
     for (unsigned I = 0; I != 2; ++I)
       if (Written->template_arguments()[I].getKind() != TemplateArgument::Type ||
           Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Written->template_arguments()[I].getAsType(),
-                               Record->getTemplateArgs()[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11956\n"); return false; }
+                               Record->getTemplateArgs()[I].getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11957\n"); return false; }
     std::set<const Decl *> Family{Pointer};
     for (const auto *Template : {Alias, Member}) {
       if (Template->getDeclContext() != Alias->getDeclContext() ||
-          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11960\n"); return false; }
+          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11961\n"); return false; }
       for (const auto *Redeclaration : Template->redecls()) {
         for (const auto *D : {static_cast<const Decl *>(Redeclaration),
                               static_cast<const Decl *>(Redeclaration->getTemplatedDecl())}) {
           if (!approvedStandardSDKDeclaration(S, SM, D) ||
-              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11965\n"); return false; }
+              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11966\n"); return false; }
           Family.insert(D);
         }
         for (const auto *Parameter : *Redeclaration->getTemplateParameters()) {
           const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
           if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() ||
               !approvedStandardSDKDeclaration(S, SM, Type) ||
-              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11972\n"); return false; }
+              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11973\n"); return false; }
           Family.insert(Type);
         }
       }
@@ -12004,10 +12005,10 @@ public:
     if (!Parameters || Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
         !Parameter->hasDefaultArgument() ||
         Written.getArgument().getKind() != TemplateArgument::Type ||
-        Converted.getArgument().getKind() != TemplateArgument::Type) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11992\n"); return false; }
+        Converted.getArgument().getKind() != TemplateArgument::Type) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11993\n"); return false; }
     const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
-    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11995\n"); return false; }
+    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=11996\n"); return false; }
     auto Use = [](QualType Type) {
       const auto *Value = Type.getTypePtr();
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Value)) Value = Elaborated->getNamedType().getTypePtr();
@@ -12016,7 +12017,7 @@ public:
     const auto *Pattern = Use(Original->getType());
     const auto *Alias = Pattern ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Pattern->getTemplateName().getAsTemplateDecl()) : nullptr;
-    if (!Alias || !Pattern->isTypeAlias()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12004\n"); return false; }
+    if (!Alias || !Pattern->isTypeAlias()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12005\n"); return false; }
     for (const auto *Info : {Written.getTypeSourceInfo(), Converted.getTypeSourceInfo()}) {
       const auto *Actual = Use(Info->getType());
       const auto *ActualAlias = Actual ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -12024,14 +12025,14 @@ public:
       if (!Actual || !Actual->isTypeAlias() || !ActualAlias ||
           ActualAlias->getCanonicalDecl() != Alias->getCanonicalDecl() ||
           Actual->template_arguments().size() != 1 ||
-          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12012\n"); return false; }
+          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12013\n"); return false; }
       const auto *Value = Actual->template_arguments()[0].getAsExpr();
       if (const auto *Constant = dyn_cast<ConstantExpr>(Value)) Value = Constant->getSubExpr();
       const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Value);
       const auto *True = Substitution ? dyn_cast<CXXBoolLiteralExpr>(
           Substitution->getReplacement()->IgnoreParenImpCasts()) : nullptr;
       if (!Substitution || Substitution->getParameter() != Dummy ||
-          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12019\n"); return false; }
+          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12020\n"); return false; }
     }
     PairStorageUseSource Spelling(*this);
     // Sema retains the substituted written/default type here. Its exact
@@ -12056,7 +12057,7 @@ public:
         !Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
         !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
         !Definition || !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
-        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12044\n"); return false; }
+        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12045\n"); return false; }
     const auto *Initializer = *Definition->init_begin();
     const auto *Child = Initializer->isBaseInitializer()
         ? dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit()) : nullptr;
@@ -12073,7 +12074,7 @@ public:
         !Context.hasSameType(Allocator->Record->bases_begin()->getType(), Child->getType()) ||
         !Context.hasSameType(QualType(Initializer->getBaseClass(), 0), Child->getType()) ||
         !pairDefaultFunctionFamily(Selected, "__memory/allocator.h") ||
-        !bindPairInput(Child->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12061\n"); return false; }
+        !bindPairInput(Child->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12062\n"); return false; }
     const auto *Info = Allocator->Record->bases_begin()->getTypeSourceInfo();
     return Info && TraverseTypeLoc(Info->getTypeLoc()) && !Failed;
   }
@@ -12112,7 +12113,7 @@ public:
         Constructor->isDefaultConstructor() == OwnerPointer ||
         Source.Operands.size() != Construction->getNumArgs() ||
         !Context.hasSameType(Construction->getType(), Target) ||
-        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12100\n"); return false; }
+        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12101\n"); return false; }
     if (OwnerPointer) {
       // Bind the original opaque argument and selected pointer conversion. The
       // ordinary runtime construction and cleanup retain their separate checks.
@@ -12130,7 +12131,7 @@ public:
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType) ||
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           approvedUtilityUniquePtrConstruction(S, SM, Construction, Context) !=
-              UtilityUniquePtrConstruction::Pointer) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12118\n"); return false; }
+              UtilityUniquePtrConstruction::Pointer) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12119\n"); return false; }
     }
     const auto *SavedQuery = PairTraitQuery;
     const auto *SavedConstruction = PairTraitConstruction;
@@ -12153,18 +12154,18 @@ public:
       if (!PairFunctions || !PairSelections ||
           !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h", OwnerPointer) ||
           !pairDefaultOwnerAlias(Constructor) ||
-          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12141\n"); return false; }
+          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12142\n"); return false; }
       const auto Events = PairSelections->find(Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12143\n"); return false; }
+      if (Events == PairSelections->end() || Events->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12144\n"); return false; }
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Construction || Event->Function != Constructor ||
             Event->Location != Query->getExprLoc() ||
-            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12147\n"); return false; }
+            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12148\n"); return false; }
         const auto Uses = PairFunctions->find({Constructor, Event->Location.getRawEncoding()});
-        if (Uses == PairFunctions->end() || Uses->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12149\n"); return false; }
+        if (Uses == PairFunctions->end() || Uses->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12150\n"); return false; }
         for (const auto *Use : Uses->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Constructor, true) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12152\n"); return false; }
+              !templateSource(*Use, Constructor, true) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12153\n"); return false; }
       }
       Complete = true;
     } else if (Allocator) {
@@ -12176,14 +12177,14 @@ public:
           Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
           pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h");
     }
-    if (!Complete || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12164\n"); return false; }
+    if (!Complete || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12165\n"); return false; }
     if (Temporary) {
       const auto *Destructor = Temporary->getTemporary() ? Temporary->getTemporary()->getDestructor() : nullptr;
       if (!Destructor || !Record->getDestructor() ||
-          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12168\n"); return false; }
+          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12169\n"); return false; }
       if (Owner) PairOwnerUse = PairOwnerMemberUse{Destructor, Query, Construction, nullptr, nullptr, Temporary};
-      if (!specialMember(Destructor) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12170\n"); return false; }
-    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12171\n"); return false; }
+      if (!specialMember(Destructor) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12171\n"); return false; }
+    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12172\n"); return false; }
     // Pointer constructibility retains a constructor-only root with no cleanup;
     // the original OperationTraitSource must have no destructor/lookup request.
     // Actual runtime destruction is still authenticated at its owning boundary.
@@ -12195,16 +12196,16 @@ public:
     NotFnResultComparisonRecord = notFnResultSentinelArgument(E);
     auto RestoreSentinel = llvm::make_scope_exit([&] { NotFnResultComparisonRecord = SavedSentinel; });
     for (const auto *Argument : E->getArgs())
-      if (!TraverseType(Argument->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12183\n"); return false; }
+      if (!TraverseType(Argument->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12184\n"); return false; }
     const bool Construction = E->getTrait() == TT_IsConstructible ||
         E->getTrait() == TT_IsNothrowConstructible;
     const bool Conversion = E->getTrait() == BTT_IsConvertible ||
         E->getTrait() == BTT_IsConvertibleTo;
     if (!Construction && !Conversion) return true;
     if (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12190\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12191\n"); return false; }
     const auto Found = OperationTraits.find(E);
-    if (Found == OperationTraits.end()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12192\n"); return false; }
+    if (Found == OperationTraits.end()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12193\n"); return false; }
     const auto &Source = Found->second;
     if (Mode == UtilityTupleQueryMode::PairConstruction) {
       bool BoundRecord = false;
@@ -12227,7 +12228,7 @@ public:
     if (!Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != Count || Source.Destructor ||
         Source.DestructionPrototype || Source.DestructionLookupAttempted ||
-        Source.DestructionExceptionAttempted) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12215\n"); return false; }
+        Source.DestructionExceptionAttempted) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12216\n"); return false; }
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && !Count)
       if (const auto Default = pairSelectedDefaultQuery(E, Source)) return *Default;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && Count == 1)
@@ -12240,7 +12241,7 @@ public:
           !Context.hasSameType(Source.Root->getType(), Target) ||
           !Source.Root->isPRValue() || Source.Root->isTypeDependent() ||
           Source.Root->isValueDependent() || Source.Root->isInstantiationDependent())
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12228\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12229\n"); return false; }
       // Sema's exact retained zero-operand scalar root has no written token.
       // Authenticate this source-free node locally; no caller expression,
       // selected body, owner operation or runtime permission is registered.
@@ -12266,31 +12267,31 @@ public:
         T = Context.getRValueReferenceType(T);
       if (!Operand || Operand->getSourceExpr() ||
           !Context.hasSameType(Operand->getType(), T.getNonLValueExprType(Context)) ||
-          Operand->getValueKind() != Expr::getValueKindForType(T)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12254\n"); return false; }
+          Operand->getValueKind() != Expr::getValueKindForType(T)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12255\n"); return false; }
       Operands.insert(Operand);
     }
     return TraverseStmt(const_cast<Expr *>(Source.Root));
   }
   bool function(const FunctionDecl *F) {
-    if (!family(F) || !bindCatInputs(F)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12260\n"); return false; }
+    if (!family(F) || !bindCatInputs(F)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12261\n"); return false; }
     if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
       if (Method->isImplicit() || Method->isDefaulted()) return specialMember(Method);
     for (const auto *Parameter : F->parameters())
-      if (!family(Parameter) || !TraverseType(Parameter->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12264\n"); return false; }
+      if (!family(Parameter) || !TraverseType(Parameter->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12265\n"); return false; }
     const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
-    if (!Prototype) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12266\n"); return false; }
+    if (!Prototype) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12267\n"); return false; }
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
     case EST_NoexceptTrue: case EST_NoexceptFalse:
       if (!Prototype->getNoexceptExpr() ||
-          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12271\n"); return false; }
+          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12272\n"); return false; }
       break;
-    default: { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12273\n"); return false; }
+    default: { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12274\n"); return false; }
     }
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F)) {
       const auto Explicit = Constructor->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved)
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12278\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12279\n"); return false; }
       const auto *Pattern = dyn_cast_or_null<CXXConstructorDecl>(
           Constructor->getTemplateInstantiationPattern());
       const auto *Primary = Constructor->getPrimaryTemplate();
@@ -12299,8 +12300,8 @@ public:
       if (!Explicit.getExpr() &&
           ((Pattern && Pattern->getExplicitSpecifier().getExpr()) ||
            (PrimaryConstructor && PrimaryConstructor->getExplicitSpecifier().getExpr())))
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12287\n"); return false; }
-      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12288\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12288\n"); return false; }
+      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12289\n"); return false; }
     }
     return !Failed;
   }
@@ -12310,7 +12311,7 @@ public:
     if (OwnerDefault &&
         (Mode != UtilityTupleQueryMode::PairConstruction || !PairDefaultOwnerSignature ||
          PairDefaultOwnerSignature->getConstructor() != Constructor ||
-         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12298\n"); return false; }
+         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12299\n"); return false; }
     const auto *Primary = Constructor->getPrimaryTemplate();
     if (!Primary || Source.Kind != TemplateSourceKind::Function ||
         Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
@@ -12320,16 +12321,16 @@ public:
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() != Primary->getTemplateParameters()->size())
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12308\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12309\n"); return false; }
     const auto *Selected = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || Selected->size() != Source.Canonical->size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12310\n"); return false; }
+    if (!Selected || Selected->size() != Source.Canonical->size()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12311\n"); return false; }
     for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Selected->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12314\n"); return false; }
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12315\n"); return false; }
     for (const auto *Arguments : {Source.Canonical, Source.Sugared})
       for (const auto &Argument : Arguments->asArray())
-        if (!TraverseTemplateArgument(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12317\n"); return false; }
+        if (!TraverseTemplateArgument(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12318\n"); return false; }
     std::set<unsigned> Defaults, Parameters;
     const auto *Owners = Primary->getTemplateParameters();
     for (const auto &Default : Source.Defaults) {
@@ -12344,8 +12345,8 @@ public:
             !Defaults.insert(1).second || !Original || !Written ||
             Converted.getKind() != TemplateArgument::Type ||
             Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12332\n"); return false; }
-        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12333\n"); return false; }
+            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12333\n"); return false; }
+        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12334\n"); return false; }
         continue;
       }
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
@@ -12359,7 +12360,7 @@ public:
           Default.Written.getArgument().getAsExpr() !=
               Parameter->getDefaultArgument().getArgument().getAsExpr() ||
           !TraverseTemplateArgument(Default.Written.getArgument()) ||
-          !TraverseTemplateArgument(Default.Converted.getArgument())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12347\n"); return false; }
+          !TraverseTemplateArgument(Default.Converted.getArgument())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12348\n"); return false; }
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       const auto *Converted = Default.Converted.getArgument().getKind() == TemplateArgument::Expression
           ? dyn_cast<ConstantExpr>(Default.Converted.getArgument().getAsExpr()) : nullptr;
@@ -12367,7 +12368,7 @@ public:
           !Context.hasSameType(Converted->getType(), Canonical.getIntegralType()) ||
           Converted->getResultAsAPSInt() != Canonical.getAsIntegral() ||
           Converted->getSubExpr()->IgnoreParens() != Default.Written.getArgument().getAsExpr())
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12355\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12356\n"); return false; }
     }
     for (const auto &ParameterType : Source.ParameterTypes) {
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(ParameterType.Parameter);
@@ -12376,17 +12377,17 @@ public:
           Owners->getParam(Parameter->getIndex()) != Parameter ||
           ParameterType.PackIndex != 0 || !ParameterType.Type ||
           !Parameters.insert(Parameter->getIndex()).second ||
-          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12364\n"); return false; }
+          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12365\n"); return false; }
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       if (Canonical.getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(ParameterType.Type->getType(), Canonical.getIntegralType()))
-        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12368\n"); return false; }
+        { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12369\n"); return false; }
     }
     for (unsigned I = 0; I < Owners->size(); ++I) {
       const auto *Declaration = Owners->getParam(I);
       if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
         if (!Parameters.count(I) ||
-            (Parameter->hasDefaultArgument() && !Defaults.count(I))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12374\n"); return false; }
+            (Parameter->hasDefaultArgument() && !Defaults.count(I))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12375\n"); return false; }
       } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Declaration)) {
         const auto &Argument = Source.Canonical->get(I);
         if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
@@ -12394,10 +12395,10 @@ public:
             Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Template ||
             !Context.hasSameTemplateName(Argument.getAsTemplate(),
                 Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
-            !TraverseTemplateName(Argument.getAsTemplate())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12382\n"); return false; }
+            !TraverseTemplateName(Argument.getAsTemplate())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12383\n"); return false; }
       } else if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Declaration)) {
-        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12384\n"); return false; }
-      } else { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12385\n"); return false; }
+        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12385\n"); return false; }
+      } else { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12386\n"); return false; }
     }
     return function(Constructor);
   }
@@ -12419,37 +12420,37 @@ public:
                  : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
-            Context.getRecordType(Constructor->getParent()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12407\n"); return false; }
+            Context.getRecordType(Constructor->getParent()))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12408\n"); return false; }
     // A piecewise use binds its exact public/private constructor descriptor.
     // This still grants signature source only; runtime admission requires the
     // separate outer-source, child-operation, lifetime and deferred checks.
     if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
         (Factory || !approvedUtilityPairPiecewiseConstruction(
                          S, SM, Construction, Context)))
-      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12414\n"); return false; }
+      { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12415\n"); return false; }
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
-      if (!bindPairInput(Field->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12419\n"); return false; }
+      if (!bindPairInput(Field->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12420\n"); return false; }
     const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
     for (const auto *Argument : Arguments)
-      if (!bindPairInput(Argument->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12422\n"); return false; }
+      if (!bindPairInput(Argument->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12423\n"); return false; }
     for (const auto *Argument : Arguments)
-      if (!bindPairReferenceFactory(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12424\n"); return false; }
+      if (!bindPairReferenceFactory(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12425\n"); return false; }
     for (const auto *Argument : Arguments)
-      if (!bindPairCallerValueAdapter(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12426\n"); return false; }
+      if (!bindPairCallerValueAdapter(Argument)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12427\n"); return false; }
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
       std::vector<const Decl *> Pending{Factory->getDirectCallee()};
       while (!Pending.empty()) {
         const auto *Declaration = Pending.back(); Pending.pop_back();
-        if (!Declaration || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12433\n"); return false; }
+        if (!Declaration || !step()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12434\n"); return false; }
         if (!PairInputFamilies.insert(Declaration).second) continue;
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
-          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12437\n"); return false; }
+          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12438\n"); return false; }
         if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
           for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
           if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -12458,7 +12459,7 @@ public:
           for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
           Pending.push_back(Template->getTemplatedDecl());
           for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-        } else if (!isa<TemplateTypeParmDecl>(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12446\n"); return false; }
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12447\n"); return false; }
       }
       // These are the exact two SDK forwarding uses already authenticated by
       // the public factory descriptor. Bind their substitutions, not their bodies.
@@ -12466,9 +12467,9 @@ public:
         if (!bindPairInput(Construction->getArg(I)->getType()) ||
             !bindPairCallerValueAdapter(Construction->getArg(I),
                                        Factory->getDirectCallee()->getParamDecl(I)))
-          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12454\n"); return false; }
+          { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12455\n"); return false; }
     }
-    if (!templateSource(Source, Constructor) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12456\n"); return false; }
+    if (!templateSource(Source, Constructor) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12457\n"); return false; }
     for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
       // Copy the item: its source can append more work to this same vector.
       const auto Work = PairConstructionSources[I];
@@ -12476,21 +12477,21 @@ public:
       if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
           Work.Ancestors.back() != Work.Construction || !Selected ||
           !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-          PendingPairConstructions[Work.Construction] != Work.Query) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12464\n"); return false; }
+          PendingPairConstructions[Work.Construction] != Work.Query) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12465\n"); return false; }
       PairConstructor = Selected;
       PairConstructionAncestors = Work.Ancestors;
       for (const auto *Field : Selected->getParent()->fields())
-        if (!bindPairInput(Field->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12468\n"); return false; }
+        if (!bindPairInput(Field->getType())) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12469\n"); return false; }
       const auto Events = PairSelections->find(Work.Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12470\n"); return false; }
+      if (Events == PairSelections->end() || Events->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12471\n"); return false; }
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-            Event->Location != Work.Query->getExprLoc()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12473\n"); return false; }
+            Event->Location != Work.Query->getExprLoc()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12474\n"); return false; }
         const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12475\n"); return false; }
+        if (Sources == PairFunctions->end() || Sources->second.empty()) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12476\n"); return false; }
         for (const auto *Use : Sources->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Selected) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12478\n"); return false; }
+              !templateSource(*Use, Selected) || Failed) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12479\n"); return false; }
       }
     }
     Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
@@ -12499,7 +12500,7 @@ public:
     return true;
   }
   bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
-    if (!bindCatInputs(Function)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12487\n"); return false; }
+    if (!bindCatInputs(Function)) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12488\n"); return false; }
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Primary || !Arguments || Source.Kind != TemplateSourceKind::Function ||
@@ -12509,7 +12510,7 @@ public:
         !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
         !Source.Canonical || !Source.Sugared || Arguments->size() != 2 ||
         Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
-        Primary->getTemplateParameters()->size() != 2) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12497\n"); return false; }
+        Primary->getTemplateParameters()->size() != 2) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12498\n"); return false; }
     for (unsigned I = 0; I < 2; ++I) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
           Primary->getTemplateParameters()->getParam(I));
@@ -12517,9 +12518,9 @@ public:
           Parameter->isParameterPack() != (I == 1) ||
           !Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12505\n"); return false; }
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12506\n"); return false; }
       if (!TraverseTemplateArgument(Source.Canonical->get(I)) ||
-          !TraverseTemplateArgument(Source.Sugared->get(I))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12507\n"); return false; }
+          !TraverseTemplateArgument(Source.Sugared->get(I))) { if (Mode == UtilityTupleQueryMode::NotFnSignature) std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=GRAPH line=12508\n"); return false; }
     }
     return function(Function) && TraverseType(Function->getReturnType()) && !Failed;
   }
@@ -13822,10 +13823,10 @@ class NotFnPointerSourceProof {
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() > 64 || Source.Defaults.size() > 64 ||
         Source.ParameterTypes.size() > 4096 || Source.Instantiation ||
-        Source.Origin || Source.WrittenStorageClass || Source.Selection) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13810\n"); return false; }
+        Source.Origin || Source.WrittenStorageClass || Source.Selection) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13811\n"); return false; }
     for (unsigned I = 0; I < Source.Canonical->size(); ++I)
       if (!Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13813\n"); return false; }
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13814\n"); return false; }
     return true;
   }
   const TemplateUseSource *typeUse(TemplateSpecializationTypeLoc Root) const {
@@ -13872,23 +13873,23 @@ class NotFnPointerSourceProof {
         !Type.Type || !Context.hasSameType(Type.Type->getType(), Context.getSizeType()) ||
         !Check.family(Primary, {"tuple"}) || !Check.family(Parameter, {"tuple"}) ||
         Source.ParameterTypes.size() != 2 || !Source.Canonical || Source.Canonical->size() != 5)
-      { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13860\n"); return false; }
+      { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13861\n"); return false; }
     bool Selected = false;
     for (const auto *Construction : Factory.Selected.SelectedConstructions)
       Selected |= Construction && Construction->getConstructor() == Constructor;
     const auto *Arguments = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || !Arguments || Arguments->size() != 5) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13865\n"); return false; }
+    if (!Selected || !Arguments || Arguments->size() != 5) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13866\n"); return false; }
     for (unsigned I = 0; I != 5; ++I)
       if (!Source.Canonical->get(I).structurallyEquals(Arguments->get(I)) ||
           Arguments->get(I).getKind() != TemplateArgument::Pack ||
-          Arguments->get(I).pack_size() != (I == 2 || I == 3 ? 0U : 1U)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13869\n"); return false; }
+          Arguments->get(I).pack_size() != (I == 2 || I == 3 ? 0U : 1U)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13870\n"); return false; }
     const auto &Index = Arguments->get(0).pack_elements()[0];
     if (Index.getKind() != TemplateArgument::Integral || !Index.getAsIntegral().isZero() ||
-        !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13872\n"); return false; }
+        !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13873\n"); return false; }
     for (const unsigned I : {1U, 4U}) {
       const auto &Element = Arguments->get(I).pack_elements()[0];
       if (Element.getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Element.getAsType(), Factory.Selected.Storage.CallableType)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13876\n"); return false; }
+          !Context.hasSameType(Element.getAsType(), Factory.Selected.Storage.CallableType)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13877\n"); return false; }
     }
     // The original Sema packet records an expanded index, or ~0U for this
     // actual empty trailing pack. Both original and substituted TypeLocs
@@ -13906,7 +13907,7 @@ class NotFnPointerSourceProof {
                ? (!Factory || !selectedTupleIndexParameter(Source, Type, *Factory))
                : Type.PackIndex != 0) ||
           !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13894\n"); return false; }
+          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13895\n"); return false; }
     }
     return true;
   }
@@ -13914,7 +13915,7 @@ class NotFnPointerSourceProof {
     const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Source.Template);
     const auto *Parameters = Alias ? Alias->getTemplateParameters() : nullptr;
     if (!Parameters || Parameters->size() != 2 ||
-        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13902\n"); return false; }
+        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13903\n"); return false; }
     const auto *Condition = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto &Use = Source.Defaults.front();
@@ -13923,7 +13924,7 @@ class NotFnPointerSourceProof {
         !Default || !Default->hasDefaultArgument() || Default->isParameterPack() ||
         Use.Parameter != Default || Source.ParameterTypes.front().Parameter != Condition ||
         Use.Written.getArgument().getKind() != TemplateArgument::Type ||
-        Use.Converted.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13911\n"); return false; }
+        Use.Converted.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13912\n"); return false; }
     // Original, substituted and converted void spellings are inspected as
     // independent source nodes. The canonical void result is insufficient.
     const auto *Original = Default->getDefaultArgument().getTypeSourceInfo();
@@ -13933,7 +13934,7 @@ class NotFnPointerSourceProof {
       if (!Info || !Info->getType()->isVoidType() ||
           !Info->getTypeLoc().getAs<BuiltinTypeLoc>() ||
           !Check.location(Info->getTypeLoc().getBeginLoc(), {"__type_traits/enable_if.h"}) ||
-          !Graph.TraverseTypeLoc(Info->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13921\n"); return false; }
+          !Graph.TraverseTypeLoc(Info->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13922\n"); return false; }
     return parameterTypes(Source);
   }
   bool constraintType(const TypeSourceInfo *Info) {
@@ -13944,7 +13945,7 @@ class NotFnPointerSourceProof {
     const auto *Source = typeUse(Root);
     if (!Source || !Root.getTypePtr()->isTypeAlias() ||
         !Check.family(Source->Template, {"__type_traits/enable_if.h"}) ||
-        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13929\n"); return false; }
+        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13930\n"); return false; }
     // The retained Sema Underlying contains the selected partial/typedef.
     // The metadata walker follows its original alias definitions and every
     // selected SDK declaration chain and its real operation-query roots.
@@ -13971,9 +13972,9 @@ class NotFnPointerSourceProof {
         !Check.location(Reference->getExprLoc(), {"__functional/perfect_forward.h"}) ||
         Source->Kind != TemplateSourceKind::Function || !Source->FunctionalNotFnConstraint ||
         Source->Declaration != Constructor || Source->Template != Primary || !arguments(*Source) ||
-        Source->Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13949\n"); return false; }
+        Source->Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13950\n"); return false; }
     for (unsigned I = 0; I < Arguments->size(); ++I)
-      if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13951\n"); return false; }
+      if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13952\n"); return false; }
     bool Spelling = false;
     for (const auto &Default : Source->Defaults) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
@@ -13984,12 +13985,12 @@ class NotFnPointerSourceProof {
                   Default.Converted.getTypeSourceInfo() == ConstructorDefaultSpelling;
     }
     const auto Root = specialization(ConstructorDefaultSpelling);
-    if (!Spelling || Root.isNull() || Root.getNumArgs() != 1) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13962\n"); return false; }
+    if (!Spelling || Root.isNull() || Root.getNumArgs() != 1) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13963\n"); return false; }
     const auto Argument = Root.getArgLoc(0);
     const auto Kind = Argument.getArgument().getKind();
     const Expr *Condition = Kind == TemplateArgument::Expression ? Argument.getSourceExpression()
         : Kind == TemplateArgument::Integral ? Argument.getSourceIntegralExpression() : nullptr;
-    if (!Condition) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13967\n"); return false; }
+    if (!Condition) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13968\n"); return false; }
     // The reference must be an original child of this particular written or
     // converted constructor default. A same-location sibling is insufficient.
     std::vector<const Stmt *> Pending{Condition};
@@ -13999,14 +14000,14 @@ class NotFnPointerSourceProof {
       const auto *Node = Pending.back();
       Pending.pop_back();
       if (!Node || !Seen.insert(Node).second) continue;
-      if (Seen.size() > 4096) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13977\n"); return false; }
+      if (Seen.size() > 4096) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13978\n"); return false; }
       Found |= Node == Reference;
       for (const auto *Child : Node->children()) Pending.push_back(Child);
     }
     const auto Input = Constructor->getParamDecl(0)->getType();
     if (!Found || !Input->isReferenceType() ||
         !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(),
-                             Storage.CallableType)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13984\n"); return false; }
+                             Storage.CallableType)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=13985\n"); return false; }
     // Reuse the complete real packet, primary/redeclaration, exact argument
     // pack and initializer proof. The storage tuple is not the factory input.
     return Graph.withNotFnConstructorQuery(Reference, Storage, [&] {
@@ -14023,19 +14024,19 @@ class NotFnPointerSourceProof {
         Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
         !Variable->isConstexpr() || !Variable->getType()->isBooleanType() ||
         !Variable->hasInit() ||
-        !Check.family(Primary, {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14001\n"); return false; }
+        !Check.family(Primary, {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14002\n"); return false; }
     // The observed traits instantiate their SDK primary. A user partial
     // selection cannot inherit that primary's source certificate.
     if (Variable->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary)
-      { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14005\n"); return false; }
+      { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14006\n"); return false; }
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14007\n"); return false; }
+      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14008\n"); return false; }
     const auto &Arguments = Variable->getTemplateArgs();
     const bool Move = Name == "is_move_constructible_v";
     if (Arguments.size() != (Move ? 1U : 2U) ||
         Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Callable) ||
-        (!Move && !Check.oneTypePack(Arguments[1], Input))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14013\n"); return false; }
+        (!Move && !Check.oneTypePack(Arguments[1], Input))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14014\n"); return false; }
     bool Found = false;
     for (const auto *Source : Sources) {
       if (!Source || Source->Kind != TemplateSourceKind::VariableUse ||
@@ -14043,9 +14044,9 @@ class NotFnPointerSourceProof {
       if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
           Source->Type || Source->Underlying || !arguments(*Source) ||
           !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-          Source->Canonical->size() != Arguments.size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14021\n"); return false; }
+          Source->Canonical->size() != Arguments.size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14022\n"); return false; }
       for (unsigned I = 0; I < Arguments.size(); ++I)
-        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14023\n"); return false; }
+        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14024\n"); return false; }
       Found = true;
     }
     // Follow the actual selected initializer (including is_move_constructible's
@@ -14054,7 +14055,7 @@ class NotFnPointerSourceProof {
   }
   bool invocationValueUse(const DeclRefExpr *Reference) {
     const auto Found = InvocableValueReferences.find(Reference);
-    if (Found == InvocableValueReferences.end()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14032\n"); return false; }
+    if (Found == InvocableValueReferences.end()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14033\n"); return false; }
     const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
     const auto *Owner = Found->second;
     if (!Variable || Variable->getDeclContext() != Owner ||
@@ -14062,7 +14063,7 @@ class NotFnPointerSourceProof {
         !Variable->getType().isConstQualified() || !Variable->getType()->isBooleanType() ||
         !Variable->isUsableInConstantExpressions(Context) ||
         !Check.family(Variable, {"__type_traits/invoke.h"}) ||
-        !Check.family(Owner, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14040\n"); return false; }
+        !Check.family(Owner, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14041\n"); return false; }
     const VarDecl *Holder = nullptr;
     const auto *Initializer = Variable->getAnyInitializer(Holder);
     return Initializer && Holder &&
@@ -14082,33 +14083,33 @@ class NotFnPointerSourceProof {
         Owner->getDefinition() != Owner || Owner->getNumBases() != 1 ||
         Owner->getNumVBases() || Base->isVirtual() || Base->getAccessSpecifier() != AS_public ||
         !Check.family(Owner, {"__type_traits/invoke.h"}) ||
-        !Check.family(Primary, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14060\n"); return false; }
+        !Check.family(Primary, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14061\n"); return false; }
     bool ActualBase = false;
     for (const auto &Candidate : Owner->bases())
       ActualBase |= &Candidate == Base;
-    if (!ActualBase) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14064\n"); return false; }
+    if (!ActualBase) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14065\n"); return false; }
     const auto *Method = Call.Method;
     const auto *Selected = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (!Method || !Selected || Selected->size() != 2 ||
         Selected->get(0).getKind() != TemplateArgument::Pack ||
         Selected->get(0).pack_size() != Method->getNumParams() ||
-        !Check.family(Method, {"__functional/perfect_forward.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14070\n"); return false; }
+        !Check.family(Method, {"__functional/perfect_forward.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14071\n"); return false; }
     auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
                                  : Call.Storage.CallableType;
     if (Method->getRefQualifier() == RQ_LValue)
       Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14075\n"); return false; }
+    else if (Method->getRefQualifier() != RQ_RValue) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14076\n"); return false; }
     const auto &Arguments = Owner->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Bound) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Method->getNumParams()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14080\n"); return false; }
+        Arguments[1].pack_size() != Method->getNumParams()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14081\n"); return false; }
     const auto Actual = Arguments[1].pack_elements();
     const auto Expected = Selected->get(0).pack_elements();
     for (unsigned I = 0; I < Expected.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type ||
           Expected[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14086\n"); return false; }
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14087\n"); return false; }
     const auto *Written = Base->getTypeSourceInfo();
     const auto Root = specialization(Written);
     const auto *EnableIf = Root ? dyn_cast_or_null<ClassTemplateDecl>(
@@ -14119,7 +14120,7 @@ class NotFnPointerSourceProof {
         Root.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type ||
         !Check.location(Written->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) ||
         !Check.location(Written->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14097\n"); return false; }
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14098\n"); return false; }
     const auto *Condition = Root.getArgLoc(0).getArgument().getAsExpr();
     // This is the actual dependent base's selected expression, not a folded
     // bool or a namespace variable admitted by name. Its variable primary,
@@ -14136,11 +14137,11 @@ class NotFnPointerSourceProof {
         !Context.hasSameType(Arguments[0].getAsType(), Expected[0].getAsType()) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
         Expected[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Expected[1].pack_size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14114\n"); return false; }
+        Arguments[1].pack_size() != Expected[1].pack_size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14115\n"); return false; }
     const auto Actual = Arguments[1].pack_elements(), Wanted = Expected[1].pack_elements();
     for (unsigned I = 0; I < Actual.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type || Wanted[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Wanted[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14118\n"); return false; }
+          !Context.hasSameType(Actual[I].getAsType(), Wanted[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14119\n"); return false; }
     return true;
   }
   bool publicNothrowValueUse(const DeclRefExpr *Reference) {
@@ -14156,14 +14157,14 @@ class NotFnPointerSourceProof {
         !Check.family(Owner, {"__type_traits/invoke.h"}) ||
         !Check.family(Primary, {"__type_traits/invoke.h"}) ||
         !Check.family(Value, {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14134\n"); return false; }
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14135\n"); return false; }
     const auto &Arguments = Owner->getTemplateArgs();
     const auto Name = Primary->getName();
     unsigned Offset = 0;
     if (Name == "__invokable_r") {
       if (Arguments.size() != 3 || Arguments[0].getKind() != TemplateArgument::Type ||
           !Arguments[0].getAsType()->isVoidType() ||
-          Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14141\n"); return false; }
+          Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14142\n"); return false; }
       Offset = 1;
     } else if (Name == "__nothrow_invokable_r_imp") {
       const auto *Partial = Owner->getSpecializedTemplateOrPartial()
@@ -14171,36 +14172,36 @@ class NotFnPointerSourceProof {
       if (Arguments.size() != 5 || !Partial ||
           !Check.family(Partial, {"__type_traits/invoke.h"}) ||
           Partial->getSpecializedTemplate() != Primary || Partial->getTemplateArgs().size() != 5 ||
-          Arguments[2].getKind() != TemplateArgument::Type || !Arguments[2].getAsType()->isVoidType()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14149\n"); return false; }
+          Arguments[2].getKind() != TemplateArgument::Type || !Arguments[2].getAsType()->isVoidType()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14150\n"); return false; }
       for (unsigned I : {0U, 1U})
         if (Arguments[I].getKind() != TemplateArgument::Integral ||
             !Arguments[I].getIntegralType()->isBooleanType() || Arguments[I].getAsIntegral() != 1 ||
             Partial->getTemplateArgs()[I].getKind() != TemplateArgument::Integral ||
-            Partial->getTemplateArgs()[I].getAsIntegral() != 1) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14154\n"); return false; }
+            Partial->getTemplateArgs()[I].getAsIntegral() != 1) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14155\n"); return false; }
       Offset = 3;
       const auto *Pattern = Value->getInstantiatedFromStaticDataMember();
       if (!Pattern || Pattern->getDeclContext() != Partial || !Pattern->hasInit() ||
           !Check.family(Pattern, {"__type_traits/invoke.h"}) ||
           !isa<CXXNoexceptExpr>(Pattern->getInit()->IgnoreParenImpCasts()) ||
-          !Value->hasInit() || !isa<CXXNoexceptExpr>(Value->getInit()->IgnoreParenImpCasts())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14160\n"); return false; }
-    } else { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14161\n"); return false; }
+          !Value->hasInit() || !isa<CXXNoexceptExpr>(Value->getInit()->IgnoreParenImpCasts())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14161\n"); return false; }
+    } else { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14162\n"); return false; }
     if (Arguments[Offset].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[Offset].getAsType(), Expected->get(0).getAsType()) ||
         Arguments[Offset + 1].getKind() != TemplateArgument::Pack ||
-        Arguments[Offset + 1].pack_size() != Expected->get(1).pack_size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14165\n"); return false; }
+        Arguments[Offset + 1].pack_size() != Expected->get(1).pack_size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14166\n"); return false; }
     const auto Pack = Arguments[Offset + 1].pack_elements();
     const auto Wanted = Expected->get(1).pack_elements();
     for (unsigned I = 0; I < Pack.size(); ++I)
       if (Pack[I].getKind() != TemplateArgument::Type || Wanted[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I].getAsType(), Wanted[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14170\n"); return false; }
+          !Context.hasSameType(Pack[I].getAsType(), Wanted[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14171\n"); return false; }
     const auto Qualifier = Reference->getQualifierLoc();
     const auto *Holder = static_cast<const VarDecl *>(nullptr);
     const auto *Initializer = Value->getAnyInitializer(Holder);
     if (!Qualifier || !Initializer || !Holder ||
         Holder->getCanonicalDecl() != Value->getCanonicalDecl() ||
-        !Check.family(Holder, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14176\n"); return false; }
+        !Check.family(Holder, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14177\n"); return false; }
     for (const auto *Redeclaration : Value->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14178\n"); return false; }
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14179\n"); return false; }
     return Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) &&
         Graph.TraverseStmt(const_cast<Expr *>(Initializer));
   }
@@ -14229,9 +14230,9 @@ class NotFnPointerSourceProof {
         !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
         !Check.family(Rest, {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__functional/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14207\n"); return false; }
+        !Check.location(Reference->getExprLoc(), {"__functional/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14208\n"); return false; }
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14209\n"); return false; }
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14210\n"); return false; }
     const auto *Load = dyn_cast<ImplicitCastExpr>(Variable->getInit());
     const auto *Value = Load && Load->getCastKind() == CK_LValueToRValue
         ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
@@ -14244,7 +14245,7 @@ class NotFnPointerSourceProof {
         Instance->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Class ||
         !Check.family(Class, {"__type_traits/invoke.h"}) ||
         !Check.family(Instance, {"__type_traits/invoke.h"}) ||
-        !publicInvokeArguments(Instance->getTemplateArgs(), *Expected)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14222\n"); return false; }
+        !publicInvokeArguments(Instance->getTemplateArgs(), *Expected)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14223\n"); return false; }
     PublicNothrowInitializer = true;
     auto Restore = llvm::make_scope_exit([&] { PublicNothrowInitializer = false; });
     // Both the selected class/base/alias graph and its original initializer
@@ -14280,36 +14281,36 @@ class NotFnPointerSourceProof {
         First->isParameterPack() || First->hasDefaultArgument() ||
         !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
-        !Check.family(Rest, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14258\n"); return false; }
+        !Check.family(Rest, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14259\n"); return false; }
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14260\n"); return false; }
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14261\n"); return false; }
     const auto *Method = Call.Method;
     const auto *CallArguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (!Method || !CallArguments || CallArguments->size() != 2 ||
         CallArguments->get(0).getKind() != TemplateArgument::Pack ||
         CallArguments->get(0).pack_size() != Method->getNumParams() ||
         Method->getNumParams() > 64 ||
-        !Check.family(Method, {"__functional/perfect_forward.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14267\n"); return false; }
+        !Check.family(Method, {"__functional/perfect_forward.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14268\n"); return false; }
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Method->getNumParams() + (DirectCallable ? 0 : 1)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14271\n"); return false; }
+        Arguments[1].pack_size() != Method->getNumParams() + (DirectCallable ? 0 : 1)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14272\n"); return false; }
     auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
                                  : Call.Storage.CallableType;
     if (Method->getRefQualifier() == RQ_LValue)
       Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14276\n"); return false; }
+    else if (Method->getRefQualifier() != RQ_RValue) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14277\n"); return false; }
     const auto Pack = Arguments[1].pack_elements();
     const unsigned Offset = DirectCallable ? 0 : 1;
     if (!Context.hasSameType(Arguments[0].getAsType(), DirectCallable
-            ? Bound : Context.getRecordType(Call.Storage.Operation))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14280\n"); return false; }
+            ? Bound : Context.getRecordType(Call.Storage.Operation))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14281\n"); return false; }
     if (!DirectCallable && (Pack[0].getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Pack[0].getAsType(), Bound))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14282\n"); return false; }
+        !Context.hasSameType(Pack[0].getAsType(), Bound))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14283\n"); return false; }
     const auto Selected = CallArguments->get(0).pack_elements();
     for (unsigned I = 0; I < Selected.size(); ++I)
       if (Selected[I].getKind() != TemplateArgument::Type ||
           Pack[I + Offset].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I + Offset].getAsType(), Selected[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14287\n"); return false; }
+          !Context.hasSameType(Pack[I + Offset].getAsType(), Selected[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14288\n"); return false; }
     if (!Internal) {
       bool Found = false;
       for (const auto *Source : Sources) {
@@ -14318,13 +14319,13 @@ class NotFnPointerSourceProof {
         if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
             Source->Type || Source->Underlying || !arguments(*Source) ||
             !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-            Source->Canonical->size() != Arguments.size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14296\n"); return false; }
+            Source->Canonical->size() != Arguments.size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14297\n"); return false; }
         for (unsigned I = 0; I < Arguments.size(); ++I)
-          if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14298\n"); return false; }
+          if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14299\n"); return false; }
         Found = true;
       }
       if (!Found || !Check.location(Reference->getExprLoc(),
-                                    {"__functional/perfect_forward.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14302\n"); return false; }
+                                    {"__functional/perfect_forward.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14303\n"); return false; }
       // Only the actual child of this authenticated outer initializer may
       // consume the SDK's non-constexpr inline const implementation variable.
       // Its identity, arguments and selected primary close again on reentry.
@@ -14332,7 +14333,7 @@ class NotFnPointerSourceProof {
       const auto *Child = Load && Load->getCastKind() == CK_LValueToRValue
           ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
       if (!Child || !Check.location(Child->getExprLoc(), {"__type_traits/invoke.h"}) ||
-          !InvocableVariableChildren.insert(Child).second) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14310\n"); return false; }
+          !InvocableVariableChildren.insert(Child).second) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14311\n"); return false; }
       auto Restore = llvm::make_scope_exit([&] { InvocableVariableChildren.erase(Child); });
       return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
     }
@@ -14356,17 +14357,17 @@ class NotFnPointerSourceProof {
         Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Arguments[0].getAsType()) ||
         Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-        Owner->getTemplateArgs()[2].pack_size() != Pack.size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14334\n"); return false; }
+        Owner->getTemplateArgs()[2].pack_size() != Pack.size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14335\n"); return false; }
     const auto ActualPack = Owner->getTemplateArgs()[2].pack_elements();
     for (unsigned I = 0; I < Pack.size(); ++I)
       if (ActualPack[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(ActualPack[I].getAsType(), Pack[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14338\n"); return false; }
+          !Context.hasSameType(ActualPack[I].getAsType(), Pack[I].getAsType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14339\n"); return false; }
     // The actual __is_invocable alias keeps its written void return argument.
     // Closing that TypeLoc is independent of its canonical void value.
     return Graph.withNotFnOperationQuery(DirectCallable ? nullptr : Reference, [&] {
       const auto Qualifier = Value->getQualifierLoc();
       if (!Qualifier || !Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) ||
-          !InvocableValueReferences.emplace(Value, Owner).second) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14344\n"); return false; }
+          !InvocableValueReferences.emplace(Value, Owner).second) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14345\n"); return false; }
       auto Restore = llvm::make_scope_exit([&] { InvocableValueReferences.erase(Value); });
       return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
     });
@@ -14379,7 +14380,7 @@ class NotFnPointerSourceProof {
         !Check.family(Alias, {"__type_traits/decay.h"}) || Root.getNumArgs() != 1 ||
         Root.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Root.getArgLoc(0).getArgument().getAsType(), Input) ||
-        !Context.hasSameType(Source->Underlying->getType(), Output)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14357\n"); return false; }
+        !Context.hasSameType(Source->Underlying->getType(), Output)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14358\n"); return false; }
     const auto *Inner = specialization(Source->Underlying->getType());
     const auto *Template = Inner ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Inner->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -14389,7 +14390,7 @@ class NotFnPointerSourceProof {
         !Check.family(Template, {"__type_traits/decay.h"}) || !Transform ||
         Transform->getUTTKind() != UnaryTransformType::Decay ||
         !Context.hasSameType(Transform->getBaseType(), Input) ||
-        !Context.hasSameType(Transform->getUnderlyingType(), Output)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14367\n"); return false; }
+        !Context.hasSameType(Transform->getUnderlyingType(), Output)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14368\n"); return false; }
     return Graph.TraverseTypeLoc(Source->Underlying->getTypeLoc()) &&
            Graph.TraverseTypeLoc(Alias->getTemplatedDecl()->getTypeSourceInfo()->getTypeLoc());
   }
@@ -14419,7 +14420,7 @@ public:
         S, SM, Factory.Selected.Storage.Record, Context);
     if (!Pointer || Factory.Selected.CallableConstruction ||
         !Graph.bindNotFnFactoryDefaults(Factory) ||
-        !Graph.bindNotFnOperation(Factory.Selected.Storage)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14391\n"); return false; }
+        !Graph.bindNotFnOperation(Factory.Selected.Storage)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14392\n"); return false; }
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no
@@ -14429,37 +14430,37 @@ public:
         ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
     if ((!InputValue->isFunctionPointerType() && !InputValue->isFunctionType()) ||
         !Context.hasSameType(Decayed, Callable) ||
-        !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14401\n"); return false; }
+        !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14402\n"); return false; }
     if (!Graph.bindNotFnConstraintVariables(
             [this, Callable, Input, Storage = *Pointer](const DeclRefExpr *Reference) {
-              if (!Reference) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14404\n"); return false; }
+              if (!Reference) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14405\n"); return false; }
               if (!Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}))
                 return constructorVariableUse(Reference, Storage);
               const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
               const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
               if (!Primary || !Primary->getIdentifier() ||
                   (Primary->getName() != "is_constructible_v" &&
-                   Primary->getName() != "is_move_constructible_v")) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14411\n"); return false; }
+                   Primary->getName() != "is_move_constructible_v")) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14412\n"); return false; }
               // Reuse the complete packet/argument/redeclaration/initializer
               // proof below; neither the variable's name nor its folded bool
               // can stand in for an actual retained constraint source.
               return variableUse(Reference, Primary->getName(), Callable, Input);
-            })) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14416\n"); return false; }
+            })) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14417\n"); return false; }
     const auto Primary = specialization(Factory.PrimaryDefault);
     const auto *PrimaryCondition = Primary.isNull() ? nullptr
         : Primary.getArgLoc(0).getArgument().getAsExpr();
     const auto *Original = PrimaryCondition
         ? dyn_cast<BinaryOperator>(PrimaryCondition->IgnoreParenImpCasts()) : nullptr;
-    if (!Original || Original->getOpcode() != BO_LAnd) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14422\n"); return false; }
+    if (!Original || Original->getOpcode() != BO_LAnd) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14423\n"); return false; }
     for (const auto *Expression : {Original->getLHS(), Original->getRHS()}) {
       const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Expression->IgnoreParenImpCasts());
       if (!Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
-          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14426\n"); return false; }
+          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14427\n"); return false; }
     }
     // Traverse the actual dependent primary, then each concrete retained role.
-    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14429\n"); return false; }
+    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14430\n"); return false; }
     for (const auto *Info : {Factory.SubstitutedDefault, Factory.ConvertedDefault}) {
-      if (!constraintType(Info)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14431\n"); return false; }
+      if (!constraintType(Info)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14432\n"); return false; }
       const auto Root = specialization(Info);
       const auto *Expression = Root.getArgLoc(0).getArgument().getAsExpr();
       const auto *And = Expression ? dyn_cast<BinaryOperator>(Expression->IgnoreParenImpCasts()) : nullptr;
@@ -14467,22 +14468,22 @@ public:
       const auto *Move = And ? dyn_cast<DeclRefExpr>(And->getRHS()->IgnoreParenImpCasts()) : nullptr;
       if (!And || And->getOpcode() != BO_LAnd ||
           !variableUse(Constructible, "is_constructible_v", Callable, Input) ||
-          !variableUse(Move, "is_move_constructible_v", Callable, Input)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14439\n"); return false; }
+          !variableUse(Move, "is_move_constructible_v", Callable, Input)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14440\n"); return false; }
       for (const auto *Reference : {Constructible, Move}) {
-        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14441\n"); return false; }
+        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14442\n"); return false; }
         const auto &Argument = Reference->template_arguments()[0];
-        if (Argument.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14443\n"); return false; }
+        if (Argument.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14444\n"); return false; }
         const auto Decay = specialization(Argument.getTypeSourceInfo());
-        if (!decay(Decay, Input, Callable)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14445\n"); return false; }
+        if (!decay(Decay, Input, Callable)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14446\n"); return false; }
       }
     }
     const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
-    if (!Tags || Tags->size() != 4) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14449\n"); return false; }
+    if (!Tags || Tags->size() != 4) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14450\n"); return false; }
     UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
                                 UtilityTupleQueryMode::CatSignature);
-    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14452\n"); return false; }
+    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14453\n"); return false; }
     for (const auto &Tag : *Tags)
-      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14454\n"); return false; }
+      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14455\n"); return false; }
     // Every selected construction keeps its actual signature. The exact
     // constructor template/default packets must also be present; the pointer
     // layout never supplies their missing source.
@@ -14490,15 +14491,15 @@ public:
       const auto *Constructor = Construction->getConstructor();
       if (Constructor->isInheritingConstructor()) {
         if (Constructor->getParent()->getCanonicalDecl() != Pointer->Record->getCanonicalDecl())
-          { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14462\n"); return false; }
+          { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14463\n"); return false; }
         Constructor = Constructor->getInheritedConstructor().getConstructor();
         if (!Constructor || Constructor->getParent()->getCanonicalDecl() !=
-                Pointer->Forwarder->getCanonicalDecl()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14465\n"); return false; }
+                Pointer->Forwarder->getCanonicalDecl()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14466\n"); return false; }
       }
       const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
-      if (!PrimaryTemplate || !Graph.function(Constructor)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14468\n"); return false; }
+      if (!PrimaryTemplate || !Graph.function(Constructor)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14469\n"); return false; }
       if (const auto *Written = Constructor->getTypeSourceInfo())
-        if (!Graph.TraverseNotFnConstructorSignature(Constructor, Written)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14470\n"); return false; }
+        if (!Graph.TraverseNotFnConstructorSignature(Constructor, Written)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14471\n"); return false; }
       bool Found = false;
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
@@ -14510,7 +14511,7 @@ public:
               Selection->Location == Source->Location &&
               matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
         if (!Selected) continue;
-        if (Source->Template != PrimaryTemplate || !arguments(*Source)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14482\n"); return false; }
+        if (Source->Template != PrimaryTemplate || !arguments(*Source)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14483\n"); return false; }
         for (const auto &Default : Source->Defaults) {
           const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
           if (Parameter) {
@@ -14518,7 +14519,7 @@ public:
                 Default.Written.getArgument().getKind() != TemplateArgument::Type ||
                 Default.Converted.getArgument().getKind() != TemplateArgument::Type ||
                 !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()))
-              { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14490\n"); return false; }
+              { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14491\n"); return false; }
             const auto *SavedOwner = ConstructorDefaultOwner;
             const auto *SavedSource = ConstructorDefaultSource;
             const auto *SavedSpelling = ConstructorDefaultSpelling;
@@ -14532,15 +14533,15 @@ public:
             for (const auto *Spelling : {Default.Written.getTypeSourceInfo(),
                                         Default.Converted.getTypeSourceInfo()}) {
               ConstructorDefaultSpelling = Spelling;
-              if (!constraintType(Spelling)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14504\n"); return false; }
+              if (!constraintType(Spelling)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14505\n"); return false; }
             }
           } else if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
-                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14507\n"); return false; }
+                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14508\n"); return false; }
         }
-        if (!parameterTypes(*Source, &Factory)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14509\n"); return false; }
+        if (!parameterTypes(*Source, &Factory)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14510\n"); return false; }
         Found = true;
       }
-      if (!Found) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14512\n"); return false; }
+      if (!Found) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14513\n"); return false; }
     }
     return true;
   }
@@ -14570,17 +14571,17 @@ public:
         Arguments->get(0).getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Pack ||
         Arguments->get(1).pack_size() + 1 != Operation->getNumParams() ||
-        !Context.hasSameType(Arguments->get(0).getAsType(), Operation->getParamDecl(0)->getType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14542\n"); return false; }
+        !Context.hasSameType(Arguments->get(0).getAsType(), Operation->getParamDecl(0)->getType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14543\n"); return false; }
     for (const auto *Redeclaration : Function->redecls())
-      if (!Check.family(Redeclaration, {"__functional/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14544\n"); return false; }
+      if (!Check.family(Redeclaration, {"__functional/invoke.h"})) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14545\n"); return false; }
     const auto Pack = Arguments->get(1).pack_elements();
     for (unsigned I = 0; I < Function->getNumParams(); ++I) {
       const auto Input = Operation->getParamDecl(I)->getType();
       if (!Input->isReferenceType() || Function->getParamDecl(I)->hasDefaultArg() ||
-          !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14549\n"); return false; }
+          !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14550\n"); return false; }
       if (I && (Pack[I - 1].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Pack[I - 1].getAsType(), Input->isLValueReferenceType()
-              ? Input : Input->getPointeeType()))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14552\n"); return false; }
+              ? Input : Input->getPointeeType()))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14553\n"); return false; }
     }
     std::vector<const CallExpr *> Roots, Forwards;
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
@@ -14593,12 +14594,12 @@ public:
           Root->isTypeDependent() || Root->isValueDependent() || Root->getNumArgs() != Operation->getNumParams() ||
           !Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}) ||
           !Context.hasSameType(Root->getType(), Function->getReturnType().getNonLValueExprType(Context)) ||
-          Root->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14565\n"); return false; }
+          Root->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14566\n"); return false; }
       bool Selected = false, Retained = false;
       for (const auto *Selection : Selections)
         if (Selection && Selection->Expression == Root && Selection->Function == Function) {
           if (!Selection->FunctionalNotFnConstraint || Selection->Location != Reference->getExprLoc() ||
-              !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14570\n"); return false; }
+              !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14571\n"); return false; }
           Selected = true;
         }
       for (const auto *Source : Sources) {
@@ -14607,27 +14608,27 @@ public:
             !Source->FunctionalNotFnConstraint || !arguments(*Source) || Source->Type || Source->Underlying ||
             Source->Written || Source->Instantiation || Source->Origin || Source->WrittenStorageClass ||
             Source->Selection || !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-            Source->Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14579\n"); return false; }
+            Source->Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14580\n"); return false; }
         for (unsigned I = 0; I < Arguments->size(); ++I)
-          if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14581\n"); return false; }
+          if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14582\n"); return false; }
         Retained = true;
       }
-      if (!Selected || !Retained) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14584\n"); return false; }
+      if (!Selected || !Retained) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14585\n"); return false; }
       for (unsigned I = 0; I < Root->getNumArgs(); ++I) {
         const CallExpr *Forward = nullptr;
         if (!Check.forwarding(Root->getArg(I), Operation->getParamDecl(I),
-                              "__functional/not_fn.h", Forward)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14588\n"); return false; }
+                              "__functional/not_fn.h", Forward)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14589\n"); return false; }
         Forwards.push_back(Forward);
       }
       Roots.push_back(Root);
     }
-    if (!Graph.bindNotFnPublicInvoke(Function, Operation, Roots, Forwards)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14593\n"); return false; }
+    if (!Graph.bindNotFnPublicInvoke(Function, Operation, Roots, Forwards)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14594\n"); return false; }
     PublicInvokeFunction = Function;
     const auto *Pattern = Primary->getTemplatedDecl();
     const auto *Info = Function->getTypeSourceInfo();
     if (!Pattern || !Info || !Pattern->getTypeSourceInfo() ||
         !Graph.TraverseTypeLoc(Info->getTypeLoc()) || !Graph.function(Function) ||
-        !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14599\n"); return false; }
+        !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14600\n"); return false; }
     // Metadata signatures are complete; the original runtime helper bodies,
     // forwarding, negation and lifetime proofs remain independent obligations.
     return true;
@@ -14643,7 +14644,7 @@ public:
       if (const auto *Info = Default.Converted.getTypeSourceInfo()) Info->getType().dump(llvm::errs(), Context);
     }
     std::fprintf(stderr, "NOT_FN_LAYOUT_CALL_DEFAULTS_END\n");
-    if (PublicInvokeFunction || PublicNothrowInitializer) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14605\n"); return false; }
+    if (PublicInvokeFunction || PublicNothrowInitializer) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14606\n"); return false; }
     auto RestorePublicInvoke = llvm::make_scope_exit([&] {
       PublicInvokeFunction = nullptr;
       PublicNothrowInitializer = false;
@@ -14651,7 +14652,7 @@ public:
     if (!Graph.bindNotFnOperation(Call.Storage) ||
         !Graph.bindNotFnConstraintVariables([this, Call](const DeclRefExpr *Reference) {
           return invocationVariableUse(Reference, Call);
-        })) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14613\n"); return false; }
+        })) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14614\n"); return false; }
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
@@ -14662,7 +14663,7 @@ public:
         SourceCall->getOperator() != OO_Call ||
         SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
-        !S.owns(SM, Reference->getExprLoc()) || !S.owns(SM, Use.Location)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14624\n"); return false; }
+        !S.owns(SM, Reference->getExprLoc()) || !S.owns(SM, Use.Location)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14625\n"); return false; }
     bool Selected = false;
     for (const auto *Selection : Selections)
       if (Selection && Selection->FunctionalNotFnConstraint &&
@@ -14675,12 +14676,12 @@ public:
     if (!Selected || !Primary || !Arguments || Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
-        Use.Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14637\n"); return false; }
+        Use.Canonical->size() != Arguments->size()) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14638\n"); return false; }
     for (unsigned I = 0; I < Arguments->size(); ++I)
-      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14639\n"); return false; }
+      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14640\n"); return false; }
     return Graph.withNotFnInvocation(Call, [&] {
     if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections) ||
-        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14642\n"); return false; }
+        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14643\n"); return false; }
     // Close the concrete inner invoke result before the outer operator's
     // constraint reaches it. Use this SAME graph and its original cumulative
     // node/depth limits; only a fully successful dependency may be cached.
@@ -14701,14 +14702,14 @@ public:
         !Alias || Alias->getName() != "invoke_result_t" ||
         !Check.family(Alias, {"__type_traits/invoke.h"}) ||
         !Context.hasSameType(Return.getType(), Callee->getReturnType()) ||
-        !Graph.TraverseTypeLoc(Return) || !publicInvokeSources(Call)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14663\n"); return false; }
+        !Graph.TraverseTypeLoc(Return) || !publicInvokeSources(Call)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14664\n"); return false; }
     // Close this selected dependency at the original graph root, after its
     // public operation is authenticated and before the independent defaults.
-    if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14666\n"); return false; }
+    if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14667\n"); return false; }
     // The outer invocability probe is a separate real selected member call.
     // Close its original primary, result alias and ellipsis witness at this
     // same root, after the precise operation invoke dependency is complete.
-    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14670\n"); return false; }
+    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14671\n"); return false; }
     const auto &Default = Use.Defaults.front();
     const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
     if (!Parameter || !Parameter->hasDefaultArgument() ||
@@ -14717,7 +14718,7 @@ public:
         !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
         !constraintType(Default.Written.getTypeSourceInfo()) ||
         !constraintType(Default.Converted.getTypeSourceInfo()) ||
-        !parameterTypes(Use)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14679\n"); return false; }
+        !parameterTypes(Use)) { std::fprintf(stderr, "NOT_FN_LAYOUT_EDGE scope=PROOF line=14680\n"); return false; }
     return true;
     });
   }
