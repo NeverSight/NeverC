@@ -82,11 +82,11 @@ def main():
         assert re.fullmatch('[0-9a-f]{40}', args.component_revision)
         assert re.fullmatch('[0-9a-f]{64}', args.component_report_sha256)
         assert sha(args.component_report) == args.component_report_sha256
-        assert component['revision'] == args.component_revision and component['completed'] and component['passed'] is False and component['not_fn_private_support_complete'] is False
+        assert component['revision'] == args.component_revision and component['completed'] and component['passed'] is True and component['not_fn_private_support_complete'] is False
         assert component['all_five_bridge_units_recompiled'] is True
-        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 808
-        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 560
-        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 240
+        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 200
+        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 48
+        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 144
         assert sum(row['expected'] == 'invalid' and row['expectation_satisfied'] for row in component['requests']) == 8
         archive = args.archive.resolve()
         assert archive.is_file() and sha(archive) == component['replayed_archive_sha256']
@@ -120,6 +120,22 @@ def main():
         assert len(selected) == manifest['expected_total'] == 124
         original = (root / 'tests/neverc/TranslateTests.cpp').read_bytes()
         generated, source_proof = extract(original, selected)
+        original_selected = tuple(selected)
+        original_generated_sha256 = hashlib.sha256(generated).hexdigest()
+        additions_path = root / plan['not_fn_formal_additions_path']
+        additions = additions_path.read_bytes()
+        assert sha(additions_path) == plan['not_fn_formal_additions_sha256']
+        additional = plan['not_fn_formal_cases']
+        assert len(additional) == 4 and len({c['formal_test_name'] for c in additional}) == 4
+        assert not set(original_selected) & {c['formal_test_name'] for c in additional}
+        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 4
+        generated += additions
+        selected += [c['formal_test_name'] for c in additional]
+        r['not_fn_formal_extension'] = dict(original_registered_source_names=7493,
+            original_selected_names=list(original_selected),
+            original_generated_before_extension_sha256=original_generated_sha256,
+            additions_sha256=sha(additions_path), additional_cases=additional,
+            original_extractor_and_124_bodies_unchanged=True)
         first_test = generated.index(b'TEST_F(')
         prefix_bytes = generated[:first_test]
         cleanup = b'''
@@ -169,7 +185,7 @@ def main():
                 suite = line.strip()
             elif suite and line.startswith('  '):
                 found.append(suite + line.strip().split()[0])
-        assert set(found) == set(selected) and len(found) == 124
+        assert set(found) == set(selected) and len(found) == 128
         xml = out / 'gtest.xml'
         environment = dict(os.environ, NEVERC_PRIVATE_RUNTIME_RETAIN=str(build / 'retained-programs'))
         code = run([tests, '--gtest_filter=' + ':'.join(selected), '--gtest_output=xml:' + str(xml)],
@@ -179,7 +195,7 @@ def main():
         tree = ET.parse(xml).getroot()
         cases = tree.findall('.//testcase')
         names = [case.attrib['classname'] + '.' + case.attrib['name'] for case in cases]
-        assert len(cases) == 124 and set(names) == set(selected)
+        assert len(cases) == 128 and set(names) == set(selected)
         failed = [name for name, case in zip(names, cases) if case.find('failure') is not None]
         skipped = [name for name, case in zip(names, cases) if case.find('skipped') is not None]
         r.update(formal_xml_sha256=sha(xml), actual_formal_tests=len(cases),
@@ -202,6 +218,25 @@ def main():
             'first_64_bytes_hex': path.open('rb').read(64).hex()}
             for path in sorted(retained.rglob('*')) if path.is_file()]
         assert sha(archive) == r['actual_private_archive_sha256'] and sha(backend) == baseline['compiler_sha256']
+        not_fn_products = []
+        for case in additional:
+            for optimization in ['-O0', '-O2']:
+                matches = list(retained.rglob(case['name'] + optimization))
+                assert len(matches) <= 1
+                if matches:
+                    product = matches[0]
+                    with product.open('rb') as stream:
+                        header = stream.read(64)
+                    not_fn_products.append(dict(name=case['name'], optimization=optimization,
+                        path=str(product.relative_to(retained)), bytes=product.stat().st_size,
+                        sha256=sha(product), first_64_bytes_hex=header.hex()))
+        r['actual_not_fn_generated_products'] = not_fn_products
+        if not failed and not skipped and code == 0:
+            assert len(not_fn_products) == 8
+            for product in not_fn_products:
+                header = bytes.fromhex(product['first_64_bytes_hex'])
+                assert product['bytes'] > 64 and len(header) == 64
+                assert header[:6] == b'\x7fELF\x02\x01' and header[18:20] == b'\x3e\x00'
         r.update(completed=True, passed=code == 0 and not failed and not skipped,
             actual_component_formal_tests_passed=code == 0 and not failed and not skipped)
         save()

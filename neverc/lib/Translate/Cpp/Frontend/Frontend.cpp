@@ -5169,7 +5169,8 @@ static const CallExpr *functionalReturnedCall(const FunctionDecl *Function) {
 static bool functionalInvocabilitySource(
     Adapter &A, const CallExpr *Call, QualType Callable,
     const TemplateArgument &Arguments, bool TargetIsNothrow,
-    llvm::StringRef TraitName = "is_nothrow_invocable_v") {
+    llvm::StringRef TraitName = "is_nothrow_invocable_v",
+    const FunctionalNotFnCallSource *NotFn = nullptr) {
   const auto *Function = Call->getDirectCallee();
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   if (!Prototype || operationCalleePrototype(Call) != Prototype ||
@@ -5183,7 +5184,32 @@ static bool functionalInvocabilitySource(
   // invocability variable, with the same callable and deduced argument pack.
   // Its resolved value also agrees with the admitted call or field projection;
   // caller-side conversions, defaults and cleanup still retain their sources.
-  const auto *Noexcept = Prototype->getNoexceptExpr();
+  const Expr *Noexcept = Prototype->getNoexceptExpr();
+  if (NotFn) {
+    const auto Site = A.S.sdkFile(A.Sources, Call->getExprLoc());
+    if (NotFn->Mode != FunctionalNotFnSourceMode::Runtime || Call != NotFn->InvokeCall ||
+        !NotFn->SourceCall || !A.S.owns(A.Sources, NotFn->SourceCall->getExprLoc()) ||
+        !Site || Site->Root != "libcxx" || Site->Path != "__functional/not_fn.h") return false;
+    if (const auto *Cached = dyn_cast_or_null<ConstantExpr>(Noexcept)) {
+      const auto *Written = Cached->getSubExpr();
+      auto PinnedSite = [&](SourceLocation Location) {
+        const auto Origin = A.S.sdkFile(A.Sources, Location);
+        return Location.isValid() && !Location.isMacroID() && Origin &&
+            Origin->Root == "libcxx" && Origin->Path == "__functional/invoke.h";
+      };
+      // Consume only this exact retained original expression, not its APValue.
+      // Generic invocation callers retain their original exception-source rule.
+      if (!Written || isa<ConstantExpr>(Written) ||
+          Cached->isTypeDependent() || Cached->isValueDependent() ||
+          Written->isTypeDependent() || Written->isValueDependent() ||
+          !Cached->getType()->isBooleanType() || !Written->getType()->isBooleanType() ||
+          !A.Context.hasSameType(Cached->getType(), Written->getType()) ||
+          Cached->getValueKind() != Written->getValueKind() ||
+          Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
+          !PinnedSite(Cached->getBeginLoc()) || !PinnedSite(Cached->getEndLoc())) return false;
+      Noexcept = Written;
+    }
+  }
   const auto *Reference =
       Noexcept ? dyn_cast<DeclRefExpr>(Noexcept->IgnoreParenImpCasts()) : nullptr;
   const auto *Variable = Reference
@@ -5226,9 +5252,11 @@ static bool functionalInvocabilitySource(
 
 static bool functionalInvocabilitySource(
     Adapter &A, const CallExpr *Call, QualType Callable,
-    const TemplateArgument &Arguments, const FunctionProtoType *Target) {
+    const TemplateArgument &Arguments, const FunctionProtoType *Target,
+    const FunctionalNotFnCallSource *NotFn = nullptr) {
   return Target && functionalInvocabilitySource(
-                       A, Call, Callable, Arguments, Target->isNothrow());
+                       A, Call, Callable, Arguments, Target->isNothrow(),
+                       "is_nothrow_invocable_v", NotFn);
 }
 
 static const FunctionProtoType *
@@ -6164,14 +6192,94 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call,
   return true;
 }
 
-static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
+// This path authenticates an internal call only through its real, independently
+// described not_fn root. It supplies no generic SDK-call or runtime-body grant.
+static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
+                                        const FunctionalNotFnCallSource &NotFn) {
+  if (NotFn.Mode != FunctionalNotFnSourceMode::Runtime || !NotFn.SourceCall ||
+      Call != NotFn.InvokeCall || !Call || Call->isTypeDependent() ||
+      Call->isValueDependent() || Call->isInstantiationDependent()) return false;
+  const auto Actual = describeFunctionalNotFnCallSource(
+      A.S, A.Sources, NotFn.SourceCall, A.Context, FunctionalNotFnSourceMode::Runtime);
+  if (!Actual || Actual->Method != NotFn.Method || Actual->Object != NotFn.Object ||
+      Actual->Receiver != NotFn.Receiver || Actual->BoundGet != NotFn.BoundGet ||
+      Actual->BoundMove != NotFn.BoundMove || Actual->OperationCall != NotFn.OperationCall ||
+      Actual->Negation != NotFn.Negation || Actual->InvokeCall != Call ||
+      Actual->DispatchCall != NotFn.DispatchCall || Actual->TargetCall != NotFn.TargetCall ||
+      Actual->ForwardingCalls != NotFn.ForwardingCalls ||
+      Actual->Storage.Record != NotFn.Storage.Record ||
+      !A.Context.hasSameType(Actual->Storage.CallableType, NotFn.Storage.CallableType) ||
+      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) return false;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Reference = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto Site = Reference ? A.S.sdkFile(A.Sources, Reference->getExprLoc()) : std::nullopt;
+  const auto *Dispatch = Function ? functionalReturnedCall(Function) : nullptr;
+  const auto *Dispatcher = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *Inner = Dispatcher ? functionalReturnedCall(Dispatcher) : nullptr;
+  const auto *Target = NotFn.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Function || !Primary || !Primary->getTemplatedDecl()->hasBody() || Function->isVariadic() ||
+      !Reference || Reference->getDecl() != Function || !Site || Site->Root != "libcxx" ||
+      Site->Path != "__functional/not_fn.h" || !Target || !ordinaryCallbackPrototype(Target) ||
+      !Target->getReturnType()->isArithmeticType() || !NotFn.Method ||
+      NotFn.Method->getNumParams() != Target->getNumParams() ||
+      Function->getNumParams() != Target->getNumParams() + 1 ||
+      Call->getNumArgs() != Function->getNumParams() || Dispatch != NotFn.DispatchCall ||
+      Inner != NotFn.TargetCall || !Dispatcher || !Inner || Inner->getDirectCallee() ||
+      isa<CXXOperatorCallExpr>(Inner) || Dispatcher->getNumParams() != Function->getNumParams() ||
+      Dispatch->getNumArgs() != Function->getNumParams() || Inner->getNumArgs() != Target->getNumParams() ||
+      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) return false;
+  // Retain the original forwarding and indirect-argument flow obligations.
+  // This pointer slice performs no hidden record copy/construction in the SDK.
+  for (unsigned I = 0; I < Function->getNumParams(); ++I) {
+    const auto *Forward = dyn_cast<CallExpr>(Dispatch->getArg(I)->IgnoreParenImpCasts());
+    const auto *Parameter = Function->getParamDecl(I);
+    const auto *Use = Forward && Forward->getNumArgs() == 1
+        ? dyn_cast<DeclRefExpr>(Forward->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+    const auto *Forwarder = Forward ? Forward->getDirectCallee() : nullptr;
+    if (!Forward || !Use || Use->getDecl() != Parameter || !Forwarder ||
+        !utilitySDKValueAdapterSource(A, Forward, UtilityOperation::Forward) ||
+        !A.Context.hasSameType(Forwarder->getReturnType(), Parameter->getType()) ||
+        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) return false;
+  }
+  auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression ? Expression->IgnoreParenImpCasts() : nullptr);
+    const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Parameter = Dispatcher->getParamDecl(Index);
+    const auto Origin = Cast ? A.S.sdkFile(A.Sources, Cast->getExprLoc()) : std::nullopt;
+    return Cast && Cast->getCastKind() == CK_NoOp && Use && Use->getDecl() == Parameter &&
+        !Parameter->hasDefaultArg() && Origin && Origin->Root == "libcxx" &&
+        Origin->Path == "__type_traits/invoke.h" &&
+        A.Context.hasSameType(Cast->getTypeAsWritten(), Parameter->getType()) &&
+        A.Context.hasSameType(Cast->getType(), Parameter->getType().getNonLValueExprType(A.Context)) &&
+        Cast->getValueKind() == Expr::getValueKindForType(Parameter->getType());
+  };
+  if (!ParameterCast(Inner->getCallee(), 0)) return false;
+  for (unsigned I = 0; I < Target->getNumParams(); ++I) {
+    const auto Parameter = Target->getParamType(I);
+    const auto Value = Parameter.getNonReferenceType();
+    const auto ActualArgument = NotFn.Method->getParamDecl(I)->getType().getNonReferenceType();
+    if (!Value->isScalarType() || Value.isVolatileQualified() || Value.isRestrictQualified() ||
+        ActualArgument.isVolatileQualified() ||
+        !A.Context.hasSameUnqualifiedType(Value, ActualArgument) ||
+        !ParameterCast(Inner->getArg(I), I + 1) ||
+        !A.Context.hasSameType(Inner->getArg(I)->getType(), Parameter.getNonLValueExprType(A.Context)) ||
+        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
+  }
+  return true;
+}
+
+static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
+    const FunctionalNotFnCallSource *NotFn = nullptr) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
     return false;
-  const auto Operation =
-      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
-  if (!Operation || *Operation != UtilityOperation::FunctionalInvoke)
-    return false;
+  if (NotFn) {
+    if (!functionalNotFnInvokeBinding(A, Call, *NotFn)) return false;
+  } else {
+    const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+    if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return false;
+  }
 
   // The runtime operation proves the fixed-arity callable, admitted argument
   // conversions and result, and the materialized public dispatch. Authenticate
@@ -6199,7 +6307,7 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                   "__type_traits/invoke.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                       Arguments->get(1), Target);
+                                       Arguments->get(1), Target, NotFn);
 }
 
 // The caller supplies a runtime-proven apply operation and its selected target.
@@ -25884,7 +25992,7 @@ public:
         Prototype && Prototype->isNothrow() == Target->isNothrow() &&
         Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
         A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
-        functionalFunctionInvokeSource(A, Runtime->InvokeCall);
+        functionalFunctionInvokeSource(A, Runtime->InvokeCall, &*Runtime);
     // Consume the selected operator's real enable_if/default packet, including
     // its original primary spelling, rather than assuming that void means valid.
     bool SelectedDefault = false;
@@ -25900,8 +26008,12 @@ public:
       // This bounded walker follows actual selected aliases, partials, trait
       // roots and all original declaration chains. No ordinary permission leaks.
       std::vector<const SelectedTemplateCallSource *> Selections;
-      const auto Found = NotFnSelectedCallSources.find(Call);
-      if (Found != NotFnSelectedCallSources.end()) Selections = Found->second;
+      // The selected operator and its actual unevaluated helper calls have
+      // distinct expression keys. Snapshot the inert owned selections here;
+      // the proof still binds each helper's exact function, expression, use
+      // location and arguments, and independently requires this root call.
+      for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
+        Selections.insert(Selections.end(), Entries.begin(), Entries.end());
       SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
           A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
           A.SpecialMembers, A.OperationTraits);

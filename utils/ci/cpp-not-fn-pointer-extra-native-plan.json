@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "name": "not-fn-pointer-factory-argument-once",
+      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFactoryAndArgumentsRunOnce",
+      "source": "#include <functional>\nint builds, calls, arguments;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nusing FP = bool (*)(int);\nFP choose() { ++builds; return &odd; }\nint argument(int x) { ++arguments; return x; }\nint main() {\n  auto f = std::not_fn(choose());\n  const bool first = f(argument(3));\n  const bool second = f(argument(4));\n  return first || !second || builds != 1 || calls != 2 || arguments != 2;\n}\n",
+      "source_sha256": "2663fceaf5b2f3c446be6beb918b22f52a8a92981071ec53962d3e12a029cdbf",
+      "original_positive_byte_identical": false,
+      "gtest_body": "TEST_F(TranslateTest, CoreV2NotFnFunctionPointerFactoryAndArgumentsRunOnce) {\n  const auto Source = tmpFile(\"not-fn-pointer-factory-argument-once.cpp\");\n  const auto Output = tmpFile(\"not-fn-pointer-factory-argument-once.nc\");\n  writeFile(Source, R\"cpp(#include <functional>\nint builds, calls, arguments;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nusing FP = bool (*)(int);\nFP choose() { ++builds; return &odd; }\nint argument(int x) { ++arguments; return x; }\nint main() {\n  auto f = std::not_fn(choose());\n  const bool first = f(argument(3));\n  const bool second = f(argument(4));\n  return first || !second || builds != 1 || calls != 2 || arguments != 2;\n}\n)cpp\");\n  auto Result = translate(Source, {\"--profile\", \"cpp-core-v2\", \"-o\", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {\"-O0\", \"-O2\"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile(\"not-fn-pointer-factory-argument-once\" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n",
+      "gtest_body_sha256": "6501b285bedf04424d90b8fcc00e70e1b0d07b561ebf5919c15762d71a241427"
+    },
+    {
+      "name": "not-fn-pointer-four-cvref",
+      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFourCvrefCalls",
+      "source": "#include <functional>\n#include <utility>\nint calls;\nbool odd(int x) noexcept { ++calls; return (x & 1) != 0; }\nint main() {\n  auto a = std::not_fn(&odd);\n  const auto b = std::not_fn(&odd);\n  const bool lvalue = a(3);\n  const bool constant_lvalue = b(4);\n  const bool rvalue = std::move(a)(5);\n  const bool constant_rvalue = std::move(b)(6);\n  return lvalue || !constant_lvalue || rvalue || !constant_rvalue || calls != 4;\n}\n",
+      "source_sha256": "898831e9711440b59c6c1b164322388777e677e6e512d1df783f78d2b144630b",
+      "original_positive_byte_identical": false,
+      "gtest_body": "TEST_F(TranslateTest, CoreV2NotFnFunctionPointerFourCvrefCalls) {\n  const auto Source = tmpFile(\"not-fn-pointer-four-cvref.cpp\");\n  const auto Output = tmpFile(\"not-fn-pointer-four-cvref.nc\");\n  writeFile(Source, R\"cpp(#include <functional>\n#include <utility>\nint calls;\nbool odd(int x) noexcept { ++calls; return (x & 1) != 0; }\nint main() {\n  auto a = std::not_fn(&odd);\n  const auto b = std::not_fn(&odd);\n  const bool lvalue = a(3);\n  const bool constant_lvalue = b(4);\n  const bool rvalue = std::move(a)(5);\n  const bool constant_rvalue = std::move(b)(6);\n  return lvalue || !constant_lvalue || rvalue || !constant_rvalue || calls != 4;\n}\n)cpp\");\n  auto Result = translate(Source, {\"--profile\", \"cpp-core-v2\", \"-o\", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {\"-O0\", \"-O2\"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile(\"not-fn-pointer-four-cvref\" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n",
+      "gtest_body_sha256": "f74704e68b91980cfde876bc10b4ea0c383f515d9b03b99bafc7178bcb0aa482"
+    }
+  ],
+  "reference_native_only": true,
+  "original_two_successful_sources_reused": true,
+  "required_cases": 2,
+  "required_native_executions": 4,
+  "private_support_complete": false,
+  "original_frozen_sdk_configuration": "6d8cb6763c6f4885b3cc32c0d1d99b0ddb88da1d"
+}

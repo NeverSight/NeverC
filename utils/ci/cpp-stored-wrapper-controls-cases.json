@@ -1,0 +1,388 @@
+{
+  "base_commit": "89574033312b3bf5946cecf4a3d59903792c99d5",
+  "baseline_revision": "1617f18ead74a8fa719e3d1bd02f9c84a10de551",
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "private_frontend_changed": false,
+  "full_ci_passed": false,
+  "promoted": [
+    {
+      "name": "WrapperTransformReduceUnary-stored-object-bool-accumulator-original",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "e94ddebb1e41e7b8c7b87d5c51e7f46f8637136f13460b6e7ec5311e8d9f540a",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-object-bool-accumulator-runtime",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4,a,nullptr)!=false;}\n",
+      "source_sha256": "3cf981ef8952c1dc068d741fd73d1fd7c7d158541c19ebee60fdd2403320f756",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-negate-original",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "58e339c1f3cf5028bcd306934ec5ef73ba8ad3a27152f7e6e5f9a2e3c03ecfe2",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-negate-runtime",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4)!=-1;}\n",
+      "source_sha256": "1a6725e06c9e6383ba3fe0f1cb66424a983f3c25e671a014eddee2de52858ef8",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-plus-original",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "e827efb52a402ee76633c98be12345e8591f3227835a66212c2d218e147ad3a0",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-plus-runtime",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};return selected(a,a+4)!=-1;}\n",
+      "source_sha256": "56c71ed9bd195fa416402d15b04ed391168b24ca86792b89899e3bff06d07737",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-object-bool-accumulator-original",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "db4b9a360019ddac15b1fc93be596844f0a2e7653e0962aa78495ee011edbb47",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-object-bool-accumulator-runtime",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,0,0};if(selected(a,a+4,a,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}\n",
+      "source_sha256": "d011391335c2268366ec42f15b0a842ab46f08c0355171acd21919fed6986eb7",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-negate-original",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "e6fb4169f0ed5304438f2f65ef1c7faa9de53861c799c239e33cfe739362e59f",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-negate-runtime",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,-3,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}\n",
+      "source_sha256": "59cf540fa0b97514b1ac8b70afd2e23c6f33756728b52baa1f1319fa1c3744e1",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-plus-original",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "945ccdb4109e77d935e935edfcb2a8e696c4b74b099a5a8b2ae1564475eb20ea",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-plus-runtime",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,-3,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}\n",
+      "source_sha256": "ac87eaace0a5bc9fe8cde3c24b345ec1f505bfd33fc93cd0334509c8f7ea03bf",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-object-bool-accumulator-original",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}\n\nint main(){return 0;}\n",
+      "source_sha256": "d7c2cef6706056c41ae458b5e8561315f01254c6d0c2355ebcc13fb34233d43c",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-object-bool-accumulator-runtime",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,0,0,0};if(selected(a,a+4,a,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}\n",
+      "source_sha256": "b2e87b08b8a5194eb1005d7ba8db2d2c0331c70dffac0eeeea4ba5521af5426e",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-negate-original",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}\n\nint main(){return 0;}\n",
+      "source_sha256": "c31dd4135f074f98d06bff07c5f43a6db7ca0489c8b6a1a59d295d4f52c2e0f9",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-negate-runtime",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,-3,-1,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}\n",
+      "source_sha256": "9aee1ecc11d3efdaac7e2253bd0958130f667ad5984721f05ed862e8b4de29f7",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-plus-original",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}\n\nint main(){return 0;}\n",
+      "source_sha256": "71211a4fef1ea13884d801ff8c6cd8326bf85bb30a3208d058924fdb124d9cd5",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-plus-runtime",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <numeric>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};int expected[]={0,-3,-1,-1};if(selected(a,a+4,out)!=out+4||out[4]!=95)return 1;for(int i=0;i!=4;++i)if(out[i]!=expected[i])return 2;return v[0]!=0||v[1]!=3||v[2]!=-2||v[3]!=0;}\n",
+      "source_sha256": "5263ebe742b9403b2ae0c9205ff6bc0fcea4bd6f283003a192486134567e06ae",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperCopyIfRecordOutput-stored-logical-not-original",
+      "test": "CoreV2WrapperCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "7eedccc04334b0a2bbd2a24032a98bee65afecade1c11107ccfec00504847aa7",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperCopyIfRecordOutput-stored-logical-not-runtime",
+      "test": "CoreV2WrapperCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};if(selected(a,a+4,out)!=out+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&out[2].get()!=&sentinel)return 1;v[0]=42;return out[0].get()!=42;}\n",
+      "source_sha256": "a4a807a6b9a40f92184f3c4d81ed8e1849bc3e3ac8e5ebcafe3d6d2e8c1eaf54",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperRemoveCopyIfRecordOutput-stored-logical-not-original",
+      "test": "CoreV2WrapperRemoveCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "b4005ddd5bf543da8e2d08628c2f024682caa922e90485b1f1036c8b204fa1b0",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperRemoveCopyIfRecordOutput-stored-logical-not-runtime",
+      "test": "CoreV2WrapperRemoveCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};if(selected(a,a+4,out)!=out+2||&out[0].get()!=&v[1]||&out[1].get()!=&v[2]||&out[2].get()!=&sentinel)return 1;v[1]=42;return out[0].get()!=42;}\n",
+      "source_sha256": "6e7702b87f0c8651c6502b2fef2c8fff379438d7721c2d7ad8f9b3142e63574d",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperPartitionCopyRecordOutput-stored-logical-not-original",
+      "test": "CoreV2WrapperPartitionCopyRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "250ddac6750745cdfb1fc2b9daf54862aa36c6fae3b9d749ba92d7ca17c74e70",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperPartitionCopyRecordOutput-stored-logical-not-runtime",
+      "test": "CoreV2WrapperPartitionCopyRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out,W*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};W other[]={sentinel,sentinel,sentinel};auto result=selected(a,a+4,out,other);return result.first!=out+2||result.second!=other+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&other[0].get()!=&v[1]||&other[1].get()!=&v[2]||&out[2].get()!=&sentinel||&other[2].get()!=&sentinel;}\n",
+      "source_sha256": "b595436de38d03d545e3b0abb71b9a2bc85bff39bac1ef05008f04ab3a9a1db6",
+      "detail": "Original source is separately preserved byte-for-byte. Runtime variant gives partition_copy disjoint output ranges, as required by its native contract; the stored predicate and selected algorithm are unchanged."
+    },
+    {
+      "name": "WrapperPartitionCopyMixedOutput-stored-logical-not-original",
+      "test": "CoreV2WrapperPartitionCopyMixedOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "04e5c71c7d30477d4efa4d5d7d905ca18ff5f03b9da7e87f841235d5601ceac3",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperPartitionCopyMixedOutput-stored-logical-not-runtime",
+      "test": "CoreV2WrapperPartitionCopyMixedOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};int other[]={91,92,93};auto result=selected(a,a+4,out,other);return result.first!=out+2||result.second!=other+2||&out[0].get()!=&v[0]||&out[1].get()!=&v[3]||&out[2].get()!=&sentinel||other[0]!=3||other[1]!=-2||other[2]!=93;}\n",
+      "source_sha256": "b9ef811641b4beaf88a2dcd9ba2e8a8d2f9e1000577739c2cbeaf6f6a972199f",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperReplaceCopyIfRecordOutput-stored-logical-not-original",
+      "test": "CoreV2WrapperReplaceCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}\n\nint main(){return 0;}\n",
+      "source_sha256": "1aa57c37b9c1c1d8bed5cb83e5d79c4a431439b1c35954dab9ba7029b928f8f1",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperReplaceCopyIfRecordOutput-stored-logical-not-runtime",
+      "test": "CoreV2WrapperReplaceCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int sentinel=-91;W out[]={sentinel,sentinel,sentinel,sentinel,sentinel};return selected(a,a+4,out)!=out+4||&out[0].get()!=&v[0]||&out[1].get()!=&v[1]||&out[2].get()!=&v[2]||&out[3].get()!=&v[0]||&out[4].get()!=&sentinel;}\n",
+      "source_sha256": "c589f47d1851efdb3c2974e639a654f2311b7956bf62359be61933b021c88af0",
+      "detail": "Exact original selected function with runtime result and output checks."
+    },
+    {
+      "name": "WrapperReplaceCopyIfWrappedValue-stored-logical-not-original",
+      "test": "CoreV2WrapperReplaceCopyIfWrappedValueRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "original",
+      "source": "\nint value=7;\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}\n\nint main(){return 0;}\n",
+      "source_sha256": "07bd0761cdfee5a0e573b970dd4662119fee2ca7f1bdc2ee037318520223f895",
+      "detail": "Exact formerly rejected selected function is retained without executing it."
+    },
+    {
+      "name": "WrapperReplaceCopyIfWrappedValue-stored-logical-not-runtime",
+      "test": "CoreV2WrapperReplaceCopyIfWrappedValueRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "runtime",
+      "source": "\nint value=7;\n#include <algorithm>\n#include <functional>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}\n\nint main(){int v[]={0,3,-2,0};W a[]={v[0],v[1],v[2],v[3]};int out[]={91,92,93,94,95};return selected(a,a+4,out)!=out+4||out[0]!=7||out[1]!=3||out[2]!=-2||out[3]!=7||out[4]!=95||value!=7;}\n",
+      "source_sha256": "0f37d89bad85fb09d72005bad749cb812d5c349b90fc40d3a1a50687bc80deeb",
+      "detail": "Exact original selected function with runtime result and output checks."
+    }
+  ],
+  "guards": [
+    {
+      "name": "WrapperTransformReduceUnary-stored-object-bool-accumulator-sdk-primary-source",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_and;}}\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_reduce(a,b,false,op,std::logical_not<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "4b716e5cb7013e0def7a612a81650fcbb578d8ba0fec752abbba86c1735fe98b",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-negate-sdk-primary-source",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct negate;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b){std::negate<> op;return std::transform_reduce(a,b,0,std::plus<>{},op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "5665ebe85f12362b71ad1b02f21653abb45291d81a0bcfb2bb8bb19f7a04be19",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformReduceUnary-stored-plus-sdk-primary-source",
+      "test": "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct plus;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b){std::plus<> op;return std::transform_reduce(a,b,0,op,std::negate<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "9192f7c8749b3735ff641d6f31ef83e7337e21f17c140826a0ebab2e7fb4fcd7",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-object-bool-accumulator-sdk-primary-source",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_and;}}\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_exclusive_scan(a,b,out,false,op,std::logical_not<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "f2fc30c92d3fddac4f152ddec6235471130ccd2bfbc22f0f1e59cf24f29bdac0",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-negate-sdk-primary-source",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct negate;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::negate<> op;return std::transform_exclusive_scan(a,b,out,0,std::plus<>{},op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "a20515c606f5a639068bc45d257902cabf0ac5631dd93052b7d1f37f5687d048",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformExclusiveScan-stored-plus-sdk-primary-source",
+      "test": "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct plus;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::plus<> op;return std::transform_exclusive_scan(a,b,out,0,op,std::negate<>{});}\n\nint main(){return 0;}\n",
+      "source_sha256": "2888b9e6904db2e131abb3e3c6ebe28f7588cd224cf510e5424633bec15dd8da",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-object-bool-accumulator-sdk-primary-source",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_and;}}\n#include <utility>\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,P c,int*out){std::logical_and<> op;return std::transform_inclusive_scan(a,b,out,op,std::logical_not<>{},false);}\n\nint main(){return 0;}\n",
+      "source_sha256": "4c45f49fb10faf65d905082b5453995d0a8e75dce0fd9ab369af65f3b3211e80",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-negate-sdk-primary-source",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct negate;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::negate<> op;return std::transform_inclusive_scan(a,b,out,std::plus<>{},op,0);}\n\nint main(){return 0;}\n",
+      "source_sha256": "1a53cdb392253504594028eb18652aa9fa4f8bd3ea3af1bcf1bbbb4c6d9c9f29",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperTransformInclusiveScan-stored-plus-sdk-primary-source",
+      "test": "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <numeric>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct plus;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::plus<> op;return std::transform_inclusive_scan(a,b,out,op,std::negate<>{},0);}\n\nint main(){return 0;}\n",
+      "source_sha256": "36aa3b75cebc01c9976ef275a796b883b68a047101dd10b0e9345b11aba2841e",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperCopyIfRecordOutput-stored-logical-not-sdk-primary-source",
+      "test": "CoreV2WrapperCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::copy_if(a,b,out,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "ea3612a57ad8d3da89ecd2806079d2aa4c545cae8e10b7a3c7987674f2707261",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperRemoveCopyIfRecordOutput-stored-logical-not-sdk-primary-source",
+      "test": "CoreV2WrapperRemoveCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::remove_copy_if(a,b,out,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "9148560c8fabcda3ac67024bc9e39e42fb76defdf6ee7fd85ac8ed30e3480d67",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperPartitionCopyRecordOutput-stored-logical-not-sdk-primary-source",
+      "test": "CoreV2WrapperPartitionCopyRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::partition_copy(a,b,out,out,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "9186dd0b270fc5a81fa2841e64e504b6d12970f360bfcf2251f417286fd89836",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperPartitionCopyMixedOutput-stored-logical-not-sdk-primary-source",
+      "test": "CoreV2WrapperPartitionCopyMixedOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out,int*other){std::logical_not<> op;return std::partition_copy(a,b,out,other,op);}\n\nint main(){return 0;}\n",
+      "source_sha256": "fe673d558bc605a46e54b354b55bd087c082ef88b3df9d262c472e6a09ccfc5a",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperReplaceCopyIfRecordOutput-stored-logical-not-sdk-primary-source",
+      "test": "CoreV2WrapperReplaceCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\n#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,W*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,a[0]);}\n\nint main(){return 0;}\n",
+      "source_sha256": "fb4c6aaa33c507a1d9b9a86a600053fa239ee85770a76a2c0a14b9957c3c2ec9",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    },
+    {
+      "name": "WrapperReplaceCopyIfWrappedValue-stored-logical-not-sdk-primary-source",
+      "test": "CoreV2WrapperReplaceCopyIfWrappedValueRuntimeRetainsSourceAndLifetimeBoundaries",
+      "category": "guard",
+      "source": "\nint value=7;\n#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}\nusing W=std::reference_wrapper<int>;using P=W*;\nauto selected(P a,P b,int*out){std::logical_not<> op;return std::replace_copy_if(a,b,out,op,std::ref(value));}\n\nint main(){return 0;}\n",
+      "source_sha256": "b46d8ebbe6bf1a290d1ac795e90de2a3ba7098e525a9d6b662f15a8fd157ff98",
+      "detail": "Native-valid source-owned redeclaration of the actual stored SDK operator primary."
+    }
+  ],
+  "affected_tests": [
+    "CoreV2WrapperTransformReduceUnaryRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperTransformExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperTransformInclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperRemoveCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperPartitionCopyRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperPartitionCopyMixedOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperReplaceCopyIfRecordOutputRuntimeRetainsSourceAndLifetimeBoundaries",
+    "CoreV2WrapperReplaceCopyIfWrappedValueRuntimeRetainsSourceAndLifetimeBoundaries"
+  ],
+  "native_executions_expected": 90,
+  "translated_executions_expected": 60,
+  "source_guard_refusals_expected": 15,
+  "native_executable_binaries_expected": 150,
+  "former_tests_sha256": "f27573e9d2c141a18bc8f2aef397ac2700752d63ea0bcd54b7527b4c685ba66b",
+  "corrected_tests_sha256": "c3b3643db8091dcf5f7187d5c479257f7ebc12e2ef5dc2aff6cdf681536c0d03"
+}

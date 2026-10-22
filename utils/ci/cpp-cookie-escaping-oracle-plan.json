@@ -1,0 +1,83 @@
+{
+  "compiler_source_revision": "43c7c0c55874c8b3ebfd4c1c39096189741f9616",
+  "compiler_run_id": 39341054945,
+  "compiler_artifact": {
+    "id": 12235108529,
+    "name": "windows-arm64-neverc",
+    "digest": "sha256:995c74533ccaf3aa43111bf07fba09b3fffd15faae908833b5d26ef3ecf1c707"
+  },
+  "compiler_sha256": "adf3b0421e9ccf5120e121393595b85e351b90dfaccc16d4a707cd3c374e0176",
+  "expected_frontend_version": "neverc-cpp-frontend 20.1.8 protocol 1 cpp-frontend-1-4bc309632733d66c978340b59c65031cd49f564f0217a411f763b15a6d915cc4",
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "source_basis": "76955e4dc9b421f9fa078955eb120609a6d2de32",
+  "fixture": "tests/neverc/Inputs/translate/cpp/default-sized-delete.cpp",
+  "harness": "tests/neverc/Inputs/translate/cpp/default-sized-delete-harness.c",
+  "fixture_sha256": "4ef2b2f7d07168b6063a6f352c5d2cd13b876bce8591f09adb56095dd1a31bd7",
+  "harness_sha256": "44ea4a0e5900234bdb3c75fb51bf76088977c3584978359b2f56fcecdeb1e693",
+  "prior_actual_native_oracle": {
+    "commit": "6aee1f1ef4deb597cab3f715c22c9a855573d533",
+    "run_id": 39407271094,
+    "artifact_id": 12257073755,
+    "report_sha256": "f034914e5eeb96da797f6e0126ec9df194ea9b7f43cd385f1bc879aef4d60ec3",
+    "actual_native_runs": 6,
+    "actual_ir_files": 4,
+    "original_native_failure_reproduced": true
+  },
+  "native_reference_version": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\nTarget: aarch64-pc-windows-msvc\nThread model: posix\nInstalledDir: C:\\Program Files\\LLVM\\bin\n",
+  "source_paths": [
+    "utils/ci/check-cookie-escaping-oracle.py",
+    "utils/ci/cpp-cookie-escaping-oracle-plan.json",
+    "utils/ci/download-repaired-windows-arm.py",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "tests/neverc/Inputs/translate/cpp/default-sized-delete.cpp",
+    "tests/neverc/Inputs/translate/cpp/default-sized-delete-harness.c"
+  ],
+  "required_native_runs": 2,
+  "required_translated_runs": 2,
+  "required_ir_files": 2,
+  "command_timeout_seconds": 60,
+  "original_gtest_body_unchanged": true,
+  "original_allocation_and_assertion_inverse_sha256": "c9c90baf94cedae4c7f7f31faacfd6c3ec18cb6fecc0c27bc86fd7c87d39727a",
+  "original_fixture_sha256": "3cf90f10ed77777813b4f0de746cdfc3790921c26de348956577843e91cc3844",
+  "original_harness_sha256": "7d71ba09a79b30f942ffd0386996b8b5b955abc5d39ad258159d64a48059a85f",
+  "original_gtest_fixture_flags": [
+    "-O0/-O2",
+    "-fno-lto",
+    "-fno-builtin-mimalloc",
+    "-c",
+    "-fstrict-aliasing"
+  ],
+  "compiler_rebuilt": false,
+  "all_binaries_remote_only": true,
+  "not_full_ci_or_current_production_compiler_proof": true,
+  "previous_bootstrap_failure": {
+    "commit": "c1a48a81ca22a2a551f6be0a9e22fdbd10d086cd",
+    "run_id": 39409694902,
+    "job_id": 118584132308,
+    "full_log_sha256": "3925dc6f09488359f1a019050e92eba16a2359911ef9396b229c42f041453f1e",
+    "actual_native_runs": 0,
+    "actual_translated_runs": 0,
+    "formal_xml": 0,
+    "failure": "Downloader CLI requires --evidence; workflow omitted it before any compiler download or fixture execution."
+  },
+  "escape_mode": "published-address-accessor",
+  "previous_foreign_declaration_rejection": {
+    "commit": "113d99b69e3df1980c59f4eec9921b3035939e2e",
+    "run_id": 39413680801,
+    "artifact_id": 12260424345,
+    "report_sha256": "8bec3e3982d0df10dad1a6ba83f43fac59b2155b3f7a555d144d638f08fd98d2",
+    "actual_native_runs": 2,
+    "actual_translated_runs": 0
+  },
+  "previous_native_runs_passed": true,
+  "previous_c_global_link_rejection": {
+    "commit": "daf3bb2fd61cf7eb838fb4f2841ec235659812f2",
+    "run_id": 39416581466,
+    "artifact_id": 12263093231,
+    "report_sha256": "af747a1d23b96d7d12f569cb4f85ebc62695878ea48ef3029a099dba7beb7b57",
+    "actual_native_runs": 2,
+    "actual_translated_runs": 0
+  },
+  "previous_translation_succeeded": true,
+  "defined_c_accessor_only": true
+}

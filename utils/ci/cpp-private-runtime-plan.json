@@ -1,26 +1,26 @@
 {
-  "component_commit": "831f0a6a5b201ca85daf9a6e499197dccaa14991",
-  "component_run_id": 39561945652,
-  "component_actual_job": 119095049567,
+  "component_commit": "94d86e681be1f62e5e311e783440aaa7d70c290e",
+  "component_run_id": 39743010552,
+  "component_actual_job": 119704615889,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12329281881,
-    "name": "cpp-ordinary-selected-call-replay-831f0a6a5b201ca85daf9a6e499197dccaa14991",
-    "digest": "sha256:7f1134b6081fe0c5a0f0829a62a40f787b385d3bf7b65190ac5f8f9e83af978e"
+    "id": 12410504437,
+    "name": "cpp-not-fn-pointer-clean-200-94d86e681be1f62e5e311e783440aaa7d70c290e",
+    "digest": "sha256:a1e948e977c0abb774e554ec9c9efc286b81c0e5f49bbd92d88eaab24625ed1a"
   },
   "component_archive_artifact": {
-    "id": 12329262211,
-    "name": "cpp-current-private-archive-remote-only-831f0a6a5b201ca85daf9a6e499197dccaa14991",
-    "digest": "sha256:ca5ca02824faafd88e0044af137ae28f5e862909513422071d2a527851506987"
+    "id": 12410229178,
+    "name": "cpp-current-private-archive-remote-only-94d86e681be1f62e5e311e783440aaa7d70c290e",
+    "digest": "sha256:78d969a9e92d9cc5979148ffcfa0e3c3c905d2072b8f083e5eb644ea7ccccf54"
   },
-  "component_report_sha256": "929713251e69917c971f98f0816842f939f9ba5e34eba1e3ec18eb570c18ec78",
-  "private_archive_sha256": "6085e10b8141dc4da341cc25e5f8ff431b284c82f0e27066862eaa66846c32a1",
-  "frontend_build_id": "cpp-frontend-1-95db68e9f1652d060fb2bb55c984c4ec3f0fae37c43745db615a81c7fbb4db74",
+  "component_report_sha256": "81f03e493c8716475aa4113d9f2193cf2abe09c136dcfcf0bb0798c2c257e8c0",
+  "private_archive_sha256": "4afa096f8425081c48268f1699c22e9c0d32122bbca4ae4b78fc4d6cf86ce349",
+  "frontend_build_id": "cpp-frontend-1-4855b23fe92459f6ddba1a2c7a10a2c9536532eb03fc885ef52fa6ad18c4b438",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "fe69c724046c07a140516bde7136b37ceca91cef365546e7fbd071834e59f379",
+    "Frontend.cpp": "383c36c9212cf4b9df7a2ea567acafbb3d35a68bfeae92eb40a53a04a8e40ce1",
     "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "f2e7e32268a2de6a0554fc83b4b65c3f960f88035eb1ad94f5770414e9698674",
+    "MathSDK.cpp": "ee2c41d8e1ca9d329c214e44a27f4210508fdb930f5c031faf6926ca6ab65e6e",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "f77ec41465dcda0bc84ad5ead774c9295d57f811065281fed439f1e5b2641d82",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -60,7 +60,8 @@
     "utils/ci/run-private-runtime-ci.py",
     "utils/ci/download-cpp-linux-baseline.py",
     "utils/ci/cpp-private-runtime-plan.json",
-    ".github/workflows/diagnose-cpp-template-source.yml"
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "utils/ci/not-fn-pointer-four-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
@@ -116,5 +117,36 @@
       "TranslateTest.CoreV2PairFactoriesSelectedValuesRunAtBothOptimizations"
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
-  }
+  },
+  "not_fn_formal_additions_path": "utils/ci/not-fn-pointer-four-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "a4be872bcc824c43b7962f2a341247286fe363b78f60beab56b28892e3905137",
+  "not_fn_formal_cases": [
+    {
+      "name": "not-fn-function-pointer",
+      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerRunsAtBothOptimizations",
+      "source_sha256": "ce1ac4c7924c372992ca2c0a78575abf2961643a1324838d0558cdb8eadf71a3",
+      "gtest_body_sha256": "16adf2ed853d627f32496d8f7333f9de774292c4af5040e326142c7c60c92d68"
+    },
+    {
+      "name": "not-fn-reference-arguments",
+      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerReferencesRunAtBothOptimizations",
+      "source_sha256": "1d5fed7302c89abf23b882a064afce68f4c65bf7cf92118313f28b4499260dbc",
+      "gtest_body_sha256": "0d926d38ad6a40a18f60a2d442cbb3caadfc823e5a94f00caf16ca51328ba6b7"
+    },
+    {
+      "name": "not-fn-pointer-factory-argument-once",
+      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFactoryAndArgumentsRunOnce",
+      "source_sha256": "2663fceaf5b2f3c446be6beb918b22f52a8a92981071ec53962d3e12a029cdbf",
+      "gtest_body_sha256": "6501b285bedf04424d90b8fcc00e70e1b0d07b561ebf5919c15762d71a241427"
+    },
+    {
+      "name": "not-fn-pointer-four-cvref",
+      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFourCvrefCalls",
+      "source_sha256": "898831e9711440b59c6c1b164322388777e677e6e512d1df783f78d2b144630b",
+      "gtest_body_sha256": "f74704e68b91980cfde876bc10b4ea0c383f515d9b03b99bafc7178bcb0aa482"
+    }
+  ],
+  "required_actual_total_gtest_xml": 128,
+  "required_actual_not_fn_gtest_xml": 4,
+  "required_actual_not_fn_generated_o0_o2_products": 8
 }

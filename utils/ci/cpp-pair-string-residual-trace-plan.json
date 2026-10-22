@@ -1,0 +1,620 @@
+{
+  "producer_commit": "a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+  "producer_run_id": 39360350577,
+  "producer_small_artifact": {
+    "id": 12238915359,
+    "name": "cpp-private-frontend-protocol-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:d1ab9fa3c119dc297baa81e778bc0a856a4d339d7620a85eba375aeb824fe55a"
+  },
+  "producer_components_artifact": {
+    "id": 12238805525,
+    "name": "cpp-private-frontend-components-remote-only-a55ea81deaea21d36b0576d506f2ec8fe20273f8",
+    "digest": "sha256:0076a18844250551abd4d3cb883100da1a7187c9dca13f1d426bbea391e5ef5f"
+  },
+  "producer_report_sha256": "2bb186c6fcff3223e0daf78eff00c67e5cf3482d0949526ca01298b5ec66ff0c",
+  "producer_manifest_sha256": "d76283cabbc5883381c942f42099d896626e4ca885274c15826c064e178f25e9",
+  "producer_private_input_sha256": {
+    "Frontend.cpp": "c610559df4f52b54a7e96fa3ad20d8f7baa34d7e38e1e40c70d26c1ff07a630e",
+    "Lowering.cpp": "81823220789917fb4b372aa97789bc8b0fdfd5c6d35c8cdcb30e3caae3241eb9",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "0506507ca68446475c1f4da4339735a50c1d083d5386ded146d73aab90f7eae1",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "8b77eb365687ea35fc554079c02a187a804b0b9a1d932355a48671f455b2deea",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "allowed_bridge_source_changes": [
+    "Frontend.cpp",
+    "Frontend.h",
+    "Lowering.cpp",
+    "MathSDK.cpp"
+  ],
+  "feature_admission_or_guard_relaxed": false,
+  "all_binaries_remote_only": true,
+  "trace_preserves_false_return_values": true,
+  "trace_source_basis": "76955e4dc9b421f9fa078955eb120609a6d2de32",
+  "cases": [
+    {
+      "name": "cstddef-predefines",
+      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
+      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
+      "expected": "accept",
+      "diagnostic_codes": []
+    },
+    {
+      "name": "pair-piecewise-scalars",
+      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
+      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
+      "expected": "accept",
+      "diagnostic_codes": []
+    },
+    {
+      "name": "pair-piecewise-string-fill",
+      "source": "#include <string>\n#include <tuple>\n#include <utility>\nint main(){std::pair<std::string,int> p(std::piecewise_construct,std::forward_as_tuple(3,'x'),std::forward_as_tuple(7));return p.first.size()!=3||p.first[0]!='x'||p.first[2]!='x'||p.second!=7;}\n",
+      "source_sha256": "7ad8e18df32e6b2f25ce1c8e5aa358acb2df5335929dcde1dc3ec729a4aacd4d",
+      "expected": "reject",
+      "diagnostic_codes": [
+        "TR0201"
+      ]
+    },
+    {
+      "name": "pair-string-comparison-embedded-zero",
+      "source": "#include <string>\n#include <utility>\nusing P=std::pair<std::string,int>;\nint check(const P& a,const P& b){return a==b||!(a!=b)||!(a<b)||a>b||!(a<=b)||a>=b;}\nint main(){P a(std::string(\"a\\0x\",3),9),b(std::string(\"a\\0y\",3),1);if(check(a,b))return 1;b.first=a.first;b.second=a.second;return !(a==b)||a!=b||a<b||a>b||!(a<=b)||!(a>=b);}\n",
+      "source_sha256": "aa5bc57185c1389a95d6809b2413a386f9b90929bbe5593e3a8c30cbf60e7860",
+      "expected": "reject",
+      "diagnostic_codes": [
+        "TR0203"
+      ]
+    }
+  ],
+  "instrumentation": {
+    "MathSDK.cpp": {
+      "regions": [
+        {
+          "begin": "class UtilityTupleQueryGraph\n",
+          "end": "\nstatic const DeclRefExpr *approvedUtilityReference(",
+          "original_sha256": "4ae7ab763e09859ffd6e857166057ecb04e941a9a0710e676e507d261d01c80c",
+          "false_count": 420,
+          "empty_count": 5
+        },
+        {
+          "begin": "std::optional<UtilityOperation>\napprovedUtilityPairComparisonChildOperation(",
+          "end": "\nstd::optional<std::vector<const CXXOperatorCallExpr *>>\napprovedUtilityPairSelectedComparisons(",
+          "original_sha256": "3273b848ca35340a596125ad8c6b1a7d7b0c94bfd9b5abf384c5dd2c8988110f",
+          "false_count": 15,
+          "empty_count": 7
+        }
+      ],
+      "helper": "static bool pairStringTraceFalse(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE MathSDK.cpp:\" << Line << \"\\n\";\n  return false;\n}\nstatic std::nullopt_t pairStringTraceEmpty(unsigned Line) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_EMPTY MathSDK.cpp:\" << Line << \"\\n\";\n  return std::nullopt;\n}\n\nstatic bool pairStringDependencyPredicate(bool Value, const char *Function, unsigned Atom) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_PREDICATE \" << Function << \":\" << Atom << \"=\" << Value << \"\\n\";\n  return Value;\n}\n\n",
+      "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
+      "inserts": [
+        "    if (PairTraitQuery && PairTraitQuery->getNumArgs() && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      const auto *Owner = PairTraitQuery->getArg(0)->getType()->getAsCXXRecordDecl();\n      if (Owner && Owner->getIdentifier() && Owner->getName() == \"basic_string\") {\n        llvm::errs() << \"PAIR_STRING_ROOT_BEGIN\\n\";\n        Source.Root->dump(llvm::errs(), Context);\n        PairTraitQuery->dump(llvm::errs(), Context);\n        llvm::errs() << \"PAIR_STRING_ROOT_END\\n\";\n      }\n    }\n",
+        "    if (Mode == UtilityTupleQueryMode::PairConstruction && Constructor &&\n        Constructor->getParent()->getIdentifier() &&\n        Constructor->getParent()->getName() == \"basic_string\" &&\n        std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_BEGIN root=\" << (E == PairTraitConstruction)\n                   << \" query=\" << bool(PairTraitQuery) << \"\\n\";\n      E->dump(llvm::errs(), Context);\n      Constructor->dump(llvm::errs());\n      if (PairTraitQuery) PairTraitQuery->dump(llvm::errs(), Context);\n      llvm::errs() << \"PAIR_STRING_CONSTRUCT_END\\n\";\n    }\n",
+        "      if (D && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_REJECTED_DECL_BEGIN\\n\";\n        D->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_REJECTED_DECL_END\\n\";\n      }\n"
+      ],
+      "predicate_rewrites": [
+        {
+          "before": "Mode != UtilityTupleQueryMode::PairConstruction || !PairTraitQuery ||\n        !Constructor ||\n        (PairTraitQuery->getTrait() != TT_IsConstructible &&\n         PairTraitQuery->getTrait() != TT_IsNothrowConstructible) ||\n        PairTraitQuery->getNumArgs() != 3 || Operands.size() != 2 ||\n        !Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType()) ||\n        !PairInputRecords.count(Constructor->getParent()->getCanonicalDecl()) ||\n        !E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||\n        E->getNumArgs() != 2 || Constructor->getNumParams() != 2 ||\n        Constructor->getPrimaryTemplate() || Constructor->isDeleted() ||\n        Constructor->isInvalidDecl() || Constructor->isVariadic() ||\n        Constructor->getAccess() != AS_public ||\n        !cstddefOrigin(S, SM, Constructor->getLocation(), \"libcxx\", \"string\")",
+          "after": "pairStringDependencyPredicate((Mode != UtilityTupleQueryMode::PairConstruction), \"pairStringFillTraitRoot.guard\", 0) || pairStringDependencyPredicate((!PairTraitQuery), \"pairStringFillTraitRoot.guard\", 1) || pairStringDependencyPredicate((!Constructor), \"pairStringFillTraitRoot.guard\", 2) || pairStringDependencyPredicate(((PairTraitQuery->getTrait() != TT_IsConstructible &&\n         PairTraitQuery->getTrait() != TT_IsNothrowConstructible)), \"pairStringFillTraitRoot.guard\", 3) || pairStringDependencyPredicate((PairTraitQuery->getNumArgs() != 3), \"pairStringFillTraitRoot.guard\", 4) || pairStringDependencyPredicate((Operands.size() != 2), \"pairStringFillTraitRoot.guard\", 5) || pairStringDependencyPredicate((!Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType())), \"pairStringFillTraitRoot.guard\", 6) || pairStringDependencyPredicate((!PairInputRecords.count(Constructor->getParent()->getCanonicalDecl())), \"pairStringFillTraitRoot.guard\", 7) || pairStringDependencyPredicate((!E->isPRValue()), \"pairStringFillTraitRoot.guard\", 8) || pairStringDependencyPredicate((E->getConstructionKind() != CXXConstructionKind::Complete), \"pairStringFillTraitRoot.guard\", 9) || pairStringDependencyPredicate((E->getNumArgs() != 2), \"pairStringFillTraitRoot.guard\", 10) || pairStringDependencyPredicate((Constructor->getNumParams() != 2), \"pairStringFillTraitRoot.guard\", 11) || pairStringDependencyPredicate((Constructor->getPrimaryTemplate()), \"pairStringFillTraitRoot.guard\", 12) || pairStringDependencyPredicate((Constructor->isDeleted()), \"pairStringFillTraitRoot.guard\", 13) || pairStringDependencyPredicate((Constructor->isInvalidDecl()), \"pairStringFillTraitRoot.guard\", 14) || pairStringDependencyPredicate((Constructor->isVariadic()), \"pairStringFillTraitRoot.guard\", 15) || pairStringDependencyPredicate((Constructor->getAccess() != AS_public), \"pairStringFillTraitRoot.guard\", 16) || pairStringDependencyPredicate((!cstddefOrigin(S, SM, Constructor->getLocation(), \"libcxx\", \"string\")), \"pairStringFillTraitRoot.guard\", 17)",
+          "label": "pairStringFillTraitRoot.guard",
+          "operator": "||",
+          "atoms": [
+            "Mode != UtilityTupleQueryMode::PairConstruction",
+            "!PairTraitQuery",
+            "!Constructor",
+            "(PairTraitQuery->getTrait() != TT_IsConstructible &&\n         PairTraitQuery->getTrait() != TT_IsNothrowConstructible)",
+            "PairTraitQuery->getNumArgs() != 3",
+            "Operands.size() != 2",
+            "!Context.hasSameType(PairTraitQuery->getArg(0)->getType(), E->getType())",
+            "!PairInputRecords.count(Constructor->getParent()->getCanonicalDecl())",
+            "!E->isPRValue()",
+            "E->getConstructionKind() != CXXConstructionKind::Complete",
+            "E->getNumArgs() != 2",
+            "Constructor->getNumParams() != 2",
+            "Constructor->getPrimaryTemplate()",
+            "Constructor->isDeleted()",
+            "Constructor->isInvalidDecl()",
+            "Constructor->isVariadic()",
+            "Constructor->getAccess() != AS_public",
+            "!cstddefOrigin(S, SM, Constructor->getLocation(), \"libcxx\", \"string\")"
+          ]
+        },
+        {
+          "before": "Prototype && Prototype->getExceptionSpecType() == EST_None &&\n        !Prototype->getNoexceptExpr() &&\n        Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType()) &&\n        Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy) &&\n        Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType()) &&\n        Context.hasSameType(E->getArg(1)->getType(), Context.CharTy) &&\n        !Constructor->getParamDecl(0)->hasDefaultArg() &&\n        !Constructor->getParamDecl(1)->hasDefaultArg() &&\n        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()",
+          "after": "pairStringDependencyPredicate((Prototype), \"pairStringFillTraitRoot.signature\", 0) && pairStringDependencyPredicate((Prototype->getExceptionSpecType() == EST_None), \"pairStringFillTraitRoot.signature\", 1) && pairStringDependencyPredicate((!Prototype->getNoexceptExpr()), \"pairStringFillTraitRoot.signature\", 2) && pairStringDependencyPredicate((Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())), \"pairStringFillTraitRoot.signature\", 3) && pairStringDependencyPredicate((Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy)), \"pairStringFillTraitRoot.signature\", 4) && pairStringDependencyPredicate((Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType())), \"pairStringFillTraitRoot.signature\", 5) && pairStringDependencyPredicate((Context.hasSameType(E->getArg(1)->getType(), Context.CharTy)), \"pairStringFillTraitRoot.signature\", 6) && pairStringDependencyPredicate((!Constructor->getParamDecl(0)->hasDefaultArg()), \"pairStringFillTraitRoot.signature\", 7) && pairStringDependencyPredicate((!Constructor->getParamDecl(1)->hasDefaultArg()), \"pairStringFillTraitRoot.signature\", 8) && pairStringDependencyPredicate((approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()), \"pairStringFillTraitRoot.signature\", 9)",
+          "label": "pairStringFillTraitRoot.signature",
+          "operator": "&&",
+          "atoms": [
+            "Prototype",
+            "Prototype->getExceptionSpecType() == EST_None",
+            "!Prototype->getNoexceptExpr()",
+            "Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())",
+            "Context.hasSameType(Constructor->getParamDecl(1)->getType(), Context.CharTy)",
+            "Context.hasSameType(E->getArg(0)->getType(), Context.getSizeType())",
+            "Context.hasSameType(E->getArg(1)->getType(), Context.CharTy)",
+            "!Constructor->getParamDecl(0)->hasDefaultArg()",
+            "!Constructor->getParamDecl(1)->hasDefaultArg()",
+            "approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context).has_value()"
+          ]
+        }
+      ]
+    },
+    "Frontend.cpp": {
+      "includes": "#include <cstdlib>\n#include \"llvm/Support/raw_ostream.h\"\n",
+      "helper": "static bool pairStringFrontendObserved(bool Value, unsigned Line) {\n  if (!Value && std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_FALSE Frontend.cpp:\" << Line << \"\\n\";\n  return Value;\n}\n\nstatic bool pairStringDependencyPredicate(bool Value, const char *Function, unsigned Atom) {\n  if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\"))\n    llvm::errs() << \"PAIR_STRING_PREDICATE \" << Function << \":\" << Atom << \"=\" << Value << \"\\n\";\n  return Value;\n}\n\n",
+      "regions": [
+        {
+          "begin": "class UtilityPairByteComparisonSources\n",
+          "end": "\nstatic bool utilityStringDestructionSource(",
+          "original_sha256": "50927abf9fbfad367d17cf98ff10215ce4a331b36df18318f06c236e40145f49",
+          "return_rewrites": [
+            {
+              "before": "return true;",
+              "after": "return pairStringFrontendObserved((true), __LINE__);"
+            },
+            {
+              "before": "return Spelling && Spelling->Root == \"libcxx\" && Expansion &&\n           Expansion->Root == \"libcxx\";",
+              "after": "return pairStringFrontendObserved((Spelling && Spelling->Root == \"libcxx\" && Expansion &&\n           Expansion->Root == \"libcxx\"), __LINE__);"
+            },
+            {
+              "before": "return false;",
+              "after": "return pairStringFrontendObserved((false), __LINE__);"
+            },
+            {
+              "before": "return approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&\n           location(Definition->getLocation());",
+              "after": "return pairStringFrontendObserved((approvedStandardSDKDeclaration(A.S, A.Sources, Definition) &&\n           location(Definition->getLocation())), __LINE__);"
+            },
+            {
+              "before": "return ++Nodes <= 16384 && location(Statement->getBeginLoc()) &&\n           location(Statement->getEndLoc());",
+              "after": "return pairStringFrontendObserved((++Nodes <= 16384 && location(Statement->getBeginLoc()) &&\n           location(Statement->getEndLoc())), __LINE__);"
+            },
+            {
+              "before": "return ++Nodes <= 16384 && location(Type.getBeginLoc()) &&\n           location(Type.getEndLoc());",
+              "after": "return pairStringFrontendObserved((++Nodes <= 16384 && location(Type.getBeginLoc()) &&\n           location(Type.getEndLoc())), __LINE__);"
+            },
+            {
+              "before": "return location(Member->getMemberLoc()) &&\n           approvedStandardSDKDeclaration(A.S, A.Sources,\n                                            Member->getMemberDecl());",
+              "after": "return pairStringFrontendObserved((location(Member->getMemberLoc()) &&\n           approvedStandardSDKDeclaration(A.S, A.Sources,\n                                            Member->getMemberDecl())), __LINE__);"
+            },
+            {
+              "before": "return location(Variable->getLocation());",
+              "after": "return pairStringFrontendObserved((location(Variable->getLocation())), __LINE__);"
+            },
+            {
+              "before": "return isa<FunctionDecl>(Declaration) ||\n           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);",
+              "after": "return pairStringFrontendObserved((isa<FunctionDecl>(Declaration) ||\n           approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)), __LINE__);"
+            },
+            {
+              "before": "return utilitySDKFunctionSource(A, Constructor, \"string_view\", false);",
+              "after": "return pairStringFrontendObserved((utilitySDKFunctionSource(A, Constructor, \"string_view\", false)), __LINE__);"
+            },
+            {
+              "before": "return File && File->Root == \"libcxx\" && File->Path == \"__algorithm/comp.h\" &&\n               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);",
+              "after": "return pairStringFrontendObserved((File && File->Root == \"libcxx\" && File->Path == \"__algorithm/comp.h\" &&\n               approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)), __LINE__);"
+            },
+            {
+              "before": "return function(Constructor);",
+              "after": "return pairStringFrontendObserved((function(Constructor)), __LINE__);"
+            },
+            {
+              "before": "return location(Call->getExprLoc()) &&\n             (Name == \"__builtin_memcmp\" ||\n              Name == \"__builtin_is_constant_evaluated\" ||\n              Name == \"__builtin_addressof\" || Name == \"__builtin_assume\" ||\n              Name == \"__builtin_expect\" || Name == \"__builtin_launder\");",
+              "after": "return pairStringFrontendObserved((location(Call->getExprLoc()) &&\n             (Name == \"__builtin_memcmp\" ||\n              Name == \"__builtin_is_constant_evaluated\" ||\n              Name == \"__builtin_addressof\" || Name == \"__builtin_assume\" ||\n              Name == \"__builtin_expect\" || Name == \"__builtin_launder\")), __LINE__);"
+            },
+            {
+              "before": "return function(Function);",
+              "after": "return pairStringFrontendObserved((function(Function)), __LINE__);"
+            },
+            {
+              "before": "return Prototype && (!Prototype->getNoexceptExpr() ||\n        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&\n        TraverseStmt(const_cast<Stmt *>(Definition->getBody()));",
+              "after": "return pairStringFrontendObserved((Prototype && (!Prototype->getNoexceptExpr() ||\n        TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) &&\n        TraverseStmt(const_cast<Stmt *>(Definition->getBody()))), __LINE__);"
+            }
+          ]
+        }
+      ],
+      "false_return": "return pairStringFrontendObserved(false, __LINE__);",
+      "inserts": [
+        "      if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_BEGIN \" << Name << \"\\n\";\n        Call->dump(llvm::errs(), A.Context);\n        Function->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_END\\n\";\n      }\n",
+        "      if (std::getenv(\"NEVERC_CPP_PAIR_SOURCE_TRACE\")) {\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_BEGIN __builtin_constant_p\\n\";\n        Call->dump(llvm::errs(), A.Context);\n        Function->dump(llvm::errs());\n        llvm::errs() << \"PAIR_STRING_BYTE_BUILTIN_END\\n\";\n      }\n"
+      ],
+      "false_count": 3,
+      "predicate_rewrites": [
+        {
+          "before": "!Origin || Origin->Root != \"libcxx\" || Origin->Path != \"string\" ||\n        Function->getBuiltinID() != Builtin::BI__builtin_constant_p ||\n        !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BI__builtin_constant_p ||\n        !Function->isImplicit() || Function->isInvalidDecl() || Function->hasBody() ||\n        Function->getPrimaryTemplate() || Function->getNumParams() ||\n        !Function->isVariadic() || !Prototype || !Prototype->isNothrow() ||\n        !A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy) ||\n        !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr || !Reference ||\n        Reference->getDecl() != Function || Reference->getFoundDecl() != Function ||\n        !Cast->getType()->isFunctionPointerType() ||\n        !A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType()) ||\n        Call->getNumArgs() != 1 || !Call->isPRValue() ||\n        !A.Context.hasSameType(Call->getType(), A.Context.IntTy) ||\n        !A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())",
+          "after": "pairStringDependencyPredicate((!Origin), \"stringConstantQuery.guard\", 0) || pairStringDependencyPredicate((Origin->Root != \"libcxx\"), \"stringConstantQuery.guard\", 1) || pairStringDependencyPredicate((Origin->Path != \"string\"), \"stringConstantQuery.guard\", 2) || pairStringDependencyPredicate((Function->getBuiltinID() != Builtin::BI__builtin_constant_p), \"stringConstantQuery.guard\", 3) || pairStringDependencyPredicate((!Builtin), \"stringConstantQuery.guard\", 4) || pairStringDependencyPredicate((!Builtin->isImplicit()), \"stringConstantQuery.guard\", 5) || pairStringDependencyPredicate((Builtin->getID() != Builtin::BI__builtin_constant_p), \"stringConstantQuery.guard\", 6) || pairStringDependencyPredicate((!Function->isImplicit()), \"stringConstantQuery.guard\", 7) || pairStringDependencyPredicate((Function->isInvalidDecl()), \"stringConstantQuery.guard\", 8) || pairStringDependencyPredicate((Function->hasBody()), \"stringConstantQuery.guard\", 9) || pairStringDependencyPredicate((Function->getPrimaryTemplate()), \"stringConstantQuery.guard\", 10) || pairStringDependencyPredicate((Function->getNumParams()), \"stringConstantQuery.guard\", 11) || pairStringDependencyPredicate((!Function->isVariadic()), \"stringConstantQuery.guard\", 12) || pairStringDependencyPredicate((!Prototype), \"stringConstantQuery.guard\", 13) || pairStringDependencyPredicate((!Prototype->isNothrow()), \"stringConstantQuery.guard\", 14) || pairStringDependencyPredicate((!A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy)), \"stringConstantQuery.guard\", 15) || pairStringDependencyPredicate((!Cast), \"stringConstantQuery.guard\", 16) || pairStringDependencyPredicate((Cast->getCastKind() != CK_BuiltinFnToFnPtr), \"stringConstantQuery.guard\", 17) || pairStringDependencyPredicate((!Reference), \"stringConstantQuery.guard\", 18) || pairStringDependencyPredicate((Reference->getDecl() != Function), \"stringConstantQuery.guard\", 19) || pairStringDependencyPredicate((Reference->getFoundDecl() != Function), \"stringConstantQuery.guard\", 20) || pairStringDependencyPredicate((!Cast->getType()->isFunctionPointerType()), \"stringConstantQuery.guard\", 21) || pairStringDependencyPredicate((!A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType())), \"stringConstantQuery.guard\", 22) || pairStringDependencyPredicate((Call->getNumArgs() != 1), \"stringConstantQuery.guard\", 23) || pairStringDependencyPredicate((!Call->isPRValue()), \"stringConstantQuery.guard\", 24) || pairStringDependencyPredicate((!A.Context.hasSameType(Call->getType(), A.Context.IntTy)), \"stringConstantQuery.guard\", 25) || pairStringDependencyPredicate((!A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())), \"stringConstantQuery.guard\", 26)",
+          "label": "stringConstantQuery.guard",
+          "operator": "||",
+          "atoms": [
+            "!Origin",
+            "Origin->Root != \"libcxx\"",
+            "Origin->Path != \"string\"",
+            "Function->getBuiltinID() != Builtin::BI__builtin_constant_p",
+            "!Builtin",
+            "!Builtin->isImplicit()",
+            "Builtin->getID() != Builtin::BI__builtin_constant_p",
+            "!Function->isImplicit()",
+            "Function->isInvalidDecl()",
+            "Function->hasBody()",
+            "Function->getPrimaryTemplate()",
+            "Function->getNumParams()",
+            "!Function->isVariadic()",
+            "!Prototype",
+            "!Prototype->isNothrow()",
+            "!A.Context.hasSameType(Prototype->getReturnType(), A.Context.IntTy)",
+            "!Cast",
+            "Cast->getCastKind() != CK_BuiltinFnToFnPtr",
+            "!Reference",
+            "Reference->getDecl() != Function",
+            "Reference->getFoundDecl() != Function",
+            "!Cast->getType()->isFunctionPointerType()",
+            "!A.Context.hasSameType(Cast->getType()->getPointeeType(), Function->getType())",
+            "Call->getNumArgs() != 1",
+            "!Call->isPRValue()",
+            "!A.Context.hasSameType(Call->getType(), A.Context.IntTy)",
+            "!A.Context.hasSameType(Call->getArg(0)->getType(), A.Context.getSizeType())"
+          ]
+        }
+      ]
+    }
+  },
+  "source_trace_preserves_all_returns": true,
+  "actual_runtime_failure_proof": {
+    "passed": false,
+    "actual_evidence_authenticated": true,
+    "completed": true,
+    "commit": "fca2aba3aac09922deb87b027bcbad8bf9d000b9",
+    "component_producer_commit": "dfe3d6673cb394f62d0e01dd94e1332dbc5ccce1",
+    "run_id": 39387668889,
+    "artifact_id": 12249526104,
+    "archive_sha256": "2ae818b1e34a80fe8ad7d3f363e605904cd92587d9e4351f48047320c4983ecd",
+    "report": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/cpp-pair-array-carrier-values/ci-failure-recovery/private-runtime-formal-ci-artifact-12249526104/unpacked/cpp-private-runtime-formal/results.json",
+    "report_sha256": "4c5b9d65648967b9e1f00720a41f4f084ac2dd0e9e20d243dc75ca9b27b7ff99",
+    "actual_original_formal_xml": 124,
+    "actual_formal_failed": [
+      "TranslateTest.CoreV2PairPiecewiseConstructionRunsAtBothOptimizations",
+      "TranslateTest.CoreV2PairSelectedComparisonsRunAtBothOptimizations"
+    ],
+    "actual_formal_skipped": [],
+    "actual_original_formal_passed": 122,
+    "actual_host_abi_audit_verified": false,
+    "required_host_abi_audit_evidence": {
+      "AuditArchive.py": false,
+      "--host-lib-dir": false,
+      "--host-nm": false,
+      "Builtin C++ frontend: defined and undefined symbols use the private LLVM ABI": false
+    },
+    "actual_current_frontend_request_count": 717,
+    "library_stubs_used": false,
+    "current_private_archive_sha256": "7cbb028748a65a9340cf110ffbb31fac20b0cc1e3699d335cccbca6247a668a1",
+    "scope": "Current private C entry and current Translate with authenticated existing C23 backend; not a fresh full compiler/platform matrix",
+    "all_binaries_remote_only": true,
+    "fresh_complete_compiler_tested": false,
+    "full_ci_passed": false,
+    "published_to_dev": false,
+    "goal_complete": false
+  },
+  "actual_runtime_failure_proof_sha256": "8c83f4023bee1b3c8bc7435153ae4a226bdea579c7be69193cec9217602c1f4e",
+  "candidate_source_paths": [
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "utils/ci/replay-pair-string-residual.py",
+    "utils/ci/cpp-pair-string-residual-trace-plan.json",
+    "utils/ci/FrontendProtocolDriver.cpp",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp"
+  ],
+  "actual_previous_source_execution_failure": {
+    "commit": "0acc34f233c19f4b425b41009544f57a654aea02",
+    "run_id": 39408349176,
+    "artifact_id": 12257904555,
+    "report_sha256": "463bafa2eaa3df089de4c3725ed99a6ae78040e2215be57291b357be8adb82e9",
+    "actual_requests": 120,
+    "accepted_positive_requests": 24,
+    "original_source_guard_rejections": 80,
+    "failed_expectations": [
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-apple-macosx15.0.0",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "arm64-apple-macosx15.0.0",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "i686-unknown-linux-gnu",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-piecewise-string-fill",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0201",
+            "column": 39,
+            "construct": "pair constructor template source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The selected pair construction needs its exact default, constraint and signature source."
+          }
+        ]
+      },
+      {
+        "target": "i686-pc-windows-msvc",
+        "name": "pair-string-comparison-embedded-zero",
+        "expected": "accept",
+        "returncode": 1,
+        "diagnostics": [
+          {
+            "code": "TR0203",
+            "column": 41,
+            "construct": "selected pair comparison source",
+            "file": "input.cpp",
+            "guidance": "Rewrite using the documented constructs in the selected profile.",
+            "line": 4,
+            "reason": "The exact selected pair and child comparison sources are required."
+          }
+        ]
+      }
+    ]
+  },
+  "source_trace_version": 2,
+  "actual_previous_v2_trace": {
+    "commit": "4f9152bfc37ec089174857903fa20d4ec8995980",
+    "run_id": 39401988046,
+    "artifact_id": 12256641933,
+    "report_sha256": "153259eb746778f952395625d1d6b112f6b322ede0dca4c7de1b449c41d3e520",
+    "actual_requests": 4,
+    "accepted_controls": 2,
+    "reproduced_pair_rejections": 2
+  },
+  "actual_previous_dependency_identity_trace": {
+    "commit": "e274b44cab764c322edeb6eb58f6edf4ee6c3094",
+    "run_id": 39405037064,
+    "artifact_id": 12257265769,
+    "report_sha256": "b3599ddedf8649872f31d68562db14a2eb1cd084b44f4c8424ab46d82eebdb09",
+    "actual_requests": 4,
+    "accepted_controls": 2,
+    "reproduced_pair_rejections": 2
+  }
+}

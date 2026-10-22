@@ -1,0 +1,75 @@
+{
+  "producer_commit": "685ab62fbf1da0f8be3da81f664127a53ab20a19",
+  "producer_run_id": 39417801628,
+  "producer_job_id": 118610982910,
+  "producer_attempt": 1,
+  "producer_report_sha256": "21d99528244018e4e7eb4b509b9740149c4f9be2242d1e5b3ae7d57f0b96945e",
+  "producer_small_artifact": {
+    "id": 12263643657,
+    "name": "cpp-not-fn-selected-source-685ab62fbf1da0f8be3da81f664127a53ab20a19",
+    "digest": "sha256:fc41c12239ce98272f0d2547c9dbc71092619f1e676898f192dd53abe9874b92"
+  },
+  "producer_binary_artifact": {
+    "id": 12262709669,
+    "name": "cpp-not-fn-selected-source-binary-remote-only-685ab62fbf1da0f8be3da81f664127a53ab20a19",
+    "digest": "sha256:7dab9cc80aa7dc67b76a6e2f5dd83b3fd3590cc90da17d8dbe63636fcb8d67ca"
+  },
+  "executable_sha256": "6e14de6a9c95fa32e9998d26306c67bc99c29c97ff85efb52dd7fa74ff64865e",
+  "frontend_build_id": "cpp-frontend-1-f36f5f537bd8d4c2a1ff079a543dc158902a58178e8be27f75bf771156b108ed",
+  "exact_private_input_sha256": {
+    "Frontend.cpp": "164f465c1e6cce0879f6438779b4d8d7f1bb73399bfcfdb3d2397b6b1124c7d3",
+    "Lowering.cpp": "3c9e34f87636423a66c234f02e6d85ab0456585d88cffe87d1a74c3db0371db3",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "aba1c4e1729348a222646630386d421b2a2c9653ddc9e92852f3a262302c9425",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "ade60b20432c7bd8346c7f4c96eb813d185deadb10e8d0bca68f3756f84678a8",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "e02454319c49a6320e8b0e4a8ded7121dea6cba3697429613524159147b06f79",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "plain_request_names": [
+    "cstddef-predefines",
+    "tuple-get",
+    "not-fn-function-pointer",
+    "not-fn-function-pointer",
+    "not-fn-function-pointer",
+    "not-fn-copied-state",
+    "not-fn-signature-queries",
+    "not-fn-four-cvref-calls"
+  ],
+  "gdb_request_names": [
+    "not-fn-function-pointer",
+    "not-fn-copied-state"
+  ],
+  "actual_frontend_timeout_seconds": 60,
+  "source_paths": [
+    "utils/ci/check-not-fn-selected-source-crash.py",
+    "utils/ci/cpp-not-fn-selected-source-crash-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml"
+  ],
+  "no_private_component_rebuild": true,
+  "no_neverc_host_rebuild": true,
+  "debugger_read_only": true,
+  "all_binaries_remote_only": true,
+  "diagnostic_always_unsupported": true,
+  "previous_diagnostic_cli_failure": {
+    "commit": "2951921314bdbd261227aa2d0796e86dfb3afec6",
+    "run_id": 39424318677,
+    "artifact_id": 12267731611,
+    "report_sha256": "44aa7e107aa5357ef6ff192156b68ca754491c825115e332e3fcfce21f24afce",
+    "actual_commands": 1,
+    "actual_gdb_stacks": 0
+  },
+  "version_entry_matches_producer_hidden_frontend_cli": true
+}
