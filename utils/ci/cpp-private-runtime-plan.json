@@ -1,26 +1,26 @@
 {
-  "component_commit": "77d77bcf652e797b931720cd176b0370c6b5fba5",
-  "component_run_id": 39765796859,
-  "component_actual_job": 119780809882,
+  "component_commit": "9aaad66c266936875c5cdc86d33ed5dcc08cb829",
+  "component_run_id": 39837774188,
+  "component_actual_job": 120030507169,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12419859470,
-    "name": "cpp-not-fn-pointer-clean-216-77d77bcf652e797b931720cd176b0370c6b5fba5",
-    "digest": "sha256:873bf7ec0fe01f8a08f9b8dae839f25105f8c25dca76561c73d12d3c4de61463"
+    "id": 12452308468,
+    "name": "cpp-not-fn-pointer-default-clean216-9aaad66c266936875c5cdc86d33ed5dcc08cb829",
+    "digest": "sha256:93ef173dd4cfe02603cf2c29b995a94e0358d6d1ed7253bc7f111987cda23e04"
   },
   "component_archive_artifact": {
-    "id": 12419859488,
-    "name": "cpp-current-private-archive-remote-only-77d77bcf652e797b931720cd176b0370c6b5fba5",
-    "digest": "sha256:69cb5a64b02378afb903f9c673d9c522280179ad246fbb7f85d6d67ba51b2afd"
+    "id": 12452612808,
+    "name": "cpp-current-private-archive-remote-only-9aaad66c266936875c5cdc86d33ed5dcc08cb829",
+    "digest": "sha256:b1da11d886d97f3d0422996e0121ab2b4db355c208fdfea11d484f75d42ca91c"
   },
-  "component_report_sha256": "a1cdafbe73f02e287fdadadb6d37d90a487221279e514da9c72041fd7c2ae48e",
-  "private_archive_sha256": "d46608c6cbc54a5b267a620c3e7d00229a96eae3f715940cdbaf2964cc25f467",
-  "frontend_build_id": "cpp-frontend-1-34593c2ae1bb3fb2cd1a1fa3ed749c1ca9556700246fbec6c65f68ec135dc8d9",
+  "component_report_sha256": "247d26a470b0703eb17c349b8cf1a98f348de8321dc29fd6a3045dbc02f36b3d",
+  "private_archive_sha256": "adb83b6b7170e916b6b0a95c48f1047efd65de2aa497f1c21b1063aa42728be9",
+  "frontend_build_id": "cpp-frontend-1-11417c1ca15810853eaa47e48277951e37a81618b9edd3a2381ad2ece536ba5a",
   "exact_private_input_sha256": {
     "Frontend.cpp": "89bf7cb9d96089060a395fdf6dc6c5811abbc4875c629aec9b7738921a448bb7",
     "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "a997b344a7e974f5fc8d7e1af35b7638f32fcf879dcd91f199c2a17be7aa1363",
+    "MathSDK.cpp": "d13f5498211e9844d2dba23e61e60b0310b7534cb585d71dd4f08259cbfa0464",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "ab65f87dc78ecc8950ae982c270e9a0ec6c57c2664483a412023028b6309ee5f",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 39523812510,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "0099922e5f92464dde0ea0c4d9cd0359d0659eeb886a099d6f558c17ef8e70b5",
+  "original_tests_file_sha256": "67efba952e2e495682b7ad08e317a7bd3c4e77541d0c279f90c6e242a51d1e8c",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -62,7 +62,8 @@
     "utils/ci/cpp-private-runtime-plan.json",
     ".github/workflows/diagnose-cpp-template-source.yml",
     "utils/ci/not-fn-pointer-four-formal-additions.cpp",
-    "utils/ci/not_fn_registered_gtests.py"
+    "utils/ci/not_fn_registered_gtests.py",
+    "utils/ci/not-fn-pointer-five-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
@@ -119,8 +120,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/not-fn-pointer-four-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "a4be872bcc824c43b7962f2a341247286fe363b78f60beab56b28892e3905137",
+  "not_fn_formal_additions_path": "utils/ci/not-fn-pointer-five-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "79d803d7ead8ca27481ca76b4d91287209d2460fe49b148ddd38764b11a18fbe",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -145,9 +146,19 @@
       "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFourCvrefCalls",
       "source_sha256": "898831e9711440b59c6c1b164322388777e677e6e512d1df783f78d2b144630b",
       "gtest_body_sha256": "f74704e68b91980cfde876bc10b4ea0c383f515d9b03b99bafc7178bcb0aa482"
+    },
+    {
+      "name": "not-fn-signature-queries",
+      "formal_test_name": "TranslateTest.CoreV2NotFnSignatureQueriesRunAtBothOptimizations",
+      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
+      "gtest_body_sha256": "b7bae65635029ff3ba2f6010240ba3d6c5cef18b3d6eadc4131aad61c3515747"
     }
   ],
-  "required_actual_total_gtest_xml": 128,
-  "required_actual_not_fn_gtest_xml": 4,
-  "required_actual_not_fn_generated_o0_o2_products": 8
+  "required_actual_total_gtest_xml": 129,
+  "required_actual_not_fn_gtest_xml": 5,
+  "required_actual_not_fn_generated_o0_o2_products": 10,
+  "not_fn_registered_previous_additions_path": "utils/ci/not-fn-pointer-five-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "79d803d7ead8ca27481ca76b4d91287209d2460fe49b148ddd38764b11a18fbe",
+  "required_actual_frontend_requests": 740,
+  "actual_new_signature_native_reference_verified": false
 }

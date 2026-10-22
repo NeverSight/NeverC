@@ -969,3 +969,5 @@ merge 接受同一默认 int/int unordered_map 的左值或右值源容器。成
 `cpp-core-v2`: 选定的 std::pair 分段构造从两个 tuple 参数对象初始化已接纳的标量、源代码记录、string、string_view 和 unique_ptr 字段，保留参数副作用、值 tuple 的独立副本、先 first 后 second 的构造顺序、选定的尾部默认参数及清理。两层 SDK 构造函数、get/forward 使用、推导和异常规格来源均须独立检查。引用字段必须指向仍然存活的调用方对象；指向按值 tuple 参数的引用及尚未证明的空基类 tuple 投影仍被拒绝。
 
 `cpp-core-v2`：直接调用 `std::not_fn` 可保存已准入的普通函数指针，并通过 `&`、`const&`、`&&` 和 `const&&` 调用适配器。函数指针只捕获一次；可调用对象和参数的副作用、引用绑定、转发、算术结果的逻辑取反及临时对象清理保持原有顺序。选中的 SDK 声明、推导、默认参数、约束、异常来源和运行时函数体仍须分别通过源码检查。有状态或仅可移动的可调用对象、可调用的 `std::reference_wrapper` 和自定义 `operator!` 结果仍待支持。NeverC 源语言保持 C23-only。
+
+`cpp-core-v2`：已准入的函数指针 `std::not_fn` 适配器现支持结果类型查询，以及 `&`、`const&`、`&&` 和 `const&&` 四种形式的 `std::is_nothrow_invocable` 查询，包括 `noexcept` 回调。工厂保留固定 SDK 中可能抛出异常的签名。查询不会执行回调；运行时调用保持现有的转发、逻辑取反和清理行为。其他可调用对象形式仍待支持。
