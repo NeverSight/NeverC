@@ -8,6 +8,8 @@ on:
       - 'tests/neverc/HostCoffSymbolsTests.py'
       - 'tests/neverc/CppFrontendToolchainTests.py'
       - '.github/workflows/test-cpp-frontend-tools.yml'
+      - 'utils/ci/check-cpp-current216-elf-combined-808.py'
+      - 'tests/neverc/FrontendReplayProtocolTests.py'
       - 'utils/ci/not_fn_registered_gtests.py'
       - 'utils/ci/check-private-frontend-runtime.py'
       - 'utils/ci/cpp-private-runtime-plan.json'
@@ -22,6 +24,8 @@ on:
       - 'tests/neverc/HostCoffSymbolsTests.py'
       - 'tests/neverc/CppFrontendToolchainTests.py'
       - '.github/workflows/test-cpp-frontend-tools.yml'
+      - 'utils/ci/check-cpp-current216-elf-combined-808.py'
+      - 'tests/neverc/FrontendReplayProtocolTests.py'
       - 'utils/ci/not_fn_registered_gtests.py'
       - 'utils/ci/check-private-frontend-runtime.py'
       - 'utils/ci/cpp-private-runtime-plan.json'
@@ -84,3 +88,5 @@ jobs:
           python-version: '3.12'
       - name: Verify registered golden source and original124 extraction
         run: python -I -B tests/neverc/NotFnRegisteredGTestsTests.py
+      - name: Verify replay protocol matches the real private entry driver
+        run: python -I -B tests/neverc/FrontendReplayProtocolTests.py

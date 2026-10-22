@@ -203,7 +203,7 @@ def main():
                 request.write_text(json.dumps(dict(protocol=1, profile='cpp-core-v2', root=str(directory),
                     source=str(source), target=target, arguments=['-std=c++17'],
                     sdk=dict(distribution_id=catalog['distribution_id'], catalog_sha256=plan['sdk_catalog_sha256']))) + '\n')
-                command = run([binary, '__neverc_cpp_frontend', '--request', request, '--response', response],
+                command = run([binary, '__neverc_cpp_frontend', '--request', request, '--output', response],
                               'execute/' + target + '/' + case['name'])
                 actual = json.loads(response.read_text()) if response.exists() else None
                 valid = False
