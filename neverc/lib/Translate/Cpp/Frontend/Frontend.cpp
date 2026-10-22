@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -5207,6 +5208,9 @@ static bool functionalInvocabilitySource(
           Cached->getValueKind() != Written->getValueKind() ||
           Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
           !PinnedSite(Cached->getBeginLoc()) || !PinnedSite(Cached->getEndLoc())) return false;
+      std::fprintf(stderr, "NOT_FN_NESTED_NOEXCEPT_CHILD root=%p invoke=%p cached=%p written=%p\n",
+          static_cast<const void *>(NotFn->SourceCall), static_cast<const void *>(Call),
+          static_cast<const void *>(Cached), static_cast<const void *>(Written));
       Noexcept = Written;
     }
   }
@@ -6198,7 +6202,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
                                         const FunctionalNotFnCallSource &NotFn) {
   if (NotFn.Mode != FunctionalNotFnSourceMode::Runtime || !NotFn.SourceCall ||
       Call != NotFn.InvokeCall || !Call || Call->isTypeDependent() ||
-      Call->isValueDependent() || Call->isInstantiationDependent()) return false;
+      Call->isValueDependent() || Call->isInstantiationDependent()) { std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_EDGE line=6201 call=%p\n", static_cast<const void *>(Call)); return false; }
   const auto Actual = describeFunctionalNotFnCallSource(
       A.S, A.Sources, NotFn.SourceCall, A.Context, FunctionalNotFnSourceMode::Runtime);
   if (!Actual || Actual->Method != NotFn.Method || Actual->Object != NotFn.Object ||
@@ -6209,7 +6213,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
       Actual->ForwardingCalls != NotFn.ForwardingCalls ||
       Actual->Storage.Record != NotFn.Storage.Record ||
       !A.Context.hasSameType(Actual->Storage.CallableType, NotFn.Storage.CallableType) ||
-      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) return false;
+      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) { std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_EDGE line=6212 call=%p\n", static_cast<const void *>(Call)); return false; }
   const auto *Function = Call->getDirectCallee();
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Reference = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
@@ -6228,7 +6232,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
       Inner != NotFn.TargetCall || !Dispatcher || !Inner || Inner->getDirectCallee() ||
       isa<CXXOperatorCallExpr>(Inner) || Dispatcher->getNumParams() != Function->getNumParams() ||
       Dispatch->getNumArgs() != Function->getNumParams() || Inner->getNumArgs() != Target->getNumParams() ||
-      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) return false;
+      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) { std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_EDGE line=6231 call=%p\n", static_cast<const void *>(Call)); return false; }
   // Retain the original forwarding and indirect-argument flow obligations.
   // This pointer slice performs no hidden record copy/construction in the SDK.
   for (unsigned I = 0; I < Function->getNumParams(); ++I) {
@@ -6240,7 +6244,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
     if (!Forward || !Use || Use->getDecl() != Parameter || !Forwarder ||
         !utilitySDKValueAdapterSource(A, Forward, UtilityOperation::Forward) ||
         !A.Context.hasSameType(Forwarder->getReturnType(), Parameter->getType()) ||
-        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) return false;
+        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) { std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_EDGE line=6243 call=%p\n", static_cast<const void *>(Call)); return false; }
   }
   auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(functionalInvokeStrippedExpression(Expression));
@@ -6254,7 +6258,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
         A.Context.hasSameType(Cast->getType(), Parameter->getType().getNonLValueExprType(A.Context)) &&
         Cast->getValueKind() == Expr::getValueKindForType(Parameter->getType());
   };
-  if (!ParameterCast(Inner->getCallee(), 0)) return false;
+  if (!ParameterCast(Inner->getCallee(), 0)) { std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_EDGE line=6257 call=%p\n", static_cast<const void *>(Call)); return false; }
   for (unsigned I = 0; I < Target->getNumParams(); ++I) {
     const auto Parameter = Target->getParamType(I);
     const auto Value = Parameter.getNonReferenceType();
@@ -6264,7 +6268,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
         !A.Context.hasSameUnqualifiedType(Value, ActualArgument) ||
         !ParameterCast(Inner->getArg(I), I + 1) ||
         !A.Context.hasSameType(Inner->getArg(I)->getType(), Parameter.getNonLValueExprType(A.Context)) ||
-        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
+        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) { std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_EDGE line=6267 call=%p\n", static_cast<const void *>(Call)); return false; }
   }
   return true;
 }
@@ -6275,7 +6279,11 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
     return false;
   if (NotFn) {
-    if (!functionalNotFnInvokeBinding(A, Call, *NotFn)) return false;
+    const bool Observed = functionalNotFnInvokeBinding(A, Call, *NotFn);
+    std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_BIND result=%u root=%p invoke=%p method=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(NotFn->SourceCall),
+        static_cast<const void *>(Call), static_cast<const void *>(NotFn->Method));
+    if (!Observed) return false;
   } else {
     const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
     if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return false;
@@ -6296,7 +6304,7 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
   const auto *InnerPrototype = Inner ? operationCalleePrototype(Inner) : nullptr;
   // Template deduction can desugar the original callable's typedefs and
   // trailing return spelling. Compare types, not their AST node identities.
-  return Target && Arguments && Arguments->size() == 2 &&
+  const bool Observed = Target && Arguments && Arguments->size() == 2 &&
          Arguments->get(0).getKind() == TemplateArgument::Type && InnerPrototype &&
          !Inner->getDirectCallee() &&
          A.Context.hasSameType(InnerPrototype, Target) &&
@@ -6308,6 +6316,9 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
                                   "__type_traits/invoke.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
                                        Arguments->get(1), Target, NotFn);
+  if (NotFn) std::fprintf(stderr, "NOT_FN_NESTED_INVOKE_SOURCE result=%u root=%p invoke=%p\n",
+      static_cast<unsigned>(Observed), static_cast<const void *>(NotFn->SourceCall), static_cast<const void *>(Call));
+  return Observed;
 }
 
 // The caller supplies a runtime-proven apply operation and its selected target.
@@ -26024,6 +26035,9 @@ public:
                "The selected invocation, exception and enabling source graph must be complete.");
       return true;
     }
+    std::fprintf(stderr, "NOT_FN_NESTED_ROOT_RUNTIME_ACCEPTED root=%p invoke=%p method=%p\n",
+        static_cast<const void *>(Call), static_cast<const void *>(Runtime->InvokeCall),
+        static_cast<const void *>(Runtime->Method));
     A.VerifiedNotFnCalls.emplace(Call, *Runtime);
     A.type(Runtime->Storage.CallableType, Call->getExprLoc());
     // The SDK receiver cast is exactly bound by the descriptor. Traverse its
