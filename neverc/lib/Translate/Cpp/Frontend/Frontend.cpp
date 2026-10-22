@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
@@ -6167,11 +6168,11 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call,
 static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
-    return false;
+    { std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_EDGE line=6170 call=%p\n", static_cast<const void *>(Call)); return false; }
   const auto Operation =
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
   if (!Operation || *Operation != UtilityOperation::FunctionalInvoke)
-    return false;
+    { std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_EDGE line=6174 call=%p\n", static_cast<const void *>(Call)); return false; }
 
   // The runtime operation proves the fixed-arity callable, admitted argument
   // conversions and result, and the materialized public dispatch. Authenticate
@@ -6188,18 +6189,86 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
   const auto *InnerPrototype = Inner ? operationCalleePrototype(Inner) : nullptr;
   // Template deduction can desugar the original callable's typedefs and
   // trailing return spelling. Compare types, not their AST node identities.
-  return Target && Arguments && Arguments->size() == 2 &&
-         Arguments->get(0).getKind() == TemplateArgument::Type && InnerPrototype &&
-         !Inner->getDirectCallee() &&
-         A.Context.hasSameType(InnerPrototype, Target) &&
-         Inner->getNumArgs() == Target->getNumParams() &&
-         Inner->getValueKind() == Call->getValueKind() &&
-         A.Context.hasSameType(Inner->getType(), Call->getType()) &&
-         utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
-         utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
-                                  "__type_traits/invoke.h") &&
-         functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                       Arguments->get(1), Target);
+  return ([&] {
+    const bool Observed = static_cast<bool>(Target);
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=0 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(Arguments);
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=1 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(Arguments->size() == 2);
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=2 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(Arguments->get(0).getKind() == TemplateArgument::Type);
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=3 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(InnerPrototype);
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=4 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(!Inner->getDirectCallee());
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=5 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(A.Context.hasSameType(InnerPrototype, Target));
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=6 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(Inner->getNumArgs() == Target->getNumParams());
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=7 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(Inner->getValueKind() == Call->getValueKind());
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=8 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(A.Context.hasSameType(Inner->getType(), Call->getType()));
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=9 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(utilitySDKFunctionSource(A, Function, "__functional/invoke.h"));
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=10 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                                  "__type_traits/invoke.h"));
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=11 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })() &&
+      ([&] {
+    const bool Observed = static_cast<bool>(functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                       Arguments->get(1), Target));
+    std::fprintf(stderr, "NOT_FN_RUNTIME_INVOKE_STAGE index=12 result=%u call=%p function=%p\n",
+        static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Function));
+    return Observed;
+  })();
 }
 
 // The caller supplies a runtime-proven apply operation and its selected target.
@@ -25879,12 +25948,84 @@ public:
     const auto *Target = Runtime->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
     const auto *Negation = dyn_cast<UnaryOperator>(Runtime->Negation);
     const auto *Prototype = Runtime->Method->getType()->getAs<FunctionProtoType>();
-    bool Source = Signature && Exception && Negation && Negation->getOpcode() == UO_LNot &&
-        Target && ordinaryCallbackPrototype(Target) && Target->getReturnType()->isArithmeticType() &&
-        Prototype && Prototype->isNothrow() == Target->isNothrow() &&
-        Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
-        A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
-        functionalFunctionInvokeSource(A, Runtime->InvokeCall);
+    bool Source = ([&] {
+      const bool Observed = static_cast<bool>(Signature);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=signature result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Exception);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=exception result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Negation);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=negation result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Negation->getOpcode() == UO_LNot);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=logical_not result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Target);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=target result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(ordinaryCallbackPrototype(Target));
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=callback_prototype result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Target->getReturnType()->isArithmeticType());
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=arithmetic_result result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Prototype);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=prototype result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Prototype->isNothrow() == Target->isNothrow());
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=nothrow_match result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(Runtime->TargetCall);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=target_call result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(!Runtime->TargetCall->getDirectCallee());
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=indirect_call result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target));
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=callee_type result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })() &&
+        ([&] {
+      const bool Observed = static_cast<bool>(functionalFunctionInvokeSource(A, Runtime->InvokeCall));
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_STAGE role=invoke_runtime_source result=%u call=%p method=%p\n",
+          static_cast<unsigned>(Observed), static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      return Observed;
+    })();
     // Consume the selected operator's real enable_if/default packet, including
     // its original primary spelling, rather than assuming that void means valid.
     bool SelectedDefault = false;
@@ -25912,6 +26053,24 @@ public:
       if (!SelectedDefault) { Source = false; break; }
     }
     if (!Source || !SelectedDefault || !Call->getType()->isBooleanType()) {
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_REJECT source=%u selected_default=%u call=%p method=%p\n",
+          static_cast<unsigned>(Source), static_cast<unsigned>(SelectedDefault),
+          static_cast<const void *>(Call), static_cast<const void *>(Runtime->Method));
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_AST_BEGIN\n");
+      Call->dump(llvm::errs(), A.Context);
+      Runtime->Method->dump(llvm::errs());
+      if (Prototype && Prototype->getNoexceptExpr()) Prototype->getNoexceptExpr()->dump(llvm::errs(), A.Context);
+      if (Negation) Negation->dump(llvm::errs(), A.Context);
+      if (Runtime->InvokeCall) {
+        Runtime->InvokeCall->dump(llvm::errs(), A.Context);
+        if (const auto *Observed = Runtime->InvokeCall->getDirectCallee()) {
+          Observed->dump(llvm::errs());
+          if (const auto *ObservedPrototype = Observed->getType()->getAs<FunctionProtoType>())
+            if (const auto *Noexcept = ObservedPrototype->getNoexceptExpr()) Noexcept->dump(llvm::errs(), A.Context);
+        }
+      }
+      if (Runtime->TargetCall) Runtime->TargetCall->dump(llvm::errs(), A.Context);
+      std::fprintf(stderr, "NOT_FN_RUNTIME_SOURCE_AST_END\n");
       A.reject(Call->getExprLoc(), "not_fn function-pointer call source",
                "The selected invocation, exception and enabling source graph must be complete.");
       return true;
