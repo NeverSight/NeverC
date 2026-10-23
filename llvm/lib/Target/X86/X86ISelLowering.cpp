@@ -26059,6 +26059,102 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
   return DAG.getMergeValues({Status, SDValue(Access, ChainIndex)}, DL);
 }
 
+static SDValue lowerDescriptorQuery(SDValue Op, const X86Subtarget &Subtarget,
+                                    SelectionDAG &DAG) {
+  const unsigned ID = Op.getConstantOperandVal(1);
+  const bool Legacy = ID == Intrinsic::x86_lsl;
+  unsigned Opcode;
+  bool Memory;
+  switch (ID) {
+  default:
+    llvm_unreachable("unexpected descriptor query intrinsic");
+  case Intrinsic::x86_lsl:
+    Opcode = X86::LSL32rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lar_reg16:
+    Opcode = X86::LAR16rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lar_mem16:
+    Opcode = X86::LAR16rm;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lar_reg32:
+    Opcode = X86::LAR32rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lar_mem32:
+    Opcode = X86::LAR32rm;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lar_reg64:
+    Opcode = X86::LAR64rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lar_mem64:
+    Opcode = X86::LAR64rm;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lsl_reg16:
+    Opcode = X86::LSL16rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lsl_mem16:
+    Opcode = X86::LSL16rm;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lsl_reg32:
+    Opcode = X86::LSL32rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lsl_mem32:
+    Opcode = X86::LSL32rm;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lsl_reg64:
+    Opcode = X86::LSL64rr;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lsl_mem64:
+    Opcode = X86::LSL64rm;
+    Memory = true;
+    break;
+  }
+  const EVT VT = Op.getValueType();
+  if (VT == MVT::i64 && !Subtarget.is64Bit())
+    report_fatal_error("64-bit descriptor query requires 64-bit mode");
+  const SDLoc DL(Op);
+  SmallVector<SDValue, 6> Operands;
+  if (Memory) {
+    const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
+    Operands = {Op.getOperand(2), DAG.getTargetConstant(1, DL, MVT::i8),
+                DAG.getRegister(0, PtrVT),
+                DAG.getTargetConstant(0, DL, MVT::i32),
+                DAG.getRegister(0, MVT::i16)};
+  } else {
+    SDValue Selector = Op.getOperand(2);
+    if (Legacy)
+      Selector = DAG.getNode(ISD::TRUNCATE, DL, MVT::i16, Selector);
+    Operands.push_back(Selector);
+  }
+  Operands.push_back(Op.getOperand(0));
+  auto *Access = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(VT, MVT::Other, MVT::Glue), Operands);
+  if (Legacy)
+    return DAG.getMergeValues({SDValue(Access, 0), SDValue(Access, 1)}, DL);
+  // Capture ZF before lowering the select: failure must not expose whatever
+  // happened to occupy the allocator's chosen destination register.
+  SDValue ZF(
+      DAG.getMachineNode(X86::SETCCr, DL, MVT::i8,
+                         {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8),
+                          SDValue(Access, 2)}),
+      0);
+  SDValue Value =
+      DAG.getSelect(DL, VT, ZF, SDValue(Access, 0), Op.getOperand(3));
+  return DAG.getMergeValues({Value, ZF, SDValue(Access, 1)}, DL);
+}
+
 static SDValue lowerSystemRegisterAccess(SDValue Op, SelectionDAG &DAG) {
   const unsigned ID = Op.getConstantOperandVal(1);
   const bool Read = ID == Intrinsic::x86_readcr || ID == Intrinsic::x86_readdr;
@@ -26454,19 +26550,20 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                                      Op.getOperand(0));
       return SDValue(N, 0);
     }
-    case llvm::Intrinsic::x86_lsl: {
-      SDLoc dl(Op);
-      SDValue Chain = Op.getOperand(0);
-      // LSL reads a 16-bit segment selector and writes the 32-bit segment limit
-      // (LSL32rr is "GR32 = lsl GR16", implicitly defining EFLAGS, with no
-      // chain). Truncate the selector to i16 to match the source register class;
-      // only the low 16 bits of the selector are meaningful, so this preserves
-      // the semantics of the original "lsl %ecx, %eax" sequence.
-      SDValue Selector = DAG.getNode(ISD::TRUNCATE, dl, MVT::i16,
-                                     Op.getOperand(2));
-      SDValue Res(DAG.getMachineNode(X86::LSL32rr, dl, MVT::i32, Selector), 0);
-      return DAG.getMergeValues({Res, Chain}, dl);
-    }
+    case Intrinsic::x86_lar_reg16:
+    case Intrinsic::x86_lar_mem16:
+    case Intrinsic::x86_lar_reg32:
+    case Intrinsic::x86_lar_mem32:
+    case Intrinsic::x86_lar_reg64:
+    case Intrinsic::x86_lar_mem64:
+    case Intrinsic::x86_lsl_reg16:
+    case Intrinsic::x86_lsl_mem16:
+    case Intrinsic::x86_lsl_reg32:
+    case Intrinsic::x86_lsl_mem32:
+    case Intrinsic::x86_lsl_reg64:
+    case Intrinsic::x86_lsl_mem64:
+    case Intrinsic::x86_lsl:
+      return lowerDescriptorQuery(Op, Subtarget, DAG);
     case llvm::Intrinsic::x86_vmlaunch:
     case llvm::Intrinsic::x86_vmresume: {
       SDLoc dl(Op);

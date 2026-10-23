@@ -169,6 +169,19 @@ TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
 BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 
+// Descriptor queries return the native value (or prior on failure) and store ZF.
+BUILTIN(__builtin_ia32_lar_reg16, "UsUsUsUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem16, "UsvC*UsUc*", "n")
+BUILTIN(__builtin_ia32_lar_reg32, "UiUsUiUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem32, "UivC*UiUc*", "n")
+BUILTIN(__builtin_ia32_lar_reg64, "ULLiUsULLiUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem64, "ULLivC*ULLiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_reg16, "UsUsUsUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem16, "UsvC*UsUc*", "n")
+BUILTIN(__builtin_ia32_lsl_reg32, "UiUsUiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem32, "UivC*UiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_reg64, "ULLiUsULLiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem64, "ULLivC*ULLiUc*", "n")
 // Register VMREAD returns the prior value on VMfail and writes i8 status.
 BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 // VMWRITE owns the source memory access, including privilege/fault ordering.

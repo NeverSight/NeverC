@@ -212,6 +212,44 @@ The native completion runners enable LLVM machine verification in NeverC
 as well as in the full fork. These checks qualify compiler transport; they
 do not execute privileged I/O or change host interrupt/descriptor state.
 
+### Descriptor queries (LAR / LSL)
+
+`__builtin_ia32_lar_{reg,mem}{16,32,64}` and the corresponding `lsl` builtins
+take a selector, a prior destination value, and an `unsigned char *` status
+output. The return type is `unsigned short`, `unsigned int`, or
+`unsigned long long`, matching the operand width. Register selectors are
+`unsigned short`; memory selectors use `const void *` so the C interface does
+not impose alignment on the architectural m16 read. That read belongs to the
+instruction, including native descriptor checks and faults. The status output
+is a separate ordinary C store after the query.
+
+The shared native IR names are `llvm.x86.{lar,lsl}.{reg,mem}{16,32,64}` with
+`{iN, i8} (i16-or-ptr, iN)` signatures. ZF is 1 on success and 0 on failure.
+Success returns the native instruction result; failure returns the supplied
+prior value. In particular, LAR's architecturally undefined result bits are
+not replaced with invented descriptor data. The result width is independent
+of the code mode: the full LLVM fork supports 16/32-bit queries in both modes
+and rejects 64-bit queries outside 64-bit mode. Memory pointers currently use
+the default address space and address size.
+
+The existing Microsoft `__segmentlimit` remains a 32-bit LSL API whose result is
+unspecified on failure. Its `llvm.x86.lsl(i32)` signature now works through
+the full LLVM fork too. The pruned backend's former chainless lowering could
+discard unused reads; both backends retain dead and repeated queries in order.
+Use the new result/status API when failure preservation matters. Non-Microsoft
+targets need `-fms-extensions` to expose the legacy spelling.
+
+`tests/verify-descriptor-query-completion.py` accepts `--compiler`, `--llc`,
+and `--backend-llc`. It checks each width and operand form, independent value
+and ZF uses, dead/repeated queries, failure preservation, ordinary memory
+ordering, unmapped selector boundaries and the C ABI at O0/O2. ELF, COFF and
+Mach-O objects also round-trip through both assembly dialects. Controlled
+completions test compiler transport, not descriptor-table emulation. On Linux
+x86-64 the NeverC and bridge routes additionally compare real user-mode
+queries for null and current-CS selectors against an independent assembly
+oracle. Privileged descriptor changes and fault delivery are outside that
+hardware check.
+
 ### CR/DR register ops
 
 `__builtin_ia32_readcr/readdr(unsigned int index)` return a full unsigned

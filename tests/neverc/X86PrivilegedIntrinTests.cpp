@@ -524,6 +524,62 @@ TEST_F(X86PrivilegedIntrinTest, WbinvdLowersCorrectly) {
 // ---------------------------------------------------------------------------
 // Segment limit (LSL)
 // ---------------------------------------------------------------------------
+TEST_F(X86PrivilegedIntrinTest,
+       DescriptorQueriesUseNativeResultAndStatusPairs) {
+  std::string Source;
+  for (const char *Operation : {"lar", "lsl"}) {
+    for (const auto &[Bits, Type] :
+         {std::pair{16, "unsigned short"}, std::pair{32, "unsigned int"},
+          std::pair{64, "unsigned long long"}}) {
+      for (bool Memory : {false, true}) {
+        const std::string Name = std::string(Operation) +
+                                 (Memory ? "_mem" : "_reg") +
+                                 std::to_string(Bits);
+        Source += std::string(Type) + " " + Name + "(" +
+                  (Memory ? "const void *" : "unsigned short ") + "selector, " +
+                  Type + " prior, unsigned char *zf) { " + Type +
+                  " first = __builtin_ia32_" + Name +
+                  "(selector, prior, zf); return first ^ __builtin_ia32_" +
+                  Name + "(selector, prior, zf + 1); }\n";
+      }
+    }
+  }
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Assembly] =
+        compileToAsm(Source.c_str(), "descriptor_queries", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Operation : {"lar", "lsl"}) {
+      const std::regex Instruction(std::string("\\t") + Operation + "\\t");
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Instruction),
+                              std::sregex_iterator()),
+                12)
+          << Assembly;
+    }
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, DeadAndRepeatedSegmentLimitReadsRemainOrdered) {
+  constexpr const char *Source = R"(
+    void query(unsigned selector) {
+      (void)__segmentlimit(selector);
+      (void)__segmentlimit(selector);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Assembly] = compileToAsm(Source, "dead_segment_limits", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    const std::regex Instruction("\\tlsl\\t");
+    EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                 Assembly.end(), Instruction),
+                            std::sregex_iterator()),
+              2)
+        << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, SegmentLimitLowersCorrectly) {
   auto [rc, s] = compileToAsm(
       "unsigned int do_lsl(unsigned int sel) { return __segmentlimit(sel); }\n",

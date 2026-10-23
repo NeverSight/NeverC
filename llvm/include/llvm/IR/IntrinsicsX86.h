@@ -1036,6 +1036,12 @@ enum X86Intrinsics : unsigned {
     x86_invvpid,                                     // llvm.x86.invvpid
     x86_inword,                                      // llvm.x86.inword
     x86_inwordstring,                                // llvm.x86.inwordstring
+    x86_lar_mem16,                                   // llvm.x86.lar.mem16
+    x86_lar_mem32,                                   // llvm.x86.lar.mem32
+    x86_lar_mem64,                                   // llvm.x86.lar.mem64
+    x86_lar_reg16,                                   // llvm.x86.lar.reg16
+    x86_lar_reg32,                                   // llvm.x86.lar.reg32
+    x86_lar_reg64,                                   // llvm.x86.lar.reg64
     x86_ldtilecfg,                                   // llvm.x86.ldtilecfg
     x86_ldtilecfg_internal,                          // llvm.x86.ldtilecfg.internal
     x86_lgdt,                                        // llvm.x86.lgdt
@@ -1043,6 +1049,12 @@ enum X86Intrinsics : unsigned {
     x86_llwpcb,                                      // llvm.x86.llwpcb
     x86_loadiwkey,                                   // llvm.x86.loadiwkey
     x86_lsl,                                         // llvm.x86.lsl
+    x86_lsl_mem16,                                   // llvm.x86.lsl.mem16
+    x86_lsl_mem32,                                   // llvm.x86.lsl.mem32
+    x86_lsl_mem64,                                   // llvm.x86.lsl.mem64
+    x86_lsl_reg16,                                   // llvm.x86.lsl.reg16
+    x86_lsl_reg32,                                   // llvm.x86.lsl.reg32
+    x86_lsl_reg64,                                   // llvm.x86.lsl.reg64
     x86_lwpins32,                                    // llvm.x86.lwpins32
     x86_lwpins64,                                    // llvm.x86.lwpins64
     x86_lwpval32,                                    // llvm.x86.lwpval32

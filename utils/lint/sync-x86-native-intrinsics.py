@@ -30,6 +30,13 @@ DECLARATIONS = {
     "vmread_reg": ("STRUCT2", "I64", "I8", "I64", "I64"),
     "vmwrite_mem": ("I8", "I64", "PTR"),
 }
+DECLARATIONS["lsl"] = ("I32", "I32")
+for operation in ("lar", "lsl"):
+    for bits in (16, 32, 64):
+        for source in ("reg", "mem"):
+            name = f"{operation}_{source}{bits}"
+            operand = "I16" if source == "reg" else "PTR"
+            DECLARATIONS[name] = ("STRUCT2", f"I{bits}", "I8", operand, f"I{bits}")
 PROTOTYPE = "llvm.x86.vmread"
 REGISTER_SIGNATURES = {
     "readcr": ("I64", "I32"), "readdr": ("I64", "I32"),
