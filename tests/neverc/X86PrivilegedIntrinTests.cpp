@@ -1083,6 +1083,7 @@ TEST_F(X86PrivilegedIntrinTest, SvmAddressOverrideRetainsItsNativePrefix) {
       __builtin_ia32_vmload_addr32(address);
       __builtin_ia32_vmsave_addr32(address);
       __builtin_ia32_invlpga_addr32(address, asid);
+      __builtin_ia32_invlpgb_addr32(address, asid, 0x80000001u);
       return address ^ asid;
     }
   )";
@@ -1090,7 +1091,7 @@ TEST_F(X86PrivilegedIntrinTest, SvmAddressOverrideRetainsItsNativePrefix) {
     SCOPED_TRACE(Opt);
     auto [RC, Assembly] = compileToAsm(Source, "svm_address_override", Opt);
     ASSERT_EQ(RC, 0) << Assembly;
-    for (const char *Mnemonic : {"vmload", "vmsave", "invlpga"})
+    for (const char *Mnemonic : {"vmload", "vmsave", "invlpga", "invlpgb"})
       EXPECT_TRUE(std::regex_search(
           Assembly, std::regex(std::string("addr32[ \t]+") + Mnemonic)))
           << Assembly;

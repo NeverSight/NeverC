@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check SVM pseudo synchronization, append-only identities and drift rejection."""
+"""Check system pseudo synchronization, append-only identities and drift rejection."""
 
 import importlib.util
 import re
@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 SPEC = importlib.util.spec_from_file_location(
-    "svm", Path(__file__).with_name("sync-x86-svm-address-instructions.py"))
+    "svm", Path(__file__).with_name("sync-x86-system-address-instructions.py"))
 SVM = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SVM)
 

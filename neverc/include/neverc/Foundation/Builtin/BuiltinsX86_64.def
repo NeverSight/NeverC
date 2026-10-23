@@ -172,6 +172,7 @@ BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 // Bounded native processor-state effects; INVLPGB uses rAX, EDX, ECX in order.
 TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
 BUILTIN(__builtin_ia32_invlpgb, "vULLiUiUi", "n")
+BUILTIN(__builtin_ia32_invlpgb_addr32, "vUiUiUi", "n")
 BUILTIN(__builtin_ia32_tlbsync, "v", "n")
 BUILTIN(__builtin_ia32_lkgs_reg, "vUs", "n")
 BUILTIN(__builtin_ia32_lkgs_mem, "vvC*", "n")

@@ -3503,6 +3503,9 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_invlpgb:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpgb,
                                    {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_invlpgb_addr32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpgb_addr32,
+                                   {Ops[0], Ops[1], Ops[2]});
   case X86::BI__builtin_ia32_tlbsync:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_tlbsync, {});
   case X86::BI__builtin_ia32_lkgs_reg:

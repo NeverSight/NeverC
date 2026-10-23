@@ -456,6 +456,10 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
     OutMI.setOpcode(X86::INVLPGA64);
     OutMI.setFlags(OutMI.getFlags() | X86::IP_HAS_AD_SIZE);
     break;
+  case X86::INVLPGB64_ADDR32:
+    OutMI.setOpcode(X86::INVLPGB64);
+    OutMI.setFlags(OutMI.getFlags() | X86::IP_HAS_AD_SIZE);
+    break;
   case X86::MASKMOVDQU:
   case X86::VMASKMOVDQU:
     OutMI.setFlags(X86::IP_HAS_AD_SIZE);

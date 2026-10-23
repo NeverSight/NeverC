@@ -26335,20 +26335,22 @@ static SDValue lowerBoundedSystemState(SDValue Op,
                    0);
   case Intrinsic::x86_tlbsync:
     return SDValue(DAG.getMachineNode(X86::TLBSYNC, DL, MVT::Other, Chain), 0);
-  case Intrinsic::x86_invlpgb: {
-    const bool Wide = ID == Intrinsic::x86_invlpgb;
-    if (Wide != Subtarget.is64Bit())
+  case Intrinsic::x86_invlpgb:
+  case Intrinsic::x86_invlpgb_addr32: {
+    const bool Override = ID == Intrinsic::x86_invlpgb_addr32;
+    if (!Subtarget.is64Bit())
       report_fatal_error(
           "INVLPGB intrinsic does not match the target code mode");
-    Chain = DAG.getCopyToReg(Chain, DL, Wide ? X86::RAX : X86::EAX,
+    Chain = DAG.getCopyToReg(Chain, DL, Override ? X86::EAX : X86::RAX,
                              Op.getOperand(2), SDValue());
     Chain = DAG.getCopyToReg(Chain, DL, X86::EDX, Op.getOperand(3),
                              Chain.getValue(1));
     Chain = DAG.getCopyToReg(Chain, DL, X86::ECX, Op.getOperand(4),
                              Chain.getValue(1));
-    return SDValue(DAG.getMachineNode(X86::INVLPGB64, DL, MVT::Other,
-                                      {Chain, Chain.getValue(1)}),
-                   0);
+    return SDValue(
+        DAG.getMachineNode(Override ? X86::INVLPGB64_ADDR32 : X86::INVLPGB64,
+                           DL, MVT::Other, {Chain, Chain.getValue(1)}),
+        0);
   }
   case Intrinsic::x86_lkgs_reg:
   case Intrinsic::x86_lkgs_mem: {
@@ -26707,6 +26709,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_hreset:
     case Intrinsic::x86_tlbsync:
     case Intrinsic::x86_invlpgb:
+    case Intrinsic::x86_invlpgb_addr32:
     case Intrinsic::x86_lkgs_reg:
     case Intrinsic::x86_lkgs_mem:
       return lowerBoundedSystemState(Op, Subtarget, DAG);

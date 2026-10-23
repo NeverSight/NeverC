@@ -40,6 +40,7 @@ def instructions(code, mode):
     while position < len(code):
         remaining = code[position:]
         for encoding, mnemonic in ((b"\xf3\x0f\x3a\xf0\xc0\x00", "hreset"),
+                                    (b"\x67\x0f\x01\xfe", "invlpgb"),
                                     (b"\x0f\x01\xfe", "invlpgb"), (b"\x0f\x01\xff", "tlbsync")):
             if remaining.startswith(encoding):
                 instruction = SimpleNamespace(address=CODE + position, size=len(encoding), mnemonic=mnemonic)
@@ -93,9 +94,11 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             else:
                 narrow = inputs
             body.append(f"%selector{i} = trunc {word} {inputs[0]} to i16")
-            parameters = {"hreset": "i32", "invlpgb": f"{word}, i32, i32", "tlbsync": "",
+            parameters = {"hreset": "i32", "invlpgb": f"{word}, i32, i32",
+                          "invlpgb.addr32": "i32, i32, i32", "tlbsync": "",
                           "lkgs.reg": "i16", "lkgs.mem": "ptr"}[operation]
             call = {"hreset": f"i32 {narrow[0]}", "invlpgb": f"{word} {inputs[0]}, i32 {narrow[1]}, i32 {narrow[2]}",
+                    "invlpgb.addr32": f"i32 {narrow[0]}, i32 {narrow[1]}, i32 {narrow[2]}",
                     "tlbsync": "", "lkgs.reg": f"i16 %selector{i}", "lkgs.mem": "ptr %source"}[operation]
             body.append(f"call void @{api}({call})")
         terms = ["%a", "%b", "%c", "%pointer"]
@@ -118,7 +121,8 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             body.append("unsigned condition = a < b;")
         for i in range(count):
             a, b, c = (p + (f" ^ {delta}ULL" if i else "") for p, delta in zip(("a", "b", "c"), DELTA))
-            call = {"hreset": a, "invlpgb": f"{a}, {b}, {c}", "tlbsync": "", "lkgs.reg": a, "lkgs.mem": "source"}[operation]
+            call = {"hreset": a, "invlpgb": f"{a}, {b}, {c}", "invlpgb.addr32": f"{a}, {b}, {c}",
+                    "tlbsync": "", "lkgs.reg": a, "lkgs.mem": "source"}[operation]
             body.append(f"__builtin_ia32_{operation.replace('.', '_')}({call});")
         result = "a ^ b ^ c ^ (unsigned long long)source"
         if variant == "memory":
@@ -187,8 +191,11 @@ def execute(code, operation, variant, mode, values, mapped=True):
         av, bv, cv = (v ^ (d if index else 0) for v, d in zip((a, b, c), DELTA))
         if operation == "hreset":
             assert machine.reg_read(regs.UC_X86_REG_EAX) == av & 0xffffffff
-        elif operation == "invlpgb":
-            assert machine.reg_read(reg("AX")) == av
+        elif operation.startswith("invlpgb"):
+            override = operation.endswith("addr32")
+            assert instruction.size == (4 if override else 3), "address-size prefix changed"
+            address_register = regs.UC_X86_REG_EAX if override else reg("AX")
+            assert machine.reg_read(address_register) == av & (0xffffffff if override else mask)
             assert machine.reg_read(regs.UC_X86_REG_EDX) == bv & 0xffffffff
             assert machine.reg_read(regs.UC_X86_REG_ECX) == cv & 0xffffffff
         elif operation.startswith("lkgs"):
@@ -267,7 +274,7 @@ def main():
         directory = args.keep or Path(temp)
         directory.mkdir(parents=True, exist_ok=True)
         for mode in ((32, 64) if args.llc else (64,)):
-            operations = ("hreset", "invlpgb", "tlbsync", "lkgs.reg", "lkgs.mem") if mode == 64 else ("hreset", "invlpgb", "tlbsync")
+            operations = ("hreset", "invlpgb", "invlpgb.addr32", "tlbsync", "lkgs.reg", "lkgs.mem") if mode == 64 else ("hreset", "invlpgb", "tlbsync")
             for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
                 code = compile_case(args, directory, operation, variant, mode, opt)
                 for values in VALUES:

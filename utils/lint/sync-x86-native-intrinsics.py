@@ -31,6 +31,7 @@ DECLARATIONS = {
     "vmwrite_mem": ("I8", "I64", "PTR"),
     "hreset": ("Done", "I32"),
     "invlpgb": ("Done", "I64", "I32", "I32"),
+    "invlpgb_addr32": ("Done", "I32", "I32", "I32"),
     "tlbsync": ("Done",),
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),

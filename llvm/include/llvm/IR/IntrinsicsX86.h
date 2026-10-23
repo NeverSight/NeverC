@@ -1042,6 +1042,7 @@ enum X86Intrinsics : unsigned {
     x86_invlpga,                                     // llvm.x86.invlpga
     x86_invlpga_addr32,                              // llvm.x86.invlpga.addr32
     x86_invlpgb,                                     // llvm.x86.invlpgb
+    x86_invlpgb_addr32,                              // llvm.x86.invlpgb.addr32
     x86_invpcid,                                     // llvm.x86.invpcid
     x86_invvpid,                                     // llvm.x86.invvpid
     x86_inword,                                      // llvm.x86.inword

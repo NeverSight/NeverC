@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Append SVM address-size pseudos without renumbering existing opcodes.
+"""Append AMD system address-size pseudos without renumbering existing opcodes.
 
-The full fork owns these in X86InstrSVM.td. They retain exact EAX/ECX inputs
-and VMCB memory effects until X86MCInstLower emits the real opcode with 67.
+The full fork owns these in X86InstrSVM.td and X86InstrMisc.td. They retain
+exact EAX/EDX/ECX inputs and effects until MC lowering adds the native 67.
 There is no new assembler mnemonic or machine-code encoding.
 """
 
@@ -21,13 +21,14 @@ def module(name, filename):
 TABLES = module("tables", "sync-x86-amx-instructions.py")
 EFFECTS = module("effects", "sync-x86-system-effects.py")
 INSTRUCTIONS = tuple((op + "64_ADDR32", op + "64", None, None)
-                     for op in ("VMLOAD", "VMSAVE", "INVLPGA"))
+                     for op in ("VMLOAD", "VMSAVE", "INVLPGA", "INVLPGB"))
 
 
 def synchronize_table(text):
     overrides = {}
     for name, prototype, _, _ in INSTRUCTIONS:
-        uses = ("EAX", "ECX") if prototype == "INVLPGA64" else ("EAX",)
+        uses = (("EAX", "EDX", "ECX") if prototype == "INVLPGB64" else
+                ("EAX", "ECX") if prototype == "INVLPGA64" else ("EAX",))
         text, offset = EFFECTS.implicit_sequence(text, uses)
         fields = TABLES.descriptor(text, prototype)
         fields[5:8] = [str(len(uses)), "0", f"X86ImpOpBase + {offset}"]
@@ -59,7 +60,7 @@ def main():
         if args.write:
             path.write_text(updated)
         else:
-            parser.exit(1, "SVM address-size pseudos are stale; run with --write\n")
+            parser.exit(1, "System address-size pseudos are stale; run with --write\n")
 
 
 if __name__ == "__main__":

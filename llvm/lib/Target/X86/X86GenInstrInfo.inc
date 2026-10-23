@@ -18506,7 +18506,8 @@ namespace X86 {
     VMLOAD64_ADDR32	= 18491,
     VMSAVE64_ADDR32	= 18492,
     INVLPGA64_ADDR32	= 18493,
-    INSTRUCTION_LIST_END = 18494
+    INVLPGB64_ADDR32	= 18494,
+    INSTRUCTION_LIST_END = 18495
   };
 
 } // end namespace X86
@@ -20897,7 +20898,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18494];
+  MCInstrDesc Insts[18495];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5432];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -20916,6 +20917,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18494,	0,	0,	0,	8,	3,	0,	X86ImpOpBase + 317,	1,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18494 = INVLPGB64_ADDR32
     { 18493,	0,	0,	0,	697,	2,	0,	X86ImpOpBase + 140,	1,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18493 = INVLPGA64_ADDR32
     { 18492,	0,	0,	0,	8,	1,	0,	X86ImpOpBase + 17,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18492 = VMSAVE64_ADDR32
     { 18491,	0,	0,	0,	8,	1,	0,	X86ImpOpBase + 17,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18491 = VMLOAD64_ADDR32
@@ -58255,6 +58257,7 @@ extern const char X86InstrNameData[] = {
   /* 258978 */ "VMLOAD64_ADDR32\0"
   /* 258994 */ "VMSAVE64_ADDR32\0"
   /* 259010 */ "INVLPGA64_ADDR32\0"
+  /* 259027 */ "INVLPGB64_ADDR32\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60613,10 +60616,11 @@ extern const unsigned X86InstrNameIndices[] = {
     258978U,
     258994U,
     259010U,
+    259027U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18494);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18495);
 }
 
 } // end namespace llvm
@@ -60676,7 +60680,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18494);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18495);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -97888,6 +97892,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     /* VMSAVE64_ADDR32 */
     35842,
     /* INVLPGA64_ADDR32 */
+    3361,
+    /* INVLPGB64_ADDR32 */
     3361,
   };
 
@@ -153233,9 +153239,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // VMLOAD64_ADDR32 = 18491
     CEFBS_In64BitMode, // VMSAVE64_ADDR32 = 18492
     CEFBS_In64BitMode, // INVLPGA64_ADDR32 = 18493
+    CEFBS_In64BitMode, // INVLPGB64_ADDR32 = 18494
   };
 
-  assert(Opcode < 18494);
+  assert(Opcode < 18495);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 
