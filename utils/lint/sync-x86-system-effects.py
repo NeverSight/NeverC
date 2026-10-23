@@ -92,7 +92,7 @@ for operation in ("VERR", "VERW", "LLDT", "LTR", "LMSW"):
         definitions = ("EFLAGS",) if operation in ("VERR", "VERW") else ()
         EFFECTS[name] = (5 if form == "m" else 1, (), definitions, memory)
 EFFECTS["INVD"] = (0, (), (), ("MayLoad", "MayStore"))
-for operation in ("ENCLS", "ENCLV"):
+for operation in ("ENCLS", "ENCLV", "ENCLU"):
     EFFECTS[operation] = (0, ("RAX", "RBX", "RCX", "RDX"),
                          ("RAX", "RBX", "RCX", "RDX", "EFLAGS"),
                          ("MayLoad", "MayStore"))

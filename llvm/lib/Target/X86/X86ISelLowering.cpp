@@ -50,6 +50,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -26062,23 +26063,38 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
 // SGX owns its implicit DS accesses, enclave state and privilege/fault checks.
 // Preserve all four natural-width GPRs and capture CF/ZF before flag
 // arithmetic.
-static SDValue lowerSGXSupervisor(SDValue Op, const X86Subtarget &Subtarget,
-                                  SelectionDAG &DAG) {
+static SDValue lowerSGXFallthrough(SDValue Op, const X86Subtarget &Subtarget,
+                                   SelectionDAG &DAG) {
   const unsigned ID = Op.getConstantOperandVal(1);
   if (!Subtarget.is64Bit())
     report_fatal_error("SGX intrinsic does not match the target code mode");
   if (!Subtarget.hasSGX())
     report_fatal_error("SGX intrinsic requires the sgx target feature");
+  if (ID == Intrinsic::x86_enclu_bounded) {
+    const auto *Control = dyn_cast<ConstantSDNode>(Op.getOperand(2));
+    if (!Control)
+      report_fatal_error("bounded ENCLU requires a constant leaf");
+    if (!X86::isBoundedEncluLeaf(Control->getZExtValue()))
+      report_fatal_error(
+          "bounded ENCLU requires a fallthrough leaf (0, 1, 5..11)");
+  }
   const SDLoc DL(Op);
   const MVT VT = MVT::i64;
   const unsigned Registers[] = {X86::RAX, X86::RBX, X86::RCX, X86::RDX};
   SDValue Chain = Op.getOperand(0), Glue;
   for (unsigned I = 0; I != 4; ++I) {
-    Chain =
-        DAG.getCopyToReg(Chain, DL, Registers[I], Op.getOperand(I + 2), Glue);
+    SDValue Input = Op.getOperand(I + 2);
+    // ImmArg becomes a TargetConstant in SelectionDAGBuilder. rAX still
+    // needs an ordinary constant that instruction selection can materialize.
+    if (Input.getOpcode() == ISD::TargetConstant)
+      Input =
+          DAG.getConstant(cast<ConstantSDNode>(Input)->getAPIntValue(), DL, VT);
+    Chain = DAG.getCopyToReg(Chain, DL, Registers[I], Input, Glue);
     Glue = Chain.getValue(1);
   }
-  const unsigned Opcode = ID == Intrinsic::x86_encls ? X86::ENCLS : X86::ENCLV;
+  const unsigned Opcode = ID == Intrinsic::x86_encls   ? X86::ENCLS
+                          : ID == Intrinsic::x86_enclv ? X86::ENCLV
+                                                       : X86::ENCLU;
   auto *Access = DAG.getMachineNode(
       Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue), {Chain, Glue});
   Chain = SDValue(Access, 0);
@@ -26666,7 +26682,8 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     }
     case Intrinsic::x86_encls:
     case Intrinsic::x86_enclv:
-      return lowerSGXSupervisor(Op, Subtarget, DAG);
+    case Intrinsic::x86_enclu_bounded:
+      return lowerSGXFallthrough(Op, Subtarget, DAG);
 
     case Intrinsic::x86_verr_reg:
     case Intrinsic::x86_verr_mem:

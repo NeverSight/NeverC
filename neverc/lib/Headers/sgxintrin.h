@@ -42,6 +42,22 @@ _enclv_u32(unsigned int __leaf, __SIZE_TYPE__ __d[]) {
   return (unsigned int)__result;
 }
 
+/* Fallthrough leaves only: 0, 1, 5..11. The leaf must be constant; entry,
+ * resume and exit require their complete enclave continuation ABI. */
+#define _enclu_bounded_u32(leaf, data)                                         \
+  __extension__({                                                              \
+    __SIZE_TYPE__ *__enclu_data = (data);                                      \
+    unsigned long long __enclu_registers[3];                                   \
+    unsigned char __enclu_flags;                                               \
+    unsigned long long __enclu_result = __builtin_ia32_enclu_bounded(          \
+        (unsigned int)(leaf), __enclu_data[0], __enclu_data[1],                \
+        __enclu_data[2], __enclu_registers, &__enclu_flags);                   \
+    __enclu_data[0] = __enclu_registers[0];                                    \
+    __enclu_data[1] = __enclu_registers[1];                                    \
+    __enclu_data[2] = __enclu_registers[2];                                    \
+    (unsigned int)__enclu_result;                                              \
+  })
+
 #undef __DEFAULT_FN_ATTRS
 #endif /* __x86_64__ */
 

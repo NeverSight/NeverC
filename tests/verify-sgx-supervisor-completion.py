@@ -5,6 +5,8 @@ Controlled completions execute surrounding scalar code and inject all four
 register outputs plus CF/ZF. They are not an SGX implementation. Separate Linux
 children compare the real CPL3 #UD boundary with independently encoded bytes.
 Successful enclave/VMX operations require a suitable execution environment.
+--bounded-enclu checks constant fallthrough leaves, including rejected
+continuations in the compiler regressions; it does not implement an enclave.
 Requires capstone, lief and unicorn. --llc tests both LLVM code modes;
 --backend-llc tests NeverC IR through the full LLVM fork.
 """
@@ -37,6 +39,11 @@ VALUES = ((4, 0, 0, 0), (0x8800000000000007, 0xd0123456789abcde, 0x798ab6cdaaaaf
 DELTA = (0x1234, 0x8796, 0xc0ffee, 0xdeadbeef)
 VARIANTS = ("all", "rax", "rbx", "rcx", "rdx", "flags", "dead", "twice", "memory", "condition")
 REGISTERS = ("AX", "BX", "CX", "DX")
+BOUNDED_LEAVES = (0, 1, 5, 6, 7, 8, 9, 10, 11)
+
+
+def enclu_control(leaf, mode, index, standard=False):
+    return leaf if mode == 32 or standard else (0x8800000000000000 ^ (0x0444000000000000 if index else 0)) | leaf
 
 
 def observed(variant):
@@ -47,12 +54,12 @@ def observed(variant):
     return range(4 if variant == "standard" else 5)
 
 
-def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.TRIPLES[0]):
-    name = f"{operation}-{variant}-{mode}-{opt}-{COMMON.TRIPLES.index(target)}"
+def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.TRIPLES[0], bounded_leaf=None):
+    name = f"{operation}-{variant}-{mode}-{opt}-{COMMON.TRIPLES.index(target)}-{bounded_leaf}"
     ir, obj = directory / (name + ".ll"), directory / (name + ".o")
     word, count = f"i{mode}", 2 if variant == "twice" else 1
     ty = "{ " + ", ".join([word] * 4 + ["i8"]) + " }"
-    api = "llvm.x86." + operation + ("32" if mode == 32 else "")
+    api = "llvm.x86." + operation + (".bounded" if bounded_leaf is not None else "") + ("32" if mode == 32 else "")
     triple = ("x86_64" if mode == 64 else "i686") + "-" + target
     if args.llc:
         body = [f"store {word} %a, ptr %memory"] if variant == "memory" else []
@@ -67,6 +74,8 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                 if index:
                     value += str(index)
                     body.append(f"{value} = xor {word} %{parameter}, {delta}")
+                if parameter == "a" and bounded_leaf is not None:
+                    value = str(enclu_control(bounded_leaf, mode, index))
                 parameters.append(f"{word} {value}")
             body.append(f"%call{index} = call {ty} @{api}({', '.join(parameters)})")
             for field in observed(variant):
@@ -91,17 +100,26 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
         src = directory / (name + ".c")
         body = ["*memory = a;"] if variant == "memory" else []
         terms = ["a", "b", "c", "d"]
+        check_evaluation = bounded_leaf is not None and variant in ("standard", "dead_standard")
+        if check_evaluation:
+            body.append("volatile unsigned evaluations = 0;")
+            terms.append(f"(evaluations != {count})")
         if variant == "condition":
             body.append("unsigned condition = a < d;")
             terms.append("condition")
         for index in range(count):
             arguments = [p + (f" ^ {delta}ULL" if index else "") for p, delta in zip(("a", "b", "c", "d"), DELTA)]
+            suffix = operation + ("_bounded" if bounded_leaf is not None else "")
+            if bounded_leaf is not None:
+                arguments[0] = str(enclu_control(bounded_leaf, mode, index)) + "ULL"
             if variant in ("standard", "dead_standard"):
+                leaf = str(bounded_leaf) if bounded_leaf is not None else "(unsigned)a"
+                data = f"(evaluations++, out{index})" if check_evaluation else f"out{index}"
                 body += [f"__SIZE_TYPE__ out{index}[3] = {{b, c, d}};",
-                         f"unsigned long long result{index} = _{operation}_u32((unsigned)a, out{index});"]
+                         f"unsigned long long result{index} = _{suffix}_u32({leaf}, {data});"]
             else:
                 body += [f"unsigned long long out{index}[3]; unsigned char flags{index};",
-                         f"unsigned long long result{index} = __builtin_ia32_{operation}({', '.join(arguments)}, out{index}, &flags{index});"]
+                         f"unsigned long long result{index} = __builtin_ia32_{suffix}({', '.join(arguments)}, out{index}, &flags{index});"]
             for field in observed(variant):
                 terms.append(f"flags{index}" if field == 4 else (f"result{index}" if field == 0 else f"out{index}[{field - 1}]"))
         if variant == "memory":
@@ -134,7 +152,7 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     return text_section(obj)
 
 
-def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=False):
+def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=False, bounded_leaf=None):
     mask = (1 << mode) - 1
     inputs = tuple(value & mask for value in values)
     machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64 if mode == 64 else unicorn.UC_MODE_32)
@@ -164,16 +182,18 @@ def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=F
     if variant == "condition":
         result ^= int(inputs[0] < inputs[3])
     for index, (instruction, status) in enumerate(zip(accesses, statuses)):
-        assert bytes(instruction.bytes) == (b"\x0f\x01\xcf" if operation == "encls" else b"\x0f\x01\xc0")
+        assert bytes(instruction.bytes) == bytes((0x0f, 0x01, {"encls": 0xcf, "enclv": 0xc0, "enclu": 0xd7}[operation]))
         machine.emu_start(start, instruction.address, count=1000)
         assert machine.reg_read(reg("IP")) == instruction.address
         for field, register in enumerate(REGISTERS):
             expected = inputs[field] ^ (DELTA[field] if index else 0)
+            if bounded_leaf is not None and field == 0:
+                expected = enclu_control(bounded_leaf, mode, index, variant in ("standard", "dead_standard"))
             if variant in ("standard", "dead_standard") and field == 0:
                 expected &= 0xffffffff
             assert machine.reg_read(reg(register)) == expected, f"incorrect SGX {register} input"
         if stop_at_boundary:
-            return  # No implicit enclave-address preload occurred before #UD.
+            return  # No implicit enclave-address preload occurred before the native boundary.
         outputs = [((0x9182736455aa0123 + field * 0x17659843) ^ (inputs[field] >> 2) ^ (0xfedcba98 if index else 0)) & mask
                    for field in range(4)]
         for register, value in zip(REGISTERS, outputs):
@@ -200,16 +220,18 @@ def native_fault_oracle(args, directory):
     if args.llc or platform.system() != "Linux" or platform.machine() != "x86_64":
         return 0
     count = 0
-    for operation, opt in itertools.product(("encls", "enclv"), ("O0", "O2")):
-        base = directory / f"fault-{operation}-{opt}"
+    cases = [("enclu", leaf) for leaf in BOUNDED_LEAVES] if args.bounded_enclu else [("encls", 4), ("enclv", 4)]
+    for (operation, leaf), opt in itertools.product(cases, ("O0", "O2")):
+        base = directory / f"fault-{operation}-{leaf}-{opt}"
         src, ir, obj, library = (base.with_suffix(suffix) for suffix in (".c", ".ll", ".o", ".so"))
-        byte = "0xcf" if operation == "encls" else "0xc0"
+        byte = {"encls": "0xcf", "enclv": "0xc0", "enclu": "0xd7"}[operation]
+        suffix = operation + ("_bounded" if args.bounded_enclu else "")
         src.write_text(f'''__attribute__((target("sgx"))) unsigned long long probe(void) {{
   unsigned long long outputs[3]; unsigned char flags;
-  return __builtin_ia32_{operation}(4, 0, 0, 0, outputs, &flags);
+  return __builtin_ia32_{suffix}({leaf}, 0, 0, 0, outputs, &flags);
 }}
 unsigned long long original(void) {{
-  unsigned long long a=4,b=0,c=0,d=0;
+  unsigned long long a={leaf},b=0,c=0,d=0;
   __asm__ volatile(".byte 0x0f, 0x01, {byte}" : "+a"(a), "+b"(b), "+c"(c), "+d"(d) : : "cc", "memory");
   return a;
 }}
@@ -222,11 +244,15 @@ unsigned long long original(void) {{
         else:
             run(compiler + ["-c", "-o", obj])
         run([args.compiler, "-shared", "-nostdlib", "-fno-lto", "-fno-builtin-mimalloc", obj, "-o", library])
+        outcomes = []
         for function in ("original", "probe"):
             child = subprocess.run([sys.executable, "-c", "import ctypes,sys; getattr(ctypes.CDLL(sys.argv[1]),sys.argv[2])()", str(library.resolve()), function],
                                    capture_output=True, text=True)
-            assert child.returncode == -signal.SIGILL, f"{operation}/{opt}/{function}: expected CPL3 #UD, got {child.returncode}: {child.stderr}"
+            expected = (-signal.SIGILL, -signal.SIGSEGV, -signal.SIGBUS) if args.bounded_enclu else (-signal.SIGILL,)
+            assert child.returncode in expected, f"{operation}/{opt}/{function}: expected native fault, got {child.returncode}: {child.stderr}"
+            outcomes.append(child.returncode)
             count += 1
+        assert outcomes[0] == outcomes[1], "native intrinsic and original bytes disagree on fault"
     return count
 
 
@@ -237,6 +263,7 @@ def main():
     backend.add_argument("--llc", type=Path)
     backend.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
+    parser.add_argument("--bounded-enclu", action="store_true")
     args = parser.parse_args()
     for key in ("compiler", "llc", "backend_llc"):
         if getattr(args, key):
@@ -246,23 +273,24 @@ def main():
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
         variants = VARIANTS if args.llc else VARIANTS + ("standard", "dead_standard")
+        cases = [("enclu", leaf) for leaf in BOUNDED_LEAVES] if args.bounded_enclu else [("encls", None), ("enclv", None)]
         for mode in ((32, 64) if args.llc else (64,)):
-            for operation, opt, variant in itertools.product(("encls", "enclv"), ("O0", "O2"), variants):
-                code = compile_case(args, directory, operation, variant, mode, opt)
+            for (operation, leaf), opt, variant in itertools.product(cases, ("O0", "O2"), variants):
+                code = compile_case(args, directory, operation, variant, mode, opt, bounded_leaf=leaf)
                 for values, statuses in itertools.product(VALUES, itertools.product(range(4), repeat=2 if variant == "twice" else 1)):
                     try:
-                        execute(code, operation, variant, mode, values, statuses)
+                        execute(code, operation, variant, mode, values, statuses, bounded_leaf=leaf)
                     except Exception as error:
-                        raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}, {statuses}: {error}") from error
+                        raise AssertionError(f"{operation}/{leaf}, {variant}, {mode}, {opt}, {values}, {statuses}: {error}") from error
                     count += 1
-                execute(code, operation, variant, mode, (4, 0xdead0001, 0xdead0003, 0xdead0005), (0,) * (2 if variant == "twice" else 1), True)
+                execute(code, operation, variant, mode, (4, 0xdead0001, 0xdead0003, 0xdead0005), (0,) * (2 if variant == "twice" else 1), True, leaf)
                 count += 1
                 if variant in ("all", "standard"):
                     for target in COMMON.TRIPLES[1:]:
-                        compile_case(args, directory, operation, variant, mode, opt, target)
+                        compile_case(args, directory, operation, variant, mode, opt, target, leaf)
                         count += 1
         native = native_fault_oracle(args, directory)
-    print(f"PASS: {count} SGX supervisor encoding/completion checks; {native} real CPL3 fault boundaries")
+    print(f"PASS: {count} SGX {'bounded ENCLU' if args.bounded_enclu else 'supervisor'} encoding/completion checks; {native} real CPL3 fault boundaries")
 
 
 if __name__ == "__main__":

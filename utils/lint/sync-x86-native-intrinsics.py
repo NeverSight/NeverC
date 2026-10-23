@@ -69,6 +69,10 @@ REGISTER_SIGNATURES = {
     "readcr": ("I64", "I32"), "readdr": ("I64", "I32"),
     "writecr": ("Done", "I32", "I64"), "writedr": ("Done", "I32", "I64"),
 }
+FIRST_IMMEDIATE_SIGNATURES = {
+    "enclu_bounded": ("STRUCT5", "I64", "I64", "I64", "I64", "I8",
+                       "I64", "I64", "I64", "I64"),
+}
 AMX_SIGNATURES = {
     **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")
        for name in ("tdpbf8ps", "tdpbhf8ps", "tdphbf8ps", "tdphf8ps", "tmmultf32ps")},
@@ -158,6 +162,8 @@ def synchronize(write):
     declarations = {suffix: (signature, PROTOTYPE)
                     for suffix, signature in DECLARATIONS.items()}
     declarations.update(AMX_SIGNATURES)
+    declarations.update({suffix: (signature, "llvm.x86.int")
+                         for suffix, signature in FIRST_IMMEDIATE_SIGNATURES.items()})
     for suffix, (signature, prototype) in declarations.items():
         source = names.index(prototype)
         attribute = immediate_pair if suffix in ROW_IMMEDIATES else attributes[source][0]

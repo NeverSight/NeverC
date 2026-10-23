@@ -1011,6 +1011,7 @@ enum X86Intrinsics : unsigned {
     x86_directstore32,                               // llvm.x86.directstore32
     x86_directstore64,                               // llvm.x86.directstore64
     x86_encls,                                       // llvm.x86.encls
+    x86_enclu_bounded,                               // llvm.x86.enclu.bounded
     x86_enclv,                                       // llvm.x86.enclv
     x86_encodekey128,                                // llvm.x86.encodekey128
     x86_encodekey256,                                // llvm.x86.encodekey256

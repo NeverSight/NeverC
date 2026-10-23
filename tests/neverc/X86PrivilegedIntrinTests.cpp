@@ -719,7 +719,7 @@ TEST_F(X86PrivilegedIntrinTest, SgxSupervisorBuiltinsAndHeadersAreNative) {
 
 TEST_F(X86PrivilegedIntrinTest,
        SgxSupervisorBuiltinsRequireTheirTargetFeature) {
-  for (const char *Operation : {"encls", "enclv"}) {
+  for (const char *Operation : {"encls", "enclv", "enclu_bounded"}) {
     const std::string Source = "unsigned long long query(unsigned long long "
                                "*out, unsigned char *flags) {"
                                "return __builtin_ia32_" +
@@ -728,6 +728,50 @@ TEST_F(X86PrivilegedIntrinTest,
     auto [RC, Error] = compileToAsm(Source.c_str(), "sgx_without_feature");
     EXPECT_NE(RC, 0);
     EXPECT_NE(Error.find("sgx"), std::string::npos) << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, SgxBoundedUserLeavesAndHeaderAreNative) {
+  for (unsigned Leaf : {0, 1, 5, 6, 7, 8, 9, 10, 11}) {
+    SCOPED_TRACE(Leaf);
+    const std::string Source =
+        "#include <immintrin.h>\n"
+        "__attribute__((target(\"sgx\"))) unsigned long long query("
+        "unsigned long long b, unsigned long long c, unsigned long long d, "
+        "unsigned long long *out, unsigned char *flags, __SIZE_TYPE__ *data) {"
+        "unsigned long long r = __builtin_ia32_enclu_bounded(" +
+        std::to_string(0x8123456700000000ULL | Leaf) +
+        "ULL,b,c,d,out,flags);"
+        "return r ^ _enclu_bounded_u32(" +
+        std::to_string(Leaf) + ",data); }";
+    for (const char *Opt : {"-O0", "-O2"}) {
+      auto [RC, Assembly] = compileToAsm(Source.c_str(), "enclu_bounded", Opt);
+      ASSERT_EQ(RC, 0) << Assembly;
+      const std::regex Pattern("\\tenclu[\\t\\r\\n]");
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Pattern),
+                              std::sregex_iterator()),
+                2)
+          << Assembly;
+      EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+    }
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, SgxBoundedUserRejectsUnownedContinuations) {
+  for (const char *Leaf :
+       {"a", "2", "3", "4", "12", "0xffffffffULL", "0x8123456700000002ULL"}) {
+    SCOPED_TRACE(Leaf);
+    const std::string Source =
+        "__attribute__((target(\"sgx\"))) unsigned long long query("
+        "unsigned long long a, unsigned long long *out, unsigned char *flags) {"
+        "return __builtin_ia32_enclu_bounded(" +
+        std::string(Leaf) + ",0,0,0,out,flags); }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "enclu_unowned");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find(std::string(Leaf) == "a" ? "constant" : "fallthrough"),
+              std::string::npos)
+        << Error;
   }
 }
 

@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include <bitset>
@@ -538,6 +539,16 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_enclu_bounded: {
+    llvm::APSInt Control;
+    if (SemaBuiltinConstantArg(TheCall, 0, Control))
+      return true;
+    if (llvm::X86::isBoundedEncluLeaf(Control.getZExtValue()))
+      return false;
+    return Diag(TheCall->getBeginLoc(),
+                diag::err_x86_builtin_invalid_enclu_leaf)
+           << TheCall->getArg(0)->getSourceRange();
+  }
   case X86::BI__readdr:
   case X86::BI__writedr:
   case X86::BI__builtin_ia32_readdr:

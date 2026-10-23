@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1569).
+   1571).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -304,7 +304,7 @@ places a second VMCB in guest RAM below 64 KiB, so i386's AX address refers to
 valid physical storage. Exact-byte and live-input checks separately verify
 prefix retention and narrowing without losing callers' original values.
 
-### SGX supervisor and VMM completion
+### SGX supervisor, VMM and bounded user completion
 
 `__builtin_ia32_encls(a, b, c, d, registers_out, flags_out)` and `enclv` take
 four `unsigned long long` inputs for RAX/RBX/RCX/RDX, return the full native
@@ -328,6 +328,29 @@ incoming machine flags and is not a defined status. A lifter must retain its
 explicit incoming flag state for those leaves. These bounded APIs do not
 provide ENCLU's entry/exit/resume continuations or full enclave state transport.
 Native privilege, feature, EPC and VMX checks remain hardware behavior.
+
+`__builtin_ia32_enclu_bounded` adds the same register/status contract for
+constant fallthrough leaves: EREPORT (0), EGETKEY (1), EACCEPT (5), EMODPE
+(6), EACCEPTCOPY (7), EVERIFYREPORT2 (8), EDECCSSA (9), EREPORT2 (10) and
+EGETKEY256 (11). Its first argument is a constant full-width RAX value;
+only its low 32 bits select the leaf. The frontend and backend share
+`llvm/IR/X86SgxIntrinsics.h` for that validation. The full LLVM fork exposes
+`llvm.x86.enclu.bounded` and `llvm.x86.enclu.bounded32` with the corresponding
+64-bit and 32-bit signatures and an `immarg` first argument. The DAG lowering
+materializes that constant into rAX before the instruction. Dynamic leaves,
+EENTER (2), ERESUME (3), EEXIT (4) and unknown leaves are rejected because
+this API does not own their continuation state. Code16 is also rejected.
+
+The header's `_enclu_bounded_u32(leaf, data)` macro takes a constant leaf,
+evaluates the three-element data-array expression once and returns low EAX.
+Use it in a function with the `sgx` target feature. Unlike the direct builtin,
+this wrapper intentionally takes a 32-bit leaf and does not expose CF/ZF.
+`tests/verify-sgx-supervisor-completion.py --bounded-enclu` qualifies all nine
+leaves through direct LLVM, NeverC and NeverC-to-full-LLVM routes. It checks
+register transport (including high RAX bits), retained memory effects,
+assembly round trips and real native fault boundaries outside an enclave.
+Compiler regressions separately check constant validation. It does not qualify successful enclave execution or the
+undefined/preserved incoming flags of individual leaves.
 
 The installed `<sgxintrin.h>`, included through `<immintrin.h>` or
 `<x86intrin.h>`, provides the standard `_encls_u32` and `_enclv_u32` wrappers
