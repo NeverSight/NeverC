@@ -546,6 +546,27 @@ VMX operations (vmlaunch, vmresume, vmwrite, etc.) report success/failure via
 EFLAGS. The lowering emits `sete` + `setb` after the VMX instruction and
 encodes the result as: 0 = success, 1 = fail (ZF), 2 = fail (CF).
 
+The portable names below are builtins on every x86-64 target, without
+`intrin.h`, a Windows SDK or Microsoft language extensions. They share the
+native IR lowering and memory effects of the corresponding `__vmx_*` APIs:
+
+```c
+unsigned char __builtin_ia32_vmread(unsigned long long field,
+                                   unsigned long long *out);
+unsigned char __builtin_ia32_vmwrite(unsigned long long field,
+                                    unsigned long long value);
+unsigned char __builtin_ia32_vmclear(const void *operand);
+unsigned char __builtin_ia32_vmptrld(const void *operand);
+void __builtin_ia32_vmptrst(void *operand);
+unsigned char __builtin_ia32_vmxon(const void *operand);
+void __builtin_ia32_vmxoff(void);
+unsigned char __builtin_ia32_vmlaunch(void);
+unsigned char __builtin_ia32_vmresume(void);
+```
+
+Pointer operands use the default address space. Use the explicit-address
+interfaces below when an architectural segment override is required.
+
 `__vmx_vmread` lowers to the memory form of VMREAD. The instruction owns the
 conditional write; do not emit a register VMREAD followed by an unconditional
 LLVM store. On VMfail the destination must remain unchanged, and the compiler
@@ -582,6 +603,10 @@ execution still requires a VMX environment. NeverC's pruned X86 backend currentl
 targets x86-64. Run the same test with `--llc /path/to/fork/llc` to cover the LLVM
 fork's x86-64 and i386 intrinsic lowering, including its separate 32-bit forms.
 The frontend test uses freestanding headers, so it needs no Windows SDK.
+Add `--portable-builtins` to check the header-free names, also with
+`--backend-llc` for the full LLVM fork. The frontend regression suite separately
+compiles all nine portable APIs at O0/O2 for ELF, COFF and Mach-O, checking both
+native IR calls and machine instructions.
 Use `--family access`, `--family management`, or `--family invalidation` for a
 focused run. Invalidation coverage checks the complete type selector, the
 unchanged m128 descriptor, all three completion statuses, and the unmapped

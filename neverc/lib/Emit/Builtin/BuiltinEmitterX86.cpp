@@ -3701,6 +3701,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_tileloaddrst164:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tileloaddrst164),
                               Ops);
+  case X86::BI__builtin_ia32_vmwrite:
   case X86::BI__vmx_vmwrite: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite,
                                    {Ops[0], Ops[1]});
@@ -3712,31 +3713,39 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                          : llvm::Intrinsic::x86_invvpid;
     return Builder.CreateIntrinsic(Int8Ty, IID, {Ops[0], Ops[1]});
   }
+  case X86::BI__builtin_ia32_vmread:
   case X86::BI__vmx_vmread: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmread,
                                    {Ops[0], Ops[1]});
   }
+  case X86::BI__builtin_ia32_vmlaunch:
   case X86::BI__vmx_vmlaunch: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmlaunch, {});
   }
+  case X86::BI__builtin_ia32_vmxoff:
   case X86::BI__vmx_off: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmxoff, {});
   }
+  case X86::BI__builtin_ia32_vmclear:
   case X86::BI__vmx_vmclear: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmclear,
                                    {Ops[0]});
   }
+  case X86::BI__builtin_ia32_vmptrld:
   case X86::BI__vmx_vmptrld: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmptrld,
                                    {Ops[0]});
   }
+  case X86::BI__builtin_ia32_vmptrst:
   case X86::BI__vmx_vmptrst: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmptrst,
                                    {Ops[0]});
   }
+  case X86::BI__builtin_ia32_vmresume:
   case X86::BI__vmx_vmresume: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmresume, {});
   }
+  case X86::BI__builtin_ia32_vmxon:
   case X86::BI__vmx_on: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmxon,
                                    {Ops[0]});

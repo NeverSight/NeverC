@@ -248,6 +248,17 @@ BUILTIN(__builtin_ia32_lsl_reg32, "UiUsUiUc*", "n")
 BUILTIN(__builtin_ia32_lsl_mem32, "UivC*UiUc*", "n")
 BUILTIN(__builtin_ia32_lsl_reg64, "ULLiUsULLiUc*", "n")
 BUILTIN(__builtin_ia32_lsl_mem64, "ULLivC*ULLiUc*", "n")
+// Portable VMX interfaces do not depend on Microsoft headers or language modes.
+BUILTIN(__builtin_ia32_vmread, "UcULLiULLi*", "n")
+BUILTIN(__builtin_ia32_vmwrite, "UcULLiULLi", "n")
+BUILTIN(__builtin_ia32_vmclear, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmptrld, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmptrst, "vv*", "n")
+BUILTIN(__builtin_ia32_vmxon, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmxoff, "v", "n")
+BUILTIN(__builtin_ia32_vmlaunch, "Uc", "n")
+BUILTIN(__builtin_ia32_vmresume, "Uc", "n")
+
 // Register VMREAD returns the prior value on VMfail and writes i8 status.
 BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 // VMWRITE owns the source memory access, including privilege/fault ordering.

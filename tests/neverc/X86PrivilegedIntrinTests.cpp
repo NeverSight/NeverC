@@ -906,6 +906,60 @@ TEST_F(X86PrivilegedIntrinTest, SegmentLimitLowersCorrectly) {
   EXPECT_NE(s.find("lsl"), std::string::npos) << "expected lsl instruction\n" << s;
 }
 
+TEST_F(X86PrivilegedIntrinTest, PortableVmxBuiltinsNeedNoPlatformHeaders) {
+  auto Source = tmpFile("portable_vmx.c");
+  auto Output = tmpFile("portable_vmx.out");
+  writeFile(Source, R"(
+    unsigned char read(unsigned long long field, unsigned long long *out) {
+      return __builtin_ia32_vmread(field, out);
+    }
+    unsigned char write(unsigned long long field, unsigned long long value) {
+      return __builtin_ia32_vmwrite(field, value);
+    }
+    unsigned char clear(const void *p) { return __builtin_ia32_vmclear(p); }
+    unsigned char load(const void *p) { return __builtin_ia32_vmptrld(p); }
+    void store(void *p) { __builtin_ia32_vmptrst(p); }
+    unsigned char on(const void *p) { return __builtin_ia32_vmxon(p); }
+    void off(void) { __builtin_ia32_vmxoff(); }
+    unsigned char launch(void) { return __builtin_ia32_vmlaunch(); }
+    unsigned char resume(void) { return __builtin_ia32_vmresume(); }
+  )");
+  for (const char *Triple : {"x86_64-pc-windows-msvc",
+                             "x86_64-unknown-linux-gnu", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"})
+      for (bool IR : {false, true}) {
+        SCOPED_TRACE(Triple);
+        SCOPED_TRACE(Opt);
+        SCOPED_TRACE(IR);
+        std::vector<std::string> Arguments = {std::string("--target=") + Triple,
+                                              "-ffreestanding",
+                                              "-fno-builtin-mimalloc",
+                                              "-fno-lto",
+                                              "-Werror",
+                                              "-mllvm",
+                                              "-verify-machineinstrs",
+                                              Opt,
+                                              "-S",
+                                              Source.string(),
+                                              "-o",
+                                              Output.string()};
+        if (IR)
+          Arguments.push_back("-emit-llvm");
+        const auto Result = ncc(Arguments);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        for (const char *Name :
+             {"vmread", "vmwrite", "vmclear", "vmptrld", "vmptrst", "vmxon",
+              "vmxoff", "vmlaunch", "vmresume"})
+          EXPECT_NE(Text.find((IR ? "@llvm.x86." : "\t") + std::string(Name) +
+                              (IR ? "(" : "")),
+                    std::string::npos)
+              << Text;
+        EXPECT_EQ(Text.find(IR ? " asm " : "#APP"), std::string::npos) << Text;
+        EXPECT_EQ(Text.find("__builtin_ia32_"), std::string::npos) << Text;
+      }
+}
+
 // ---------------------------------------------------------------------------
 // VMX: vmxoff, vmlaunch, vmresume, vmptrst (simple ops)
 // ---------------------------------------------------------------------------

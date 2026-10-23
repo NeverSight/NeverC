@@ -35,7 +35,8 @@ VOID_MANAGEMENT = {"vmptrst", "vmxoff"}
 INVALIDATION = ("invept", "invvpid")
 
 
-def compile_case(compiler, directory, operation, dead, opt, backend=None):
+def compile_case(compiler, directory, operation, dead, opt, backend=None,
+                 portable=False):
     name = operation + ("_dead" if dead else "") + "_" + opt
     source = directory / (name + ".c")
     output = directory / (name + ".obj")
@@ -50,13 +51,14 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None):
         second = "unsigned __int64 *out" if operation == "vmread" else "unsigned __int64 value"
         parameters = f"unsigned __int64 field, {second}"
         arguments = "field, out" if operation == "vmread" else "field, value"
-    builtin = ("__builtin_ia32_" + operation if operation in INVALIDATION else
+    builtin = ("__builtin_ia32_" + operation if portable or operation in INVALIDATION else
                "__vmx_" + {"vmxon": "on", "vmxoff": "off"}.get(operation, operation))
+    parameters = parameters.replace("unsigned __int64", "unsigned long long")
     returns_void = dead or operation in VOID_MANAGEMENT
     result = "void" if returns_void else "unsigned char"
     prefix = "" if returns_void else "return "
     source.write_text(
-        '#include <intrin.h>\n'
+        ('' if portable else '#include <intrin.h>\n') +
         f'{result} probe({parameters}) {{\n'
         f'  {prefix}{builtin}({arguments});\n}}\n')
     command = [str(compiler), "-target", "x86_64-pc-windows-msvc", "-" + opt,
@@ -292,11 +294,15 @@ def main():
     mode.add_argument("--llc", type=Path, help="test the LLVM fork directly in both word sizes")
     parser.add_argument("--backend-llc", type=Path,
                         help="compile NeverC's emitted IR using this LLVM fork")
+    parser.add_argument("--portable-builtins", action="store_true",
+                        help="use header-free __builtin_ia32_* VMX interfaces")
     parser.add_argument("--family", choices=("access", "management", "invalidation", "all"),
                         default="all")
     args = parser.parse_args()
     if args.llc and args.backend_llc:
         parser.error("--backend-llc tests frontend IR and cannot be combined with --llc")
+    if args.llc and args.portable_builtins:
+        parser.error("--portable-builtins tests frontend APIs and cannot be combined with --llc")
     count = 0
     operations = ("vmread", "vmwrite") if args.family in ("access", "all") else ()
     if args.family in ("management", "all"):
@@ -312,7 +318,7 @@ def main():
                             name, code = compile_ir(args.llc, Path(temp), operation, dead, opt, bits)
                         else:
                             name, code = compile_case(args.compiler, Path(temp), operation, dead, opt,
-                                                      args.backend_llc)
+                                                      args.backend_llc, args.portable_builtins)
                         if operation in MANAGEMENT:
                             statuses = (1, 2) if operation in ("vmlaunch", "vmresume") else (0, 1, 2)
                             if operation in VOID_MANAGEMENT:
