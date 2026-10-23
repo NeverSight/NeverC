@@ -851,8 +851,7 @@ static __inline__ __m128i __DEFAULT_FN_ATTRS _mm_max_epu32(__m128i __V1,
 ///    11: Bits [127:96] of parameter \a X are returned.
 /// \returns A 32-bit integer containing the extracted 32 bits of float data.
 #define _mm_extract_ps(X, N)                                                   \
-  __builtin_bit_cast(                                                          \
-      int, __builtin_ia32_vec_ext_v4sf((__v4sf)(__m128)(X), (int)(N)))
+  ((int)__builtin_ia32_vec_ext_v4si((__v4si)(__m128)(X), (int)(N)))
 
 /* Miscellaneous insert and extract macros.  */
 /* Extract a single-precision float from X at index N into D.  */
