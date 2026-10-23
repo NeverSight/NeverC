@@ -2624,7 +2624,16 @@ OPTION(prefix_1, "-mamx-complex", mamx_complex, Flag, m_x86_Features_Group,
 OPTION(prefix_1, "-mamx-fp16", mamx_fp16, Flag, m_x86_Features_Group, INVALID,
        nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
        nullptr)
+OPTION(prefix_1, "-mamx-fp8", mamx_fp8, Flag, m_x86_Features_Group, INVALID,
+       nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
+       nullptr)
 OPTION(prefix_1, "-mamx-int8", mamx_int8, Flag, m_x86_Features_Group, INVALID,
+       nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
+       nullptr)
+OPTION(prefix_1, "-mamx-movrs", mamx_movrs, Flag, m_x86_Features_Group, INVALID,
+       nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
+       nullptr)
+OPTION(prefix_1, "-mamx-tf32", mamx_tf32, Flag, m_x86_Features_Group, INVALID,
        nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
        nullptr)
 OPTION(prefix_1, "-mamx-tile", mamx_tile, Flag, m_x86_Features_Group, INVALID,
@@ -3024,9 +3033,18 @@ OPTION(prefix_1, "-mno-amx-complex", mno_amx_complex, Flag,
 OPTION(prefix_1, "-mno-amx-fp16", mno_amx_fp16, Flag, m_x86_Features_Group,
        INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr,
        nullptr, nullptr)
+OPTION(prefix_1, "-mno-amx-fp8", mno_amx_fp8, Flag, m_x86_Features_Group, INVALID,
+       nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
+       nullptr)
 OPTION(prefix_1, "-mno-amx-int8", mno_amx_int8, Flag, m_x86_Features_Group,
        INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr,
        nullptr, nullptr)
+OPTION(prefix_1, "-mno-amx-movrs", mno_amx_movrs, Flag, m_x86_Features_Group, INVALID,
+       nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
+       nullptr)
+OPTION(prefix_1, "-mno-amx-tf32", mno_amx_tf32, Flag, m_x86_Features_Group, INVALID,
+       nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
+       nullptr)
 OPTION(prefix_1, "-mno-amx-tile", mno_amx_tile, Flag, m_x86_Features_Group,
        INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr,
        nullptr, nullptr)

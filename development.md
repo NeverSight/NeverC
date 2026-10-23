@@ -472,7 +472,10 @@ instruction-owned memory accesses and architectural tile state; it does not
 preload memory or implement the instruction with inline assembly.
 
 The feature names are `amx-fp8`, `amx-movrs` and `amx-tf32`, each implying
-`amx-tile`. TF32 retains the fork's historical instruction support, rather than
+`amx-tile`. They work in function target attributes and through `-mamx-fp8`,
+`-mamx-movrs` and `-mamx-tf32`, with matching `-mno-` options. The last command-line
+enable/disable option controls both builtin availability and feature macros.
+TF32 retains the fork's historical instruction support, rather than
 claiming that withdrawn instruction is present in current processors. The
 physical tile bank must not be mixed in one function with compiler-managed
 `x86_amx` values. Both compilers reject this before instruction selection,

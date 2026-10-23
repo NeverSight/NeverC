@@ -2,6 +2,7 @@
 
 #include <iterator>
 #include <regex>
+#include <tuple>
 
 class X86PrivilegedIntrinTest : public NeverCTest {
 protected:
@@ -118,6 +119,39 @@ TEST_F(X86PrivilegedIntrinTest, AmxPhysicalAndManagedTilesCannotBeMixed) {
     EXPECT_NE(Error.find("cannot mix physical AMX tile intrinsics"),
               std::string::npos)
         << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest,
+       AmxCommandLineFeaturesControlBuiltinsAndMacros) {
+  for (const auto &[Feature, Macro, Call] :
+       {std::tuple{"amx-fp8", "__AMX_FP8__",
+                   "__builtin_ia32_tdpbf8ps(0, 1, 2)"},
+        std::tuple{"amx-movrs", "__AMX_MOVRS__",
+                   "__builtin_ia32_tileloaddrs64(0, p, 64)"},
+        std::tuple{"amx-tf32", "__AMX_TF32__",
+                   "__builtin_ia32_tmmultf32ps(0, 1, 2)"}}) {
+    SCOPED_TRACE(Feature);
+    auto Source = tmpFile("amx_feature.c");
+    auto Object = tmpFile("amx_feature.obj");
+    writeFile(Source, std::string("#if !defined(") + Macro +
+                          ") || !defined(__AMX_TILE__)\n#error missing "
+                          "requested feature\n#endif\n"
+                          "void f(const void *p) { " +
+                          Call + "; }\n");
+    const std::string Enable = std::string("-m") + Feature;
+    const std::string Disable = std::string("-mno-") + Feature;
+    for (bool Enabled : {true, false}) {
+      auto Result = ncc({"--target=x86_64-pc-windows-msvc", "-ffreestanding",
+                         "-fno-builtin-mimalloc", "-fno-lto", "-c",
+                         Enabled ? Disable : Enable, Enabled ? Enable : Disable,
+                         Source.string(), "-o", Object.string()});
+      EXPECT_EQ(Result.exitCode == 0, Enabled) << Result.err;
+      if (!Enabled)
+        EXPECT_NE(Result.err.find("missing requested feature"),
+                  std::string::npos)
+            << Result.err;
+    }
   }
 }
 
