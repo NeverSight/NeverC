@@ -1,5 +1,4 @@
 #include "Frontend.h"
-#include <cstdio>
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
@@ -6199,7 +6198,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
                                         const FunctionalNotFnCallSource &NotFn) {
   if (NotFn.Mode != FunctionalNotFnSourceMode::Runtime || !NotFn.SourceCall ||
       Call != NotFn.InvokeCall || !Call || Call->isTypeDependent() ||
-      Call->isValueDependent() || Call->isInstantiationDependent()) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+      Call->isValueDependent() || Call->isInstantiationDependent()) return false;
   const auto Actual = describeFunctionalNotFnCallSource(
       A.S, A.Sources, NotFn.SourceCall, A.Context, FunctionalNotFnSourceMode::Runtime);
   if (!Actual || Actual->Method != NotFn.Method || Actual->Object != NotFn.Object ||
@@ -6210,7 +6209,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
       Actual->ForwardingCalls != NotFn.ForwardingCalls ||
       Actual->Storage.Record != NotFn.Storage.Record ||
       !A.Context.hasSameType(Actual->Storage.CallableType, NotFn.Storage.CallableType) ||
-      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) return false;
   const auto *Function = Call->getDirectCallee();
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Reference = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
@@ -6231,7 +6230,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
       Inner != NotFn.TargetCall || !Dispatcher || !Inner || Inner->getDirectCallee() ||
       isa<CXXOperatorCallExpr>(Inner) || Dispatcher->getNumParams() != Function->getNumParams() ||
       Dispatch->getNumArgs() != Function->getNumParams() || Inner->getNumArgs() != Target->getNumParams() ||
-      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) return false;
   // Retain the original forwarding and indirect-argument flow obligations.
   // This pointer slice performs no hidden record copy/construction in the SDK.
   for (unsigned I = 0; I < Function->getNumParams(); ++I) {
@@ -6243,7 +6242,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
     if (!Forward || !Use || Use->getDecl() != Parameter || !Forwarder ||
         !utilitySDKValueAdapterSource(A, Forward, UtilityOperation::Forward) ||
         !A.Context.hasSameType(Forwarder->getReturnType(), Parameter->getType()) ||
-        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) return false;
   }
   auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression ? Expression->IgnoreParenImpCasts() : nullptr);
@@ -6257,7 +6256,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
         A.Context.hasSameType(Cast->getType(), Parameter->getType().getNonLValueExprType(A.Context)) &&
         Cast->getValueKind() == Expr::getValueKindForType(Parameter->getType());
   };
-  if (!ParameterCast(Inner->getCallee(), 0)) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+  if (!ParameterCast(Inner->getCallee(), 0)) return false;
   for (unsigned I = 0; I < Target->getNumParams(); ++I) {
     const auto Parameter = Target->getParamType(I);
     const auto Value = Parameter.getNonReferenceType();
@@ -6267,7 +6266,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
         !A.Context.hasSameUnqualifiedType(Value, ActualArgument) ||
         !ParameterCast(Inner->getArg(I), I + 1) ||
         !A.Context.hasSameType(Inner->getArg(I)->getType(), Parameter.getNonLValueExprType(A.Context)) ||
-        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
   }
   return true;
 }
@@ -6276,12 +6275,12 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
     const FunctionalNotFnCallSource *NotFn = nullptr) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
-    return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+    return false;
   if (NotFn) {
-    if (!functionalNotFnInvokeBinding(A, Call, *NotFn)) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+    if (!functionalNotFnInvokeBinding(A, Call, *NotFn)) return false;
   } else {
     const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
-    if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return (std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_FALSE line=%u function=%s\n", __LINE__, __func__), false);
+    if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return false;
   }
 
   // The runtime operation proves the fixed-arity callable, admitted argument
@@ -26033,11 +26032,6 @@ public:
         Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
         A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
         functionalFunctionInvokeSource(A, Runtime->InvokeCall, &*Runtime);
-    std::fprintf(stderr, "CUSTOM_NEGATION_ROOT line=%u signature=%u exception=%u negation_source=%u owned_negation=%u target=%u source=%u\n",
-        A.Sources.getPresumedLineNumber(Call->getExprLoc()),
-        static_cast<unsigned>(bool(Signature)), static_cast<unsigned>(bool(Exception)),
-        static_cast<unsigned>(NegationSource), static_cast<unsigned>(NegationMethod != nullptr),
-        static_cast<unsigned>(Target != nullptr), static_cast<unsigned>(Source));
     // Consume the selected operator's real enable_if/default packet, including
     // its original primary spelling, rather than assuming that void means valid.
     bool SelectedDefault = false;
@@ -26062,8 +26056,6 @@ public:
       SelectedDefault = approvedFunctionalNotFnPointerCallDefaults(
           A.S, A.Sources, A.Context, *Runtime, *Use, NotFnConstraintSources, Selections,
           A.SpecialMembers, A.OperationTraits);
-      std::fprintf(stderr, "CUSTOM_NEGATION_DEFAULT selected=%u source=%u\n",
-          static_cast<unsigned>(SelectedDefault), static_cast<unsigned>(Source));
       if (!SelectedDefault) { Source = false; break; }
     }
     if (!Source || !SelectedDefault ||
