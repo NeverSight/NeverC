@@ -7624,6 +7624,7 @@ class UtilityTupleQueryGraph
   bool NotFnOperationInvokeSignatureActive = false;
   std::set<const CallExpr *> NotFnPublicInvokeUses, NotFnPublicForwards;
   std::map<const CXXOperatorCallExpr *, const CallExpr *> NotFnNegationUses;
+  std::map<const CXXBindTemporaryExpr *, const CallExpr *> NotFnQueryBindings;
   std::set<const ParmVarDecl *> NotFnPublicParameters;
   std::set<const FunctionDecl *> CompletedNotFnInvokeSignatures;
   std::map<const CallExpr *, const FunctionDecl *> NotFnTryResultUses;
@@ -10387,6 +10388,7 @@ public:
         NotFnOperationInvokeFunction || !NotFnOperationInvokeUses.empty() ||
         NotFnOperationInvokeSignatureActive || !NotFnPublicInvokeUses.empty() ||
         !NotFnPublicForwards.empty() || !NotFnPublicParameters.empty() || !NotFnNegationUses.empty() ||
+        !NotFnQueryBindings.empty() ||
         !NotFnResultSentinels.empty() || NotFnResultComparisonRecord ||
         NotFnResultWrittenArgument || NotFnResultWrittenSentinel ||
         !Proof || !Call.Method || !Call.SourceCall ||
@@ -10408,6 +10410,7 @@ public:
       NotFnPublicForwards.clear();
       NotFnPublicParameters.clear();
       NotFnNegationUses.clear();
+      NotFnQueryBindings.clear();
       CompletedNotFnInvokeSignatures.clear();
       NotFnTryResultUses.clear();
       NotFnOperationTryResultUses.clear();
@@ -10450,6 +10453,16 @@ public:
         const auto *Method = approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context);
         if (!Method || Method != approvedFunctionalNotFnPointerNegation(S, SM, *NotFnInvocation, Context) ||
             !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return false;
+        if (Mode != FunctionalNotFnSourceMode::Runtime) {
+          const auto *Receiver = dyn_cast<ImplicitCastExpr>(Negation->getArg(0)->IgnoreParens());
+          const auto *Temporary = Receiver
+              ? dyn_cast<MaterializeTemporaryExpr>(Receiver->getSubExpr()->IgnoreParens()) : nullptr;
+          const auto *Binding = Temporary
+              ? dyn_cast<CXXBindTemporaryExpr>(Temporary->getSubExpr()->IgnoreParens()) : nullptr;
+          // approvedFunctionalNotFnPointerNegation already bound this exact
+          // query node, invoke child, original SDK range and trivial result.
+          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return false;
+        }
       } else if (NotFnCallbackResultRecord) return false;
     }
     NotFnPublicInvoke = Function;
@@ -11819,6 +11832,17 @@ public:
     return true;
   }
   bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
+    const auto Bound = NotFnQueryBindings.find(E);
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnInvocation &&
+        Bound != NotFnQueryBindings.end()) {
+      const auto *Result = approvedFunctionalNotFnPointerResultRecord(S, SM, E->getType(), Context);
+      // No generic temporary or destructor permission: this one original
+      // unevaluated binding belongs to the independently checked call root.
+      return E->getTemporary() && E->isPRValue() && Bound->second &&
+          Bound->second->isPRValue() && E->getSubExpr()->IgnoreParens() == Bound->second &&
+          Context.hasSameType(E->getType(), Bound->second->getType()) &&
+          Result && Result->getCanonicalDecl() == NotFnCallbackResultRecord;
+    }
     if (Operands.empty() || !E->getTemporary()) return false;
     const auto *Destructor = E->getTemporary()->getDestructor();
     const auto SavedOwnerUse = PairOwnerUse;
