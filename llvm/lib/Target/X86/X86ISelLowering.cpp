@@ -26270,6 +26270,45 @@ static SDValue lowerBoundedSystemState(SDValue Op,
     llvm_unreachable("unexpected bounded system intrinsic");
   case Intrinsic::x86_invd:
     return SDValue(DAG.getMachineNode(X86::INVD, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_stgi:
+    return SDValue(DAG.getMachineNode(X86::STGI, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_clgi:
+    return SDValue(DAG.getMachineNode(X86::CLGI, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_swapgs:
+    return SDValue(DAG.getMachineNode(X86::SWAPGS, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_clac:
+    return SDValue(DAG.getMachineNode(X86::CLAC, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_stac:
+    return SDValue(DAG.getMachineNode(X86::STAC, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_hlt:
+    return SDValue(DAG.getMachineNode(X86::HLT, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_vmfunc_eptp_switch:
+    Chain = DAG.getCopyToReg(Chain, DL, X86::EAX,
+                             DAG.getConstant(0, DL, MVT::i32), SDValue());
+    Chain = DAG.getCopyToReg(Chain, DL, X86::ECX, Op.getOperand(2),
+                             Chain.getValue(1));
+    return SDValue(DAG.getMachineNode(X86::VMFUNC, DL, MVT::Other,
+                                      {Chain, Chain.getValue(1)}),
+                   0);
+  case Intrinsic::x86_vmload:
+  case Intrinsic::x86_vmsave:
+  case Intrinsic::x86_invlpga: {
+    Chain = DAG.getCopyToReg(Chain, DL, X86::RAX, Op.getOperand(2), SDValue());
+    unsigned Opcode;
+    if (ID == Intrinsic::x86_vmload)
+      Opcode = X86::VMLOAD64;
+    else if (ID == Intrinsic::x86_vmsave)
+      Opcode = X86::VMSAVE64;
+    else {
+      Opcode = X86::INVLPGA64;
+      Chain = DAG.getCopyToReg(Chain, DL, X86::ECX, Op.getOperand(3),
+                               Chain.getValue(1));
+    }
+    return SDValue(
+        DAG.getMachineNode(Opcode, DL, MVT::Other, {Chain, Chain.getValue(1)}),
+        0);
+  }
+
   case Intrinsic::x86_hreset:
     Chain = DAG.getCopyToReg(Chain, DL, X86::EAX, Op.getOperand(2), SDValue());
     return SDValue(DAG.getMachineNode(X86::HRESET, DL, MVT::Other,
@@ -26633,6 +26672,16 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_lmsw_mem:
       return lowerDescriptorState(Op, Subtarget, DAG);
 
+    case Intrinsic::x86_vmload:
+    case Intrinsic::x86_vmsave:
+    case Intrinsic::x86_invlpga:
+    case Intrinsic::x86_stgi:
+    case Intrinsic::x86_clgi:
+    case Intrinsic::x86_swapgs:
+    case Intrinsic::x86_clac:
+    case Intrinsic::x86_stac:
+    case Intrinsic::x86_hlt:
+    case Intrinsic::x86_vmfunc_eptp_switch:
     case Intrinsic::x86_invd:
     case Intrinsic::x86_hreset:
     case Intrinsic::x86_tlbsync:

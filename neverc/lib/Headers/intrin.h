@@ -39,9 +39,7 @@ void __cpuidex(int[4], int, int);
 __int64 __emul(int, int);
 unsigned __int64 __emulu(unsigned int, unsigned int);
 unsigned int __getcallerseflags(void);
-#if !defined(__x86_64__)
 void __halt(void);
-#endif
 unsigned char __inbyte(unsigned short);
 void __inbytestring(unsigned short, unsigned char *, unsigned long);
 unsigned long __indword(unsigned short);
@@ -416,10 +414,6 @@ unsigned char _InterlockedCompareExchange128_rel(__int64 volatile *_Destination,
 |* Misc
 \*----------------------------------------------------------------------------*/
 #if defined(__x86_64__)
-static __inline__ void __DEFAULT_FN_ATTRS __halt(void) {
-  __asm__ volatile("hlt");
-}
-
 static __inline__ void __DEFAULT_FN_ATTRS __nop(void) {
   __asm__ volatile("nop");
 }

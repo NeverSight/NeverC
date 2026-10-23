@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1556).
+   1566).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -249,6 +249,45 @@ selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
 assembly dialects. It executes surrounding scalar code while intercepting
 privileged instructions, so it does not qualify successful processor-history
 reset, descriptor loading, interprocessor invalidation or synchronization.
+
+### Bounded virtualization and supervisor state
+
+`__builtin_ia32_vmload` and `__builtin_ia32_vmsave` pass a full unsigned i64
+physical VMCB address in RAX. `__builtin_ia32_invlpga` takes an unsigned i64
+linear address and an unsigned i32 ASID in ECX. These integer operands never
+become compiler memory accesses. Matching `llvm.x86.vmload`, `vmsave` and
+`invlpga` APIs require 64-bit mode; the full fork also provides `vmload32`,
+`vmsave32` and `invlpga32` for i386. These APIs select default address width;
+address-size overrides still need separate interfaces.
+
+`__builtin_ia32_{stgi,clgi,swapgs,clac,stac,hlt}` and their matching LLVM APIs
+have no explicit operands. SWAPGS requires long mode. CLAC/STAC change AC,
+preserving arithmetic flags; STGI/CLGI change GIF. HLT can resume after a
+returning interrupt, so its machine description is no longer a CFG terminator
+and the IR call has neither `noreturn` nor `willreturn`. All APIs retain
+conservative IR memory effects and native privilege/feature validation.
+
+`__builtin_ia32_vmfunc_eptp_switch(unsigned index)` selects only VMFUNC leaf 0
+with EAX=0 and the full ECX index, through `llvm.x86.vmfunc.eptp.switch`.
+It does not synthesize VMfail status or define register behavior for other
+VMFUNC leaves. Entry/exit continuations, hypercall protocols and arbitrary
+VMRUN machine-state transport remain separate work.
+
+Microsoft `<intrin.h>` interfaces `__svm_{vmload,vmsave,invlpga,stgi,clgi}`
+and `__halt` lower through the same native paths. The old assembly-only halt
+wrapper is removed. `tests/verify-bounded-virtualization-completion.py`
+checks exact bytes, full inputs, dead/repeated effects, live values, memory
+ordering, saved registers and continuation at O0/O2, including all three
+object formats and both assembly dialects. Linux x64 children compare real
+CPL3 faults with independent byte oracles.
+
+`tests/verify-bounded-virtualization-qemu.py` executes the generated code in
+disposable i386/x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
+INVLPGA fallthrough, AC changes, SWAPGS exchange, GIF masking of an actual
+pending PIC interrupt, and HLT continuation after a timer interrupt. It shares
+the descriptor-state guest build/boot runner, including the bitcode bridge.
+TCG results do not qualify physical TLB invalidation or successful VMFUNC in
+VMX non-root operation.
 
 ### SGX supervisor and VMM completion
 

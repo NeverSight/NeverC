@@ -995,8 +995,10 @@ enum X86Intrinsics : unsigned {
     x86_bmi_pext_64,                                 // llvm.x86.bmi.pext.64
     x86_cast_tile_to_vector,                         // llvm.x86.cast.tile.to.vector
     x86_cast_vector_to_tile,                         // llvm.x86.cast.vector.to.tile
+    x86_clac,                                        // llvm.x86.clac
     x86_cldemote,                                    // llvm.x86.cldemote
     x86_clflushopt,                                  // llvm.x86.clflushopt
+    x86_clgi,                                        // llvm.x86.clgi
     x86_cli,                                         // llvm.x86.cli
     x86_clrssbsy,                                    // llvm.x86.clrssbsy
     x86_clts,                                        // llvm.x86.clts
@@ -1024,6 +1026,7 @@ enum X86Intrinsics : unsigned {
     x86_fxrstor64,                                   // llvm.x86.fxrstor64
     x86_fxsave,                                      // llvm.x86.fxsave
     x86_fxsave64,                                    // llvm.x86.fxsave64
+    x86_hlt,                                         // llvm.x86.hlt
     x86_hreset,                                      // llvm.x86.hreset
     x86_inbyte,                                      // llvm.x86.inbyte
     x86_inbytestring,                                // llvm.x86.inbytestring
@@ -1036,6 +1039,7 @@ enum X86Intrinsics : unsigned {
     x86_invd,                                        // llvm.x86.invd
     x86_invept,                                      // llvm.x86.invept
     x86_invlpg,                                      // llvm.x86.invlpg
+    x86_invlpga,                                     // llvm.x86.invlpga
     x86_invlpgb,                                     // llvm.x86.invlpgb
     x86_invpcid,                                     // llvm.x86.invpcid
     x86_invvpid,                                     // llvm.x86.invvpid
@@ -1378,6 +1382,8 @@ enum X86Intrinsics : unsigned {
     x86_ssse3_psign_d_128,                           // llvm.x86.ssse3.psign.d.128
     x86_ssse3_psign_w,                               // llvm.x86.ssse3.psign.w
     x86_ssse3_psign_w_128,                           // llvm.x86.ssse3.psign.w.128
+    x86_stac,                                        // llvm.x86.stac
+    x86_stgi,                                        // llvm.x86.stgi
     x86_sti,                                         // llvm.x86.sti
     x86_stosb,                                       // llvm.x86.stosb
     x86_stosd,                                       // llvm.x86.stosd
@@ -1391,6 +1397,7 @@ enum X86Intrinsics : unsigned {
     x86_stui,                                        // llvm.x86.stui
     x86_subborrow_32,                                // llvm.x86.subborrow.32
     x86_subborrow_64,                                // llvm.x86.subborrow.64
+    x86_swapgs,                                      // llvm.x86.swapgs
     x86_tbm_bextri_u32,                              // llvm.x86.tbm.bextri.u32
     x86_tbm_bextri_u64,                              // llvm.x86.tbm.bextri.u64
     x86_tcmmimfp16ps,                                // llvm.x86.tcmmimfp16ps
@@ -1474,12 +1481,15 @@ enum X86Intrinsics : unsigned {
     x86_vgf2p8mulb_256,                              // llvm.x86.vgf2p8mulb.256
     x86_vgf2p8mulb_512,                              // llvm.x86.vgf2p8mulb.512
     x86_vmclear,                                     // llvm.x86.vmclear
+    x86_vmfunc_eptp_switch,                          // llvm.x86.vmfunc.eptp.switch
     x86_vmlaunch,                                    // llvm.x86.vmlaunch
+    x86_vmload,                                      // llvm.x86.vmload
     x86_vmptrld,                                     // llvm.x86.vmptrld
     x86_vmptrst,                                     // llvm.x86.vmptrst
     x86_vmread,                                      // llvm.x86.vmread
     x86_vmread_reg,                                  // llvm.x86.vmread.reg
     x86_vmresume,                                    // llvm.x86.vmresume
+    x86_vmsave,                                      // llvm.x86.vmsave
     x86_vmwrite,                                     // llvm.x86.vmwrite
     x86_vmwrite_mem,                                 // llvm.x86.vmwrite.mem
     x86_vmxoff,                                      // llvm.x86.vmxoff

@@ -1038,3 +1038,41 @@ TEST_F(X86PrivilegedIntrinTest, TsxOpsLowerCorrectly) {
   EXPECT_NE(s.find("xabort"), std::string::npos) << "expected xabort\n" << s;
   EXPECT_NE(s.find("xtest"), std::string::npos) << "expected xtest\n" << s;
 }
+
+TEST_F(X86PrivilegedIntrinTest, BoundedVirtualizationUsesNativeInstructions) {
+  constexpr const char *Source = R"(
+    #include <intrin.h>
+    unsigned long long probe(unsigned long long address, unsigned asid,
+                             unsigned long long *ordinary) {
+      *ordinary = address;
+      __builtin_ia32_vmload(address);
+      __builtin_ia32_vmsave(address);
+      __builtin_ia32_invlpga(address, asid);
+      __builtin_ia32_stgi();
+      __builtin_ia32_clgi();
+      __builtin_ia32_swapgs();
+      __builtin_ia32_stac();
+      __builtin_ia32_clac();
+      __builtin_ia32_hlt();
+      __builtin_ia32_vmfunc_eptp_switch(asid);
+      __svm_vmload(address);
+      __svm_vmsave(address);
+      __svm_invlpga((void *)address, (int)asid);
+      __svm_stgi();
+      __svm_clgi();
+      __halt();
+      return *ordinary ^ address ^ asid;
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "bounded_virtualization", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Mnemonic : {"vmload", "vmsave", "invlpga", "stgi", "clgi",
+                                 "swapgs", "stac", "clac", "hlt", "vmfunc"})
+      EXPECT_NE(Assembly.find(std::string("\t") + Mnemonic), std::string::npos)
+          << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+    EXPECT_EQ(Assembly.find("call"), std::string::npos) << Assembly;
+  }
+}

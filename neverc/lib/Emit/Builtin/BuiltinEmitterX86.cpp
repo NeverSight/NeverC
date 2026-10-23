@@ -3374,6 +3374,39 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_clts:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__svm_vmload:
+  case X86::BI__builtin_ia32_vmload:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload,
+                                   {Ops[0]});
+  case X86::BI__svm_vmsave:
+  case X86::BI__builtin_ia32_vmsave:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave,
+                                   {Ops[0]});
+  case X86::BI__svm_invlpga:
+    return Builder.CreateIntrinsic(
+        VoidTy, llvm::Intrinsic::x86_invlpga,
+        {Builder.CreatePtrToInt(Ops[0], Int64Ty), Ops[1]});
+  case X86::BI__builtin_ia32_invlpga:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga,
+                                   {Ops[0], Ops[1]});
+  case X86::BI__svm_stgi:
+  case X86::BI__builtin_ia32_stgi:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stgi, {});
+  case X86::BI__svm_clgi:
+  case X86::BI__builtin_ia32_clgi:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clgi, {});
+  case X86::BI__builtin_ia32_swapgs:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_swapgs, {});
+  case X86::BI__builtin_ia32_clac:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clac, {});
+  case X86::BI__builtin_ia32_stac:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stac, {});
+  case X86::BI__halt:
+  case X86::BI__builtin_ia32_hlt:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_hlt, {});
+  case X86::BI__builtin_ia32_vmfunc_eptp_switch:
+    return Builder.CreateIntrinsic(
+        VoidTy, llvm::Intrinsic::x86_vmfunc_eptp_switch, {Ops[0]});
   case X86::BI__builtin_ia32_encls:
   case X86::BI__builtin_ia32_enclv: {
     const auto ID = BuiltinID == X86::BI__builtin_ia32_encls

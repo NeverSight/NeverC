@@ -160,13 +160,13 @@ pd:
     return common
 
 
-def check_guest(args, directory, mode, opt):
+def check_guest(args, directory, mode, opt, source_builder=source, boot_builder=boot):
     prefix = directory / f"guest-{mode}-{opt}"
     src, ir, obj, asm, boot_obj, script, elf, kernel = (prefix.with_suffix(suffix) for suffix in
                                                        (".c", ".ll", ".o", ".s", ".boot.o", ".ld", ".elf", ".multiboot"))
-    code, checks = source(mode, bool(args.llc))
+    code, checks = source_builder(mode, bool(args.llc))
     src.write_text(code)
-    asm.write_text(boot(mode))
+    asm.write_text(boot_builder(mode))
     triple = ("x86_64" if mode == 64 else "i686") + "-unknown-linux-gnu"
     compiler = [args.clang if args.llc else args.compiler, "--target=" + triple, "-" + opt, "-ffreestanding",
                 "-fno-stack-protector", "-fno-pic", "-fno-pie", "-fno-lto", "-mno-red-zone", "-mno-sse",

@@ -35,6 +35,12 @@ DECLARATIONS = {
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),
 }
+for operation in ("vmload", "vmsave"):
+    DECLARATIONS[operation] = ("Done", "I64")
+DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
+DECLARATIONS["vmfunc_eptp_switch"] = ("Done", "I32")
+for operation in ("stgi", "clgi", "swapgs", "clac", "stac", "hlt"):
+    DECLARATIONS[operation] = ("Done",)
 DECLARATIONS["lsl"] = ("I32", "I32")
 DECLARATIONS["invd"] = ("Done",)
 for operation in ("encls", "enclv"):
