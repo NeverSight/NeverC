@@ -44,6 +44,10 @@ ENCODINGS = {
     "hlt": bytes.fromhex("f4"), "vmfunc.eptp.switch": bytes.fromhex("0f01d4"),
 }
 
+for operation in ("vmload", "vmsave", "invlpga"):
+    for bits in (16, 32):
+        ENCODINGS[f"{operation}.addr{bits}"] = b"\x67" + ENCODINGS[operation]
+
 
 def instructions(code, mode):
     decoder = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64 if mode == 64 else capstone.CS_MODE_32)
@@ -56,6 +60,8 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     name = f"{operation}-{variant}-{mode}-{opt}-{COMMON.TRIPLES.index(target)}"
     ir, obj = directory / (name + ".ll"), directory / (name + ".o")
     word = f"i{mode}"
+    base = operation.split(".")[0]
+    address_bits = int(operation.rsplit("addr", 1)[1]) if ".addr" in operation else mode
     triple = ("x86_64" if mode == 64 else "i686") + "-" + target
     api = "llvm.x86." + operation + ("32" if operation in ("vmload", "vmsave", "invlpga") and mode == 32 else "")
     count = 2 if variant == "twice" else 1
@@ -79,11 +85,15 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                 narrow = [f"%narrow{i}_{j}" for j in range(3)]
             else:
                 narrow = inputs
-            parameters = (word if operation in ("vmload", "vmsave") else
-                          f"{word}, i32" if operation == "invlpga" else
+            address = inputs[0]
+            if address_bits != mode:
+                address = f"%address{i}"
+                body.append(f"{address} = trunc {word} {inputs[0]} to i{address_bits}")
+            parameters = (f"i{address_bits}" if base in ("vmload", "vmsave") else
+                          f"i{address_bits}, i32" if base == "invlpga" else
                           "i32" if operation == "vmfunc.eptp.switch" else "")
-            call = (f"{word} {inputs[0]}" if operation in ("vmload", "vmsave") else
-                    f"{word} {inputs[0]}, i32 {narrow[1]}" if operation == "invlpga" else
+            call = (f"i{address_bits} {address}" if base in ("vmload", "vmsave") else
+                    f"i{address_bits} {address}, i32 {narrow[1]}" if base == "invlpga" else
                     f"i32 {narrow[1]}" if operation == "vmfunc.eptp.switch" else "")
             body.append(f"call void @{api}({call})")
         terms = ["%a", "%b", "%c", "%pointer"]
@@ -106,8 +116,8 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             body.append("unsigned condition = a < b;")
         for i in range(count):
             a, b, c = (p + (f" ^ {delta}ULL" if i else "") for p, delta in zip(("a", "b", "c"), DELTA))
-            call = (a if operation in ("vmload", "vmsave") else
-                    f"{a}, {b}" if operation == "invlpga" else
+            call = (a if base in ("vmload", "vmsave") else
+                    f"{a}, {b}" if base == "invlpga" else
                     b if operation == "vmfunc.eptp.switch" else "")
             body.append(f"__builtin_ia32_{operation.replace('.', '_')}({call});")
         result = "a ^ b ^ c ^ (unsigned long long)source"
@@ -144,6 +154,8 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
 
 def execute(code, operation, variant, mode, values):
     mask = (1 << mode) - 1
+    base = operation.split(".")[0]
+    address_bits = int(operation.rsplit("addr", 1)[1]) if ".addr" in operation else mode
     a, b, c = (v & mask for v in values)
     source = SOURCE
     machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64 if mode == 64 else unicorn.UC_MODE_32)
@@ -176,9 +188,10 @@ def execute(code, operation, variant, mode, values):
         machine.emu_start(start, instruction.address, count=1000)
         assert machine.reg_read(reg("IP")) == instruction.address
         av, bv, cv = (v ^ (d if index else 0) for v, d in zip((a, b, c), DELTA))
-        if operation in ("vmload", "vmsave", "invlpga"):
-            assert machine.reg_read(reg("AX")) == av, "native address input changed"
-            if operation == "invlpga":
+        if base in ("vmload", "vmsave", "invlpga"):
+            address_reg = {16: regs.UC_X86_REG_AX, 32: regs.UC_X86_REG_EAX, 64: regs.UC_X86_REG_RAX}[address_bits]
+            assert machine.reg_read(address_reg) == av & ((1 << address_bits) - 1), "native address input changed"
+            if base == "invlpga":
                 assert machine.reg_read(regs.UC_X86_REG_ECX) == bv & 0xffffffff, "ASID input changed"
         elif operation == "vmfunc.eptp.switch":
             assert machine.reg_read(regs.UC_X86_REG_EAX) == 0, "wrong VMFUNC leaf"
@@ -201,10 +214,11 @@ def native_fault_oracle(args, directory):
     if args.llc or platform.system() != "Linux" or platform.machine() != "x86_64":
         return 0
     count = 0
-    for operation, opt in itertools.product(ENCODINGS, ("O0", "O2")):
+    for operation, opt in itertools.product((op for op in ENCODINGS if not op.endswith("addr16")), ("O0", "O2")):
+        base_op = operation.split(".")[0]
         base = directory / f"fault-{operation.replace('.', '_')}-{opt}"
         src, ir, obj, library = (base.with_suffix(suffix) for suffix in (".c", ".ll", ".o", ".so"))
-        parameters = "0xdead0000ULL, 0x87654321U" if operation == "invlpga" else "0xdead0000ULL" if operation in ("vmload", "vmsave") else "0x87654321U" if operation == "vmfunc.eptp.switch" else ""
+        parameters = "0xdead0000ULL, 0x87654321U" if base_op == "invlpga" else "0xdead0000ULL" if base_op in ("vmload", "vmsave") else "0x87654321U" if operation == "vmfunc.eptp.switch" else ""
         encoded = ", ".join(hex(v) for v in ENCODINGS[operation])
         src.write_text(f'''void probe(void) {{ __builtin_ia32_{operation.replace('.', '_')}({parameters}); }}
 void original(void) {{
@@ -247,7 +261,7 @@ def main():
         directory = args.keep or Path(temp)
         directory.mkdir(parents=True, exist_ok=True)
         for mode in ((32, 64) if args.llc else (64,)):
-            operations = [op for op in ENCODINGS if mode == 64 or op != "swapgs"]
+            operations = [op for op in ENCODINGS if (mode == 64 or op != "swapgs") and not op.endswith("addr16" if mode == 64 else "addr32")]
             for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
                 code = compile_case(args, directory, operation, variant, mode, opt)
                 for values in VALUES:

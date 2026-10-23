@@ -20039,6 +20039,9 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// PTILEMOVROWrti
     32116U,	// LKGS16r
     97652U,	// LKGS16m
+    0U,	// VMLOAD64_ADDR32
+    0U,	// VMSAVE64_ADDR32
+    0U,	// INVLPGA64_ADDR32
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38533,6 +38536,9 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// PTILEMOVROWrti
     0U,	// LKGS16r
     0U,	// LKGS16m
+    0U,	// VMLOAD64_ADDR32
+    0U,	// VMSAVE64_ADDR32
+    0U,	// INVLPGA64_ADDR32
 };
 
   // Emit the opcode for the instruction.

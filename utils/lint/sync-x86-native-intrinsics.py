@@ -38,6 +38,9 @@ DECLARATIONS = {
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation] = ("Done", "I64")
 DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
+for operation in ("vmload", "vmsave"):
+    DECLARATIONS[operation + "_addr32"] = ("Done", "I32")
+DECLARATIONS["invlpga_addr32"] = ("Done", "I32", "I32")
 DECLARATIONS["vmfunc_eptp_switch"] = ("Done", "I32")
 for operation in ("stgi", "clgi", "swapgs", "clac", "stac", "hlt"):
     DECLARATIONS[operation] = ("Done",)

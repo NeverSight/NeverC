@@ -26270,6 +26270,24 @@ static SDValue lowerBoundedSystemState(SDValue Op,
     llvm_unreachable("unexpected bounded system intrinsic");
   case Intrinsic::x86_invd:
     return SDValue(DAG.getMachineNode(X86::INVD, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_vmload_addr32:
+  case Intrinsic::x86_vmsave_addr32:
+  case Intrinsic::x86_invlpga_addr32: {
+    Chain = DAG.getCopyToReg(Chain, DL, X86::EAX, Op.getOperand(2), SDValue());
+    unsigned Opcode;
+    if (ID == Intrinsic::x86_vmload_addr32)
+      Opcode = X86::VMLOAD64_ADDR32;
+    else if (ID == Intrinsic::x86_vmsave_addr32)
+      Opcode = X86::VMSAVE64_ADDR32;
+    else {
+      Opcode = X86::INVLPGA64_ADDR32;
+      Chain = DAG.getCopyToReg(Chain, DL, X86::ECX, Op.getOperand(3),
+                               Chain.getValue(1));
+    }
+    return SDValue(
+        DAG.getMachineNode(Opcode, DL, MVT::Other, {Chain, Chain.getValue(1)}),
+        0);
+  }
   case Intrinsic::x86_stgi:
     return SDValue(DAG.getMachineNode(X86::STGI, DL, MVT::Other, Chain), 0);
   case Intrinsic::x86_clgi:
@@ -26675,6 +26693,9 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_vmload:
     case Intrinsic::x86_vmsave:
     case Intrinsic::x86_invlpga:
+    case Intrinsic::x86_vmload_addr32:
+    case Intrinsic::x86_vmsave_addr32:
+    case Intrinsic::x86_invlpga_addr32:
     case Intrinsic::x86_stgi:
     case Intrinsic::x86_clgi:
     case Intrinsic::x86_swapgs:

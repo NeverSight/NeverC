@@ -3389,6 +3389,15 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_invlpga:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga,
                                    {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_vmload_addr32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload_addr32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_vmsave_addr32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave_addr32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_invlpga_addr32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga_addr32,
+                                   {Ops[0], Ops[1]});
   case X86::BI__svm_stgi:
   case X86::BI__builtin_ia32_stgi:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stgi, {});

@@ -102,12 +102,15 @@ def row_operands(text, pseudo, immediate):
     return text, operand_offset, type_offset
 
 
-def synchronize_instructions(text, instructions=INSTRUCTIONS, rows=ROWS):
+def synchronize_instructions(text, instructions=INSTRUCTIONS, rows=ROWS,
+                             descriptor_overrides=None):
     for name, prototype, encoding, _ in instructions:
         ids = enums(text)
         total = int(re.search(r"INSTRUCTION_LIST_END = (\d+)", text).group(1))
         opcode = ids.get(name, total)
-        fields = descriptor(text, prototype)
+        fields = (list(descriptor_overrides[name])
+                  if descriptor_overrides and name in descriptor_overrides
+                  else descriptor(text, prototype))
         fields[0] = str(opcode)
         row_type_offset = None
         if name in rows:

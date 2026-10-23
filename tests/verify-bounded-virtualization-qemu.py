@@ -127,6 +127,23 @@ unsigned probe(void) {
     return "\n".join(body) + "\n", checks + 1
 
 
+def address_source(mode, llvm_route):
+    code, checks = source(mode, llvm_route)
+    # A real VMCB below 64 KiB lets i386 addr16 execute without truncating
+    # the kernel's linked address into unrelated storage. Guest RAM owns it.
+    code = code.replace("static unsigned char vmcb[4096] __attribute__((aligned(4096)));",
+                        "static unsigned char *const vmcb = (unsigned char *)0x8000;")
+    bits = 32 if mode == 64 else 16
+    for operation in ("vmload", "vmsave", "invlpga"):
+        code = code.replace(f"__builtin_ia32_{operation}(", f"__builtin_ia32_{operation}_addr{bits}(")
+        if llvm_route:
+            old = operation + ("32" if mode == 32 else "")
+            code = code.replace(f'"llvm.x86.{old}"', f'"llvm.x86.{operation}.addr{bits}"')
+            code = code.replace(f"__builtin_ia32_{operation}_addr{bits}(__UINTPTR_TYPE__",
+                                f"__builtin_ia32_{operation}_addr{bits}(" + ("unsigned" if bits == 32 else "unsigned short"))
+    return code, checks
+
+
 def boot(mode):
     word = "q" if mode == 64 else "l"
     accumulator = "%rax" if mode == 64 else "%eax"
@@ -163,8 +180,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix="virtualization-cpl0-") as temporary:
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        count = sum(GUEST.check_guest(args, directory, mode, opt, source, boot)
-                    for mode in ((32, 64) if args.llc else (64,)) for opt in ("O0", "O2"))
+        count = 0
+        for name, builder in (("default", source), ("address", address_source)):
+            case_dir = directory / name
+            case_dir.mkdir(exist_ok=True)
+            count += sum(GUEST.check_guest(args, case_dir, mode, opt, builder, boot)
+                         for mode in ((32, 64) if args.llc else (64,)) for opt in ("O0", "O2"))
     print(f"PASS: {count} CPL0 bounded virtualization/state checks in QEMU TCG")
 
 

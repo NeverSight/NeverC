@@ -1040,6 +1040,7 @@ enum X86Intrinsics : unsigned {
     x86_invept,                                      // llvm.x86.invept
     x86_invlpg,                                      // llvm.x86.invlpg
     x86_invlpga,                                     // llvm.x86.invlpga
+    x86_invlpga_addr32,                              // llvm.x86.invlpga.addr32
     x86_invlpgb,                                     // llvm.x86.invlpgb
     x86_invpcid,                                     // llvm.x86.invpcid
     x86_invvpid,                                     // llvm.x86.invvpid
@@ -1484,12 +1485,14 @@ enum X86Intrinsics : unsigned {
     x86_vmfunc_eptp_switch,                          // llvm.x86.vmfunc.eptp.switch
     x86_vmlaunch,                                    // llvm.x86.vmlaunch
     x86_vmload,                                      // llvm.x86.vmload
+    x86_vmload_addr32,                               // llvm.x86.vmload.addr32
     x86_vmptrld,                                     // llvm.x86.vmptrld
     x86_vmptrst,                                     // llvm.x86.vmptrst
     x86_vmread,                                      // llvm.x86.vmread
     x86_vmread_reg,                                  // llvm.x86.vmread.reg
     x86_vmresume,                                    // llvm.x86.vmresume
     x86_vmsave,                                      // llvm.x86.vmsave
+    x86_vmsave_addr32,                               // llvm.x86.vmsave.addr32
     x86_vmwrite,                                     // llvm.x86.vmwrite
     x86_vmwrite_mem,                                 // llvm.x86.vmwrite.mem
     x86_vmxoff,                                      // llvm.x86.vmxoff

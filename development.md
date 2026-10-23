@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1566).
+   1569).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -257,8 +257,18 @@ physical VMCB address in RAX. `__builtin_ia32_invlpga` takes an unsigned i64
 linear address and an unsigned i32 ASID in ECX. These integer operands never
 become compiler memory accesses. Matching `llvm.x86.vmload`, `vmsave` and
 `invlpga` APIs require 64-bit mode; the full fork also provides `vmload32`,
-`vmsave32` and `invlpga32` for i386. These APIs select default address width;
-address-size overrides still need separate interfaces.
+`vmsave32` and `invlpga32` for i386. These APIs select default address width.
+
+`__builtin_ia32_{vmload,vmsave,invlpga}_addr32` instead selects the long-mode
+address-size override, taking an unsigned i32 address. The matching LLVM
+`llvm.x86.{vmload,vmsave,invlpga}.addr32` APIs reject non-long mode; the full
+fork also supplies `.addr16` with i16 addresses for i386. INVLPGA's ASID
+remains a complete i32 ECX value in every form. These interfaces preserve the
+native `67` prefix through late MC lowering. Pseudos retain exact AX/EAX/ECX
+uses and VMCB memory effects during machine optimization, then emit the real
+instruction and explicit address-size prefix in both assembly dialects.
+`sync-x86-svm-address-instructions.py` owns the three appended NeverC pseudos;
+existing opcode identities remain unchanged.
 
 `__builtin_ia32_{stgi,clgi,swapgs,clac,stac,hlt}` and their matching LLVM APIs
 have no explicit operands. SWAPGS requires long mode. CLAC/STAC change AC,
@@ -288,6 +298,11 @@ pending PIC interrupt, and HLT continuation after a timer interrupt. It shares
 the descriptor-state guest build/boot runner, including the bitcode bridge.
 TCG results do not qualify physical TLB invalidation or successful VMFUNC in
 VMX non-root operation.
+
+Both harnesses include explicit address-width overrides. The CPL0 fixture
+places a second VMCB in guest RAM below 64 KiB, so i386's AX address refers to
+valid physical storage. Exact-byte and live-input checks separately verify
+prefix retention and narrowing without losing callers' original values.
 
 ### SGX supervisor and VMM completion
 

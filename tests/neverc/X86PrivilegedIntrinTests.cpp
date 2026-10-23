@@ -1076,3 +1076,24 @@ TEST_F(X86PrivilegedIntrinTest, BoundedVirtualizationUsesNativeInstructions) {
     EXPECT_EQ(Assembly.find("call"), std::string::npos) << Assembly;
   }
 }
+
+TEST_F(X86PrivilegedIntrinTest, SvmAddressOverrideRetainsItsNativePrefix) {
+  constexpr const char *Source = R"(
+    unsigned probe(unsigned address, unsigned asid) {
+      __builtin_ia32_vmload_addr32(address);
+      __builtin_ia32_vmsave_addr32(address);
+      __builtin_ia32_invlpga_addr32(address, asid);
+      return address ^ asid;
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "svm_address_override", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Mnemonic : {"vmload", "vmsave", "invlpga"})
+      EXPECT_TRUE(std::regex_search(
+          Assembly, std::regex(std::string("addr32[ \t]+") + Mnemonic)))
+          << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
