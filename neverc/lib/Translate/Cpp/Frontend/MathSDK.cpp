@@ -1,6 +1,5 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
-#include <cstdio>
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
@@ -7588,14 +7587,6 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
 // carrier, and no selected runtime body or lifetime permission is produced.
 enum class UtilityTupleQueryMode { Construction, CatSignature, PairConstruction, NotFnSignature };
 
-// Bounded source observation only. Every original false remains false.
-static bool ownedNotFnTraceFalse(unsigned Line, const char *Function) {
-  static unsigned Observations = 0;
-  if (Observations++ < 16384)
-    std::fprintf(stderr, "OWNED_NOT_FN_FALSE line=%u function=%s\n", Line, Function);
-  return false;
-}
-
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
   const State &S;
@@ -7717,7 +7708,7 @@ class UtilityTupleQueryGraph
   bool step() {
     if (Failed || ++Nodes > 200000 || Depth > 64) {
       Failed = true;
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     }
     return true;
   }
@@ -7745,19 +7736,19 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__utility/declval.h") ||
         !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__utility/declval.h") ||
         !cstddefOrigin(S, SM, Use->getExprLoc(), "libcxx", "__type_traits/invoke.h"))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     // Keep exact original unevaluated operands; no body/runtime permission.
     Declvals.push_back(Use);
     return true;
   }
   bool notFnInvokeParameter(const ParmVarDecl *Parameter) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
-        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return false;
     const auto *Owner = dyn_cast<FunctionDecl>(Parameter->getDeclContext());
     if (Owner != NotFnInvokeSignature) {
       const auto *Primary = NotFnInvokeSignature->getPrimaryTemplate();
       if (!NotFnInvokeWrittenPattern || Owner != NotFnInvokeWrittenPattern ||
-          !Primary || Primary->getTemplatedDecl() != Owner) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Primary || Primary->getTemplatedDecl() != Owner) return false;
     }
     bool Found = false;
     for (const auto *Actual : Owner->parameters()) Found |= Actual == Parameter;
@@ -7785,29 +7776,29 @@ class UtilityTupleQueryGraph
         !Arguments || Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != Wrapper->getNumParams() ||
         Target->getNumArgs() != Wrapper->getNumParams() + 1 ||
-        Method->getNumParams() != Wrapper->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Method->getNumParams() != Wrapper->getNumParams()) return false;
     auto Bound = Wrapper->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Wrapper->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Wrapper->getRefQualifier() != RQ_RValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    else if (Wrapper->getRefQualifier() != RQ_RValue) return false;
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Actual) {
       if (!Actual || Actual->size() != 2 || Actual->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Actual->get(0).getAsType(), Bound) ||
           Actual->get(1).getKind() != TemplateArgument::Pack ||
-          Actual->get(1).pack_size() != Pack.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Actual->get(1).pack_size() != Pack.size()) return false;
       const auto Types = Actual->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type || Types[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Types[I].getAsType(), Pack[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Types[I].getAsType(), Pack[I].getAsType())) return false;
       return true;
     };
     const bool HelperReturn = NotFnInvokeSignature && Expression == NotFnInvokeReturn;
     if (Forwarded) {
       if (!NotFnInvokeSignature || Expression != NotFnInvokeException ||
           NotFnInvokeSignature->getNumParams() != Target->getNumArgs() ||
-          !BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return false;
     } else if (HelperReturn) {
-      if (!BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return false;
     } else {
       const auto *Owner = dyn_cast_or_null<ClassTemplateSpecializationDecl>(NotFnConstraintBaseOwner);
       const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
@@ -7817,10 +7808,10 @@ class UtilityTupleQueryGraph
           !NotFnConstraintBase || NotFnConstraintBase->isVirtual() ||
           !NotFnConstraintBase->getTypeSourceInfo() || !family(Owner) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !BoundArguments(&Owner->getTemplateArgs())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !BoundArguments(&Owner->getTemplateArgs())) return false;
       bool Actual = false;
       for (const auto &Base : Owner->bases()) Actual |= &Base == NotFnConstraintBase;
-      if (!Actual) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Actual) return false;
     }
     std::vector<const CallExpr *> Declvals;
     auto Operand = [&](const Expr *Value, QualType Input, unsigned Index) {
@@ -7841,31 +7832,31 @@ class UtilityTupleQueryGraph
     const auto ReceiverType = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
     if (!Context.hasSameType(Target->getArg(0)->getType(), Bound.getNonReferenceType()) ||
         Target->getArg(0)->getValueKind() != Expr::getValueKindForType(ReceiverType) ||
-        !Operand(Target->getArg(0), Bound, 0)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Operand(Target->getArg(0), Bound, 0)) return false;
     for (unsigned I = 0; I < Pack.size(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
       if (!Parameter->isScalarType() || Parameter.isVolatileQualified() ||
           !Context.hasSameType(Target->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
           Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return false;
     }
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     const auto Inserted = NotFnOwnedInvokeQueries.emplace(Target, Method);
-    if (!Inserted.second && Inserted.first->second != Method) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Inserted.second && Inserted.first->second != Method) return false;
     NotFnOwnedQuerySources->insert(Method);
     return true;
   }
   bool notFnInvokeForwardedCall(const CallExpr *Expression) {
     if (NotFnOwnedInvokeMethod) return notFnOwnedInvokeQuery(Expression, true);
     if (!Expression || Expression != NotFnInvokeException || !NotFnInvokeSignature ||
-        Expression->getDirectCallee() || !NotFnInvocation) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Expression->getDirectCallee() || !NotFnInvocation) return false;
     const auto *Prototype = NotFnCallableType->getPointeeType()->getAs<FunctionProtoType>();
     if (!Prototype || Expression->getNumArgs() != Prototype->getNumParams() ||
         NotFnInvokeSignature->getNumParams() != Expression->getNumArgs() + 1 ||
         !Context.hasSameType(Expression->getType(),
             Prototype->getReturnType().getNonLValueExprType(Context)) ||
         Expression->getValueKind() != Expr::getValueKindForType(Prototype->getReturnType()))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParenImpCasts()) : nullptr;
       const auto *Reference = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -7882,13 +7873,13 @@ class UtilityTupleQueryGraph
     const auto *Callee = dyn_cast<ImplicitCastExpr>(Expression->getCallee());
     if (!Callee || Callee->getCastKind() != CK_LValueToRValue ||
         !Context.hasSameType(Callee->getType(), NotFnCallableType) ||
-        !Forward(Callee->getSubExpr(), 0)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Forward(Callee->getSubExpr(), 0)) return false;
     for (unsigned I = 0; I < Expression->getNumArgs(); ++I)
       if (!Forward(Expression->getArg(I), I + 1) ||
           !Context.hasSameType(Expression->getArg(I)->getType(),
               Prototype->getParamType(I).getNonLValueExprType(Context)) ||
           Expression->getArg(I)->getValueKind() !=
-              Expr::getValueKindForType(Prototype->getParamType(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Expr::getValueKindForType(Prototype->getParamType(I))) return false;
     return true;
   }
   bool notFnIndirectSignature(const CallExpr *Expression) {
@@ -7919,13 +7910,13 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Expression->getType(),
             Prototype->getReturnType().getNonLValueExprType(Context)) ||
         Expression->getValueKind() != Expr::getValueKindForType(Prototype->getReturnType()))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     bool ActualBase = false;
     if (!HelperReturn)
       for (const auto &Base : Owner->bases()) ActualBase |= &Base == NotFnConstraintBase;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
     const auto Selected = Arguments->get(0).pack_elements();
     const auto *HelperArguments = HelperReturn
         ? NotFnInvokeSignature->getTemplateSpecializationArgs() : nullptr;
@@ -7934,12 +7925,12 @@ class UtilityTupleQueryGraph
         (*OwnerArguments)[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType((*OwnerArguments)[0].getAsType(), Bound) ||
         (*OwnerArguments)[1].getKind() != TemplateArgument::Pack ||
-        (*OwnerArguments)[1].pack_size() != Selected.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        (*OwnerArguments)[1].pack_size() != Selected.size()) return false;
     const auto Actual = (*OwnerArguments)[1].pack_elements();
     for (unsigned I = 0; I < Selected.size(); ++I)
       if (Selected[I].getKind() != TemplateArgument::Type ||
           Actual[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Selected[I].getAsType(), Actual[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Selected[I].getAsType(), Actual[I].getAsType())) return false;
 
     std::vector<const CallExpr *> Declvals;
     auto Declval = [&](const Expr *Value, QualType Input) {
@@ -7947,13 +7938,13 @@ class UtilityTupleQueryGraph
     };
     const auto *Callee = dyn_cast<ImplicitCastExpr>(Expression->getCallee());
     if (!Callee || Callee->getCastKind() != CK_LValueToRValue ||
-        !Declval(Callee->getSubExpr(), Bound)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Declval(Callee->getSubExpr(), Bound)) return false;
     for (unsigned I = 0; I < Selected.size(); ++I) {
       const auto Parameter = Prototype->getParamType(I);
       if (!Context.hasSameType(Expression->getArg(I)->getType(),
               Parameter.getNonLValueExprType(Context)) ||
           Expression->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !Declval(Expression->getArg(I), Selected[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Declval(Expression->getArg(I), Selected[I].getAsType())) return false;
     }
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     return true;
@@ -7974,7 +7965,7 @@ class UtilityTupleQueryGraph
         Constructor->isInvalidDecl() || Constructor->isVariadic() ||
         Constructor->getAccess() != AS_public ||
         !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
     return Prototype && Prototype->getExceptionSpecType() == EST_None &&
         !Prototype->getNoexceptExpr() &&
@@ -7989,7 +7980,7 @@ class UtilityTupleQueryGraph
   bool pinned(const Decl *D) {
     if (!D || !step() || D->isInvalidDecl() ||
         !approvedStandardSDKDeclaration(S, SM, D))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Origin = S.sdkFile(SM, D->getLocation());
     return Origin && Origin->Root == "libcxx" &&
            (DefaultEqualityFamilies.count(D) ||
@@ -8029,7 +8020,7 @@ class UtilityTupleQueryGraph
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
       if (Mode == UtilityTupleQueryMode::PairConstruction) Failed = true;
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     }
     if (!Declarations.insert(D).second) {
       Complete = true;
@@ -8037,44 +8028,44 @@ class UtilityTupleQueryGraph
     }
     if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
       for (const auto *Redeclaration : R->redecls())
-        if (!pinned(Redeclaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!pinned(Redeclaration)) return false;
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!family(Primary)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!family(Primary)) return false;
         if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
                 .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
-          if (!family(Partial)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!family(Partial)) return false;
         if (const auto *Pattern = Instance->getTemplateInstantiationPattern())
-          if (!family(Pattern)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!family(Pattern)) return false;
       }
     } else if (const auto *F = dyn_cast<FunctionDecl>(D)) {
       for (const auto *Redeclaration : F->redecls())
-        if (!pinned(Redeclaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!pinned(Redeclaration)) return false;
       if (const auto *Primary = F->getPrimaryTemplate())
-        if (!family(Primary)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!family(Primary)) return false;
       if (const auto *Pattern = F->getTemplateInstantiationPattern())
-        if (!family(Pattern)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!family(Pattern)) return false;
     } else if (const auto *T = dyn_cast<RedeclarableTemplateDecl>(D)) {
       for (const auto *Redeclaration : T->redecls())
         if (!pinned(Redeclaration) || !pinned(Redeclaration->getTemplatedDecl()))
-          return ownedNotFnTraceFalse(__LINE__, __func__);
+          return false;
     } else if (const auto *V = dyn_cast<VarDecl>(D)) {
       for (const auto *Redeclaration : V->redecls())
-        if (!pinned(Redeclaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!pinned(Redeclaration)) return false;
       if (const auto *Pattern = V->getInstantiatedFromStaticDataMember())
-        if (!family(Pattern)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!family(Pattern)) return false;
     }
     Complete = true;
     return true;
   }
   bool ownedPairInputRecord(const CXXRecordDecl *Record) const {
-    if (!Record || !S.owns(SM, Record->getLocation())) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Record || !S.owns(SM, Record->getLocation())) return false;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     return !Primary || S.owns(SM, Primary->getLocation());
   }
   bool pairSourceTypeSpelling(QualType Type) {
-    if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return false;
     const auto *Raw = Type.getTypePtr();
     const auto *Alias = dyn_cast<TypedefType>(Raw);
     const auto *Instance = dyn_cast<TemplateSpecializationType>(Raw);
@@ -8102,10 +8093,10 @@ class UtilityTupleQueryGraph
       }
     }
     if (!Declaration || !S.owns(SM, Declaration->getLocation()) ||
-        approvedStandardSDKDeclaration(S, SM, Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
     if (const auto *Record = Type->getAsCXXRecordDecl();
         Record && S.owns(SM, Record->getLocation()) && !ownedPairInputRecord(Record))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     // This is a source dependency, never an SDK certificate. The exact alias
     // TypeLoc or retained template use must finish in the ordinary checker.
     PairSourceTypeSpellings.insert(Raw);
@@ -8117,9 +8108,9 @@ class UtilityTupleQueryGraph
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back();
       Pending.pop_back();
-      if (!Declaration || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Declaration || !step()) return false;
       if (!PairInputFamilies.insert(Declaration).second) continue;
-      if (!approvedStandardSDKDeclaration(S, SM, Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
       if (const auto *R = dyn_cast<CXXRecordDecl>(Declaration)) {
         for (const auto *Redeclaration : R->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Described = R->getDescribedClassTemplate())
@@ -8159,14 +8150,14 @@ class UtilityTupleQueryGraph
     }
   public:
     explicit PairStorageUseSource(UtilityTupleQueryGraph &Graph) : Graph(Graph) {}
-    bool shouldWalkTypesOfTypeLocs() const { return ownedNotFnTraceFalse(__LINE__, __func__); }
+    bool shouldWalkTypesOfTypeLocs() const { return false; }
     bool check(const TypeSourceInfo *Info) {
-      if (!Info || !Graph.step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Info || !Graph.step()) return false;
       if (!Seen.insert(Info).second) return true;
       return TraverseTypeLoc(Info->getTypeLoc());
     }
     bool TraverseTypeLoc(TypeLoc TL) {
-      if (!TL) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!TL) return false;
       ++Graph.Depth;
       auto Restore = llvm::make_scope_exit([&] { --Graph.Depth; });
       return Graph.step() && location(TL.getBeginLoc()) && location(TL.getEndLoc()) &&
@@ -8184,7 +8175,7 @@ class UtilityTupleQueryGraph
             !Graph.Context.hasSameType(TL.getType(), Storage->getElementType()) ||
             !approvedStandardSDKDeclaration(Graph.S, Graph.SM, Alias) ||
             !cstddefOrigin(Graph.S, Graph.SM, Alias->getLocation(), "libcxx", "array") ||
-            !Alias->getTypeSourceInfo()) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Alias->getTypeSourceInfo()) return false;
         // The exact zero-array field use binds this member alias. Its actual
         // original TSI below still proves every __empty/conditional token.
         Graph.PairInputFamilies.insert(Alias);
@@ -8195,7 +8186,7 @@ class UtilityTupleQueryGraph
             cstddefOrigin(Graph.S, Graph.SM, Owner->getLocation(), "libcxx", "optional")) {
           if (!approvedStandardSDKDeclaration(Graph.S, Graph.SM, Alias) ||
               !cstddefOrigin(Graph.S, Graph.SM, Alias->getLocation(), "libcxx", "optional") ||
-              !Alias->getTypeSourceInfo()) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !Alias->getTypeSourceInfo()) return false;
           Graph.PairInputFamilies.insert(Alias);
         }
       }
@@ -8212,21 +8203,21 @@ class UtilityTupleQueryGraph
                                 : "__functional/binary_function.h";
         if (!Actual || !Graph.PairBorrowedStorageRecords.count(Actual->getCanonicalDecl()) ||
             Actual->getName() != (Unary ? "__unary_function_keep_layout_base"
-                                       : "__binary_function_keep_layout_base")) return ownedNotFnTraceFalse(__LINE__, __func__);
+                                       : "__binary_function_keep_layout_base")) return false;
         std::vector<const Decl *> Pending{Alias};
         std::set<const Decl *> Family;
         while (!Pending.empty()) {
           const auto *D = Pending.back();
           Pending.pop_back();
-          if (!D || !Graph.step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!D || !Graph.step()) return false;
           if (!Family.insert(D).second) continue;
           if (!approvedStandardSDKDeclaration(Graph.S, Graph.SM, D) ||
-              !cstddefOrigin(Graph.S, Graph.SM, D->getLocation(), "libcxx", Path)) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !cstddefOrigin(Graph.S, Graph.SM, D->getLocation(), "libcxx", Path)) return false;
           if (const auto *T = dyn_cast<TypeAliasTemplateDecl>(D)) {
             for (const auto *R : T->redecls()) Pending.push_back(R);
             Pending.push_back(T->getTemplatedDecl());
             for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-          } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return false;
         }
         // Only this actual base use supplies the independent alias family.
         Graph.PairInputFamilies.insert(Family.begin(), Family.end());
@@ -8237,9 +8228,9 @@ class UtilityTupleQueryGraph
            Alias->getName() == "__optional_sfinae_assign_base_t")) {
         const auto *Actual = TL.getType()->getAsCXXRecordDecl();
         if (!Actual || !Graph.PairOptionalStorageRecords.count(Actual->getCanonicalDecl()) ||
-            !Graph.bindPairOptionalAlias(Alias)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Graph.bindPairOptionalAlias(Alias)) return false;
       }
-      if (!Template || !Graph.family(Template)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Template || !Graph.family(Template)) return false;
       if (const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template))
         return Graph.family(Alias->getTemplatedDecl()) &&
                check(Alias->getTemplatedDecl()->getTypeSourceInfo());
@@ -8252,7 +8243,7 @@ class UtilityTupleQueryGraph
       ++Graph.Depth;
       if (Graph.step()) return true;
       --Graph.Depth;
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     }
     bool dataTraverseStmtPost(Stmt *) { --Graph.Depth; return true; }
   };
@@ -8261,15 +8252,15 @@ class UtilityTupleQueryGraph
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *D = Pending.back(); Pending.pop_back();
-      if (!D || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!D || !step()) return false;
       if (!Family.insert(D).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "optional")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "optional")) return false;
       if (const auto *T = dyn_cast<TypeAliasTemplateDecl>(D)) {
         for (const auto *R : T->redecls()) Pending.push_back(R);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return false;
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     return true;
@@ -8277,15 +8268,15 @@ class UtilityTupleQueryGraph
   bool bindPairOptionalStorage(const CXXRecordDecl *Record, unsigned Nesting = 0) {
     if (!Record || Nesting > 64 || !step() || Record->isInvalidDecl() ||
         Record->isUnion() || Record->isDynamicClass() || Record->getNumVBases() ||
-        !approvedStandardSDKDeclaration(S, SM, Record) || !bindPairInputFamily(Record)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !approvedStandardSDKDeclaration(S, SM, Record) || !bindPairInputFamily(Record)) return false;
     if (!PairOptionalStorageRecords.insert(Record->getCanonicalDecl()).second) return true;
     for (const auto &Base : Record->bases()) {
       const auto *Child = Base.getType()->getAsCXXRecordDecl();
-      if (Base.isVirtual() || !Child || !bindPairOptionalStorage(Child, Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Base.isVirtual() || !Child || !bindPairOptionalStorage(Child, Nesting + 1)) return false;
       PairStorageUseSource Source(*this);
       if (!Base.getTypeSourceInfo() ||
           !Context.hasSameType(Base.getTypeSourceInfo()->getType(), Base.getType()) ||
-          !Source.check(Base.getTypeSourceInfo())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Source.check(Base.getTypeSourceInfo())) return false;
     }
     return true;
   }
@@ -8296,9 +8287,9 @@ class UtilityTupleQueryGraph
         Definition->isUnion() || Definition->isDynamicClass() || Definition->getNumVBases() ||
         !Definition->isStandardLayout() || !Definition->hasTrivialCopyConstructor() ||
         !Definition->hasTrivialDestructor() ||
-        !approvedStandardSDKDeclaration(S, SM, Definition)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !approvedStandardSDKDeclaration(S, SM, Definition)) return false;
     if (Wrapper) {
-      if (!approvedFunctionalReferenceRecord(S, SM, Definition, Context)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!approvedFunctionalReferenceRecord(S, SM, Definition, Context)) return false;
     } else {
       const auto Origin = S.sdkFile(SM, Definition->getLocation());
       if (!Origin || Origin->Root != "libcxx" || !Definition->isEmpty() ||
@@ -8316,16 +8307,16 @@ class UtilityTupleQueryGraph
              Definition->getName() == "__binary_function_keep_layout_base" &&
              !Definition->getNumBases()) ||
             (Origin->Path == "__utility/empty.h" && Definition->getName() == "__empty" &&
-             !Definition->getNumBases()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+             !Definition->getNumBases()))) return false;
     }
-    if (!bindPairInputFamily(Definition)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!bindPairInputFamily(Definition)) return false;
     if (Wrapper) {
       const auto Description = approvedFunctionalReferenceRecord(S, SM, Definition, Context);
       const TypedefNameDecl *Alias = nullptr;
       for (const auto *Declaration : Definition->decls())
         if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
             Named && Named->getIdentifier() && Named->getName() == "type") {
-          if (Alias) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (Alias) return false;
           Alias = Named;
         }
       const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
@@ -8338,7 +8329,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Info->getType(), Alias->getUnderlyingType()) ||
           !approvedStandardSDKDeclaration(S, SM, Alias) ||
           !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h") ||
-          !Source.check(Info)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Source.check(Info)) return false;
       // Only this bound wrapper's actual referent alias supplies metadata.
       // Its original type spelling closes before any later alias/cache use.
       PairInputFamilies.insert(Alias);
@@ -8349,12 +8340,12 @@ class UtilityTupleQueryGraph
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
           !Context.hasSameType(Base.getTypeSourceInfo()->getType(), Base.getType()) ||
           !bindPairBorrowedStorage(Base.getType()->getAsCXXRecordDecl(), false, Nesting + 1) ||
-          !Source.check(Base.getTypeSourceInfo()) || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Source.check(Base.getTypeSourceInfo()) || Failed) return false;
     }
     return true;
   }
   bool bindPairInput(QualType Type, unsigned Nesting = 0) {
-    if (Type.isNull() || Nesting > 64 || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Type.isNull() || Nesting > 64 || !step()) return false;
     const auto *Canonical = Type.getCanonicalType().getTypePtr();
     if (!PairInputTypes.insert(Canonical).second) return true;
     if (Canonical->isPointerType() || Canonical->isReferenceType())
@@ -8363,21 +8354,21 @@ class UtilityTupleQueryGraph
         Array && (isa<ConstantArrayType>(Array) || isa<IncompleteArrayType>(Array)))
       return bindPairInput(Array->getElementType(), Nesting + 1);
     if (const auto *Function = Canonical->getAs<FunctionProtoType>()) {
-      if (!bindPairInput(Function->getReturnType(), Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!bindPairInput(Function->getReturnType(), Nesting + 1)) return false;
       for (const auto Parameter : Function->param_types())
-        if (!bindPairInput(Parameter, Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!bindPairInput(Parameter, Nesting + 1)) return false;
       return true;
     }
     const auto *Record = Canonical->getAsCXXRecordDecl();
     if (!Record) return true;
     PairInputRecords.insert(Record->getCanonicalDecl());
-    if (!bindPairInputFamily(Record)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!bindPairInputFamily(Record)) return false;
     if (approvedFunctionalReferenceRecord(S, SM, Record, Context) &&
-        !bindPairBorrowedStorage(Record, true)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !bindPairBorrowedStorage(Record, true)) return false;
     if (const auto Optional = approvedUtilityOptionalRecord(S, SM, Record, Context)) {
       const auto *Union = dyn_cast<CXXRecordDecl>(Optional->Value->getDeclContext());
       if (!Union || !Union->isUnion() || !Union->hasTrivialDestructor() ||
-          !bindPairOptionalStorage(Record) || !bindPairInputFamily(Union)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !bindPairOptionalStorage(Record) || !bindPairInputFamily(Union)) return false;
       PairOptionalStorageRecords.insert(Union->getCanonicalDecl());
       PairOptionalStorageUnions.insert(Union->getCanonicalDecl());
       // Actual storage field spellings are independent source uses. Layout
@@ -8386,10 +8377,10 @@ class UtilityTupleQueryGraph
       for (const auto *Field : Union->fields()) {
         const auto *Written = Field->getTypeSourceInfo();
         if (!Written || !Context.hasSameType(Written->getType(), Field->getType()) ||
-            !Source.check(Written)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Source.check(Written)) return false;
       }
       if (!Optional->Engaged->getTypeSourceInfo() ||
-          !Source.check(Optional->Engaged->getTypeSourceInfo())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Source.check(Optional->Engaged->getTypeSourceInfo())) return false;
     }
     if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
         Array && !Array->Size) {
@@ -8399,23 +8390,23 @@ class UtilityTupleQueryGraph
       if (!Storage || !Written ||
           !Context.hasSameType(Written->getType(), Array->Elements->getType()) ||
           !bindPairBorrowedStorage(Storage->getElementType()->getAsCXXRecordDecl(), false) ||
-          !Source.check(Written) || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Source.check(Written) || Failed) return false;
     }
     // Follow type arguments only; no source declaration/body becomes SDK code.
     const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(Record);
     if (!Specialization) return true;
     auto Argument = [&](auto &&Self, const TemplateArgument &Value,
                         unsigned Depth) -> bool {
-      if (Depth > 64 || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Depth > 64 || !step()) return false;
       if (Value.getKind() == TemplateArgument::Type)
         return bindPairInput(Value.getAsType(), Depth + 1);
       if (Value.getKind() == TemplateArgument::Pack)
         for (const auto &Element : Value.pack_elements())
-          if (!Self(Self, Element, Depth + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!Self(Self, Element, Depth + 1)) return false;
       return true;
     };
     for (const auto &Value : Specialization->getTemplateArgs().asArray())
-      if (!Argument(Argument, Value, Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Argument(Argument, Value, Nesting + 1)) return false;
     return true;
   }
   bool bindPairReferenceFactory(const Expr *Argument) {
@@ -8426,17 +8417,17 @@ class UtilityTupleQueryGraph
     const auto *Function = Call->getDirectCallee();
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     if (!Function || !Primary ||
-        !PairInputRecords.count(Factory->Result.Record->getCanonicalDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !PairInputRecords.count(Factory->Result.Record->getCanonicalDecl())) return false;
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Current) ||
           !cstddefOrigin(S, SM, Current->getLocation(), "libcxx",
-                         "__functional/reference_wrapper.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+                         "__functional/reference_wrapper.h")) return false;
       if (const auto *F = dyn_cast<FunctionDecl>(Current)) {
         for (const auto *D : F->redecls()) Pending.push_back(D);
         if (const auto *Pattern = F->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
@@ -8445,7 +8436,7 @@ class UtilityTupleQueryGraph
         for (const auto *D : T->redecls()) Pending.push_back(D);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TemplateTypeParmDecl, NonTypeTemplateParmDecl>(Current)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      } else if (!isa<TemplateTypeParmDecl, NonTypeTemplateParmDecl>(Current)) return false;
     }
     // Only metadata substitutions of this exact admitted caller factory join
     // the graph. The caller still checks its actual call and referent source.
@@ -8480,26 +8471,26 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Arguments->get(0).getAsType(),
               Parameter->isLValueReferenceType() ? Parameter : Parameter->getPointeeType()) ||
           !Context.hasSameType(Function->getReturnType(), Parameter) ||
-          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return false;
       const bool LValue = Parameter->isLValueReferenceType() || Call->getType()->isFunctionType();
-      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return false;
       Operation = UtilityOperation::Forward;
     } else {
       Operation = approvedUtilityOperation(S, SM, Call, Context);
-      if (!S.owns(SM, Call->getExprLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!S.owns(SM, Call->getExprLoc())) return false;
     }
     const auto Path = Operation == UtilityOperation::Move ? "__utility/move.h"
         : Operation == UtilityOperation::Forward ? "__utility/forward.h" : "";
     if (!*Path ||
-        !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return false;
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Path)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Path)) return false;
       if (const auto *F = dyn_cast<FunctionDecl>(Current)) {
         for (const auto *D : F->redecls()) Pending.push_back(D);
         if (const auto *Pattern = F->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
@@ -8508,7 +8499,7 @@ class UtilityTupleQueryGraph
         for (const auto *D : T->redecls()) Pending.push_back(D);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TemplateTypeParmDecl>(Current)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      } else if (!isa<TemplateTypeParmDecl>(Current)) return false;
     }
     // These actual caller adapters supply metadata substitution provenance.
     // Ordinary completion still authenticates their calls and original operands.
@@ -8517,7 +8508,7 @@ class UtilityTupleQueryGraph
   }
   bool pairOwner(const CXXRecordDecl *Record) {
     if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
-        !Record) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Record) return false;
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(
         PairConstructor->getParent());
     const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
@@ -8531,15 +8522,15 @@ class UtilityTupleQueryGraph
   bool pairHelperOwner(const CXXRecordDecl *Record) {
     if (!Record || !Record->getIdentifier() || Record->getName() != "_CheckArgs" ||
         !pairOwner(dyn_cast<CXXRecordDecl>(Record->getDeclContext())) ||
-        !family(Record)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !family(Record)) return false;
     const auto *Definition = Record->getDefinition();
     if (!Definition || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() ||
-        !Definition->field_empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Definition->field_empty()) return false;
     const auto *Origin = Definition->getInstantiatedFromMemberClass();
     if (Origin && (!family(Origin) || !Origin->getIdentifier() ||
         Origin->getName() != "_CheckArgs" ||
-        !pairOwner(dyn_cast<CXXRecordDecl>(Origin->getDeclContext())))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !pairOwner(dyn_cast<CXXRecordDecl>(Origin->getDeclContext())))) return false;
     return true;
   }
   bool pairHelper(const FunctionDecl *Function) {
@@ -8547,40 +8538,40 @@ class UtilityTupleQueryGraph
     if (!Method || !pairHelperOwner(Method->getParent()) || !family(Method) ||
         !Method->isStatic() || !Method->isConstexpr() || Method->isVariadic() ||
         Method->getNumParams() || !Method->getReturnType()->isBooleanType() ||
-        Method->getAccess() != AS_public || !Method->getIdentifier()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Method->getAccess() != AS_public || !Method->getIdentifier()) return false;
     const auto Name = Method->getName();
     if (Name != "__is_pair_constructible" && Name != "__is_implicit" &&
-        Name != "__enable_default" && Name != "__enable_implicit_default") return ownedNotFnTraceFalse(__LINE__, __func__);
+        Name != "__enable_default" && Name != "__enable_implicit_default") return false;
     const auto *Primary = Method->getPrimaryTemplate();
     const auto *Arguments = Method->getTemplateSpecializationArgs();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     if (!Primary || !Arguments || !Parameters || !family(Primary) ||
         Primary->getDeclContext() != Method->getDeclContext() ||
-        Arguments->size() != Parameters->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments->size() != Parameters->size()) return false;
     const bool Default = Name == "__enable_default" ||
                          Name == "__enable_implicit_default";
-    if (Parameters->size() != (Default ? 1u : 2u)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Parameters->size() != (Default ? 1u : 2u)) return false;
     for (unsigned I = 0; I < Parameters->size(); ++I) {
-      if (!family(Parameters->getParam(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!family(Parameters->getParam(I))) return false;
       if (Default) {
         const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(I));
         if (!Parameter || !Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
             !Context.hasSameType(Parameter->getType(),
                 Context.getLValueReferenceType(Context.IntTy)) ||
             Arguments->get(I).getKind() != TemplateArgument::Pack ||
-            Arguments->get(I).pack_size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Arguments->get(I).pack_size()) return false;
       } else {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         if (!Parameter || Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
             Arguments->get(I).getKind() != TemplateArgument::Type ||
-            !TraverseTemplateArgument(Arguments->get(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !TraverseTemplateArgument(Arguments->get(I))) return false;
       }
     }
     if (const auto *Original = Primary->getInstantiatedFromMemberTemplate())
       if (!family(Original) || !pairHelperOwner(
-              dyn_cast<CXXRecordDecl>(Original->getDeclContext()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+              dyn_cast<CXXRecordDecl>(Original->getDeclContext()))) return false;
     if (CompletedPairHelpers.count(Function)) return true;
-    if (!ActivePairHelpers.insert(Function).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!ActivePairHelpers.insert(Function).second) return false;
     auto Restore = llvm::make_scope_exit([&] { ActivePairHelpers.erase(Function); });
     const auto *Definition = Function->getDefinition();
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
@@ -8603,46 +8594,46 @@ class UtilityTupleQueryGraph
     if (!PairInputRecords.count(Owner->Record->getCanonicalDecl()) || !PairOwnerUse ||
         PairOwnerUse->Method != Method || PairOwnerUse->Query != PairTraitQuery ||
         PairOwnerUse->Root != PairTraitConstruction || !PairTraitQuery ||
-        !PairTraitConstruction || !PairConstructor) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !PairTraitConstruction || !PairConstructor) return false;
     const auto &Use = *PairOwnerUse;
     const auto Found = OperationTraits.find(Use.Query);
     if (Found == OperationTraits.end() || !Found->second.Attempted ||
-        !Found->second.Complete || !Found->second.Root) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Found->second.Complete || !Found->second.Root) return false;
     const auto *Original = Found->second.Root->IgnoreParenImpCasts();
     const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Original);
     if (Temporary) Original = Temporary->getSubExpr()->IgnoreParenImpCasts();
-    if (Original != Use.Root) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Original != Use.Root) return false;
     if (Use.Parent) {
       const auto Source = SpecialMembers.find(Use.Parent->getCanonicalDecl());
       if (!Use.Subobject || Use.Temporary || !ActiveMembers.count(Use.Parent) ||
           Source == SpecialMembers.end() || !Source->second.Complete ||
           Source->second.Owner != Use.Parent || Use.Subobject->Method != Method)
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       bool Actual = false;
       for (const auto &Selection : Source->second.Selections)
         Actual |= &Selection == Use.Subobject;
-      if (!Actual) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Actual) return false;
     } else if (Use.Subobject) {
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     } else if (isa<CXXConstructorDecl>(Method)) {
-      if (Use.Temporary || Use.Root->getConstructor() != Method) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Use.Temporary || Use.Root->getConstructor() != Method) return false;
     } else {
       if (!Use.Temporary || Use.Temporary != Temporary ||
           !Use.Temporary->getTemporary() ||
-          Use.Temporary->getTemporary()->getDestructor() != Method) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Use.Temporary->getTemporary()->getDestructor() != Method) return false;
     }
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     if (!Primary || !(Constructor ? Constructor->isMoveConstructor()
-                                 : isa<CXXDestructorDecl>(Method))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                                 : isa<CXXDestructorDecl>(Method))) return false;
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       const auto *Record = Current->getParent();
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
@@ -8666,13 +8657,13 @@ class UtilityTupleQueryGraph
            (!Pattern || Record->getCanonicalDecl() != Pattern->getCanonicalDecl())) ||
           (Constructor ? !Copy || !Copy->isMoveConstructor() || Copy->getNumParams() != 1 ||
                              Copy->getParamDecl(0)->hasDefaultArg()
-                       : !isa<CXXDestructorDecl>(Current) || Current->getNumParams())) return ownedNotFnTraceFalse(__LINE__, __func__);
+                       : !isa<CXXDestructorDecl>(Current) || Current->getNumParams())) return false;
       if (Copy && !Context.hasSameType(Copy->getParamDecl(0)->getType(),
-              Context.getRValueReferenceType(Context.getRecordType(Record)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Context.getRValueReferenceType(Context.getRecordType(Record)))) return false;
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *Source = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Source);
-        if (!Member) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Member) return false;
         Pending.push_back(Member);
       }
     }
@@ -8687,11 +8678,11 @@ class UtilityTupleQueryGraph
     const bool Owner = Mode == UtilityTupleQueryMode::PairConstruction && PairOwnerUse &&
         PairOwnerUse->Method == Method &&
         utilityUniquePtrRecord(S, SM, R, Context, false, false).has_value();
-    if ((!String && !Owner) || !family(Method)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if ((!String && !Owner) || !family(Method)) return false;
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->getNoexceptExpr() || Method->isDeleted() ||
         Method->isInvalidDecl() || Method->isVariadic() || Method->getPrimaryTemplate())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     if (Destructor)
       return !Method->getNumParams() && !Method->isVirtual() &&
              R->getDestructor() && R->getDestructor()->getCanonicalDecl() ==
@@ -8699,7 +8690,7 @@ class UtilityTupleQueryGraph
     if (!Constructor || !Constructor->isCopyOrMoveConstructor() ||
         (Owner && !Constructor->isMoveConstructor()) ||
         Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto Type = Context.getRecordType(R);
     const auto Expected = Constructor->isMoveConstructor()
@@ -8720,20 +8711,20 @@ class UtilityTupleQueryGraph
     if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
         !(Constructor ? (Constructor->isCopyOrMoveConstructor() ||
                          (PairDefault && Constructor->isDefaultConstructor())) : isa<CXXDestructorDecl>(Method)))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Origin = S.sdkFile(SM, Record->getLocation());
     if (!Origin || Origin->Root != "libcxx" ||
         (Origin->Path != "__functional/reference_wrapper.h" &&
          Origin->Path != "__functional/weak_result_type.h" &&
          Origin->Path != "__functional/unary_function.h" &&
          Origin->Path != "__functional/binary_function.h" &&
-         Origin->Path != "__utility/empty.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+         Origin->Path != "__utility/empty.h")) return false;
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
       const auto *Owner = Current->getParent();
@@ -8748,11 +8739,11 @@ class UtilityTupleQueryGraph
                          Copy->isMoveConstructor() != Constructor->isMoveConstructor() ||
                          !(Copy->isCopyOrMoveConstructor() ||
                            (PairDefault && Copy->isDefaultConstructor()))
-                       : !isa<CXXDestructorDecl>(Current))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                       : !isa<CXXDestructorDecl>(Current))) return false;
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Member) return false;
         Pending.push_back(Member);
       }
     }
@@ -8764,19 +8755,19 @@ class UtilityTupleQueryGraph
         Nesting > 64 || !step() || !Constructor->isDefaultConstructor() ||
         Constructor->getNumParams() || Constructor->isDeleted() || Constructor->isInvalidDecl() ||
         Constructor->isVariadic() || Constructor->getPrimaryTemplate() ||
-        !PairOptionalStorageRecords.count(Constructor->getParent()->getCanonicalDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !PairOptionalStorageRecords.count(Constructor->getParent()->getCanonicalDecl())) return false;
     const auto *Record = Constructor->getParent()->getDefinition();
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
     const auto Origin = S.sdkFile(SM, Record->getLocation());
     if (!Primary || !Pattern || !Origin || Origin->Root != "libcxx" ||
-        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return false;
     std::vector<const CXXConstructorDecl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       if (!Current->isDefaultConstructor() || Current->getNumParams() ||
@@ -8785,28 +8776,28 @@ class UtilityTupleQueryGraph
           !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Origin->Path) ||
           (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
            Owner->getCanonicalDecl() != Pattern->getCanonicalDecl() &&
-           Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
+           Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl())) return false;
       const auto Explicit = Current->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved ||
-          Explicit.getExpr() || Explicit.isExplicit()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Explicit.getExpr() || Explicit.isExplicit()) return false;
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXConstructorDecl>(D));
       if (const auto *D = Current->getTemplateInstantiationPattern())
         Pending.push_back(cast<CXXConstructorDecl>(D));
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
-    if (!family(Constructor) || !family(Record)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(Constructor) || !family(Record)) return false;
     const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->getNoexceptExpr() ||
-        Prototype->getExceptionSpecType() != EST_BasicNoexcept) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept) return false;
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
     if (!Body || !Body->body_empty() ||
-        !S.sdkFile(SM, Body->getBeginLoc()) || !S.sdkFile(SM, Body->getEndLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !S.sdkFile(SM, Body->getBeginLoc()) || !S.sdkFile(SM, Body->getEndLoc())) return false;
     if (Record->getName() == "__optional_destruct_base") {
       // This selected constructor activates only the null union member and
       // false engagement flag. No element default constructor is evaluated.
       const CXXCtorInitializer *Null = nullptr, *Engaged = nullptr;
       for (const auto *Init : Constructor->inits()) {
-        if (!step() || !Init->isAnyMemberInitializer() || !Init->getAnyMember()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!step() || !Init->isAnyMemberInitializer() || !Init->getAnyMember()) return false;
         const auto *Field = Init->getAnyMember();
         if (Init->isIndirectMemberInitializer()) {
           const auto *Indirect = Init->getIndirectMember();
@@ -8822,15 +8813,15 @@ class UtilityTupleQueryGraph
               !approvedStandardSDKDeclaration(S, SM, Indirect) ||
               !approvedStandardSDKDeclaration(S, SM, Anonymous) ||
               !cstddefOrigin(S, SM, Indirect->getLocation(), "libcxx", "optional") ||
-              !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional")) return ownedNotFnTraceFalse(__LINE__, __func__);
-        } else if (Field->getDeclContext() != Record) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional")) return false;
+        } else if (Field->getDeclContext() != Record) return false;
         if (!approvedStandardSDKDeclaration(S, SM, Field) ||
-            !cstddefOrigin(S, SM, Field->getLocation(), "libcxx", "optional")) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !cstddefOrigin(S, SM, Field->getLocation(), "libcxx", "optional")) return false;
         if (Field->getName() == "__null_state_" && Field->getType()->isCharType() && !Null)
           Null = Init;
         else if (Field->getName() == "__engaged_" && Field->getType()->isBooleanType() && !Engaged)
           Engaged = Init;
-        else return ownedNotFnTraceFalse(__LINE__, __func__);
+        else return false;
       }
       const auto *Zero = Null ? dyn_cast<ImplicitValueInitExpr>(Null->getInit()) : nullptr;
       const auto *False = Engaged ? dyn_cast<CXXBoolLiteralExpr>(Engaged->getInit()) : nullptr;
@@ -8844,9 +8835,9 @@ class UtilityTupleQueryGraph
       const auto *Child = Base.getType()->getAsCXXRecordDecl();
       if (!Child || Base.isVirtual() ||
           !PairOptionalStorageRecords.count(Child->getCanonicalDecl()) ||
-          !Expected.insert(Child->getCanonicalDecl()).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Expected.insert(Child->getCanonicalDecl()).second) return false;
     }
-    if (!Record->field_empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Record->field_empty()) return false;
     if (Expected.empty())
       return Constructor->isImplicit() && Constructor->isDefaulted() && Constructor->isTrivial() &&
           Constructor->init_begin() == Constructor->init_end();
@@ -8860,7 +8851,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameUnqualifiedType(Call->getType(), Context.getRecordType(Base)) ||
           !S.sdkFile(SM, Call->getBeginLoc()) || !S.sdkFile(SM, Call->getEndLoc()) ||
           !Expected.erase(Base->getCanonicalDecl()) ||
-          !pairOptionalDefault(Child, Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !pairOptionalDefault(Child, Nesting + 1)) return false;
     }
     return Expected.empty();
   }
@@ -8878,12 +8869,12 @@ class UtilityTupleQueryGraph
         !(Method->isImplicit() || Method->isDefaulted()) || !Method->isDefaulted() ||
         !Method->isTrivial() || !Record->hasTrivialDestructor() ||
         !Origin || Origin->Root != "libcxx" ||
-        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return false;
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       const auto *CurrentCopy = dyn_cast<CXXConstructorDecl>(Current);
@@ -8899,7 +8890,7 @@ class UtilityTupleQueryGraph
            (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()) &&
            (!Primary || Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl()) &&
            (!SelectedPattern || Current->getCanonicalDecl() != SelectedPattern->getCanonicalDecl())))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *D = Current->getTemplateInstantiationPattern()) Pending.push_back(cast<CXXMethodDecl>(D));
     }
@@ -8917,17 +8908,17 @@ class UtilityTupleQueryGraph
     const bool SelectedDefault = PairDefault && Default && Default->isDefaultConstructor();
     if (!Primary || !Method->isImplicit() || !Method->isDefaulted() ||
         (!Method->isTrivial() && !SelectedDefault) ||
-        !utilityPairValue(S, SM, Context, Context.getRecordType(Array->Record))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !utilityPairValue(S, SM, Context, Context.getRecordType(Array->Record))) return false;
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     if (!(Constructor ? (Constructor->isCopyOrMoveConstructor() ||
                          (PairDefault && Constructor->isDefaultConstructor()))
-                      : isa<CXXDestructorDecl>(Method))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                      : isa<CXXDestructorDecl>(Method))) return false;
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
@@ -8941,12 +8932,12 @@ class UtilityTupleQueryGraph
                          Copy->isDefaultConstructor() != Constructor->isDefaultConstructor() ||
                          !(Copy->isCopyOrMoveConstructor() ||
                            (PairDefault && Copy->isDefaultConstructor()))
-                       : !isa<CXXDestructorDecl>(Current))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                       : !isa<CXXDestructorDecl>(Current))) return false;
       for (const auto *Declaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Declaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Member) return false;
         Pending.push_back(Member);
       }
     }
@@ -8960,23 +8951,23 @@ class UtilityTupleQueryGraph
                      bool PairDefault = false) {
     if (!Method || Nesting > 64 || !step() || Method->isInvalidDecl() ||
         Method->isDeleted() || Method->isVariadic() || Method->isVirtual() ||
-        Method->getPrimaryTemplate()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Method->getPrimaryTemplate()) return false;
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnOwnedCallableRecord &&
         Method->getParent()->getCanonicalDecl() == NotFnOwnedCallableRecord) {
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
       if (!NotFnOwnedQuerySources || Method->hasAttrs() || !S.owns(SM, Method->getLocation()) ||
-          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return false;
       for (const auto *Declaration : Method->redecls()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
         if (!Member || !S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
-            Member->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Member->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord) return false;
       }
       if (Copy && (Copy->getNumParams() != 1 ||
           !Copy->getParamDecl(0)->getType()->isReferenceType() ||
           !Context.hasSameUnqualifiedType(Copy->getParamDecl(0)->getType().getNonReferenceType(),
-                                        NotFnCallableType))) return ownedNotFnTraceFalse(__LINE__, __func__);
-      if (Destructor && Destructor->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+                                        NotFnCallableType))) return false;
+      if (Destructor && Destructor->getNumParams()) return false;
       // A real retained query selected this ordinary operation. Export that
       // exact signature dependency; it supplies no SDK or runtime body grant.
       NotFnOwnedQuerySources->insert(Method);
@@ -8985,7 +8976,7 @@ class UtilityTupleQueryGraph
     // Clang checks anonymous optional variants in the enclosing member's
     // deletion graph; it never selects an anonymous-union copy operation.
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
-        PairOptionalStorageUnions.count(Method->getParent()->getCanonicalDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        PairOptionalStorageUnions.count(Method->getParent()->getCanonicalDecl())) return false;
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         PairInputRecords.count(Method->getParent()->getCanonicalDecl()) &&
         ownedPairInputRecord(Method->getParent())) {
@@ -8995,7 +8986,7 @@ class UtilityTupleQueryGraph
           !Method->isDefaulted() || !Method->isTrivial() ||
           !(Copy ? (Copy->isCopyOrMoveConstructor() ||
                     (PairDefault && Copy->isDefaultConstructor())) : isa<CXXDestructorDecl>(Method)))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       // This exact retained child is an ordinary source dependency, never an
       // SDK family member. The caller must close its declaration, layout,
       // exception and selected subobject sources after whole-graph success.
@@ -9010,12 +9001,12 @@ class UtilityTupleQueryGraph
     }
     // Bind this use before consulting the method cache; another retained
     // query or subobject selection must independently authenticate its purpose.
-    if (!bindPairOwnerMember(Method)) { Failed = true; return ownedNotFnTraceFalse(__LINE__, __func__); }
+    if (!bindPairOwnerMember(Method)) { Failed = true; return false; }
     if (!bindPairBorrowedMember(Method, PairDefault) ||
         !bindPairArrayMember(Method, PairDefault) ||
-        !bindPairOptionalMember(Method) || !family(Method)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !bindPairOptionalMember(Method) || !family(Method)) return false;
     if (CompletedMembers.count(Method)) return true;
-    if (!ActiveMembers.insert(Method).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!ActiveMembers.insert(Method).second) return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveMembers.erase(Method); });
     if (selectedLeaf(Method)) {
       CompletedMembers.insert(Method);
@@ -9051,26 +9042,26 @@ class UtilityTupleQueryGraph
           (Mode == UtilityTupleQueryMode::PairConstruction && Method->isTrivial() &&
            (Destructor || (Constructor && Constructor->isCopyOrMoveConstructor())) &&
            PairOptionalStorageRecords.count(Record->getCanonicalDecl())) ||
-          approvedUtilityStringViewRecord(S, SM, Record, Context))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          approvedUtilityStringViewRecord(S, SM, Record, Context))) return false;
     if (Constructor && PairDefault && Constructor->isDefaultConstructor()) {
-      if (Constructor->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Constructor->getNumParams()) return false;
     } else if (Constructor) {
       const auto Type = Context.getRecordType(Record);
       if (Constructor->getNumParams() != 1 ||
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
               Constructor->isMoveConstructor() ? Context.getRValueReferenceType(Type)
-                  : Context.getLValueReferenceType(Type.withConst()))) return ownedNotFnTraceFalse(__LINE__, __func__);
-    } else if (Destructor->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+                  : Context.getLValueReferenceType(Type.withConst()))) return false;
+    } else if (Destructor->getNumParams()) return false;
     // Bind each semantic choice to its actual base/field. A layout or a
     // defaulted flag alone cannot authenticate a selected child operation.
     std::set<std::pair<const void *, bool>> Expected;
     for (const auto &Base : Record->bases()) {
-      if (Base.isVirtual()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Base.isVirtual()) return false;
       Expected.emplace(&Base, false);
       if (Constructor) Expected.emplace(&Base, true);
     }
     auto FieldDependency = [&](const FieldDecl *Field) {
-      if (!Field || !step() || Field->isInvalidDecl() || Field->isBitField()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Field || !step() || Field->isInvalidDecl() || Field->isBitField()) return false;
       if (Context.getBaseElementType(Field->getType())->isRecordType()) {
         Expected.emplace(Field, false);
         if (Constructor) Expected.emplace(Field, true);
@@ -9085,44 +9076,44 @@ class UtilityTupleQueryGraph
           PairOptionalStorageUnions.count(Union->getCanonicalDecl())) {
         // Match Sema's actual anonymous-variant deletion walk: selections are
         // owned by this enclosing method and name the exact variant field.
-        if (!FieldDependency(Field)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!FieldDependency(Field)) return false;
         Expected.erase({Field, false}); Expected.erase({Field, true});
         for (const auto *Variant : Union->fields())
-          if (!FieldDependency(Variant)) return ownedNotFnTraceFalse(__LINE__, __func__);
-      } else if (!FieldDependency(Field)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!FieldDependency(Variant)) return false;
+      } else if (!FieldDependency(Field)) return false;
     }
     const auto Found = SpecialMembers.find(Method->getCanonicalDecl());
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         PairOptionalStorageRecords.count(Record->getCanonicalDecl()) &&
         (Found == SpecialMembers.end() || !Found->second.Complete ||
-         Found->second.Owner != Method)) return ownedNotFnTraceFalse(__LINE__, __func__);
+         Found->second.Owner != Method)) return false;
     if (Found == SpecialMembers.end()) {
-      if (!Method->isTrivial() || !Expected.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Method->isTrivial() || !Expected.empty()) return false;
     } else {
       const auto &Source = Found->second;
-      if (!Source.Complete || Source.Owner != Method) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Source.Complete || Source.Owner != Method) return false;
       for (const auto &Selection : Source.Selections) {
         const auto *Child = Selection.Method;
         const void *Object = Selection.Base ? static_cast<const void *>(Selection.Base)
                                             : Selection.Field;
         if (!Child || bool(Selection.Base) == bool(Selection.Field) ||
-            !Expected.erase({Object, Selection.ConstructorDestruction})) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Expected.erase({Object, Selection.ConstructorDestruction})) return false;
         const auto Type = Selection.Base ? Selection.Base->getType() : Selection.Field->getType();
         const auto *Subrecord = Context.getBaseElementType(Type)->getAsCXXRecordDecl();
         if (!Subrecord || Subrecord->getCanonicalDecl() !=
-                              Child->getParent()->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+                              Child->getParent()->getCanonicalDecl()) return false;
         if (Selection.ConstructorDestruction) {
           const auto *Dtor = dyn_cast<CXXDestructorDecl>(Child);
           if (!Constructor || !Dtor || !Subrecord->getDestructor() ||
               Subrecord->getDestructor()->getCanonicalDecl() != Dtor->getCanonicalDecl())
-            return ownedNotFnTraceFalse(__LINE__, __func__);
+            return false;
         } else if (Constructor) {
           const auto *Copy = dyn_cast<CXXConstructorDecl>(Child);
           if (!Copy ||
               (Constructor->isDefaultConstructor()
                    ? !PairDefault || !Copy->isDefaultConstructor()
-                   : !Copy->isCopyOrMoveConstructor())) return ownedNotFnTraceFalse(__LINE__, __func__);
-        } else if (!isa<CXXDestructorDecl>(Child)) return ownedNotFnTraceFalse(__LINE__, __func__);
+                   : !Copy->isCopyOrMoveConstructor())) return false;
+        } else if (!isa<CXXDestructorDecl>(Child)) return false;
         const auto SavedOwnerUse = PairOwnerUse;
         if (Mode == UtilityTupleQueryMode::PairConstruction &&
             utilityUniquePtrRecord(S, SM, Subrecord, Context, false, false))
@@ -9130,9 +9121,9 @@ class UtilityTupleQueryGraph
                                            Method, &Selection, nullptr};
         auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
         if (!specialMember(Child, Nesting + 1,
-                           PairDefault && Constructor && Constructor->isDefaultConstructor())) return ownedNotFnTraceFalse(__LINE__, __func__);
+                           PairDefault && Constructor && Constructor->isDefaultConstructor())) return false;
       }
-      if (!Expected.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Expected.empty()) return false;
     }
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
@@ -9144,10 +9135,10 @@ class UtilityTupleQueryGraph
           Literal->getEndLoc().isInvalid() &&
           Context.hasSameType(Literal->getType(), Context.BoolTy))
         GeneratedExceptionLiterals.insert(Literal);
-      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return false;
       break;
     }
-    default: return ownedNotFnTraceFalse(__LINE__, __func__);
+    default: return false;
     }
     CompletedMembers.insert(Method);
     return true;
@@ -9157,7 +9148,7 @@ class UtilityTupleQueryGraph
       return utilityCatCarrier(S, SM, Context, T, LayoutProof, Nesting);
     if (T.isNull() || Nesting > 64 || T.isVolatileQualified() ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     if (T->isReferenceType())
       return carrier(T->getPointeeType(), Nesting + 1);
     // Only the callable independently certified in this not_fn storage may
@@ -9183,32 +9174,32 @@ class UtilityTupleQueryGraph
       return true;
     const auto Tuple = utilityTupleStorageRecord(S, SM, R, Context, Nesting);
     if (!Tuple)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto &E : Tuple->Elements)
-      if (!carrier(E.getType(), Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!carrier(E.getType(), Nesting + 1)) return false;
     return true;
   }
   bool defaultEqualityFamily(const NamedDecl *Candidate) {
-    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return false;
     std::vector<const Decl *> Pending{Candidate};
     std::set<const Decl *> Seen;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back();
       Pending.pop_back();
-      if (!Declaration || !step() || Declaration->isInvalidDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Declaration || !step() || Declaration->isInvalidDecl()) return false;
       if (!Seen.insert(Declaration).second) continue;
       if (Seen.size() > 64 || !approvedStandardSDKDeclaration(S, SM, Declaration))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
       const auto *Function = Template ? Template->getTemplatedDecl()
           : dyn_cast<FunctionDecl>(Declaration);
       if (!Function || isa<CXXMethodDecl>(Function) ||
-          Function->getOverloadedOperator() != OO_EqualEqual) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Function->getOverloadedOperator() != OO_EqualEqual) return false;
       const auto Origin = S.sdkFile(SM, Declaration->getLocation());
       const bool IteratorCandidate = Origin && Origin->Root == "libcxx" &&
           (Origin->Path == "__iterator/reverse_iterator.h" ||
            Origin->Path == "__iterator/wrap_iter.h");
-      if (!pinned(Declaration) && !IteratorCandidate) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!pinned(Declaration) && !IteratorCandidate) return false;
       if (Template) {
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         Pending.push_back(Function);
@@ -9230,19 +9221,19 @@ class UtilityTupleQueryGraph
         Use->isDependentType() || !Use->isTypeAlias() || !family(Alias) ||
         Alias->getName() != "__make_indices_imp" ||
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Declaration = Alias->getTemplatedDecl();
     const auto *Parameters = Alias->getTemplateParameters();
     if (!Declaration || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
         Parameters->size() != 2 || Use->template_arguments().size() != 2)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     for (const auto *Parameter : {Ep, Sp})
       if (!Parameter || Parameter->hasDefaultArgument() || Parameter->isParameterPack() ||
           !family(Parameter) || !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
           !Parameter->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
     // Inspect the original alias DSL, without admitting the location-less
     // compiler builtin as a general declaration or template name.
     const auto *Original = dyn_cast<DependentTemplateSpecializationType>(
@@ -9265,7 +9256,7 @@ class UtilityTupleQueryGraph
         !Builtin || !Builtin->isImplicit() || !Builtin->getLocation().isInvalid() ||
         !Builtin->getDeclContext()->isTranslationUnit() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
-        SequenceUse->template_arguments().size() != 3) return ownedNotFnTraceFalse(__LINE__, __func__);
+        SequenceUse->template_arguments().size() != 3) return false;
     const auto &SequenceArguments = SequenceUse->template_arguments();
     const auto *Sequence = SequenceArguments[0].getKind() == TemplateArgument::Template
         ? dyn_cast_or_null<ClassTemplateDecl>(SequenceArguments[0].getAsTemplate().getAsTemplateDecl()) : nullptr;
@@ -9280,14 +9271,14 @@ class UtilityTupleQueryGraph
         : TemplateSpecializationTypeLoc();
     if (!OriginalLoc || OriginalLoc.getTypePtr() != Original || !SequenceLoc ||
         SequenceLoc.getTypePtr() != SequenceUse || SequenceLoc.getNumArgs() != 3)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc(),
                          OriginalLoc.getTemplateNameLoc(), SequenceLoc.getTemplateNameLoc(),
                          SequenceLoc.getArgLoc(0).getTemplateNameLoc(),
                          Difference ? Difference->getOperatorLoc() : SourceLocation(),
                          Left ? Left->getLocation() : SourceLocation(),
                          Right ? Right->getLocation() : SourceLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
     if (!Sequence || Sequence->getName() != "__integer_sequence" || !family(Sequence) ||
         !cstddefOrigin(S, SM, Sequence->getLocation(), "libcxx", "__utility/integer_sequence.h") ||
         SequenceArguments[1].getKind() != TemplateArgument::Type ||
@@ -9295,12 +9286,12 @@ class UtilityTupleQueryGraph
         !TraverseType(SequenceArguments[1].getAsType()) ||
         !Difference || Difference->getOpcode() != BO_Sub ||
         !Left || Left->getDecl() != Ep || !Right || Right->getDecl() != Sp ||
-        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return false;
     const auto *SizeSource = SequenceLoc.getArgLoc(1).getTypeSourceInfo();
     const auto *OriginalOffset = dyn_cast<DeclRefExpr>(Original->template_arguments()[0].getAsExpr());
     if (!SizeSource || !TraverseTypeLoc(SizeSource->getTypeLoc()) ||
         !cstddefOrigin(S, SM, OriginalOffset->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *SequenceParameters = Sequence->getTemplateParameters();
     const auto *IndexType = SequenceParameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(SequenceParameters->getParam(0)) : nullptr;
@@ -9310,15 +9301,15 @@ class UtilityTupleQueryGraph
     if (!IndexType || IndexType->hasDefaultArgument() || IndexType->isParameterPack() ||
         !Values || !Values->isParameterPack() || Values->hasDefaultArgument() ||
         !ValueType || ValueType->getDecl() != IndexType ||
-        !family(IndexType) || !family(Values)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !family(IndexType) || !family(Values)) return false;
     const auto *SequenceDefinition = Sequence->getTemplatedDecl()->getDefinition();
     if (!SequenceDefinition || !family(SequenceDefinition) ||
-        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return false;
     const TypeAliasTemplateDecl *ToIndices = nullptr;
     for (const auto *Member : SequenceDefinition->decls())
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Member);
           Template && Template->getName() == "__to_tuple_indices") {
-        if (ToIndices) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (ToIndices) return false;
         ToIndices = Template;
       }
     const auto *ToParameters = ToIndices ? ToIndices->getTemplateParameters() : nullptr;
@@ -9347,7 +9338,7 @@ class UtilityTupleQueryGraph
           cstddefOrigin(S, SM, Indices->getLocation(), "libcxx", "__utility/integer_sequence.h")) ||
         !Addition || Addition->getOpcode() != BO_Add || !ValueReference ||
         ValueReference->getDecl() != Values || !OffsetReference ||
-        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return false;
     auto IndicesLoc = ToDeclaration->getTypeSourceInfo()->getTypeLoc();
     for (unsigned I = 0; I <= 8 && IndicesLoc &&
          !IndicesLoc.getAs<TemplateSpecializationTypeLoc>(); ++I)
@@ -9355,12 +9346,12 @@ class UtilityTupleQueryGraph
     const auto IndexTemplateLoc = IndicesLoc.getAs<TemplateSpecializationTypeLoc>();
     if (!IndexTemplateLoc || IndexTemplateLoc.getTypePtr() != IndicesUse ||
         !cstddefOrigin(S, SM, IndexTemplateLoc.getTemplateNameLoc(), "libcxx", "__utility/integer_sequence.h"))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto L : {ToDeclaration->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
                          ToDeclaration->getTypeSourceInfo()->getTypeLoc().getEndLoc(),
                          Addition->getOperatorLoc(), ValueReference->getLocation(),
                          OffsetReference->getLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
     const auto *IndexParameters = Indices->getTemplateParameters();
     const auto *IndexPack = IndexParameters->size() == 1
         ? dyn_cast<NonTypeTemplateParmDecl>(IndexParameters->getParam(0)) : nullptr;
@@ -9373,7 +9364,7 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, IndexDefinition->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
         !IndexDefinition->field_empty() ||
         IndexDefinition->getNumBases() || IndexDefinition->isUnion() ||
-        IndexDefinition->isDynamicClass()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        IndexDefinition->isDynamicClass()) return false;
     uint64_t End = 0, Start = 0;
     auto Concrete = [&](const TemplateArgument &Argument, uint64_t &Value) {
       const llvm::APSInt *Integer = nullptr;
@@ -9384,15 +9375,15 @@ class UtilityTupleQueryGraph
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Expression = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Expression || Expression->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Expression->getAPValueResult().getKind() != APValue::Int) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Expression->getAPValueResult().getKind() != APValue::Int) return false;
         Stored = Expression->getResultAsAPSInt(); Integer = &Stored; Type = Expression->getType();
       }
       if (!Integer || !Context.hasSameType(Type, Context.getSizeType()) ||
-          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return false;
       Value = Integer->getZExtValue(); return true;
     };
     if (!Concrete(Use->template_arguments()[0], End) ||
-        !Concrete(Use->template_arguments()[1], Start) || Start > End) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Concrete(Use->template_arguments()[1], Start) || Start > End) return false;
     const auto *ActualTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
     const auto *ActualAlias = ActualTo ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         ActualTo->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -9410,13 +9401,13 @@ class UtilityTupleQueryGraph
         (Result->getSpecializationKind() != TSK_ImplicitInstantiation &&
          Result->getSpecializationKind() != TSK_Undeclared) ||
         !Result->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
-        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return false;
     // The final empty metadata specialization may remain lazy. Its actual
     // family, original primary definition and every index are authenticated;
     // this query neither asks Sema for a definition nor consumes a layout.
     if (const auto *Definition = Result->getDefinition())
       if (!family(Definition) || !Definition->field_empty() || Definition->getNumBases() ||
-          Definition->isUnion() || Definition->isDynamicClass()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Definition->isUnion() || Definition->isDynamicClass()) return false;
     const auto &ActualArguments = ActualSequence->getTemplateArgs();
     const auto &ResultArguments = Result->getTemplateArgs();
     if (ActualArguments.size() != 2 || ActualArguments[0].getKind() != TemplateArgument::Type ||
@@ -9424,12 +9415,12 @@ class UtilityTupleQueryGraph
         ActualArguments[1].getKind() != TemplateArgument::Pack ||
         ActualArguments[1].pack_size() != End - Start || ResultArguments.size() != 1 ||
         ResultArguments[0].getKind() != TemplateArgument::Pack ||
-        ResultArguments[0].pack_size() != End - Start) return ownedNotFnTraceFalse(__LINE__, __func__);
+        ResultArguments[0].pack_size() != End - Start) return false;
     for (unsigned I = 0; I < End - Start; ++I) {
       uint64_t Generated = 0, Index = 0;
       if (!step() || !Concrete(ActualArguments[1].pack_elements()[I], Generated) ||
           !Concrete(ResultArguments[0].pack_elements()[I], Index) ||
-          Generated != I || Index != Start + I) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Generated != I || Index != Start + I) return false;
     }
     return true;
   }
@@ -9442,16 +9433,16 @@ class UtilityTupleQueryGraph
         Partial->getName() != "__make_tuple_types_flat" ||
         !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "__tuple/make_tuple_types.h") ||
         Actual->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplatePartialSpecializationDecl *>() != Partial)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Output = Pattern->getTemplatedDecl()->getUnderlyingType()->getAs<TemplateSpecializationType>();
     if (!Output || Output->template_arguments().size() != 1 ||
-        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return false;
     const auto *Expansion = dyn_cast<PackExpansionType>(Output->template_arguments()[0].getAsType().getTypePtr());
     const auto *Copy = Expansion ? Expansion->getPattern()->getAs<TemplateSpecializationType>() : nullptr;
     const auto *CopyAlias = Copy ? dyn_cast_or_null<TypeAliasTemplateDecl>(Copy->getTemplateName().getAsTemplateDecl()) : nullptr;
     if (!CopyAlias || CopyAlias->getName() != "__copy_cvref_t" || !family(CopyAlias) ||
         Copy->template_arguments().size() != 2 ||
-        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return false;
     const auto *Projection = Copy->template_arguments()[1].getAsType()->getAs<TemplateSpecializationType>();
     const auto *Builtin = Projection ? dyn_cast_or_null<BuiltinTemplateDecl>(Projection->getTemplateName().getAsTemplateDecl()) : nullptr;
     if (!Builtin) {
@@ -9477,8 +9468,8 @@ class UtilityTupleQueryGraph
           !IgnoredIndex || IgnoredIndex->isParameterPack() || IgnoredIndex->hasDefaultArgument() ||
           !family(IgnoredIndex) || !Context.hasSameType(IgnoredIndex->getType(), Context.getSizeType()) ||
           !ValueType || ValueType->getDecl() != Value || !Reference || Reference->getDecl() != Index ||
-          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
-      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return false;
+      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return false;
       ArrayValueProjections.insert(Projection);
       return true;
     }
@@ -9499,29 +9490,29 @@ class UtilityTupleQueryGraph
         !Index || !Index->isParameterPack() || !family(Index) ||
         !Context.hasSameType(Index->getType(), Context.getSizeType()) ||
         !Reference || Reference->getDecl() != Index ||
-        !ParameterType || ParameterType->getDecl() != Types) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !ParameterType || ParameterType->getDecl() != Types) return false;
     for (const auto &Existing : PackProjections)
       if (Existing.Original == Projection && Existing.Owner == Actual) return true;
-    if (PackProjections.size() >= 64) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (PackProjections.size() >= 64) return false;
     PackProjections.push_back({Projection, Builtin, Actual, Index, Types});
     return true;
   }
   bool retainDefinitionParameters(const TypeAliasTemplateDecl *Alias) {
     auto Keep = [&](const TemplateParameterList *Parameters) {
-      if (!Parameters) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Parameters) return false;
       for (const auto *Declaration : *Parameters)
         if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
           if (!step() || !family(Parameter) || !Parameter->getTypeSourceInfo() ||
-              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
           const auto Inserted = CatDefinitionParameters.emplace(Parameter, Parameters);
-          if (!Inserted.second && Inserted.first->second != Parameters) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!Inserted.second && Inserted.first->second != Parameters) return false;
         }
       return true;
     };
-    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return false;
     const auto *Owner = dyn_cast<CXXRecordDecl>(Alias->getDeclContext());
     if (!Owner) return true;
-    if (!family(Owner)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(Owner)) return false;
     if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Owner))
       return Keep(Partial->getTemplateParameters());
     if (const auto *Primary = Owner->getDescribedClassTemplate())
@@ -9544,7 +9535,7 @@ class UtilityTupleQueryGraph
     return nullptr;
   }
   bool catPackElement(const TemplateSpecializationType *Use) {
-    if (Mode != UtilityTupleQueryMode::CatSignature || !Use || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Use || !step()) return false;
     const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(Use->getTemplateName().getAsTemplateDecl());
     for (const auto &Projection : PackProjections) {
       if (Builtin != Projection.Builtin) continue;
@@ -9562,50 +9553,50 @@ class UtilityTupleQueryGraph
       const auto Number = Index->getResultAsAPSInt();
       const auto &OwnerArguments = Projection.Owner->getTemplateArgs();
       if (OwnerArguments.size() != 2 || OwnerArguments[0].getKind() != TemplateArgument::Type ||
-          Number.isNegative()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Number.isNegative()) return false;
       const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, OwnerArguments[0].getAsType(), Context);
       if (!Storage || Storage->ArrayElements || Arguments.size() != Storage->size() + 1 ||
-          Number.getLimitedValue(Storage->size()) >= Storage->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Number.getLimitedValue(Storage->size()) >= Storage->size()) return false;
       for (unsigned I = 0; I < Storage->size(); ++I) {
-        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return false;
         const auto Type = Arguments[I+1].getAsType();
         const auto *Element = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
         if (!Element || Element->getAssociatedDecl() != Projection.Owner ||
             Element->getReplacedParameter() != Projection.Types || !Element->getPackIndex() ||
             *Element->getPackIndex() != Storage->size() - 1 - I ||
-            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return false;
       }
       return Context.hasSameType(Use->getAliasedType(), Storage->elementType(Number.getZExtValue()));
     }
-    return ownedNotFnTraceFalse(__LINE__, __func__);
+    return false;
   }
   bool bindCatInputs(const FunctionDecl *Function) {
     if (Mode != UtilityTupleQueryMode::CatSignature) return true;
     if (!Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
         !family(Function) || !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "tuple") ||
-        Function->getNumParams() > 64) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Function->getNumParams() > 64) return false;
     if (CatInputFunction) return CatInputFunction == Function;
     CatInputFunction = Function;
     auto Bind = [&](auto &&Self, QualType Type, unsigned Nesting) -> bool {
-      if (!step() || Nesting > 64 || Type.isNull()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step() || Nesting > 64 || Type.isNull()) return false;
       if (Type->isReferenceType()) return Self(Self, Type->getPointeeType(), Nesting + 1);
-      if (!carrier(Type, Nesting)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!carrier(Type, Nesting)) return false;
       if (utilityScalar(Context, Type) || Type->isVoidType()) return true;
       const auto *Record = Type->getAsCXXRecordDecl();
       if (const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, Type, Context)) {
         if (Storage->ArrayElements)
           return Self(Self, Storage->ArrayElementType, Nesting + 1);
         for (unsigned I = 0; I < Storage->size(); ++I)
-          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return false;
         return true;
       }
       if (const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false)) {
         const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
-        if (!Instance || Instance->getTemplateArgs().size() != 2) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Instance || Instance->getTemplateArgs().size() != 2) return false;
         CatInputOwners.insert(Instance->getCanonicalDecl());
         for (unsigned I = 0; I < 2; ++I) {
           const auto &Argument = Instance->getTemplateArgs().get(I);
-          if (Argument.getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (Argument.getKind() != TemplateArgument::Type) return false;
           const auto Input = Argument.getAsType();
           const auto *InputRecord = Context.getBaseElementType(Input)->getAsCXXRecordDecl();
           // External atoms belong to these exact owner input slots. Caller
@@ -9623,7 +9614,7 @@ class UtilityTupleQueryGraph
     };
     for (const auto *Parameter : Function->parameters())
       if (!Parameter->getType()->isReferenceType() ||
-          !Bind(Bind, Parameter->getType(), 0)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Bind(Bind, Parameter->getType(), 0)) return false;
     return true;
   }
   bool ownerSource(const CXXRecordDecl *Record) {
@@ -9639,12 +9630,12 @@ class UtilityTupleQueryGraph
                    PairInputRecords.count(Instance->getCanonicalDecl()));
     if (!Instance || !Bound || !family(Instance) ||
         !Parameters || Parameters->size() != 2 || Instance->getTemplateArgs().size() != 2)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Dp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     if (!Tp || !Dp || Tp->hasDefaultArgument() || !Dp->hasDefaultArgument() ||
         Tp->isParameterPack() || Dp->isParameterPack() || !family(Tp) || !family(Dp))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto &Default = Dp->getDefaultArgument();
     const auto *Info = Default.getArgument().getKind() == TemplateArgument::Type
         ? Default.getTypeSourceInfo() : nullptr;
@@ -9659,12 +9650,12 @@ class UtilityTupleQueryGraph
         Deletion->getName() != "default_delete" ||
         !approvedStandardSDKDeclaration(S, SM, Deletion) ||
         !cstddefOrigin(S, SM, Deletion->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
-        !Argument || Argument->getDecl() != Tp) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Argument || Argument->getDecl() != Tp) return false;
     // A custom actual deleter still depends on this exact written SDK default.
     // Bind only its declaration family before traversing the original TSI.
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
-        !bindPairInputFamily(Deletion->getTemplatedDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
-    if (!family(Deletion) || !TraverseTypeLoc(Info->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !bindPairInputFamily(Deletion->getTemplatedDecl())) return false;
+    if (!family(Deletion) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
     const auto *Actual = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Deleter.Record);
     const bool DefaultFamily = Actual &&
         Actual->getSpecializedTemplate()->getCanonicalDecl() == Deletion->getCanonicalDecl();
@@ -9674,23 +9665,23 @@ class UtilityTupleQueryGraph
           Actual->getTemplateArgs().size() != 1 ||
           Actual->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Actual->getTemplateArgs()[0].getAsType(),
-                              Instance->getTemplateArgs()[0].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+                              Instance->getTemplateArgs()[0].getAsType())) return false;
     }
     for (const auto &Input : Instance->getTemplateArgs().asArray())
-      if (!TraverseTemplateArgument(Input)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!TraverseTemplateArgument(Input)) return false;
     return true;
   }
   bool fullSliceDefaults(const ClassTemplateSpecializationDecl *Instance) {
     if (!Instance || Context.getExternalSource() ||
         Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
-        !Instance->getDefinition() || !family(Instance)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Instance->getDefinition() || !family(Instance)) return false;
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto &Arguments = Instance->getTemplateArgs();
     if (!Parameters || Parameters->size() != 4 || Arguments.size() != 4 ||
         Arguments[0].getKind() != TemplateArgument::Type ||
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__tuple/make_tuple_types.h"))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2));
@@ -9707,11 +9698,11 @@ class UtilityTupleQueryGraph
         !Same->getTypeSourceInfo() ||
         !TraverseTypeLoc(Ep->getTypeSourceInfo()->getTypeLoc()) ||
         !TraverseTypeLoc(Sp->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return false;
     const auto Object = Arguments[0].getAsType();
     if (Object->isReferenceType() || Object.hasLocalQualifiers() ||
         (Mode != UtilityTupleQueryMode::CatSignature &&
-         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return false;
     const auto NotFnSlice = NotFnTupleTagSlices.find(Instance->getCanonicalDecl());
     std::optional<UtilityTupleLikeSource> Tuple;
     if (NotFnSlice != NotFnTupleTagSlices.end()) {
@@ -9721,14 +9712,14 @@ class UtilityTupleQueryGraph
       if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagStorage ||
           !Context.hasSameType(Object, Context.getRecordType(NotFnTupleTagStorage->Tuple)) ||
           !Context.hasSameType(NotFnTupleTagStorage->Callable.getType(),
-                               NotFnTupleTagStorage->CallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+                               NotFnTupleTagStorage->CallableType)) return false;
       Tuple = UtilityTupleLikeSource{{NotFnTupleTagStorage->Callable}, nullptr, {}, 0};
     } else {
       Tuple = Mode == UtilityTupleQueryMode::CatSignature
           ? approvedUtilityTupleCatQueryLayout(S, SM, Object, Context)
           : approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
     }
-    if (!Tuple) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Tuple) return false;
     const auto Integral = [&](unsigned I, QualType T, uint64_t N) {
       const auto &Argument = Arguments[I];
       return Argument.getKind() == TemplateArgument::Integral &&
@@ -9739,7 +9730,7 @@ class UtilityTupleQueryGraph
     const unsigned Start = NotFnSlice == NotFnTupleTagSlices.end() ? 0U : NotFnSlice->second.second;
     if (!Integral(1, Context.getSizeType(), Tuple->size()) ||
         !Integral(2, Context.getSizeType(), Start) ||
-        !Integral(3, Context.BoolTy, 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Integral(3, Context.BoolTy, 1)) return false;
     const auto Default = [](const NonTypeTemplateParmDecl *P) -> const Expr * {
       const auto &A = P->getDefaultArgument().getArgument();
       return A.getKind() == TemplateArgument::Expression ? A.getAsExpr() : nullptr;
@@ -9806,23 +9797,23 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Zero->getType(), Context.IntTy) ||
         !(Equality ? Equality->getOpcode() == BO_EQ : DependentEquality) ||
         !Left || Left->getDecl() != Ep || !OtherSize ||
-        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return false;
     // The retained dependent lookup must close every original candidate.
     // Ep and the already instantiated tuple_size value both have size_t;
     // no candidate body, overload resolution or new evaluation is requested.
     if (DependentEquality)
       for (const auto *Candidate : Lookup->decls())
-        if (!defaultEqualityFamily(Candidate)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!defaultEqualityFamily(Candidate)) return false;
     {
       // This is the original definition's exact parameter, not an
       // instantiated metadata object's value member.
       const auto Inserted = DefinitionParameters.emplace(Ep, Primary);
-      if (!Inserted.second && Inserted.first->second != Primary) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Inserted.second && Inserted.first->second != Primary) return false;
       auto Restore = llvm::make_scope_exit([&] {
         if (Inserted.second) DefinitionParameters.erase(Ep);
       });
       if (!TraverseStmt(const_cast<Expr *>(Default(Sp))) ||
-          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return false;
     }
     // The only lookup permitted here reads the specialization already used
     // by Sema's defaults. External AST loading was excluded above.
@@ -9831,16 +9822,16 @@ class UtilityTupleQueryGraph
     const auto *Witness = const_cast<ClassTemplateDecl *>(Size)->findSpecialization(
         llvm::ArrayRef<TemplateArgument>(SizeArgument), InsertPosition);
     if (!Witness || !approvedUtilityTupleLikeSizeTrait(S, SM, Witness, Object, *Tuple, Context) ||
-        !record(Witness)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !record(Witness)) return false;
     bool HasValue = false;
     for (const auto &Base : Witness->getDefinition()->bases()) {
       const auto *Owner = Base.getType()->getAsCXXRecordDecl();
       const auto *Definition = Owner ? Owner->getDefinition() : nullptr;
-      if (!Definition) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Definition) return false;
       for (const auto *Declaration : Definition->decls()) {
         const auto *Value = dyn_cast<VarDecl>(Declaration);
         if (!Value || Value->getName() != "value") continue;
-        if (HasValue || !value(Value)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (HasValue || !value(Value)) return false;
         HasValue = true;
       }
     }
@@ -9869,17 +9860,17 @@ class UtilityTupleQueryGraph
     const bool Fallback = !SelectedPartial;
     const auto *Partial = Candidate ? Candidate : SelectedPartial;
     if (Fallback && !Candidate) {
-      if (!Primary || !family(Primary)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Primary || !family(Primary)) return false;
       llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 2> Partials;
       Primary->getPartialSpecializations(Partials);
-      if (Partials.size() != 2) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Partials.size() != 2) return false;
       std::set<bool> Values;
       for (const auto *Original : Partials) {
         if (!step() || Original->getTemplateArgs().size() != 3 ||
-            Original->getTemplateArgs()[2].getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Original->getTemplateArgs()[2].getKind() != TemplateArgument::Type) return false;
         const auto Value = pairBooleanConstant(Original->getTemplateArgs()[2].getAsType());
         if (!Value || !Values.insert(*Value).second ||
-            !pairImplicitDefaultSource(Instance, Original)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !pairImplicitDefaultSource(Instance, Original)) return false;
       }
       return Values.size() == 2 && !Failed;
     }
@@ -9893,14 +9884,14 @@ class UtilityTupleQueryGraph
         Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Partial->getSpecializedTemplate()->getCanonicalDecl() != Primary->getCanonicalDecl() ||
         Partial->getTemplateParameters()->size() != 1)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto &Arguments = Instance->getTemplateArgs();
     if (Arguments.size() != 3 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Type ||
         Arguments[2].getKind() != TemplateArgument::Type ||
         !Arguments[1].getAsType()->isVoidType() ||
         !PairInputTypes.count(Arguments[0].getAsType().getCanonicalType().getTypePtr()))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Target = Arguments[0].getAsType();
     const auto *First = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Second = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
@@ -9909,7 +9900,7 @@ class UtilityTupleQueryGraph
         Partial->getTemplateParameters()->getParam(0));
     for (const auto *Parameter : {First, Second, Third, Element})
       if (!Parameter || !family(Parameter) || Parameter->isParameterPack() ||
-          Parameter->getDepth() || Parameter->getIndex() > 2) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Parameter->getDepth() || Parameter->getIndex() > 2) return false;
     if (First->getIndex() || First->hasDefaultArgument() || Second->getIndex() != 1 ||
         Third->getIndex() != 2 || Element->getIndex() || Element->hasDefaultArgument() ||
         !Second->hasDefaultArgument() || !Third->hasDefaultArgument() ||
@@ -9918,7 +9909,7 @@ class UtilityTupleQueryGraph
         !Second->getDefaultArgument().getTypeSourceInfo() || !Third->getDefaultArgument().getTypeSourceInfo() ||
         !Second->getDefaultArgument().getArgument().getAsType()->isVoidType() ||
         !TraverseTypeLoc(Second->getDefaultArgument().getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseTypeLoc(Third->getDefaultArgument().getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !TraverseTypeLoc(Third->getDefaultArgument().getTypeSourceInfo()->getTypeLoc())) return false;
     // The original third default must name the real default-construction trait
     // for this primary's own first parameter. Its folded result alone is not
     // evidence for the source which selected this partial specialization.
@@ -9935,27 +9926,27 @@ class UtilityTupleQueryGraph
         Use->template_arguments().size() != 1 ||
         Use->template_arguments()[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Use->template_arguments()[0].getAsType(),
-                            QualType(First->getTypeForDecl(), 0))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                            QualType(First->getTypeForDecl(), 0))) return false;
     const ClassTemplateSpecializationDecl *DefaultInstance = nullptr;
     for (const auto *Candidate : DefaultTrait->specializations()) {
-      if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step()) return false;
       const auto &A = Candidate->getTemplateArgs();
       if (A.size() != 1 || A[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(A[0].getAsType(), Target)) continue;
       if ((DefaultInstance && DefaultInstance->getCanonicalDecl() != Candidate->getCanonicalDecl()) ||
           !record(Candidate) || Candidate->getNumBases() != 1 ||
           !Context.hasSameType(Candidate->bases_begin()->getType(), Arguments[2].getAsType()))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       DefaultInstance = Candidate;
     }
-    if (!DefaultInstance) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!DefaultInstance) return false;
     const auto *PrimaryDefinition = Primary->getTemplatedDecl()->getDefinition();
     if (!PrimaryDefinition || !family(PrimaryDefinition) ||
         PrimaryDefinition->getNumBases() != 1 || !PrimaryDefinition->field_empty() ||
         !PrimaryDefinition->bases_begin()->getTypeSourceInfo() ||
-        !TraverseTypeLoc(PrimaryDefinition->bases_begin()->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !TraverseTypeLoc(PrimaryDefinition->bases_begin()->getTypeSourceInfo()->getTypeLoc())) return false;
     const auto PrimaryValue = pairBooleanConstant(PrimaryDefinition->bases_begin()->getType());
-    if (!PrimaryValue || *PrimaryValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!PrimaryValue || *PrimaryValue) return false;
     if (Fallback) {
       // Failed copy-list candidates have no successful selected helper call.
       // Bind their independent source proof to this exact retained direct
@@ -9981,19 +9972,19 @@ class UtilityTupleQueryGraph
           !Constructor->isDefaultConstructor() || !TargetRecord ||
           !ownedPairInputRecord(TargetRecord) ||
           Constructor->getParent()->getCanonicalDecl() != TargetRecord->getCanonicalDecl() ||
-          !Context.hasSameType(Root->getType(), Target)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Root->getType(), Target)) return false;
     }
     const auto PartialBase = Partial->getTemplateArgs()[2].getAsType();
     for (const auto *Definition : {Instance->getDefinition(), Partial->getDefinition()}) {
       if (!Definition || !family(Definition) || Definition->isUnion() ||
           Definition->isDynamicClass() || Definition->getNumBases() != 1 ||
-          !Definition->field_empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Definition->field_empty()) return false;
       const auto &Base = *Definition->bases_begin();
       if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public ||
           !Context.hasSameType(Base.getType(), Definition == Instance->getDefinition()
               ? (Fallback ? PrimaryDefinition->bases_begin()->getType() : Arguments[2].getAsType())
               : PartialBase) || !Base.getTypeSourceInfo() ||
-          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
     }
     const auto PartialArguments = Written->arguments();
     if (PartialArguments[0].getArgument().getKind() != TemplateArgument::Type ||
@@ -10003,7 +9994,7 @@ class UtilityTupleQueryGraph
                             QualType(Element->getTypeForDecl(), 0)) ||
         !Context.hasSameType(PartialArguments[2].getArgument().getAsType(), PartialBase) ||
         (!Fallback && !Context.hasSameType(PartialBase, Arguments[2].getAsType())))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Decltype = dyn_cast<DecltypeType>(
         PartialArguments[1].getArgument().getAsType().getTypePtr());
     const auto *Call = Decltype ? dyn_cast<CallExpr>(Decltype->getUnderlyingExpr()) : nullptr;
@@ -10015,32 +10006,32 @@ class UtilityTupleQueryGraph
     if (!Call || !Lookup || !List || List->getNumInits() || Lookup->requiresADL() ||
         !Namespace || !Namespace->isStdNamespace() || CallQualifier->getPrefix() ||
         !Lookup->hasExplicitTemplateArgs() || Lookup->getNumTemplateArgs() != 1 ||
-        Lookup->decls_begin() == Lookup->decls_end()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Lookup->decls_begin() == Lookup->decls_end()) return false;
     for (const auto Location : {Call->getBeginLoc(), Lookup->getNameLoc(),
                                List->getLBraceLoc(), List->getRBraceLoc(), Call->getEndLoc()})
       if (!cstddefOrigin(S, SM, Location, "libcxx",
-                         "__type_traits/is_implicitly_default_constructible.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+                         "__type_traits/is_implicitly_default_constructible.h")) return false;
     const auto &HelperArgument = Lookup->template_arguments()[0].getArgument();
     if (HelperArgument.getKind() != TemplateArgument::Type ||
         !Context.hasSameType(HelperArgument.getAsType(), Context.getLValueReferenceType(
-            QualType(Element->getTypeForDecl(), 0).withConst()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+            QualType(Element->getTypeForDecl(), 0).withConst()))) return false;
     const FunctionTemplateDecl *Helper = nullptr;
     for (const auto *Declaration : Lookup->decls()) {
-      if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step()) return false;
       const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
       if (!Candidate || !family(Candidate) ||
           Candidate->getName() != "__test_implicit_default_constructible" ||
           Candidate->getDeclContext() != Primary->getDeclContext() ||
-          (Helper && Helper->getCanonicalDecl() != Candidate->getCanonicalDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          (Helper && Helper->getCanonicalDecl() != Candidate->getCanonicalDecl())) return false;
       Helper = Candidate;
     }
     if (!Helper || !Helper->getIdentifier() || Helper->getTemplateParameters()->size() != 1)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto *Declaration : Helper->getDeclContext()->lookup(Helper->getDeclName())) {
-      if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step()) return false;
       const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
       if (!Candidate || Candidate->getCanonicalDecl() != Helper->getCanonicalDecl() ||
-          !family(Candidate)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !family(Candidate)) return false;
     }
     const auto *HelperParameter = dyn_cast<TemplateTypeParmDecl>(
         Helper->getTemplateParameters()->getParam(0));
@@ -10055,11 +10046,11 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Pattern->getParamDecl(0)->getType(),
                             QualType(HelperParameter->getTypeForDecl(), 0)) ||
         !Pattern->getTypeSourceInfo() ||
-        !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
     const auto Expected = Context.getLValueReferenceType(Target.withConst());
     const FunctionDecl *Selected = nullptr;
     for (const auto *Candidate : Helper->specializations()) {
-      if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step()) return false;
       const auto *A = Candidate->getTemplateSpecializationArgs();
       if (!A || A->size() != 1 || A->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(A->get(0).getAsType(), Expected)) continue;
@@ -10071,18 +10062,18 @@ class UtilityTupleQueryGraph
           Candidate->getType()->castAs<FunctionProtoType>()->getExceptionSpecType() != EST_None ||
           Candidate->getParamDecl(0)->hasDefaultArg() ||
           !Context.hasSameType(Candidate->getParamDecl(0)->getType(), Expected) ||
-          !function(Candidate)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !function(Candidate)) return false;
       for (const auto *Declaration : Candidate->redecls())
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
       Selected = Candidate;
     }
     // On a primary fallback, a specialization may have been discarded by
     // failed deduction. Existing exact candidates must nevertheless close all
     // source/redeclaration checks above; absence grants no selected identity.
-    if ((!Fallback && !Selected) || !TraverseStmt(const_cast<CallExpr *>(Call))) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if ((!Fallback && !Selected) || !TraverseStmt(const_cast<CallExpr *>(Call))) return false;
     for (const auto &Argument : PartialArguments)
-      if (!TraverseTemplateArgumentLoc(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!TraverseTemplateArgumentLoc(Argument)) return false;
     return !Failed;
   }
 
@@ -10148,7 +10139,7 @@ class UtilityTupleQueryGraph
     return Complete;
   }
   bool record(const CXXRecordDecl *R) {
-    if (!R || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!R || Failed) return false;
     const auto *PairTrait = dyn_cast<ClassTemplateSpecializationDecl>(R);
     const auto *PairTraitPrimary = PairTrait ? PairTrait->getSpecializedTemplate() : nullptr;
     const auto *PairTraitCanonical = PairTraitPrimary ? PairTraitPrimary->getCanonicalDecl() : nullptr;
@@ -10164,12 +10155,12 @@ class UtilityTupleQueryGraph
       if (CompletedPairImplicitDefaults.count(Key)) return true;
       if (!ActivePairImplicitDefaults.insert(Key).second) {
         Failed = true;
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       }
       auto Restore = llvm::make_scope_exit([&] { ActivePairImplicitDefaults.erase(Key); });
       if (!family(R) || !pairImplicitDefaultSource(PairTrait)) {
         Failed = true;
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       }
       CompletedPairImplicitDefaults.insert(Key);
       return true;
@@ -10200,13 +10191,13 @@ class UtilityTupleQueryGraph
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairOwner(R)) {
       if (!Records.insert(R).second) return true;
       const auto *Definition = R->getDefinition();
-      if (!Definition || Definition->getNumBases() || !family(Definition)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Definition || Definition->getNumBases() || !family(Definition)) return false;
       unsigned Fields = 0;
       for (const auto *Field : Definition->fields()) {
         if (++Fields > 2 || !family(Field) || Field->isBitField() ||
             Field->isMutable() || Field->hasAttrs() || Field->getAccess() != AS_public ||
             Field->getName() != (Fields == 1 ? "first" : "second") ||
-            !TraverseType(Field->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !TraverseType(Field->getType())) return false;
       }
       return Fields == 2;
     }
@@ -10235,7 +10226,7 @@ class UtilityTupleQueryGraph
       if (!Instance || !Definition || !family(R) || !family(Definition) ||
           Instance->getTemplateArgs().size() != 1 ||
           Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-          Instance->getTemplateArgs()[0].pack_size() != 1) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Instance->getTemplateArgs()[0].pack_size() != 1) return false;
       const auto &Element = Instance->getTemplateArgs()[0].pack_elements()[0];
       return Element.getKind() == TemplateArgument::Type &&
           Context.hasSameType(Element.getAsType(), NotFnTupleTagStorage->CallableType) &&
@@ -10249,7 +10240,7 @@ class UtilityTupleQueryGraph
       const auto *Definition = R->getDefinition();
       if (Definition && NotFnTupleLeafEmptyBase) {
         if (!NotFnOwnedCallableRecord || NotFnTupleLeafValue || !family(R) || !family(Definition) ||
-            !Definition->field_empty() || Definition->getNumBases() != 1) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Definition->field_empty() || Definition->getNumBases() != 1) return false;
         const auto &Base = *Definition->bases_begin();
         const auto *Owner = Base.getType()->getAsCXXRecordDecl();
         return Owner && !Base.isVirtual() && Base.getAccessSpecifier() == AS_private &&
@@ -10260,12 +10251,12 @@ class UtilityTupleQueryGraph
           Definition->getNumBases() || Definition->isUnion() || Definition->isDynamicClass() ||
           std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
           *Definition->field_begin() != NotFnTupleLeafValue || !family(NotFnTupleLeafValue) ||
-          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return false;
       return TraverseType(NotFnTupleLeafValue->getType());
     }
     if (carrier(Context.getRecordType(R))) {
       if (Mode != UtilityTupleQueryMode::CatSignature) return true;
-      if (!family(R)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!family(R)) return false;
       // The layout descriptor is structural evidence only. Close each actual
       // tuple-like element in the SDK signature graph as well.
       if (const auto Storage = approvedUtilityTupleCatQueryLayout(
@@ -10274,7 +10265,7 @@ class UtilityTupleQueryGraph
         if (Storage->ArrayElements)
           return TraverseType(Storage->ArrayElementType);
         for (unsigned I = 0; I < Storage->size(); ++I)
-          if (!TraverseType(Storage->elementType(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!TraverseType(Storage->elementType(I))) return false;
         return true;
       }
       if (approvedMemoryTemplateMetadata(S, SM, R) == MemoryTemplateMetadata::UniquePtr)
@@ -10309,19 +10300,19 @@ class UtilityTupleQueryGraph
       if (!Complete) Failed = true;
       return Complete;
     }
-    if (!family(R)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(R)) return false;
     if (!Records.insert(R).second) return true;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
     if (Instance && Instance->getIdentifier() && Instance->getName() == "__make_tuple_types" &&
-        !fullSliceDefaults(Instance)) return ownedNotFnTraceFalse(__LINE__, __func__);
-    if (!Instance) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !fullSliceDefaults(Instance)) return false;
+    if (!Instance) return false;
     for (const auto &Argument : Instance->getTemplateArgs().asArray())
-      if (!TraverseTemplateArgument(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!TraverseTemplateArgument(Argument)) return false;
     const auto *Definition = R->getDefinition();
     if (!Definition) return true; // Unconsumed metadata remains lazy.
     if (!family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumVBases())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto &Base : Definition->bases()) {
       const auto *SavedOwner = NotFnConstraintBaseOwner;
       const auto *SavedBase = NotFnConstraintBase;
@@ -10334,14 +10325,14 @@ class UtilityTupleQueryGraph
         NotFnConstraintBase = SavedBase;
       });
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
-          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
     }
     // Only referenced value/alias members are consumed below. Never walk
     // metadata's unselected constructors or manufacture a definition.
     return Definition->field_empty();
   }
   bool value(const ValueDecl *D, const DeclRefExpr *Reference = nullptr) {
-    if (!family(D) || !TraverseType(D->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(D) || !TraverseType(D->getType())) return false;
     if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
       if (Mode == UtilityTupleQueryMode::CatSignature)
         if (const auto Found = CatDefinitionParameters.find(Parameter);
@@ -10363,7 +10354,7 @@ class UtilityTupleQueryGraph
       }
     }
     if (const auto *R = dyn_cast<CXXRecordDecl>(D->getDeclContext()))
-      if (!record(R)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!record(R)) return false;
     if (const auto *V = dyn_cast<VarDecl>(D)) {
       if (!V->isStaticDataMember()) {
         // Only the bound not_fn proof can consume this exact retained use
@@ -10397,7 +10388,7 @@ public:
       llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false) {
     if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
         NotFnTupleTagStorage || Tags.size() != 4 ||
-        Factory.SelectedConstructions.size() != 4) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Factory.SelectedConstructions.size() != 4) return false;
     const auto Pointer = Owned ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Factory.Storage.Record, Context);
     const auto *TupleInstance = Pointer ? dyn_cast<ClassTemplateSpecializationDecl>(Pointer->Tuple) : nullptr;
@@ -10409,29 +10400,29 @@ public:
         !Arguments || Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != 1 || Construction->getNumArgs() != 1 ||
         Constructor->getParent()->getCanonicalDecl() != Pointer->Tuple->getCanonicalDecl() ||
-        !family(Constructor)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !family(Constructor)) return false;
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Seen;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Seen.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Current->getTemplateParameters()->size()) return false;
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
       InputPacks.insert(Pack);
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Template : TupleInstance->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Template) || Template->getTemplateParameters()->size() != 1)
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Template->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
       StoredPacks.insert(Pack);
     }
     for (unsigned I : {1U, 3U}) {
       const auto &Tag = Tags[I];
       if (!Tag.Written || !Tag.Construction ||
           Tag.Construction->getConstructor()->getParent()->getCanonicalDecl() !=
-              Tag.Record->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Tag.Record->getCanonicalDecl()) return false;
       const auto Written = Tag.Written->getTypeLoc().getAs<ElaboratedTypeLoc>();
       const auto Qualifier = Written.isNull() ? NestedNameSpecifierLoc() : Written.getQualifierLoc();
       const auto Location = Qualifier ? Qualifier.getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
@@ -10446,7 +10437,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(Pointer->Tuple)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
       for (unsigned J = 1; J != Count; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -10456,12 +10447,12 @@ public:
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != 1 ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
       }
       // Both actual ranges end at this independently described one-element
       // storage. The fourth tag's explicit start is one, so its slice is empty.
       if (!NotFnTupleTagSlices.emplace(Instance->getCanonicalDecl(),
-              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return false;
     }
     NotFnTupleTagStorage = *Pointer;
     return true;
@@ -10477,11 +10468,11 @@ public:
         Factory.Use.Canonical->get(0).getKind() != TemplateArgument::Type ||
         Factory.Use.Sugared->get(0).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Factory.Use.Canonical->get(0).getAsType(),
-                             Factory.Use.Sugared->get(0).getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+                             Factory.Use.Sugared->get(0).getAsType())) return false;
     auto Input = Factory.Use.Sugared->get(0).getAsType().getNonReferenceType();
     std::map<const TypedefNameDecl *, const TypeSourceInfo *> Pending;
     for (unsigned I = 0; ; ++I) {
-      if (I >= 64 || !step() || Input.isNull()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (I >= 64 || !step() || Input.isNull()) return false;
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
         Input = Elaborated->getNamedType();
         continue;
@@ -10498,10 +10489,10 @@ public:
           (Named && Named->getDescribedAliasTemplate()) ||
           (!Alias->getUnderlyingType()->isFunctionPointerType() && !NotFnOwnedCallableRecord) ||
           !Context.hasSameType(Alias->getUnderlyingType(), NotFnCallableType) ||
-          !Pending.emplace(Alias, Info).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Pending.emplace(Alias, Info).second) return false;
       // Complete the actual alias TSI, callback signature and owned spelling
       // before exposing this one raw typedef identity to the metadata graph.
-      if (!SourceAlias || !SourceAlias(Alias)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!SourceAlias || !SourceAlias(Alias)) return false;
       Input = Alias->getUnderlyingType();
     }
     NotFnOwnedInputAliases = std::move(Pending);
@@ -10510,22 +10501,22 @@ public:
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage,
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Pointer = OwnedQuerySources
         ? describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
     if (!Pointer || Pointer->Operation != Storage.Operation ||
         !Context.hasSameType(Pointer->CallableType, Storage.CallableType) || !Pointer->TupleLeaf)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     if (Pointer->Callable.EmptyBase) {
       const auto *Leaf = Pointer->TupleLeaf->getDefinition();
       if (!OwnedQuerySources || !Leaf || !Leaf->field_empty() || Leaf->getNumBases() != 1 ||
           Pointer->Callable.Field || !Pointer->Callable.EmptyBase->isEmpty() ||
           Leaf->bases_begin()->getType()->getAsCXXRecordDecl()->getCanonicalDecl() !=
-              Pointer->Callable.EmptyBase->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Pointer->Callable.EmptyBase->getCanonicalDecl()) return false;
       NotFnTupleLeafEmptyBase = Pointer->Callable.EmptyBase->getCanonicalDecl();
     } else if (!Pointer->Callable.Field || Pointer->Callable.Field->getParent()->getCanonicalDecl() !=
-                   Pointer->TupleLeaf->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+                   Pointer->TupleLeaf->getCanonicalDecl()) return false;
     NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
     NotFnTupleLeafRecord = Pointer->TupleLeaf->getCanonicalDecl();
     NotFnTupleLeafValue = Pointer->Callable.Field;
@@ -10554,13 +10545,13 @@ public:
         !Proof || !Call.Method || !Call.SourceCall ||
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
-        !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return false;
     if (NotFnOwnedCallableRecord) {
       const auto Owned = describeFunctionalNotFnOwnedCallSource(S, SM, Call.SourceCall, Context);
       if (!Owned || !NotFnOwnedQuerySources || Owned->Selected.TargetCall != Call.TargetCall ||
           Owned->Selected.Method != Call.Method ||
           Owned->CallableMethod->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord)
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       NotFnOwnedInvokeMethod = Owned->CallableMethod;
     }
     NotFnInvocation = &Call;
@@ -10599,16 +10590,16 @@ public:
         Roots.size() != 3 || Forwards.size() != 3 * Operation->getNumParams() ||
         !NotFnInvocation->OperationCall || NotFnInvocation->OperationCall->getDirectCallee() != Operation ||
         NotFnInvocation->InvokeCall->getDirectCallee() != Function || !family(Function) || !family(Operation))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto *Root : Roots)
       if (!Root || Root->getDirectCallee() != Function ||
-          !NotFnPublicInvokeUses.insert(Root).second) return ownedNotFnTraceFalse(__LINE__, __func__);
-    if (!NotFnPublicInvokeUses.count(NotFnInvocation->InvokeCall)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !NotFnPublicInvokeUses.insert(Root).second) return false;
+    if (!NotFnPublicInvokeUses.count(NotFnInvocation->InvokeCall)) return false;
     for (const auto *Forward : Forwards)
-      if (!Forward || !NotFnPublicForwards.insert(Forward).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Forward || !NotFnPublicForwards.insert(Forward).second) return false;
     for (const auto *Parameter : Operation->parameters()) {
       if (!Parameter || Parameter->getDeclContext() != Operation ||
-          !NotFnPublicParameters.insert(Parameter).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !NotFnPublicParameters.insert(Parameter).second) return false;
     }
     // Only the three original result/noexcept/body expressions of this exact
     // operation can refer to the owned negation. No SDK family or user body
@@ -10618,11 +10609,11 @@ public:
       const auto Source = describeFunctionalNotFnCallSource(S, SM,
           NotFnInvocation->SourceCall, Context, Mode);
       if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
-          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return false;
       if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source->Negation)) {
         const auto *Method = approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context);
         if (!Method || Method != approvedFunctionalNotFnPointerNegation(S, SM, *NotFnInvocation, Context) ||
-            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return false;
         if (Mode != FunctionalNotFnSourceMode::Runtime) {
           const auto *Receiver = dyn_cast<ImplicitCastExpr>(Negation->getArg(0)->IgnoreParens());
           const auto *Temporary = Receiver
@@ -10631,16 +10622,16 @@ public:
               ? dyn_cast<CXXBindTemporaryExpr>(Temporary->getSubExpr()->IgnoreParens()) : nullptr;
           // approvedFunctionalNotFnPointerNegation already bound this exact
           // query node, invoke child, original SDK range and trivial result.
-          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return false;
         }
-      } else if (NotFnCallbackResultRecord) return ownedNotFnTraceFalse(__LINE__, __func__);
+      } else if (NotFnCallbackResultRecord) return false;
     }
     NotFnPublicInvoke = Function;
     NotFnPublicOperation = Operation;
     return true;
   }
   bool withNotFnOperationQuery(const DeclRefExpr *Reference, std::function<bool()> Proof) {
-    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return false;
     if (!Reference) return Proof();
     const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
     const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
@@ -10656,17 +10647,17 @@ public:
         !NotFnInvocation->OperationCall ||
         Operation != NotFnInvocation->OperationCall->getDirectCallee() ||
         Operation->getParent()->getCanonicalDecl() != NotFnInvocation->Storage.Operation->getCanonicalDecl() ||
-        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return false;
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Context.getRecordType(Operation->getParent())) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Operation->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments[1].pack_size() != Operation->getNumParams()) return false;
     const auto Actual = Arguments[1].pack_elements();
     const auto Expected = Selected->get(0).pack_elements();
     for (unsigned I = 0; I < Actual.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type || Expected[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return false;
     // The caller independently authenticated this real initializer, selected
     // SDK primary and original written-void alias. This scope grants only the
     // corresponding unevaluated operation query, never a runtime body.
@@ -10681,21 +10672,21 @@ public:
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
         NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
         !CompletedNotFnInvokeSignatures.empty() || Arguments->size() != 2 ||
-        Arguments->get(0).getKind() != TemplateArgument::Pack) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments->get(0).getKind() != TemplateArgument::Pack) return false;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Types->get(1).pack_size() != Pack.size()) return false;
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
       return true;
     };
     std::set<const FunctionDecl *> Functions;
@@ -10725,23 +10716,23 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
       // _Fp is the deduction result; the actual parameter is _Fp&&.
       // Reference collapsing preserves lvalues and forwards rvalues with the
       // original const qualification. Do not change the template argument.
       const auto ForwardedCallable = Method->getRefQualifier() == RQ_RValue
           ? Context.getRValueReferenceType(Bound) : Bound;
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return false;
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return false;
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -10753,19 +10744,19 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return false;
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return false;
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Selected) return false;
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Functions.size() != 1 || Uses.empty()) return false;
     const auto *F = *Functions.begin();
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
@@ -10778,7 +10769,7 @@ public:
     const auto *ReturnCall = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
-        (!NotFnOwnedInvokeMethod && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        (!NotFnOwnedInvokeMethod && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return false;
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -10789,7 +10780,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnIndirectSignature(ReturnCall) || !notFnInvokeForwardedCall(ExceptionCall))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -10797,18 +10788,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
     }
-    if (!function(F)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!function(F)) return false;
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return false;
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!notFnInvokeParameter(Parameter)) return false;
     CompletedNotFnInvokeSignatures.insert(F);
     NotFnInvokeUses = std::move(Uses);
     return !Failed;
@@ -10822,19 +10813,19 @@ public:
         !Operation || !Arguments || NotFnInvokeSignature || NotFnInvokeWrittenPattern ||
         NotFnOperationInvokeSignatureActive || Arguments->size() != 1 ||
         Arguments->get(0).getKind() != TemplateArgument::Pack ||
-        Arguments->get(0).pack_size() != Operation->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments->get(0).pack_size() != Operation->getNumParams()) return false;
     const auto Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Types->get(1).pack_size() != Pack.size()) return false;
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
       return true;
     };
     if (NotFnOperationInvokeFunction)
@@ -10867,18 +10858,18 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) return false;
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return false;
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -10890,19 +10881,19 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return false;
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return false;
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Selected) return false;
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Functions.size() != 1 || Uses.empty()) return false;
     const auto *F = *Functions.begin();
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
@@ -10923,7 +10914,7 @@ public:
           Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Cached->getBeginLoc(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) return false;
       ExceptionSource = Written;
     }
     const auto *Exception = ExceptionSource
@@ -10932,7 +10923,7 @@ public:
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
         !isa<CXXOperatorCallExpr>(ReturnCall) || !isa<CXXOperatorCallExpr>(ExceptionCall) ||
-        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) return ownedNotFnTraceFalse(__LINE__, __func__);
+        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) return false;
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -10945,7 +10936,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnOperationQueryCall(ReturnCall) || !notFnOperationInvokeForwardedCall(ExceptionCall))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -10953,18 +10944,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
     }
-    if (!function(F)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!function(F)) return false;
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return false;
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!notFnInvokeParameter(Parameter)) return false;
     // These exact declaration-only calls are published only after both the
     // selected and primary written signatures have passed this same graph.
     // Runtime bodies, forwarding, negation and lifetime remain separate.
@@ -10979,15 +10970,15 @@ public:
         isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
         !family(R) || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
-        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
     const auto Self = Context.getRecordType(Definition);
     const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
     unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
     for (const auto *Declaration : Definition->decls()) {
-      if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step()) return false;
       if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
         if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
-            Name->getDeclContext() != Definition || !family(Name)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Name->getDeclContext() != Definition || !family(Name)) return false;
         continue;
       }
       const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
@@ -10996,20 +10987,20 @@ public:
           Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
           Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
           Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
-          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
       for (const auto *Parameter : Member->parameters())
         if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
-            !Context.hasSameType(Parameter->getType(), ConstantReference)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) return false;
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
         if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
         else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
-        else return ownedNotFnTraceFalse(__LINE__, __func__);
+        else return false;
       } else if (isa<CXXDestructorDecl>(Member)) {
-        if (Member->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Member->getNumParams()) return false;
         ++Destroy;
       } else {
         if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
-            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return false;
         ++Assign;
       }
     }
@@ -11084,17 +11075,17 @@ public:
         Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
         (OperationDependency ? !NotFnOperationTryResultUses.empty()
-                             : !NotFnTryResultUses.empty())) return ownedNotFnTraceFalse(__LINE__, __func__);
+                             : !NotFnTryResultUses.empty())) return false;
     const auto *Operation = OperationDependency ? NotFnPublicOperation : nullptr;
     const auto *OperationArguments = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
     if (OperationDependency && (Depth != 0 || Failed || NotFnOperationQuery ||
         !Operation || !OperationArguments || OperationArguments->size() != 1 ||
         OperationArguments->get(0).getKind() != TemplateArgument::Pack ||
         OperationArguments->get(0).pack_size() != Operation->getNumParams() ||
-        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return false;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
     if (OperationDependency) Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = OperationDependency ? OperationArguments->get(0).pack_elements()
                                           : Arguments->get(0).pack_elements();
@@ -11102,18 +11093,18 @@ public:
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Types->get(1).pack_size() != Pack.size()) return false;
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
       return true;
     };
     std::set<const FunctionDecl *> Functions;
     std::map<const CallExpr *, const FunctionDecl *> Uses;
     for (const auto *Source : Sources) {
-      if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!step()) return false;
       const auto *F = Source ? dyn_cast_or_null<CXXMethodDecl>(Source->Declaration) : nullptr;
       if (!F || !F->getIdentifier() || F->getName() != "__try_call" ||
           !BoundArguments(F->getTemplateSpecializationArgs()) || F->isVariadic() ||
@@ -11143,24 +11134,24 @@ public:
           !Source->Canonical || !Source->Sugared || !BoundArguments(Source->Canonical) ||
           !BoundArguments(Source->Sugared) || !family(F) || !family(Owner) || !family(OwnerPrimary) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
       const auto OwnerPack = Owner->getTemplateArgs()[2].pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (OwnerPack[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return false;
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
       const auto *Definition = Owner->getDefinition();
       if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
-          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return false;
       const TypeAliasDecl *Result = nullptr;
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!step()) return false;
         const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
-        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return false;
         Result = Alias;
       }
       const auto *ResultType = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
@@ -11174,22 +11165,22 @@ public:
           E->isTypeDependent() || E->isValueDependent() ||
           Reference->getExprLoc() != Source->Location ||
           !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
       bool Selected = false;
       for (const auto *Selection : Selections) {
-        if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!step()) return false;
         if (Selection && Selection->Function == F && Selection->Expression == E &&
             Selection->Location == Source->Location && Selection->FunctionalNotFnConstraint &&
             matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
       }
-      if (!Selected) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Selected) return false;
       const auto *Return = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
       const auto *Invoke = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
       if (!Invoke || (OperationDependency
           ? (!NotFnOperationInvokeUses.count(Invoke) ||
              Invoke->getDirectCallee() != NotFnOperationInvokeFunction)
           : (!NotFnInvokeUses.count(Invoke) ||
-             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return ownedNotFnTraceFalse(__LINE__, __func__);
+             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return false;
       // This declaration-only probe is used solely by the actual _Result
       // decltype. Close every real signature and member-template ancestor;
       // no runtime body is supplied or approved. The original class arguments
@@ -11197,7 +11188,7 @@ public:
       for (const auto *Template = Primary; Template;
            Template = Template->getInstantiatedFromMemberTemplate()) {
         if (!step() || !family(Template) ||
-            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return false;
         const auto *Parameters = Template->getTemplateParameters();
         const auto *First = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
         const auto *Rest = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
@@ -11208,13 +11199,13 @@ public:
             (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
             !Pattern->isStatic() || Pattern->getNumParams() != 1 || Pattern->isVariadic() ||
             Pattern->hasBody() || Pattern->getParamDecl(0)->hasDefaultArg() ||
-            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
         for (const auto *Declaration : Pattern->redecls()) {
           const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
           if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
               Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
               !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-              !function(Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !function(Declaration)) return false;
         }
       }
       for (const auto *Declaration : F->redecls()) {
@@ -11222,12 +11213,12 @@ public:
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-            !function(Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !function(Declaration)) return false;
       }
       const CXXMethodDecl *Fallback = nullptr;
       const CXXRecordDecl *Sentinel = nullptr;
       for (const auto *Witness : Sources) {
-        if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!step()) return false;
         const auto *Candidate = Witness ? dyn_cast_or_null<CXXMethodDecl>(Witness->Declaration) : nullptr;
         if (!Candidate || Candidate->getParent() != Owner || Candidate->getDeclName() != F->getDeclName() ||
             !Candidate->isVariadic() || Candidate->getNumParams() ||
@@ -11243,11 +11234,11 @@ public:
             Witness->Instantiation || Witness->Origin || Witness->WrittenStorageClass || Witness->Selection ||
             !BoundArguments(Witness->Canonical) || !BoundArguments(Witness->Sugared) ||
             !family(Candidate) || !notFnResultSentinelDefinition(R) ||
-            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return false;
         for (unsigned I = 0; I < Witness->Canonical->size(); ++I)
           if (!Witness->Canonical->get(I).structurallyEquals(Candidate->getTemplateSpecializationArgs()->get(I)) ||
               !Witness->Canonical->get(I).structurallyEquals(
-                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return false;
         // The unselected ellipsis candidate supplies a type identity only.
         // Its actual packet and every original member-template declaration
         // must close; no call selection or runtime body is invented for it.
@@ -11261,7 +11252,7 @@ public:
               !Rest->isParameterPack() || First->getIndex() != 0 || Rest->getIndex() != 1 ||
               First->hasDefaultArgument() || Rest->hasDefaultArgument() || !family(First) || !family(Rest) ||
               !Pattern || (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
-              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return false;
           for (const auto *Declaration : Pattern->redecls()) {
             const auto *Info = Declaration->getTypeSourceInfo();
             const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -11270,10 +11261,10 @@ public:
                 !Prototype->isVariadic() || Prototype->getNumParams() ||
                 Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
                 !Context.hasSameType(Info->getType(), Declaration->getType()) ||
-                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return ownedNotFnTraceFalse(__LINE__, __func__);
+                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
             for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                     Prototype->getEllipsisLoc()})
-              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
           }
         }
         const auto *Info = Candidate->getTypeSourceInfo();
@@ -11282,20 +11273,20 @@ public:
         if (!Location || !Prototype || !Prototype->isVariadic() || Prototype->getNumParams() ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !Context.hasSameType(Info->getType(), Candidate->getType()) ||
-            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
         for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                 Prototype->getEllipsisLoc()})
-          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
         Fallback = Candidate;
         Sentinel = R->getCanonicalDecl();
       }
-      if (!Fallback || !Sentinel) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Fallback || !Sentinel) return false;
       const auto Inserted = NotFnResultSentinels.emplace(Result, Sentinel);
-      if (!Inserted.second && Inserted.first->second != Sentinel) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Inserted.second && Inserted.first->second != Sentinel) return false;
       Uses.emplace(E, F);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty() || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Functions.size() != 1 || Uses.empty() || Failed) return false;
     // The operation dependency has a distinct selected identity and use set.
     // Reuse all original packet, primary, signature and sentinel obligations;
     // a helper name or a matching result type supplies no permission.
@@ -11309,11 +11300,6 @@ public:
         ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
     const auto *Query = Variable && Variable->hasInit()
         ? dyn_cast<TypeTraitExpr>(Variable->getInit()->IgnoreParenImpCasts()) : nullptr;
-    std::fprintf(stderr, "OWNED_FACTORY_QUERY_ENTER mode=%u factory=%u query=%p nargs=%u ownrecord=%p activequery=%p activeroot=%p\n",
-        static_cast<unsigned>(Mode), static_cast<unsigned>(bool(NotFnFactoryDefaults)),
-        static_cast<const void *>(Query), Query ? Query->getNumArgs() : 0,
-        static_cast<const void *>(NotFnOwnedCallableRecord), static_cast<const void *>(NotFnConstructorQuery),
-        static_cast<const void *>(NotFnConstructorRoot));
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnFactoryDefaults ||
         NotFnConstructorQuery || NotFnConstructorRoot || !Proof || !Query ||
         Query->getTrait() != TT_IsConstructible || Query->getNumArgs() != 2 ||
@@ -11322,22 +11308,11 @@ public:
         Storage.Tuple != NotFnFactoryDefaults->Selected.Storage.Tuple ||
         !Context.hasSameType(Storage.CallableType, NotFnCallableType) ||
         !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Input = Query->getArg(1)->getType();
-    const auto *TraceInherited = NotFnFactoryDefaults->Selected.InheritedInitialization;
-    const auto *TraceForwarder = TraceInherited ? TraceInherited->getConstructor() : nullptr;
-    std::fprintf(stderr, "OWNED_FACTORY_QUERY_INPUT input=%s callable=%s inherited=%p forwarder=%p nargs=%u parentmatch=%u param=%s inputsame=%u valuesame=%u\n",
-        Input.getAsString().c_str(), Storage.CallableType.getAsString().c_str(),
-        static_cast<const void *>(TraceInherited), static_cast<const void *>(TraceForwarder),
-        TraceForwarder ? TraceForwarder->getNumParams() : 0,
-        static_cast<unsigned>(TraceForwarder && TraceForwarder->getParent()->getCanonicalDecl() == Storage.Forwarder->getCanonicalDecl()),
-        TraceForwarder && TraceForwarder->getNumParams() ? TraceForwarder->getParamDecl(0)->getType().getAsString().c_str() : "-",
-        static_cast<unsigned>(TraceForwarder && TraceForwarder->getNumParams() && Context.hasSameType(Input, TraceForwarder->getParamDecl(0)->getType())),
-        static_cast<unsigned>(Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)));
-
     if (!NotFnOwnedCallableRecord) {
       if (!Input->isRValueReferenceType() ||
-          !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return false;
     } else {
       // The forwarder is reached through the outer inherited initializer;
       // it is not a CXXConstructExpr in SelectedConstructions.
@@ -11347,49 +11322,25 @@ public:
           Forwarder->getParent()->getCanonicalDecl() != Storage.Forwarder->getCanonicalDecl() ||
           Forwarder->getNumParams() != 1 ||
           !Context.hasSameType(Input, Forwarder->getParamDecl(0)->getType()) ||
-          !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)) return false;
     }
-    const auto QueryOrigin = S.sdkFile(SM, Query->getExprLoc());
-    std::fprintf(stderr, "OWNED_CONSTRUCTOR_QUERY ptr=%p trait=%u args=%u rawloc=%u owned=%u root=%s path=%s target=%s input=%s retained=%u\n",
-        static_cast<const void *>(Query), static_cast<unsigned>(Query->getTrait()), Query->getNumArgs(),
-        Query->getExprLoc().getRawEncoding(), static_cast<unsigned>(S.owns(SM, Query->getExprLoc())),
-        QueryOrigin ? QueryOrigin->Root.c_str() : "-", QueryOrigin ? QueryOrigin->Path.c_str() : "-",
-        Query->getArg(0)->getType().getAsString().c_str(), Query->getArg(1)->getType().getAsString().c_str(),
-        static_cast<unsigned>(OperationTraits.count(Query)));
     const auto Found = OperationTraits.find(Query);
-    if (Found == OperationTraits.end()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Found == OperationTraits.end()) return false;
     const auto &Source = Found->second;
-    std::fprintf(stderr, "OWNED_FACTORY_QUERY_SOURCE attempted=%u complete=%u operands=%zu root=%p kind=%s type=%s dtor=%u dtorproto=%u lookup=%u exception=%u\n",
-        static_cast<unsigned>(Source.Attempted), static_cast<unsigned>(Source.Complete), Source.Operands.size(),
-        static_cast<const void *>(Source.Root), Source.Root ? Source.Root->getStmtClassName() : "-",
-        Source.Root ? Source.Root->getType().getAsString().c_str() : "-", static_cast<unsigned>(bool(Source.Destructor)),
-        static_cast<unsigned>(bool(Source.DestructionPrototype)), static_cast<unsigned>(Source.DestructionLookupAttempted),
-        static_cast<unsigned>(Source.DestructionExceptionAttempted));
-
     const auto *Root = Source.Root
         ? dyn_cast<CXXConstructExpr>(Source.Root->IgnoreParenImpCasts()) : nullptr;
     if (!Source.Attempted || !Source.Complete || !Root || Source.Operands.size() != 1 ||
         Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
         Source.DestructionExceptionAttempted ||
-        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return false;
     const auto *Constructor = Root->getConstructor();
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
       if (Construction && Construction->getConstructor() == Constructor &&
           Constructor->getParent()->getCanonicalDecl() == Storage.Tuple->getCanonicalDecl())
         Selected = true;
-    std::fprintf(stderr, "OWNED_FACTORY_QUERY_SELECTED selected=%u ctor=%p parent=%s nargs=%u input=%s\n",
-        static_cast<unsigned>(Selected), static_cast<const void *>(Constructor),
-        Constructor ? Constructor->getParent()->getQualifiedNameAsString().c_str() : "-",
-        Constructor ? Constructor->getNumParams() : 0,
-        Constructor && Constructor->getNumParams() ? Constructor->getParamDecl(0)->getType().getAsString().c_str() : "-");
-    for (const auto *Candidate : NotFnFactoryDefaults->Selected.SelectedConstructions)
-      if (Candidate) std::fprintf(stderr, "OWNED_FACTORY_QUERY_CANDIDATE ctor=%p parent=%s exact=%u canonical=%u\n",
-          static_cast<const void *>(Candidate->getConstructor()), Candidate->getConstructor()->getParent()->getQualifiedNameAsString().c_str(),
-          static_cast<unsigned>(Candidate->getConstructor() == Constructor),
-          static_cast<unsigned>(Candidate->getConstructor()->getCanonicalDecl() == Constructor->getCanonicalDecl()));
     if (!Selected || Constructor->getNumParams() != 1 ||
-        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return false;
     // This is the actual retained query for an already described runtime
     // construction, not a copy/move special member or a generic SDK grant.
     // The callback still authenticates the original variable packet before
@@ -11401,9 +11352,7 @@ public:
       NotFnConstructorQuery = nullptr;
       NotFnConstructorRoot = nullptr;
     });
-    const bool Result = Proof();
-    std::fprintf(stderr, "OWNED_FACTORY_QUERY_PROOF result=%u failed=%u\n", static_cast<unsigned>(Result), static_cast<unsigned>(Failed));
-    return Result && !Failed;
+    return Proof() && !Failed;
   }
   bool TraverseNotFnConstructorSignature(const CXXConstructorDecl *Constructor,
       const TypeSourceInfo *Written) {
@@ -11411,7 +11360,7 @@ public:
         NotFnConstructorReturn || !Constructor || !Written ||
         Written != Constructor->getTypeSourceInfo() || !family(Constructor) ||
         !Constructor->getPrimaryTemplate() || !Constructor->getReturnType()->isVoidType())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions) {
       const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
@@ -11423,7 +11372,7 @@ public:
     const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
     if (!Selected || !Prototype || !Return ||
         !Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     // Clang's actual selected constructor carries a void return TypeLoc, but
     // constructors have no written return token. Bind only that precise slot;
     // all parameters, defaults, noexcept and other locations keep their proof.
@@ -11438,13 +11387,13 @@ public:
   }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
-        NotFnConstraintVariableSource || !Source) return ownedNotFnTraceFalse(__LINE__, __func__);
+        NotFnConstraintVariableSource || !Source) return false;
     NotFnConstraintVariableSource = std::move(Source);
     return true;
   }
   bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     NotFnFactoryDefaults = &Factory;
     return true;
   }
@@ -11463,18 +11412,18 @@ public:
     if (const auto *Sentinel = notFnResultSentinelAlias(Location.getTypePtr())) {
       if (Location.getNumArgs() != 2 ||
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
-          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return false;
       const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
       const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
       const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
       if (!First || !Second || !Record ||
           First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
           Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
-          Record->getCanonicalDecl() != Sentinel) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Record->getCanonicalDecl() != Sentinel) return false;
       for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
       NotFnResultWrittenArgument = Second;
       NotFnResultWrittenSentinel = Sentinel;
     }
@@ -11491,7 +11440,7 @@ public:
     if (T.isNull()) return true;
     if (!step() || T.isVolatileQualified() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
       return true;
     if (Mode == UtilityTupleQueryMode::CatSignature && CatInputFunction)
@@ -11502,11 +11451,11 @@ public:
         if (Bound != CatOwnerAtoms.end()) {
           for (const auto &[Owner, Slot] : Bound->second) {
             if (!CatInputOwners.count(Owner->getCanonicalDecl()) ||
-                Slot >= Owner->getTemplateArgs().size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+                Slot >= Owner->getTemplateArgs().size()) return false;
             const auto &Argument = Owner->getTemplateArgs()[Slot];
             const auto *Input = Argument.getKind() == TemplateArgument::Type
                 ? Context.getBaseElementType(Argument.getAsType())->getAsCXXRecordDecl() : nullptr;
-            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
           }
           return true;
         }
@@ -11519,7 +11468,7 @@ public:
   }
   bool TraverseStmt(Stmt *E) {
     if (!E) return true;
-    if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!step()) return false;
     if (!Expressions.insert(E).second) return true;
     // RAV's dataTraverseStmtPre/Post already own this statement's depth.
     // Preserve existing accounting for the other query modes.
@@ -11541,12 +11490,12 @@ public:
             // Repair only this authenticated original projection wrapper.
             // The real builtin/alias name token must remain SDK source.
             if (!cstddefOrigin(S, SM, Named.getTemplateNameLoc(), "libcxx",
-                               "__tuple/make_tuple_types.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+                               "__tuple/make_tuple_types.h")) return false;
             for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
-              if (L.isInvalid()) return ownedNotFnTraceFalse(__LINE__, __func__);
+              if (L.isInvalid()) return false;
               const auto Origin = S.sdkFile(SM, L);
               if ((!Origin || Origin->Root != "libcxx") &&
-                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return false;
             }
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
@@ -11564,7 +11513,7 @@ public:
       if ((!Origin || Origin->Root != "libcxx") &&
           !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
             functionalNotFnFactorySplitTypeEnd(
-                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -11598,11 +11547,11 @@ public:
     ++Depth;
     if (step()) return true;
     --Depth;
-    return ownedNotFnTraceFalse(__LINE__, __func__); // RAV skips this subtree; Failed still rejects the whole proof.
+    return false; // RAV skips this subtree; Failed still rejects the whole proof.
   }
   bool dataTraverseStmtPost(Stmt *) { --Depth; return true; }
   bool VisitExpr(Expr *E) {
-    if (!step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!step()) return false;
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E))
       return Operands.count(Opaque) && !Opaque->getSourceExpr();
     const auto Origin = S.sdkFile(SM, E->getExprLoc());
@@ -11630,11 +11579,11 @@ public:
             TraverseType(Declaration->getUnderlyingType());
       }
     }
-    if (!family(Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(Declaration)) return false;
     if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
       if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
-        if (!*ViewAlias) return ownedNotFnTraceFalse(__LINE__, __func__);
-      } else if (!record(Owner)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!*ViewAlias) return false;
+      } else if (!record(Owner)) return false;
     }
     return Declaration->getTypeSourceInfo() &&
            TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
@@ -11648,7 +11597,7 @@ public:
   }
   bool VisitTemplateSpecializationType(TemplateSpecializationType *T) {
     const auto *Template = T->getTemplateName().getAsTemplateDecl();
-    if (!Template || !family(Template)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Template || !family(Template)) return false;
     if (T->isTypeAlias()) {
       const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template);
       const auto *Declaration = Alias
@@ -11658,7 +11607,7 @@ public:
       if (Mode == UtilityTupleQueryMode::CatSignature && Alias &&
           Alias->getName() == "__make_indices_imp") return catIndexAlias(T, Alias);
       if (!Declaration || !Declaration->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
       return TraverseType(T->getAliasedType());
     }
     if (Template->getName() == "__make_tuple_types" && !T->isDependentType()) {
@@ -11668,17 +11617,17 @@ public:
       const bool NotFnTag = Mode == UtilityTupleQueryMode::CatSignature &&
           Bound != NotFnTupleTagSlices.end() && Bound->second.first == T;
       if (!NotFnTag && (T->template_arguments().size() != 1 ||
-          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return false;
     }
     return T->isDependentType() || record(T->getAsCXXRecordDecl());
   }
   bool VisitDeclRefExpr(DeclRefExpr *E) {
     const auto *D = E->getDecl();
     if (const auto *F = dyn_cast<FunctionDecl>(D)) {
-      if (!family(F) || !TraverseType(F->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!family(F) || !TraverseType(F->getType())) return false;
       if (const auto *Arguments = F->getTemplateSpecializationArgs())
         for (const auto &A : Arguments->asArray())
-          if (!TraverseTemplateArgument(A)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!TraverseTemplateArgument(A)) return false;
       return true;
     }
     if (const auto *Parameter = dyn_cast<ParmVarDecl>(D)) {
@@ -11703,8 +11652,8 @@ public:
         // Charge the skipped callee nodes without traversing an owned method
         // as though it were an SDK declaration family.
         if (Found->second != NotFnOwnedInvokeMethod || !step() || !VisitExpr(E) || !step() || !step() ||
-            E->getNumArgs() != NotFnOwnedInvokeMethod->getNumParams() + 1) return ownedNotFnTraceFalse(__LINE__, __func__);
-        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            E->getNumArgs() != NotFnOwnedInvokeMethod->getNumParams() + 1) return false;
+        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
         return true;
       }
     }
@@ -11716,11 +11665,11 @@ public:
     // bound above. Traverse the real receiver and nested invoke; the ordinary
     // source checker independently finishes the selected method signature/body.
     if (!step() || !VisitExpr(E) || !step() || !step() ||
-        E->getNumArgs() != 1 || !Found->second) return ownedNotFnTraceFalse(__LINE__, __func__);
+        E->getNumArgs() != 1 || !Found->second) return false;
     return TraverseStmt(E->getArg(0));
   }
   bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
-    for (const auto *D : E->decls()) if (!family(D)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    for (const auto *D : E->decls()) if (!family(D)) return false;
     return true;
   }
   bool VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
@@ -11739,7 +11688,7 @@ public:
     if (!step() || !Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != 1 || !Operand || Operand->getSourceExpr() ||
         Source.Operands[0] != Operand || !Operands.count(Operand) || Access->ObjectIsArrow ||
-        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return false;
     // Only this actual SDK conversion family joins metadata. The SDK access
     // descriptor proves its pointer dereference; the pending ordinary query
     // must still finish the selected call and original exception source.
@@ -11747,7 +11696,7 @@ public:
     std::set<const CXXMethodDecl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Current || !step()) return false;
       if (!Family.insert(Current).second) continue;
       const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
       if (!isa<CXXConversionDecl>(Current) || !Current->isConst() || Current->isStatic() ||
@@ -11755,17 +11704,17 @@ public:
           Current->getNumParams() || Current->getPrimaryTemplate() ||
           !Prototype || !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
           !approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
       for (const auto *Redeclaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Member) return false;
         Pending.push_back(Member);
       }
       if (const auto *Definition = Current->getDefinition()) {
         if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
-            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
       }
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
@@ -11790,13 +11739,13 @@ public:
         Types->get(0).pack_size() != Operation->getNumParams() ||
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
     const auto Object = Context.getRecordType(Operation->getParent());
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
-        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return false;
     std::vector<const CallExpr *> Declvals;
-    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return false;
     const auto Inputs = Types->get(0).pack_elements();
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
@@ -11804,9 +11753,9 @@ public:
       if (Inputs[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Operand->getType(), Parameter.getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return false;
     }
-    if (!family(Operation)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(Operation)) return false;
     // Exact original SDK declval nodes, owned by this proven metadata query.
     // Their bodies and all user/runtime calls retain their original rules.
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
@@ -11826,7 +11775,7 @@ public:
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         NotFnInvokeSignature->getNumParams() != Call->getNumArgs() ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParens()) : nullptr;
       const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -11844,12 +11793,12 @@ public:
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
         !Context.hasSameType(Receiver->getType(), Context.getConstType(Object)) ||
-        !Forward(Receiver->getSubExpr(), 0)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Forward(Receiver->getSubExpr(), 0)) return false;
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
       if (!Forward(Call->getArg(I + 1), I + 1) ||
           !Context.hasSameType(Call->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
-          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
     }
     return family(Operation);
   }
@@ -11906,7 +11855,7 @@ public:
           !Context.hasSameType(Operand->getType(),
               Query->getArg(1)->getType().getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Query->getArg(1)->getType()))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       return function(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -11950,19 +11899,19 @@ public:
       if (!PairFunctions || !PairSelections || !step() ||
           PairConstructionAncestors.size() >= 64 ||
           std::find(PairConstructionAncestors.begin(), PairConstructionAncestors.end(), E) !=
-              PairConstructionAncestors.end()) return ownedNotFnTraceFalse(__LINE__, __func__);
+              PairConstructionAncestors.end()) return false;
       const auto Selected = PairSelections->find(E);
-      if (Selected == PairSelections->end() || Selected->second.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Selected == PairSelections->end() || Selected->second.empty()) return false;
       for (const auto *Selection : Selected->second) {
         if (!Selection || Selection->Expression != E || Selection->Function != Constructor ||
             Selection->Location != PairTraitQuery->getExprLoc() ||
             !approvedUtilityPairTraitSelectionLocation(S, SM, Selection->Location, Constructor))
-          return ownedNotFnTraceFalse(__LINE__, __func__);
+          return false;
         const auto Sources = PairFunctions->find({Constructor, Selection->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
         for (const auto *Source : Sources->second)
           if (!Source || Source->Declaration != Constructor || Source->Written ||
-              Source->Location != Selection->Location) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Source->Location != Selection->Location) return false;
       }
       const auto [Entry, Inserted] = PendingPairConstructions.emplace(E, PairTraitQuery);
       if (!Inserted) return Entry->second == PairTraitQuery && !Failed;
@@ -12013,7 +11962,7 @@ public:
           Prototype->getNoexceptExpr() ||
           approvedUtilityStringViewConstruction(S, SM, E, Context) !=
               UtilityStringViewConstruction::PointerAndSize)
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
         auto Input = PairTraitQuery->getArg(I + 1)->getType();
@@ -12023,7 +11972,7 @@ public:
             Constructor->getParamDecl(I)->hasDefaultArg() ||
             !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
             Operand->getValueKind() != Expr::getValueKindForType(Input))
-          return ownedNotFnTraceFalse(__LINE__, __func__);
+          return false;
       }
       return function(Constructor) && !Failed;
     }
@@ -12052,7 +12001,7 @@ public:
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           Constructor->getParamDecl(1)->hasDefaultArg() ||
           !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       return function(Constructor) && !Failed;
     }
     const auto SavedOwnerUse = PairOwnerUse;
@@ -12066,9 +12015,9 @@ public:
         E->getNumArgs() != Constructor->getNumParams() ||
         !Context.hasSameUnqualifiedType(E->getType(),
             Context.getRecordType(Constructor->getParent())) ||
-        !specialMember(Constructor)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !specialMember(Constructor)) return false;
     for (const auto *Argument : E->arguments())
-      if (isa<CXXDefaultArgExpr>(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (isa<CXXDefaultArgExpr>(Argument)) return false;
     return true;
   }
   bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
@@ -12083,7 +12032,7 @@ public:
           Context.hasSameType(E->getType(), Bound->second->getType()) &&
           Result && Result->getCanonicalDecl() == NotFnCallbackResultRecord;
     }
-    if (Operands.empty() || !E->getTemporary()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Operands.empty() || !E->getTemporary()) return false;
     const auto *Destructor = E->getTemporary()->getDestructor();
     const auto SavedOwnerUse = PairOwnerUse;
     if (Mode == UtilityTupleQueryMode::PairConstruction && PairTraitConstruction &&
@@ -12094,26 +12043,26 @@ public:
     auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
     return specialMember(Destructor);
   }
-  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return ownedNotFnTraceFalse(__LINE__, __func__); }
-  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return ownedNotFnTraceFalse(__LINE__, __func__); }
-  bool VisitCXXNewExpr(CXXNewExpr *) { return ownedNotFnTraceFalse(__LINE__, __func__); }
-  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return ownedNotFnTraceFalse(__LINE__, __func__); }
-  bool VisitLambdaExpr(LambdaExpr *) { return ownedNotFnTraceFalse(__LINE__, __func__); }
+  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return false; }
+  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return false; }
+  bool VisitCXXNewExpr(CXXNewExpr *) { return false; }
+  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return false; }
+  bool VisitLambdaExpr(LambdaExpr *) { return false; }
   bool pairDefaultFunctionFamily(const CXXConstructorDecl *Constructor,
                                   llvm::StringRef Path, bool OwnerPointer = false) {
     const auto *Record = Constructor ? Constructor->getParent() : nullptr;
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
-    if (!Record || !Primary) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Record || !Primary) return false;
     std::vector<const Decl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Declaration || !step()) return false;
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return false;
       if (const auto *Member = dyn_cast<CXXConstructorDecl>(Declaration)) {
         const auto *Owner = Member->getParent();
         if ((OwnerPointer ? Member->isDefaultConstructor() || Member->getNumParams() != 1 ||
@@ -12122,7 +12071,7 @@ public:
             Member->isDeleted() || Member->isVariadic() ||
             (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
              Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl() &&
-             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return false;
         for (const auto *Redeclaration : Member->redecls()) Pending.push_back(Redeclaration);
         if (OwnerPointer) Pending.push_back(Member->getParamDecl(0));
         if (const auto *Template = Member->getPrimaryTemplate()) Pending.push_back(Template);
@@ -12135,8 +12084,8 @@ public:
       } else if (const auto *Parameter = dyn_cast<ParmVarDecl>(Declaration)) {
         const auto *Owner = dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext());
         if (!OwnerPointer || !Owner || Owner->getNumParams() != 1 ||
-            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return ownedNotFnTraceFalse(__LINE__, __func__);
-      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return false;
+      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
     }
     // One exact retained element query supplies these signature identities.
     // A pointer constructor still closes its actual defaults and parameter source;
@@ -12153,7 +12102,7 @@ public:
         !Context.hasSameType(Arguments->get(0).getIntegralType(), Context.BoolTy) ||
         !Arguments->get(0).getAsIntegral().getBoolValue() ||
         Arguments->get(1).getKind() != TemplateArgument::Type ||
-        !Arguments->get(1).getAsType()->isVoidType()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Arguments->get(1).getAsType()->isVoidType()) return false;
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto *Info = Default && Default->hasDefaultArgument()
@@ -12170,37 +12119,37 @@ public:
         Alias->getName() != "_EnableIfDeleterDefaultConstructible" ||
         Alias->getDeclContext() != Primary->getDeclContext() ||
         Use->template_arguments().size() != 1 ||
-        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
     const auto *Reference = dyn_cast<DeclRefExpr>(Use->template_arguments()[0].getAsExpr()->IgnoreParenImpCasts());
     const auto *True = dyn_cast<CXXBoolLiteralExpr>(Dummy->getDefaultArgument().getArgument().getAsExpr());
     if (!Reference || Reference->getDecl() != Dummy || !True || !True->getValue() ||
         True->getBeginLoc().isMacroID() || True->getEndLoc().isMacroID() ||
-        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return false;
     std::vector<const Decl *> Pending{Alias};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Declaration || !step()) return false;
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Declaration)) {
-        if (Template->getTemplateParameters()->size() != 2) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Template->getTemplateParameters()->size() != 2) return false;
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
         Pending.push_back(Template->getTemplatedDecl());
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()->getDefinition());
     const TypedefNameDecl *Deleter = nullptr;
     if (!Owner || Owner->getTemplateArgs().size() != 2 ||
-        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return false;
     for (const auto *Declaration : Owner->decls())
       if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
           Named && Named->getIdentifier() && Named->getName() == "deleter_type") {
-        if (Deleter) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Deleter) return false;
         Deleter = Named;
       }
     const auto *DeleterInfo = Deleter ? Deleter->getTypeSourceInfo() : nullptr;
@@ -12208,15 +12157,15 @@ public:
         !Context.hasSameType(Deleter->getUnderlyingType(), Owner->getTemplateArgs()[1].getAsType()) ||
         !Context.hasSameType(DeleterInfo->getType(), Deleter->getUnderlyingType()) ||
         !approvedStandardSDKDeclaration(S, SM, Deleter) ||
-        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
     // This actual owner default uses its own deleter alias. Authenticate the
     // declaration, substitution and original spelling before its first use.
     PairInputFamilies.insert(Deleter);
     PairStorageUseSource Source(*this);
-    if (!Source.check(DeleterInfo)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Source.check(DeleterInfo)) return false;
     for (const auto *Parameter : *Alias->getTemplateParameters())
       if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
-          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return false;
     return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
   }
   bool pairOwnerPointerAlias(const CXXConstructorDecl *Constructor) {
@@ -12226,12 +12175,12 @@ public:
     if (!Record || !PairDefaultOwnerSignature ||
         PairDefaultOwnerSignature->getConstructor() != Constructor ||
         Constructor->getNumParams() != 1 || Record->getTemplateArgs().size() != 2)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const TypedefNameDecl *Pointer = nullptr;
     for (const auto *Declaration : Record->decls())
       if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
           Alias && Alias->getIdentifier() && Alias->getName() == "pointer") {
-        if (Pointer) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Pointer) return false;
         Pointer = Alias;
       }
     auto Use = [](QualType Type) {
@@ -12259,28 +12208,28 @@ public:
         !cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
         !Alias || Alias->getName() != "__pointer" || !Original || !Original->isTypeAlias() ||
         !Detected || Detected->getName() != "__detected_or_t" || !family(Detected) ||
-        !Member || Member->getName() != "__pointer_member") return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Member || Member->getName() != "__pointer_member") return false;
     for (unsigned I = 0; I != 2; ++I)
       if (Written->template_arguments()[I].getKind() != TemplateArgument::Type ||
           Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Written->template_arguments()[I].getAsType(),
-                               Record->getTemplateArgs()[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+                               Record->getTemplateArgs()[I].getAsType())) return false;
     std::set<const Decl *> Family{Pointer};
     for (const auto *Template : {Alias, Member}) {
       if (Template->getDeclContext() != Alias->getDeclContext() ||
-          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return false;
       for (const auto *Redeclaration : Template->redecls()) {
         for (const auto *D : {static_cast<const Decl *>(Redeclaration),
                               static_cast<const Decl *>(Redeclaration->getTemplatedDecl())}) {
           if (!approvedStandardSDKDeclaration(S, SM, D) ||
-              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
           Family.insert(D);
         }
         for (const auto *Parameter : *Redeclaration->getTemplateParameters()) {
           const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
           if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() ||
               !approvedStandardSDKDeclaration(S, SM, Type) ||
-              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
           Family.insert(Type);
         }
       }
@@ -12300,10 +12249,10 @@ public:
     if (!Parameters || Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
         !Parameter->hasDefaultArgument() ||
         Written.getArgument().getKind() != TemplateArgument::Type ||
-        Converted.getArgument().getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Converted.getArgument().getKind() != TemplateArgument::Type) return false;
     const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
-    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return false;
     auto Use = [](QualType Type) {
       const auto *Value = Type.getTypePtr();
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Value)) Value = Elaborated->getNamedType().getTypePtr();
@@ -12312,7 +12261,7 @@ public:
     const auto *Pattern = Use(Original->getType());
     const auto *Alias = Pattern ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Pattern->getTemplateName().getAsTemplateDecl()) : nullptr;
-    if (!Alias || !Pattern->isTypeAlias()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Alias || !Pattern->isTypeAlias()) return false;
     for (const auto *Info : {Written.getTypeSourceInfo(), Converted.getTypeSourceInfo()}) {
       const auto *Actual = Use(Info->getType());
       const auto *ActualAlias = Actual ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -12320,14 +12269,14 @@ public:
       if (!Actual || !Actual->isTypeAlias() || !ActualAlias ||
           ActualAlias->getCanonicalDecl() != Alias->getCanonicalDecl() ||
           Actual->template_arguments().size() != 1 ||
-          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
       const auto *Value = Actual->template_arguments()[0].getAsExpr();
       if (const auto *Constant = dyn_cast<ConstantExpr>(Value)) Value = Constant->getSubExpr();
       const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Value);
       const auto *True = Substitution ? dyn_cast<CXXBoolLiteralExpr>(
           Substitution->getReplacement()->IgnoreParenImpCasts()) : nullptr;
       if (!Substitution || Substitution->getParameter() != Dummy ||
-          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return false;
     }
     PairStorageUseSource Spelling(*this);
     // Sema retains the substituted written/default type here. Its exact
@@ -12352,7 +12301,7 @@ public:
         !Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
         !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
         !Definition || !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
-        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return false;
     const auto *Initializer = *Definition->init_begin();
     const auto *Child = Initializer->isBaseInitializer()
         ? dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit()) : nullptr;
@@ -12369,7 +12318,7 @@ public:
         !Context.hasSameType(Allocator->Record->bases_begin()->getType(), Child->getType()) ||
         !Context.hasSameType(QualType(Initializer->getBaseClass(), 0), Child->getType()) ||
         !pairDefaultFunctionFamily(Selected, "__memory/allocator.h") ||
-        !bindPairInput(Child->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !bindPairInput(Child->getType())) return false;
     const auto *Info = Allocator->Record->bases_begin()->getTypeSourceInfo();
     return Info && TraverseTypeLoc(Info->getTypeLoc()) && !Failed;
   }
@@ -12408,7 +12357,7 @@ public:
         Constructor->isDefaultConstructor() == OwnerPointer ||
         Source.Operands.size() != Construction->getNumArgs() ||
         !Context.hasSameType(Construction->getType(), Target) ||
-        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
     if (OwnerPointer) {
       // Bind the original opaque argument and selected pointer conversion. The
       // ordinary runtime construction and cleanup retain their separate checks.
@@ -12426,7 +12375,7 @@ public:
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType) ||
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           approvedUtilityUniquePtrConstruction(S, SM, Construction, Context) !=
-              UtilityUniquePtrConstruction::Pointer) return ownedNotFnTraceFalse(__LINE__, __func__);
+              UtilityUniquePtrConstruction::Pointer) return false;
     }
     const auto *SavedQuery = PairTraitQuery;
     const auto *SavedConstruction = PairTraitConstruction;
@@ -12449,18 +12398,18 @@ public:
       if (!PairFunctions || !PairSelections ||
           !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h", OwnerPointer) ||
           !pairDefaultOwnerAlias(Constructor) ||
-          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return false;
       const auto Events = PairSelections->find(Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Events == PairSelections->end() || Events->second.empty()) return false;
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Construction || Event->Function != Constructor ||
             Event->Location != Query->getExprLoc() ||
-            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return false;
         const auto Uses = PairFunctions->find({Constructor, Event->Location.getRawEncoding()});
-        if (Uses == PairFunctions->end() || Uses->second.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Uses == PairFunctions->end() || Uses->second.empty()) return false;
         for (const auto *Use : Uses->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Constructor, true) || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !templateSource(*Use, Constructor, true) || Failed) return false;
       }
       Complete = true;
     } else if (Allocator) {
@@ -12472,14 +12421,14 @@ public:
           Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
           pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h");
     }
-    if (!Complete || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Complete || Failed) return false;
     if (Temporary) {
       const auto *Destructor = Temporary->getTemporary() ? Temporary->getTemporary()->getDestructor() : nullptr;
       if (!Destructor || !Record->getDestructor() ||
-          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return false;
       if (Owner) PairOwnerUse = PairOwnerMemberUse{Destructor, Query, Construction, nullptr, nullptr, Temporary};
-      if (!specialMember(Destructor) || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
-    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!specialMember(Destructor) || Failed) return false;
+    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return false;
     // Pointer constructibility retains a constructor-only root with no cleanup;
     // the original OperationTraitSource must have no destructor/lookup request.
     // Actual runtime destruction is still authenticated at its owning boundary.
@@ -12491,16 +12440,16 @@ public:
     NotFnResultComparisonRecord = notFnResultSentinelArgument(E);
     auto RestoreSentinel = llvm::make_scope_exit([&] { NotFnResultComparisonRecord = SavedSentinel; });
     for (const auto *Argument : E->getArgs())
-      if (!TraverseType(Argument->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!TraverseType(Argument->getType())) return false;
     const bool Construction = E->getTrait() == TT_IsConstructible ||
         E->getTrait() == TT_IsNothrowConstructible;
     const bool Conversion = E->getTrait() == BTT_IsConvertible ||
         E->getTrait() == BTT_IsConvertibleTo;
     if (!Construction && !Conversion) return true;
     if (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto Found = OperationTraits.find(E);
-    if (Found == OperationTraits.end()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Found == OperationTraits.end()) return false;
     const auto &Source = Found->second;
     if (Mode == UtilityTupleQueryMode::PairConstruction) {
       bool BoundRecord = false;
@@ -12523,7 +12472,7 @@ public:
     if (!Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != Count || Source.Destructor ||
         Source.DestructionPrototype || Source.DestructionLookupAttempted ||
-        Source.DestructionExceptionAttempted) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Source.DestructionExceptionAttempted) return false;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && !Count)
       if (const auto Default = pairSelectedDefaultQuery(E, Source)) return *Default;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && Count == 1)
@@ -12536,7 +12485,7 @@ public:
           !Context.hasSameType(Source.Root->getType(), Target) ||
           !Source.Root->isPRValue() || Source.Root->isTypeDependent() ||
           Source.Root->isValueDependent() || Source.Root->isInstantiationDependent())
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       // Sema's exact retained zero-operand scalar root has no written token.
       // Authenticate this source-free node locally; no caller expression,
       // selected body, owner operation or runtime permission is registered.
@@ -12562,31 +12511,31 @@ public:
         T = Context.getRValueReferenceType(T);
       if (!Operand || Operand->getSourceExpr() ||
           !Context.hasSameType(Operand->getType(), T.getNonLValueExprType(Context)) ||
-          Operand->getValueKind() != Expr::getValueKindForType(T)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Operand->getValueKind() != Expr::getValueKindForType(T)) return false;
       Operands.insert(Operand);
     }
     return TraverseStmt(const_cast<Expr *>(Source.Root));
   }
   bool function(const FunctionDecl *F) {
-    if (!family(F) || !bindCatInputs(F)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!family(F) || !bindCatInputs(F)) return false;
     if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
       if (Method->isImplicit() || Method->isDefaulted()) return specialMember(Method);
     for (const auto *Parameter : F->parameters())
-      if (!family(Parameter) || !TraverseType(Parameter->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!family(Parameter) || !TraverseType(Parameter->getType())) return false;
     const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
-    if (!Prototype) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Prototype) return false;
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
     case EST_NoexceptTrue: case EST_NoexceptFalse:
       if (!Prototype->getNoexceptExpr() ||
-          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return false;
       break;
-    default: return ownedNotFnTraceFalse(__LINE__, __func__);
+    default: return false;
     }
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F)) {
       const auto Explicit = Constructor->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved)
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
       const auto *Pattern = dyn_cast_or_null<CXXConstructorDecl>(
           Constructor->getTemplateInstantiationPattern());
       const auto *Primary = Constructor->getPrimaryTemplate();
@@ -12595,8 +12544,8 @@ public:
       if (!Explicit.getExpr() &&
           ((Pattern && Pattern->getExplicitSpecifier().getExpr()) ||
            (PrimaryConstructor && PrimaryConstructor->getExplicitSpecifier().getExpr())))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
-      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
+      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return false;
     }
     return !Failed;
   }
@@ -12606,7 +12555,7 @@ public:
     if (OwnerDefault &&
         (Mode != UtilityTupleQueryMode::PairConstruction || !PairDefaultOwnerSignature ||
          PairDefaultOwnerSignature->getConstructor() != Constructor ||
-         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return ownedNotFnTraceFalse(__LINE__, __func__);
+         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return false;
     const auto *Primary = Constructor->getPrimaryTemplate();
     if (!Primary || Source.Kind != TemplateSourceKind::Function ||
         Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
@@ -12616,16 +12565,16 @@ public:
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() != Primary->getTemplateParameters()->size())
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     const auto *Selected = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || Selected->size() != Source.Canonical->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Selected || Selected->size() != Source.Canonical->size()) return false;
     for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Selected->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
     for (const auto *Arguments : {Source.Canonical, Source.Sugared})
       for (const auto &Argument : Arguments->asArray())
-        if (!TraverseTemplateArgument(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!TraverseTemplateArgument(Argument)) return false;
     std::set<unsigned> Defaults, Parameters;
     const auto *Owners = Primary->getTemplateParameters();
     for (const auto &Default : Source.Defaults) {
@@ -12640,8 +12589,8 @@ public:
             !Defaults.insert(1).second || !Original || !Written ||
             Converted.getKind() != TemplateArgument::Type ||
             Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
-        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return false;
+        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return false;
         continue;
       }
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
@@ -12655,7 +12604,7 @@ public:
           Default.Written.getArgument().getAsExpr() !=
               Parameter->getDefaultArgument().getArgument().getAsExpr() ||
           !TraverseTemplateArgument(Default.Written.getArgument()) ||
-          !TraverseTemplateArgument(Default.Converted.getArgument())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTemplateArgument(Default.Converted.getArgument())) return false;
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       const auto *Converted = Default.Converted.getArgument().getKind() == TemplateArgument::Expression
           ? dyn_cast<ConstantExpr>(Default.Converted.getArgument().getAsExpr()) : nullptr;
@@ -12663,7 +12612,7 @@ public:
           !Context.hasSameType(Converted->getType(), Canonical.getIntegralType()) ||
           Converted->getResultAsAPSInt() != Canonical.getAsIntegral() ||
           Converted->getSubExpr()->IgnoreParens() != Default.Written.getArgument().getAsExpr())
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
     }
     for (const auto &ParameterType : Source.ParameterTypes) {
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(ParameterType.Parameter);
@@ -12672,17 +12621,17 @@ public:
           Owners->getParam(Parameter->getIndex()) != Parameter ||
           ParameterType.PackIndex != 0 || !ParameterType.Type ||
           !Parameters.insert(Parameter->getIndex()).second ||
-          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return false;
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       if (Canonical.getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(ParameterType.Type->getType(), Canonical.getIntegralType()))
-        return ownedNotFnTraceFalse(__LINE__, __func__);
+        return false;
     }
     for (unsigned I = 0; I < Owners->size(); ++I) {
       const auto *Declaration = Owners->getParam(I);
       if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
         if (!Parameters.count(I) ||
-            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return false;
       } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Declaration)) {
         const auto &Argument = Source.Canonical->get(I);
         if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
@@ -12690,10 +12639,10 @@ public:
             Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Template ||
             !Context.hasSameTemplateName(Argument.getAsTemplate(),
                 Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
-            !TraverseTemplateName(Argument.getAsTemplate())) return ownedNotFnTraceFalse(__LINE__, __func__);
+            !TraverseTemplateName(Argument.getAsTemplate())) return false;
       } else if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Declaration)) {
-        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return ownedNotFnTraceFalse(__LINE__, __func__);
-      } else return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return false;
+      } else return false;
     }
     return function(Constructor);
   }
@@ -12715,37 +12664,37 @@ public:
                  : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
-            Context.getRecordType(Constructor->getParent()))) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Context.getRecordType(Constructor->getParent()))) return false;
     // A piecewise use binds its exact public/private constructor descriptor.
     // This still grants signature source only; runtime admission requires the
     // separate outer-source, child-operation, lifetime and deferred checks.
     if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
         (Factory || !approvedUtilityPairPiecewiseConstruction(
                          S, SM, Construction, Context)))
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
-      if (!bindPairInput(Field->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!bindPairInput(Field->getType())) return false;
     const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
     for (const auto *Argument : Arguments)
-      if (!bindPairInput(Argument->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!bindPairInput(Argument->getType())) return false;
     for (const auto *Argument : Arguments)
-      if (!bindPairReferenceFactory(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!bindPairReferenceFactory(Argument)) return false;
     for (const auto *Argument : Arguments)
-      if (!bindPairCallerValueAdapter(Argument)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!bindPairCallerValueAdapter(Argument)) return false;
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
       std::vector<const Decl *> Pending{Factory->getDirectCallee()};
       while (!Pending.empty()) {
         const auto *Declaration = Pending.back(); Pending.pop_back();
-        if (!Declaration || !step()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Declaration || !step()) return false;
         if (!PairInputFamilies.insert(Declaration).second) continue;
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
-          return ownedNotFnTraceFalse(__LINE__, __func__);
+          return false;
         if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
           for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
           if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -12754,7 +12703,7 @@ public:
           for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
           Pending.push_back(Template->getTemplatedDecl());
           for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
       }
       // These are the exact two SDK forwarding uses already authenticated by
       // the public factory descriptor. Bind their substitutions, not their bodies.
@@ -12762,9 +12711,9 @@ public:
         if (!bindPairInput(Construction->getArg(I)->getType()) ||
             !bindPairCallerValueAdapter(Construction->getArg(I),
                                        Factory->getDirectCallee()->getParamDecl(I)))
-          return ownedNotFnTraceFalse(__LINE__, __func__);
+          return false;
     }
-    if (!templateSource(Source, Constructor) || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!templateSource(Source, Constructor) || Failed) return false;
     for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
       // Copy the item: its source can append more work to this same vector.
       const auto Work = PairConstructionSources[I];
@@ -12772,21 +12721,21 @@ public:
       if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
           Work.Ancestors.back() != Work.Construction || !Selected ||
           !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-          PendingPairConstructions[Work.Construction] != Work.Query) return ownedNotFnTraceFalse(__LINE__, __func__);
+          PendingPairConstructions[Work.Construction] != Work.Query) return false;
       PairConstructor = Selected;
       PairConstructionAncestors = Work.Ancestors;
       for (const auto *Field : Selected->getParent()->fields())
-        if (!bindPairInput(Field->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!bindPairInput(Field->getType())) return false;
       const auto Events = PairSelections->find(Work.Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Events == PairSelections->end() || Events->second.empty()) return false;
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-            Event->Location != Work.Query->getExprLoc()) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Event->Location != Work.Query->getExprLoc()) return false;
         const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
         for (const auto *Use : Sources->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Selected) || Failed) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !templateSource(*Use, Selected) || Failed) return false;
       }
     }
     Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
@@ -12795,7 +12744,7 @@ public:
     return true;
   }
   bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
-    if (!bindCatInputs(Function)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!bindCatInputs(Function)) return false;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Primary || !Arguments || Source.Kind != TemplateSourceKind::Function ||
@@ -12805,7 +12754,7 @@ public:
         !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
         !Source.Canonical || !Source.Sugared || Arguments->size() != 2 ||
         Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
-        Primary->getTemplateParameters()->size() != 2) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Primary->getTemplateParameters()->size() != 2) return false;
     for (unsigned I = 0; I < 2; ++I) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
           Primary->getTemplateParameters()->getParam(I));
@@ -12813,9 +12762,9 @@ public:
           Parameter->isParameterPack() != (I == 1) ||
           !Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
       if (!TraverseTemplateArgument(Source.Canonical->get(I)) ||
-          !TraverseTemplateArgument(Source.Sugared->get(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !TraverseTemplateArgument(Source.Sugared->get(I))) return false;
     }
     return function(Function) && TraverseType(Function->getReturnType()) && !Failed;
   }
@@ -14410,10 +14359,10 @@ class NotFnPointerSourceProof {
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() > 64 || Source.Defaults.size() > 64 ||
         Source.ParameterTypes.size() > 4096 || Source.Instantiation ||
-        Source.Origin || Source.WrittenStorageClass || Source.Selection) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Source.Origin || Source.WrittenStorageClass || Source.Selection) return false;
     for (unsigned I = 0; I < Source.Canonical->size(); ++I)
       if (!Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return ownedNotFnTraceFalse(__LINE__, __func__);
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
     return true;
   }
   const TemplateUseSource *typeUse(TemplateSpecializationTypeLoc Root) const {
@@ -14460,23 +14409,36 @@ class NotFnPointerSourceProof {
         !Type.Type || !Context.hasSameType(Type.Type->getType(), Context.getSizeType()) ||
         !Check.family(Primary, {"tuple"}) || !Check.family(Parameter, {"tuple"}) ||
         Source.ParameterTypes.size() != 2 || !Source.Canonical || Source.Canonical->size() != 5)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     bool Selected = false;
     for (const auto *Construction : Factory.Selected.SelectedConstructions)
       Selected |= Construction && Construction->getConstructor() == Constructor;
     const auto *Arguments = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || !Arguments || Arguments->size() != 5) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Selected || !Arguments || Arguments->size() != 5) return false;
     for (unsigned I = 0; I != 5; ++I)
       if (!Source.Canonical->get(I).structurallyEquals(Arguments->get(I)) ||
           Arguments->get(I).getKind() != TemplateArgument::Pack ||
-          Arguments->get(I).pack_size() != (I == 2 || I == 3 ? 0U : 1U)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Arguments->get(I).pack_size() != (I == 2 || I == 3 ? 0U : 1U)) return false;
     const auto &Index = Arguments->get(0).pack_elements()[0];
     if (Index.getKind() != TemplateArgument::Integral || !Index.getAsIntegral().isZero() ||
-        !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Index.getIntegralType(), Context.getSizeType())) return false;
+    const auto *FactoryArguments = Factory.Selected.Factory
+        ? Factory.Selected.Factory->getTemplateSpecializationArgs() : nullptr;
+    if (!FactoryArguments || FactoryArguments->size() != 2 ||
+        FactoryArguments->get(0).getKind() != TemplateArgument::Type ||
+        Constructor->getNumParams() != 5) return false;
+    const auto Input = FactoryArguments->get(0).getAsType();
+    if (Input.isNull()) return false;
+    const auto Forwarded = Input->isReferenceType()
+        ? Input : Context.getRValueReferenceType(Input);
+    if (!Context.hasSameType(Constructor->getParamDecl(4)->getType(), Forwarded)) return false;
     for (const unsigned I : {1U, 4U}) {
       const auto &Element = Arguments->get(I).pack_elements()[0];
+      // _Tf stores the decayed callable; _Up retains the factory's actual
+      // deduced forwarding type, including an lvalue reference.
+      const auto Expected = I == 1 ? Factory.Selected.Storage.CallableType : Input;
       if (Element.getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Element.getAsType(), Factory.Selected.Storage.CallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Element.getAsType(), Expected)) return false;
     }
     // The original Sema packet records an expanded index, or ~0U for this
     // actual empty trailing pack. Both original and substituted TypeLocs
@@ -14494,7 +14456,7 @@ class NotFnPointerSourceProof {
                ? (!Factory || !selectedTupleIndexParameter(Source, Type, *Factory))
                : Type.PackIndex != 0) ||
           !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Graph.TraverseTypeLoc(Type.Type->getTypeLoc())) return false;
     }
     return true;
   }
@@ -14502,7 +14464,7 @@ class NotFnPointerSourceProof {
     const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Source.Template);
     const auto *Parameters = Alias ? Alias->getTemplateParameters() : nullptr;
     if (!Parameters || Parameters->size() != 2 ||
-        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Source.Defaults.size() != 1 || Source.ParameterTypes.size() != 1) return false;
     const auto *Condition = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto &Use = Source.Defaults.front();
@@ -14511,7 +14473,7 @@ class NotFnPointerSourceProof {
         !Default || !Default->hasDefaultArgument() || Default->isParameterPack() ||
         Use.Parameter != Default || Source.ParameterTypes.front().Parameter != Condition ||
         Use.Written.getArgument().getKind() != TemplateArgument::Type ||
-        Use.Converted.getArgument().getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Use.Converted.getArgument().getKind() != TemplateArgument::Type) return false;
     // Original, substituted and converted void spellings are inspected as
     // independent source nodes. The canonical void result is insufficient.
     const auto *Original = Default->getDefaultArgument().getTypeSourceInfo();
@@ -14521,7 +14483,7 @@ class NotFnPointerSourceProof {
       if (!Info || !Info->getType()->isVoidType() ||
           !Info->getTypeLoc().getAs<BuiltinTypeLoc>() ||
           !Check.location(Info->getTypeLoc().getBeginLoc(), {"__type_traits/enable_if.h"}) ||
-          !Graph.TraverseTypeLoc(Info->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Graph.TraverseTypeLoc(Info->getTypeLoc())) return false;
     return parameterTypes(Source);
   }
   bool constraintType(const TypeSourceInfo *Info) {
@@ -14529,7 +14491,7 @@ class NotFnPointerSourceProof {
     const auto *Source = typeUse(Root);
     if (!Source || !Root.getTypePtr()->isTypeAlias() ||
         !Check.family(Source->Template, {"__type_traits/enable_if.h"}) ||
-        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Source->Template->getName() != "enable_if_t" || !aliasDefault(*Source)) return false;
     // The retained Sema Underlying contains the selected partial/typedef.
     // The metadata walker follows its original alias definitions and every
     // selected SDK declaration chain and its real operation-query roots.
@@ -14549,9 +14511,9 @@ class NotFnPointerSourceProof {
         !Check.location(Reference->getExprLoc(), {"__functional/perfect_forward.h"}) ||
         Source->Kind != TemplateSourceKind::Function || !Source->FunctionalNotFnConstraint ||
         Source->Declaration != Constructor || Source->Template != Primary || !arguments(*Source) ||
-        Source->Canonical->size() != Arguments->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Source->Canonical->size() != Arguments->size()) return false;
     for (unsigned I = 0; I < Arguments->size(); ++I)
-      if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
     bool Spelling = false;
     for (const auto &Default : Source->Defaults) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
@@ -14562,12 +14524,12 @@ class NotFnPointerSourceProof {
                   Default.Converted.getTypeSourceInfo() == ConstructorDefaultSpelling;
     }
     const auto Root = specialization(ConstructorDefaultSpelling);
-    if (!Spelling || Root.isNull() || Root.getNumArgs() != 1) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Spelling || Root.isNull() || Root.getNumArgs() != 1) return false;
     const auto Argument = Root.getArgLoc(0);
     const auto Kind = Argument.getArgument().getKind();
     const Expr *Condition = Kind == TemplateArgument::Expression ? Argument.getSourceExpression()
         : Kind == TemplateArgument::Integral ? Argument.getSourceIntegralExpression() : nullptr;
-    if (!Condition) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Condition) return false;
     // The reference must be an original child of this particular written or
     // converted constructor default. A same-location sibling is insufficient.
     std::vector<const Stmt *> Pending{Condition};
@@ -14577,14 +14539,14 @@ class NotFnPointerSourceProof {
       const auto *Node = Pending.back();
       Pending.pop_back();
       if (!Node || !Seen.insert(Node).second) continue;
-      if (Seen.size() > 4096) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (Seen.size() > 4096) return false;
       Found |= Node == Reference;
       for (const auto *Child : Node->children()) Pending.push_back(Child);
     }
     const auto Input = Constructor->getParamDecl(0)->getType();
     if (!Found || !Input->isReferenceType() ||
         !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(),
-                             Storage.CallableType)) return ownedNotFnTraceFalse(__LINE__, __func__);
+                             Storage.CallableType)) return false;
     // Reuse the complete real packet, primary/redeclaration, exact argument
     // pack and initializer proof. The storage tuple is not the factory input.
     return Graph.withNotFnConstructorQuery(Reference, Storage, [&] {
@@ -14601,19 +14563,19 @@ class NotFnPointerSourceProof {
         Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
         !Variable->isConstexpr() || !Variable->getType()->isBooleanType() ||
         !Variable->hasInit() ||
-        !Check.family(Primary, {"__type_traits/is_constructible.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Primary, {"__type_traits/is_constructible.h"})) return false;
     // The observed traits instantiate their SDK primary. A user partial
     // selection cannot inherit that primary's source certificate.
     if (Variable->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary)
-      return ownedNotFnTraceFalse(__LINE__, __func__);
+      return false;
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Check.family(Redeclaration, {"__type_traits/is_constructible.h"})) return false;
     const auto &Arguments = Variable->getTemplateArgs();
     const bool Move = Name == "is_move_constructible_v";
     if (Arguments.size() != (Move ? 1U : 2U) ||
         Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Callable) ||
-        (!Move && !Check.oneTypePack(Arguments[1], Input))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        (!Move && !Check.oneTypePack(Arguments[1], Input))) return false;
     bool Found = false;
     for (const auto *Source : Sources) {
       if (!Source || Source->Kind != TemplateSourceKind::VariableUse ||
@@ -14621,9 +14583,9 @@ class NotFnPointerSourceProof {
       if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
           Source->Type || Source->Underlying || !arguments(*Source) ||
           !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-          Source->Canonical->size() != Arguments.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Source->Canonical->size() != Arguments.size()) return false;
       for (unsigned I = 0; I < Arguments.size(); ++I)
-        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return false;
       Found = true;
     }
     // Follow the actual selected initializer (including is_move_constructible's
@@ -14632,7 +14594,7 @@ class NotFnPointerSourceProof {
   }
   bool invocationValueUse(const DeclRefExpr *Reference) {
     const auto Found = InvocableValueReferences.find(Reference);
-    if (Found == InvocableValueReferences.end()) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (Found == InvocableValueReferences.end()) return false;
     const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
     const auto *Owner = Found->second;
     if (!Variable || Variable->getDeclContext() != Owner ||
@@ -14640,7 +14602,7 @@ class NotFnPointerSourceProof {
         !Variable->getType().isConstQualified() || !Variable->getType()->isBooleanType() ||
         !Variable->isUsableInConstantExpressions(Context) ||
         !Check.family(Variable, {"__type_traits/invoke.h"}) ||
-        !Check.family(Owner, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Owner, {"__type_traits/invoke.h"})) return false;
     const VarDecl *Holder = nullptr;
     const auto *Initializer = Variable->getAnyInitializer(Holder);
     return Initializer && Holder &&
@@ -14660,33 +14622,33 @@ class NotFnPointerSourceProof {
         Owner->getDefinition() != Owner || Owner->getNumBases() != 1 ||
         Owner->getNumVBases() || Base->isVirtual() || Base->getAccessSpecifier() != AS_public ||
         !Check.family(Owner, {"__type_traits/invoke.h"}) ||
-        !Check.family(Primary, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Primary, {"__type_traits/invoke.h"})) return false;
     bool ActualBase = false;
     for (const auto &Candidate : Owner->bases())
       ActualBase |= &Candidate == Base;
-    if (!ActualBase) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!ActualBase) return false;
     const auto *Method = Call.Method;
     const auto *Selected = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (!Method || !Selected || Selected->size() != 2 ||
         Selected->get(0).getKind() != TemplateArgument::Pack ||
         Selected->get(0).pack_size() != Method->getNumParams() ||
-        !Check.family(Method, {"__functional/perfect_forward.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
     auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
                                  : Call.Storage.CallableType;
     if (Method->getRefQualifier() == RQ_LValue)
       Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
     const auto &Arguments = Owner->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Bound) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Method->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments[1].pack_size() != Method->getNumParams()) return false;
     const auto Actual = Arguments[1].pack_elements();
     const auto Expected = Selected->get(0).pack_elements();
     for (unsigned I = 0; I < Expected.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type ||
           Expected[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return false;
     const auto *Written = Base->getTypeSourceInfo();
     const auto Root = specialization(Written);
     const auto *EnableIf = Root ? dyn_cast_or_null<ClassTemplateDecl>(
@@ -14697,7 +14659,7 @@ class NotFnPointerSourceProof {
         Root.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type ||
         !Check.location(Written->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) ||
         !Check.location(Written->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) return false;
     const auto *Condition = Root.getArgLoc(0).getArgument().getAsExpr();
     // This is the actual dependent base's selected expression, not a folded
     // bool or a namespace variable admitted by name. Its variable primary,
@@ -14714,11 +14676,11 @@ class NotFnPointerSourceProof {
         !Context.hasSameType(Arguments[0].getAsType(), Expected[0].getAsType()) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
         Expected[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Expected[1].pack_size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments[1].pack_size() != Expected[1].pack_size()) return false;
     const auto Actual = Arguments[1].pack_elements(), Wanted = Expected[1].pack_elements();
     for (unsigned I = 0; I < Actual.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type || Wanted[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Wanted[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Actual[I].getAsType(), Wanted[I].getAsType())) return false;
     return true;
   }
   bool publicNothrowValueUse(const DeclRefExpr *Reference) {
@@ -14734,14 +14696,14 @@ class NotFnPointerSourceProof {
         !Check.family(Owner, {"__type_traits/invoke.h"}) ||
         !Check.family(Primary, {"__type_traits/invoke.h"}) ||
         !Check.family(Value, {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) return false;
     const auto &Arguments = Owner->getTemplateArgs();
     const auto Name = Primary->getName();
     unsigned Offset = 0;
     if (Name == "__invokable_r") {
       if (Arguments.size() != 3 || Arguments[0].getKind() != TemplateArgument::Type ||
           !Arguments[0].getAsType()->isVoidType() ||
-          Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) return false;
       Offset = 1;
     } else if (Name == "__nothrow_invokable_r_imp") {
       const auto *Partial = Owner->getSpecializedTemplateOrPartial()
@@ -14749,36 +14711,36 @@ class NotFnPointerSourceProof {
       if (Arguments.size() != 5 || !Partial ||
           !Check.family(Partial, {"__type_traits/invoke.h"}) ||
           Partial->getSpecializedTemplate() != Primary || Partial->getTemplateArgs().size() != 5 ||
-          Arguments[2].getKind() != TemplateArgument::Type || !Arguments[2].getAsType()->isVoidType()) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Arguments[2].getKind() != TemplateArgument::Type || !Arguments[2].getAsType()->isVoidType()) return false;
       for (unsigned I : {0U, 1U})
         if (Arguments[I].getKind() != TemplateArgument::Integral ||
             !Arguments[I].getIntegralType()->isBooleanType() || Arguments[I].getAsIntegral() != 1 ||
             Partial->getTemplateArgs()[I].getKind() != TemplateArgument::Integral ||
-            Partial->getTemplateArgs()[I].getAsIntegral() != 1) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Partial->getTemplateArgs()[I].getAsIntegral() != 1) return false;
       Offset = 3;
       const auto *Pattern = Value->getInstantiatedFromStaticDataMember();
       if (!Pattern || Pattern->getDeclContext() != Partial || !Pattern->hasInit() ||
           !Check.family(Pattern, {"__type_traits/invoke.h"}) ||
           !isa<CXXNoexceptExpr>(Pattern->getInit()->IgnoreParenImpCasts()) ||
-          !Value->hasInit() || !isa<CXXNoexceptExpr>(Value->getInit()->IgnoreParenImpCasts())) return ownedNotFnTraceFalse(__LINE__, __func__);
-    } else return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Value->hasInit() || !isa<CXXNoexceptExpr>(Value->getInit()->IgnoreParenImpCasts())) return false;
+    } else return false;
     if (Arguments[Offset].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[Offset].getAsType(), Expected->get(0).getAsType()) ||
         Arguments[Offset + 1].getKind() != TemplateArgument::Pack ||
-        Arguments[Offset + 1].pack_size() != Expected->get(1).pack_size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments[Offset + 1].pack_size() != Expected->get(1).pack_size()) return false;
     const auto Pack = Arguments[Offset + 1].pack_elements();
     const auto Wanted = Expected->get(1).pack_elements();
     for (unsigned I = 0; I < Pack.size(); ++I)
       if (Pack[I].getKind() != TemplateArgument::Type || Wanted[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I].getAsType(), Wanted[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Pack[I].getAsType(), Wanted[I].getAsType())) return false;
     const auto Qualifier = Reference->getQualifierLoc();
     const auto *Holder = static_cast<const VarDecl *>(nullptr);
     const auto *Initializer = Value->getAnyInitializer(Holder);
     if (!Qualifier || !Initializer || !Holder ||
         Holder->getCanonicalDecl() != Value->getCanonicalDecl() ||
-        !Check.family(Holder, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Holder, {"__type_traits/invoke.h"})) return false;
     for (const auto *Redeclaration : Value->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
     return Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) &&
         Graph.TraverseStmt(const_cast<Expr *>(Initializer));
   }
@@ -14807,9 +14769,9 @@ class NotFnPointerSourceProof {
         !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
         !Check.family(Rest, {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__functional/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.location(Reference->getExprLoc(), {"__functional/invoke.h"})) return false;
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
     const auto *Load = dyn_cast<ImplicitCastExpr>(Variable->getInit());
     const auto *Value = Load && Load->getCastKind() == CK_LValueToRValue
         ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
@@ -14822,7 +14784,7 @@ class NotFnPointerSourceProof {
         Instance->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Class ||
         !Check.family(Class, {"__type_traits/invoke.h"}) ||
         !Check.family(Instance, {"__type_traits/invoke.h"}) ||
-        !publicInvokeArguments(Instance->getTemplateArgs(), *Expected)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !publicInvokeArguments(Instance->getTemplateArgs(), *Expected)) return false;
     PublicNothrowInitializer = true;
     auto Restore = llvm::make_scope_exit([&] { PublicNothrowInitializer = false; });
     // Both the selected class/base/alias graph and its original initializer
@@ -14858,36 +14820,36 @@ class NotFnPointerSourceProof {
         First->isParameterPack() || First->hasDefaultArgument() ||
         !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
-        !Check.family(Rest, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Rest, {"__type_traits/invoke.h"})) return false;
     for (const auto *Redeclaration : Variable->redecls())
-      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
     const auto *Method = Call.Method;
     const auto *CallArguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (!Method || !CallArguments || CallArguments->size() != 2 ||
         CallArguments->get(0).getKind() != TemplateArgument::Pack ||
         CallArguments->get(0).pack_size() != Method->getNumParams() ||
         Method->getNumParams() > 64 ||
-        !Check.family(Method, {"__functional/perfect_forward.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Method->getNumParams() + (DirectCallable ? 0 : 1)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments[1].pack_size() != Method->getNumParams() + (DirectCallable ? 0 : 1)) return false;
     auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
                                  : Call.Storage.CallableType;
     if (Method->getRefQualifier() == RQ_LValue)
       Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return ownedNotFnTraceFalse(__LINE__, __func__);
+    else if (Method->getRefQualifier() != RQ_RValue) return false;
     const auto Pack = Arguments[1].pack_elements();
     const unsigned Offset = DirectCallable ? 0 : 1;
     if (!Context.hasSameType(Arguments[0].getAsType(), DirectCallable
-            ? Bound : Context.getRecordType(Call.Storage.Operation))) return ownedNotFnTraceFalse(__LINE__, __func__);
+            ? Bound : Context.getRecordType(Call.Storage.Operation))) return false;
     if (!DirectCallable && (Pack[0].getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Pack[0].getAsType(), Bound))) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Pack[0].getAsType(), Bound))) return false;
     const auto Selected = CallArguments->get(0).pack_elements();
     for (unsigned I = 0; I < Selected.size(); ++I)
       if (Selected[I].getKind() != TemplateArgument::Type ||
           Pack[I + Offset].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Pack[I + Offset].getAsType(), Selected[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Pack[I + Offset].getAsType(), Selected[I].getAsType())) return false;
     if (!Internal) {
       bool Found = false;
       for (const auto *Source : Sources) {
@@ -14896,13 +14858,13 @@ class NotFnPointerSourceProof {
         if (!Source->FunctionalNotFnConstraint || Source->Template != Primary ||
             Source->Type || Source->Underlying || !arguments(*Source) ||
             !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-            Source->Canonical->size() != Arguments.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Source->Canonical->size() != Arguments.size()) return false;
         for (unsigned I = 0; I < Arguments.size(); ++I)
-          if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!Source->Canonical->get(I).structurallyEquals(Arguments[I])) return false;
         Found = true;
       }
       if (!Found || !Check.location(Reference->getExprLoc(),
-                                    {"__functional/perfect_forward.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+                                    {"__functional/perfect_forward.h"})) return false;
       // Only the actual child of this authenticated outer initializer may
       // consume the SDK's non-constexpr inline const implementation variable.
       // Its identity, arguments and selected primary close again on reentry.
@@ -14910,7 +14872,7 @@ class NotFnPointerSourceProof {
       const auto *Child = Load && Load->getCastKind() == CK_LValueToRValue
           ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
       if (!Child || !Check.location(Child->getExprLoc(), {"__type_traits/invoke.h"}) ||
-          !InvocableVariableChildren.insert(Child).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !InvocableVariableChildren.insert(Child).second) return false;
       auto Restore = llvm::make_scope_exit([&] { InvocableVariableChildren.erase(Child); });
       return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
     }
@@ -14934,17 +14896,17 @@ class NotFnPointerSourceProof {
         Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Arguments[0].getAsType()) ||
         Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-        Owner->getTemplateArgs()[2].pack_size() != Pack.size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Owner->getTemplateArgs()[2].pack_size() != Pack.size()) return false;
     const auto ActualPack = Owner->getTemplateArgs()[2].pack_elements();
     for (unsigned I = 0; I < Pack.size(); ++I)
       if (ActualPack[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(ActualPack[I].getAsType(), Pack[I].getAsType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(ActualPack[I].getAsType(), Pack[I].getAsType())) return false;
     // The actual __is_invocable alias keeps its written void return argument.
     // Closing that TypeLoc is independent of its canonical void value.
     return Graph.withNotFnOperationQuery(DirectCallable ? nullptr : Reference, [&] {
       const auto Qualifier = Value->getQualifierLoc();
       if (!Qualifier || !Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) ||
-          !InvocableValueReferences.emplace(Value, Owner).second) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !InvocableValueReferences.emplace(Value, Owner).second) return false;
       auto Restore = llvm::make_scope_exit([&] { InvocableValueReferences.erase(Value); });
       return Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
     });
@@ -14957,7 +14919,7 @@ class NotFnPointerSourceProof {
         !Check.family(Alias, {"__type_traits/decay.h"}) || Root.getNumArgs() != 1 ||
         Root.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Root.getArgLoc(0).getArgument().getAsType(), Input) ||
-        !Context.hasSameType(Source->Underlying->getType(), Output)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Source->Underlying->getType(), Output)) return false;
     const auto *Inner = specialization(Source->Underlying->getType());
     const auto *Template = Inner ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Inner->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -14967,7 +14929,7 @@ class NotFnPointerSourceProof {
         !Check.family(Template, {"__type_traits/decay.h"}) || !Transform ||
         Transform->getUTTKind() != UnaryTransformType::Decay ||
         !Context.hasSameType(Transform->getBaseType(), Input) ||
-        !Context.hasSameType(Transform->getUnderlyingType(), Output)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Context.hasSameType(Transform->getUnderlyingType(), Output)) return false;
     return Graph.TraverseTypeLoc(Source->Underlying->getTypeLoc()) &&
            Graph.TraverseTypeLoc(Alias->getTemplatedDecl()->getTypeSourceInfo()->getTypeLoc());
   }
@@ -14994,7 +14956,7 @@ public:
     if (!Pointer || (OwnedQuerySources ? !Factory.Selected.CallableConstruction
                                      : bool(Factory.Selected.CallableConstruction)) ||
         !Graph.bindNotFnFactoryDefaults(Factory) ||
-        !Graph.bindNotFnOperation(Factory.Selected.Storage, OwnedQuerySources)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Graph.bindNotFnOperation(Factory.Selected.Storage, OwnedQuerySources)) return false;
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no
@@ -15005,37 +14967,37 @@ public:
     if ((OwnedQuerySources ? !InputValue->isRecordType()
                           : (!InputValue->isFunctionPointerType() && !InputValue->isFunctionType())) ||
         !Context.hasSameType(Decayed, Callable) ||
-        !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) return false;
     if (!Graph.bindNotFnConstraintVariables(
             [this, Callable, Input, Storage = *Pointer](const DeclRefExpr *Reference) {
-              if (!Reference) return ownedNotFnTraceFalse(__LINE__, __func__);
+              if (!Reference) return false;
               if (!Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}))
                 return constructorVariableUse(Reference, Storage);
               const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
               const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
               if (!Primary || !Primary->getIdentifier() ||
                   (Primary->getName() != "is_constructible_v" &&
-                   Primary->getName() != "is_move_constructible_v")) return ownedNotFnTraceFalse(__LINE__, __func__);
+                   Primary->getName() != "is_move_constructible_v")) return false;
               // Reuse the complete packet/argument/redeclaration/initializer
               // proof below; neither the variable's name nor its folded bool
               // can stand in for an actual retained constraint source.
               return variableUse(Reference, Primary->getName(), Callable, Input);
-            })) return ownedNotFnTraceFalse(__LINE__, __func__);
+            })) return false;
     const auto Primary = specialization(Factory.PrimaryDefault);
     const auto *PrimaryCondition = Primary.isNull() ? nullptr
         : Primary.getArgLoc(0).getArgument().getAsExpr();
     const auto *Original = PrimaryCondition
         ? dyn_cast<BinaryOperator>(PrimaryCondition->IgnoreParenImpCasts()) : nullptr;
-    if (!Original || Original->getOpcode() != BO_LAnd) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Original || Original->getOpcode() != BO_LAnd) return false;
     for (const auto *Expression : {Original->getLHS(), Original->getRHS()}) {
       const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Expression->IgnoreParenImpCasts());
       if (!Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
-          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Check.family(*Lookup->decls_begin(), {"__type_traits/is_constructible.h"})) return false;
     }
     // Traverse the actual dependent primary, then each concrete retained role.
-    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Graph.TraverseType(Factory.PrimaryDefault->getType())) return false;
     for (const auto *Info : {Factory.SubstitutedDefault, Factory.ConvertedDefault}) {
-      if (!constraintType(Info)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!constraintType(Info)) return false;
       const auto Root = specialization(Info);
       const auto *Expression = Root.getArgLoc(0).getArgument().getAsExpr();
       const auto *And = Expression ? dyn_cast<BinaryOperator>(Expression->IgnoreParenImpCasts()) : nullptr;
@@ -15043,22 +15005,22 @@ public:
       const auto *Move = And ? dyn_cast<DeclRefExpr>(And->getRHS()->IgnoreParenImpCasts()) : nullptr;
       if (!And || And->getOpcode() != BO_LAnd ||
           !variableUse(Constructible, "is_constructible_v", Callable, Input) ||
-          !variableUse(Move, "is_move_constructible_v", Callable, Input)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !variableUse(Move, "is_move_constructible_v", Callable, Input)) return false;
       for (const auto *Reference : {Constructible, Move}) {
-        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Reference->hasExplicitTemplateArgs() || !Reference->getNumTemplateArgs()) return false;
         const auto &Argument = Reference->template_arguments()[0];
-        if (Argument.getArgument().getKind() != TemplateArgument::Type) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Argument.getArgument().getKind() != TemplateArgument::Type) return false;
         const auto Decay = specialization(Argument.getTypeSourceInfo());
-        if (!decay(Decay, Input, Callable)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!decay(Decay, Input, Callable)) return false;
       }
     }
     const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
-    if (!Tags || Tags->size() != 4) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Tags || Tags->size() != 4) return false;
     UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
                                 UtilityTupleQueryMode::CatSignature);
-    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags, OwnedQuerySources != nullptr)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags, OwnedQuerySources != nullptr)) return false;
     for (const auto &Tag : *Tags)
-      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
     // Every selected construction keeps its actual signature. The exact
     // constructor template/default packets must also be present; the pointer
     // layout never supplies their missing source.
@@ -15066,15 +15028,15 @@ public:
       const auto *Constructor = Construction->getConstructor();
       if (Constructor->isInheritingConstructor()) {
         if (Constructor->getParent()->getCanonicalDecl() != Pointer->Record->getCanonicalDecl())
-          return ownedNotFnTraceFalse(__LINE__, __func__);
+          return false;
         Constructor = Constructor->getInheritedConstructor().getConstructor();
         if (!Constructor || Constructor->getParent()->getCanonicalDecl() !=
-                Pointer->Forwarder->getCanonicalDecl()) return ownedNotFnTraceFalse(__LINE__, __func__);
+                Pointer->Forwarder->getCanonicalDecl()) return false;
       }
       const auto *PrimaryTemplate = Constructor->getPrimaryTemplate();
-      if (!PrimaryTemplate || !Graph.function(Constructor)) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!PrimaryTemplate || !Graph.function(Constructor)) return false;
       if (const auto *Written = Constructor->getTypeSourceInfo())
-        if (!Graph.TraverseNotFnConstructorSignature(Constructor, Written)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!Graph.TraverseNotFnConstructorSignature(Constructor, Written)) return false;
       bool Found = false;
       for (const auto *Source : Sources) {
         if (!Source || Source->Kind != TemplateSourceKind::Function ||
@@ -15086,7 +15048,7 @@ public:
               Selection->Location == Source->Location &&
               matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
         if (!Selected) continue;
-        if (Source->Template != PrimaryTemplate || !arguments(*Source)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (Source->Template != PrimaryTemplate || !arguments(*Source)) return false;
         for (const auto &Default : Source->Defaults) {
           const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
           if (Parameter) {
@@ -15094,7 +15056,7 @@ public:
                 Default.Written.getArgument().getKind() != TemplateArgument::Type ||
                 Default.Converted.getArgument().getKind() != TemplateArgument::Type ||
                 !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()))
-              return ownedNotFnTraceFalse(__LINE__, __func__);
+              return false;
             const auto *SavedOwner = ConstructorDefaultOwner;
             const auto *SavedSource = ConstructorDefaultSource;
             const auto *SavedSpelling = ConstructorDefaultSpelling;
@@ -15108,15 +15070,15 @@ public:
             for (const auto *Spelling : {Default.Written.getTypeSourceInfo(),
                                         Default.Converted.getTypeSourceInfo()}) {
               ConstructorDefaultSpelling = Spelling;
-              if (!constraintType(Spelling)) return ownedNotFnTraceFalse(__LINE__, __func__);
+              if (!constraintType(Spelling)) return false;
             }
           } else if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
-                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) return ownedNotFnTraceFalse(__LINE__, __func__);
+                     !Graph.TraverseTemplateArgumentLoc(Default.Converted)) return false;
         }
-        if (!parameterTypes(*Source, &Factory)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        if (!parameterTypes(*Source, &Factory)) return false;
         Found = true;
       }
-      if (!Found) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Found) return false;
     }
     return true;
   }
@@ -15145,14 +15107,14 @@ public:
         Operation->getNumParams() > 64 || Arguments->size() != 2 ||
         Arguments->get(0).getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Pack ||
-        Arguments->get(1).pack_size() + 1 != Operation->getNumParams()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Arguments->get(1).pack_size() + 1 != Operation->getNumParams()) return false;
     for (const auto *Redeclaration : Function->redecls())
-      if (!Check.family(Redeclaration, {"__functional/invoke.h"})) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Check.family(Redeclaration, {"__functional/invoke.h"})) return false;
     const auto Pack = Arguments->get(1).pack_elements();
     for (unsigned I = 0; I < Function->getNumParams(); ++I) {
       const auto Input = Operation->getParamDecl(I)->getType();
       if (!Input->isReferenceType() || Function->getParamDecl(I)->hasDefaultArg() ||
-          !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) return ownedNotFnTraceFalse(__LINE__, __func__);
+          !Context.hasSameType(Function->getParamDecl(I)->getType(), Input)) return false;
       // Both SDK calls forward the same parameter. Deduction keeps an
       // lvalue reference but removes the reference from an xvalue; the
       // independently checked function parameter still has Input's exact
@@ -15160,7 +15122,7 @@ public:
       const auto &Deduced = I ? Pack[I - 1] : Arguments->get(0);
       if (Deduced.getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Deduced.getAsType(), Input->isLValueReferenceType()
-              ? Input : Input->getPointeeType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+              ? Input : Input->getPointeeType())) return false;
     }
     std::vector<const CallExpr *> Roots, Forwards;
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
@@ -15169,19 +15131,19 @@ public:
       const auto *Negation = Source ? dyn_cast_or_null<UnaryOperator>(Source->Negation) : nullptr;
       if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
           (Negation ? Negation->getOpcode() != UO_LNot
-                    : !approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context))) return ownedNotFnTraceFalse(__LINE__, __func__);
+                    : !approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context))) return false;
       const auto *Root = Source->InvokeCall;
       const auto *Reference = Root ? dyn_cast<DeclRefExpr>(Root->getCallee()->IgnoreParenImpCasts()) : nullptr;
       if (!Root || !Reference || Reference->getDecl() != Function || Root->getDirectCallee() != Function ||
           Root->isTypeDependent() || Root->isValueDependent() || Root->getNumArgs() != Operation->getNumParams() ||
           !Check.location(Reference->getExprLoc(), {"__functional/not_fn.h"}) ||
           !Context.hasSameType(Root->getType(), Function->getReturnType().getNonLValueExprType(Context)) ||
-          Root->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) return ownedNotFnTraceFalse(__LINE__, __func__);
+          Root->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) return false;
       bool Selected = false, Retained = false;
       for (const auto *Selection : Selections)
         if (Selection && Selection->Expression == Root && Selection->Function == Function) {
           if (!Selection->FunctionalNotFnConstraint || Selection->Location != Reference->getExprLoc() ||
-              !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) return ownedNotFnTraceFalse(__LINE__, __func__);
+              !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) return false;
           Selected = true;
         }
       for (const auto *Source : Sources) {
@@ -15190,34 +15152,34 @@ public:
             !Source->FunctionalNotFnConstraint || !arguments(*Source) || Source->Type || Source->Underlying ||
             Source->Written || Source->Instantiation || Source->Origin || Source->WrittenStorageClass ||
             Source->Selection || !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
-            Source->Canonical->size() != Arguments->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+            Source->Canonical->size() != Arguments->size()) return false;
         for (unsigned I = 0; I < Arguments->size(); ++I)
-          if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+          if (!Source->Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
         Retained = true;
       }
-      if (!Selected || !Retained) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Selected || !Retained) return false;
       for (unsigned I = 0; I < Root->getNumArgs(); ++I) {
         const CallExpr *Forward = nullptr;
         if (!Check.forwarding(Root->getArg(I), Operation->getParamDecl(I),
-                              "__functional/not_fn.h", Forward)) return ownedNotFnTraceFalse(__LINE__, __func__);
+                              "__functional/not_fn.h", Forward)) return false;
         Forwards.push_back(Forward);
       }
       Roots.push_back(Root);
     }
-    if (!Graph.bindNotFnPublicInvoke(Function, Operation, Roots, Forwards)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Graph.bindNotFnPublicInvoke(Function, Operation, Roots, Forwards)) return false;
     PublicInvokeFunction = Function;
     const auto *Pattern = Primary->getTemplatedDecl();
     const auto *Info = Function->getTypeSourceInfo();
     if (!Pattern || !Info || !Pattern->getTypeSourceInfo() ||
         !Graph.TraverseTypeLoc(Info->getTypeLoc()) || !Graph.function(Function) ||
-        !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
     // Metadata signatures are complete; the original runtime helper bodies,
     // forwarding, negation and lifetime proofs remain independent obligations.
     return true;
   }
   bool callDefaults(const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr) {
-    if (PublicInvokeFunction || PublicNothrowInitializer) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (PublicInvokeFunction || PublicNothrowInitializer) return false;
     auto RestorePublicInvoke = llvm::make_scope_exit([&] {
       PublicInvokeFunction = nullptr;
       PublicNothrowInitializer = false;
@@ -15225,7 +15187,7 @@ public:
     if (!Graph.bindNotFnOperation(Call.Storage, OwnedQuerySources) ||
         !Graph.bindNotFnConstraintVariables([this, Call](const DeclRefExpr *Reference) {
           return invocationVariableUse(Reference, Call);
-        })) return ownedNotFnTraceFalse(__LINE__, __func__);
+        })) return false;
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
@@ -15236,7 +15198,7 @@ public:
         SourceCall->getOperator() != OO_Call ||
         SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
-        !S.owns(SM, Reference->getExprLoc()) || !Use.Location.isValid()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !S.owns(SM, Reference->getExprLoc()) || !Use.Location.isValid()) return false;
     bool Selected = false;
     // Retain the original owned-source proof. Only an SDK-origin packet
     // needs the additional exact retained selection of this same method.
@@ -15260,12 +15222,12 @@ public:
         Use.Template != Primary || Use.Declaration != Method ||
         Use.Kind != TemplateSourceKind::Function || !Use.FunctionalNotFnConstraint ||
         !arguments(Use) || Use.Defaults.size() != 1 ||
-        Use.Canonical->size() != Arguments->size()) return ownedNotFnTraceFalse(__LINE__, __func__);
+        Use.Canonical->size() != Arguments->size()) return false;
     for (unsigned I = 0; I < Arguments->size(); ++I)
-      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return ownedNotFnTraceFalse(__LINE__, __func__);
+      if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
     return Graph.withNotFnInvocation(Call, [&] {
     if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections) ||
-        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) return false;
     // Close the concrete inner invoke result before the outer operator's
     // constraint reaches it. Use this SAME graph and its original cumulative
     // node/depth limits; only a fully successful dependency may be cached.
@@ -15286,14 +15248,14 @@ public:
         !Alias || Alias->getName() != "invoke_result_t" ||
         !Check.family(Alias, {"__type_traits/invoke.h"}) ||
         !Context.hasSameType(Return.getType(), Callee->getReturnType()) ||
-        !Graph.TraverseTypeLoc(Return) || !publicInvokeSources(Call)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !Graph.TraverseTypeLoc(Return) || !publicInvokeSources(Call)) return false;
     // Close this selected dependency at the original graph root, after its
     // public operation is authenticated and before the independent defaults.
-    if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Graph.prepareNotFnOperationInvokeSignatures(Sources, Selections)) return false;
     // The outer invocability probe is a separate real selected member call.
     // Close its original primary, result alias and ellipsis witness at this
     // same root, after the precise operation invoke dependency is complete.
-    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) return ownedNotFnTraceFalse(__LINE__, __func__);
+    if (!Graph.prepareNotFnTryResultSignatures(Sources, Selections, true)) return false;
     const auto &Default = Use.Defaults.front();
     const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter);
     if (!Parameter || !Parameter->hasDefaultArgument() ||
@@ -15302,7 +15264,7 @@ public:
         !Graph.TraverseType(Parameter->getDefaultArgument().getArgument().getAsType()) ||
         !constraintType(Default.Written.getTypeSourceInfo()) ||
         !constraintType(Default.Converted.getTypeSourceInfo()) ||
-        !parameterTypes(Use)) return ownedNotFnTraceFalse(__LINE__, __func__);
+        !parameterTypes(Use)) return false;
     return true;
     });
   }
