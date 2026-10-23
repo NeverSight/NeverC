@@ -71,6 +71,7 @@ set(x86_files
   adcintrin.h
   adxintrin.h
   ammintrin.h
+  amxintrin.h
   avx2intrin.h
   avx512bf16intrin.h
   avx512bitalgintrin.h

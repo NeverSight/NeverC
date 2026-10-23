@@ -47,6 +47,86 @@ TEST_F(X86PrivilegedIntrinTest,
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, AmxPublicHeaderExposesPhysicalTileInterfaces) {
+  auto Source = tmpFile("amx_header.c");
+  auto Assembly = tmpFile("amx_header.s");
+  writeFile(Source, R"(
+    #include <immintrin.h>
+    void f(void *out, const void *config, unsigned long long stride,
+           unsigned row) {
+      _tile_loadconfig(config);
+      _tile_storeconfig(out);
+      _tile_zero(0);
+      _tile_loadd(1, config, stride);
+      _tile_stream_loadd(2, config, stride);
+      _tile_loaddrs(3, config, stride);
+      _tile_stream_loaddrs(4, config, stride);
+      _tile_dpbssd(0, 1, 2);
+      _tile_dpbsud(0, 1, 2);
+      _tile_dpbusd(0, 1, 2);
+      _tile_dpbuud(0, 1, 2);
+      _tile_dpbf16ps(0, 1, 2);
+      _tile_dpfp16ps(0, 1, 2);
+      _tile_cmmimfp16ps(0, 1, 2);
+      _tile_cmmrlfp16ps(0, 1, 2);
+      _tile_dpbf8ps(0, 1, 2);
+      _tile_dpbhf8ps(0, 1, 2);
+      _tile_dphbf8ps(0, 1, 2);
+      _tile_dphf8ps(0, 1, 2);
+      _tile_mmultf32ps(0, 1, 2);
+      ((__m512 *)out)[0] = _tile_cvtrowd2ps(0, row);
+      ((__m512 *)out)[1] = _tile_cvtrowd2psi(1, 255);
+      ((__m512bh *)out)[2] = _tile_cvtrowps2bf16h(2, row);
+      ((__m512bh *)out)[3] = _tile_cvtrowps2bf16hi(3, 255);
+      ((__m512bh *)out)[4] = _tile_cvtrowps2bf16l(4, row);
+      ((__m512bh *)out)[5] = _tile_cvtrowps2bf16li(5, 255);
+      ((__m512h *)out)[6] = _tile_cvtrowps2phh(6, row);
+      ((__m512h *)out)[7] = _tile_cvtrowps2phhi(7, 255);
+      ((__m512h *)out)[8] = _tile_cvtrowps2phl(0, row);
+      ((__m512h *)out)[9] = _tile_cvtrowps2phli(1, 255);
+      ((__m512i *)out)[10] = _tile_movrow(2, row);
+      ((__m512i *)out)[11] = _tile_movrowi(3, 255);
+      _tile_stored(0, out, stride);
+      _tile_release();
+    }
+  )");
+  for (const char *Triple :
+       {"x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu",
+        "x86_64-apple-darwin"}) {
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Triple);
+      SCOPED_TRACE(Opt);
+      auto Result = ncc({std::string("--target=") + Triple,
+                         "-ffreestanding",
+                         "-fno-builtin-mimalloc",
+                         "-fno-lto",
+                         "-Werror",
+                         "-mamx-avx512",
+                         "-mavx10.2",
+                         "-mamx-int8",
+                         "-mamx-bf16",
+                         "-mamx-fp16",
+                         "-mamx-complex",
+                         "-mamx-fp8",
+                         "-mamx-movrs",
+                         "-mamx-tf32",
+                         "-mllvm",
+                         "-verify-machineinstrs",
+                         Opt,
+                         "-S",
+                         Source.string(),
+                         "-o",
+                         Assembly.string()});
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      const auto Text = readFile(Assembly);
+      EXPECT_EQ(Text.find("#APP"), std::string::npos) << Text;
+      EXPECT_NE(Text.find("\ttdpbf8ps\t"), std::string::npos) << Text;
+      EXPECT_NE(Text.find("\ttcvtrowps2phl\t"), std::string::npos) << Text;
+      EXPECT_NE(Text.find("\ttileloaddrst1\t"), std::string::npos) << Text;
+    }
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, AmxComputeAndMovrsUseNativeInstructions) {
   constexpr const char *Source = R"(
     __attribute__((target("amx-fp8,amx-movrs,amx-tf32")))

@@ -6,6 +6,7 @@
 #endif
 
 #include <x86gprintrin.h>
+#include <amxintrin.h>
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
     defined(__MMX__)

@@ -471,6 +471,14 @@ linear pointer and a full-width byte stride. The compiler preserves the
 instruction-owned memory accesses and architectural tile state; it does not
 preload memory or implement the instruction with inline assembly.
 
+`<immintrin.h>` also exposes the standard physical `_tile_*` entry points
+through `amxintrin.h`, including configuration, loads/stores, compute and row
+operations. These wrappers call the native builtins; they introduce no inline
+assembly or managed-tile conversion. For example, `_tile_loaddrs(0, base,
+stride)`, `_tile_dpbf8ps(0, 1, 2)` and `_tile_cvtrowd2ps(0, row)` use the same
+contracts as their corresponding builtins. The header ships in the compiler's
+resource directory and the installed x86 resource-header component.
+
 The feature names are `amx-fp8`, `amx-movrs` and `amx-tf32`, each implying
 `amx-tile`. They work in function target attributes and through `-mamx-fp8`,
 `-mamx-movrs` and `-mamx-tf32`, with matching `-mno-` options. The last command-line
@@ -553,7 +561,7 @@ establish those contracts.
 
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
-36 tests cover native instruction emission, semantic regressions, builtin
+37 tests cover native instruction emission, semantic regressions, builtin
 type/selector diagnostics and the absence of inline assembly. The
 `compileToAsm()` helper enables the machine verifier for the Windows x64
 target; tests exercise O0/O2 where optimization affects the contract.
