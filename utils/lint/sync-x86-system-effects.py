@@ -13,12 +13,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TABLE = ROOT / "llvm/lib/Target/X86/X86GenInstrInfo.inc"
-# Implicit uses, implicit definitions, explicit/implicit memory effects.
+# Explicit operand count, implicit uses/definitions, memory effects.
 EFFECTS = {
-    "CLTS": ((), (), ()),
-    "WRMSRNS": (("EAX", "ECX", "EDX"), (), ()),
-    "RDMSRLIST": (("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad", "MayStore")),
-    "WRMSRLIST": (("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad",)),
+    "CLTS": (0, (), (), ()),
+    "WRMSRNS": (0, ("EAX", "ECX", "EDX"), (), ()),
+    "RDMSRLIST": (0, ("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad", "MayStore")),
+    "WRMSRLIST": (0, ("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad",)),
+    # IF/VIF is ambient state. CLI/STI preserve the arithmetic flags represented
+    # by the compiler's EFLAGS register, so they do not use or define that value.
+    "CLI": (0, (), (), ()),
+    "STI": (0, (), (), ()),
+    "INVLPG": (5, (), (), ()),
+    "SGDT64m": (5, (), (), ("MayStore",)),
+    "SIDT64m": (5, (), (), ("MayStore",)),
+    "LGDT64m": (5, (), (), ("MayLoad",)),
+    "LIDT64m": (5, (), (), ("MayLoad",)),
+    "CPUID": (0, ("EAX", "ECX"), ("EAX", "EBX", "ECX", "EDX"), ()),
+    "IN8rr": (0, ("DX",), ("AL",), ()),
+    "IN16rr": (0, ("DX",), ("AX",), ()),
+    "IN32rr": (0, ("DX",), ("EAX",), ()),
+    "OUT8rr": (0, ("DX", "AL"), (), ()),
+    "OUT16rr": (0, ("DX", "AX"), (), ()),
+    "OUT32rr": (0, ("DX", "EAX"), (), ()),
 }
 
 
@@ -40,7 +56,7 @@ def implicit_sequence(text, sequence):
 
 
 def synchronize(text):
-    for name, (uses, definitions, memory_effects) in EFFECTS.items():
+    for name, (explicit_operands, uses, definitions, memory_effects) in EFFECTS.items():
         text, offset = implicit_sequence(text, uses + definitions)
         pattern = re.compile(
             r"^(\s*\{ )([^\n]+?)( \},  // Inst #\d+ = " + name + r")$", re.MULTILINE)
@@ -48,7 +64,7 @@ def synchronize(text):
         if not match:
             raise ValueError(f"missing instruction descriptor: {name}")
         fields = match.group(2).split(",\t")
-        if len(fields) != 10 or fields[1:3] != ["0", "0"]:
+        if len(fields) != 10 or fields[1:3] != [str(explicit_operands), "0"]:
             raise ValueError(f"unexpected explicit operands: {name}")
         fields[5:8] = [str(len(uses)), str(len(definitions)), f"X86ImpOpBase + {offset}"]
         flags, encoding = fields[9].split(", ", 1)

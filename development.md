@@ -188,6 +188,30 @@ nonzero injection does not model a normal architectural return. Privileged MSR
 access and actual partial-progress exception/restart behavior need a suitable
 execution environment.
 
+### Port I/O, descriptor tables and processor queries
+
+The LLVM fork accepts NeverC's native `inbyte/inword/indword`,
+`outbyte/outword/outdword`, `cli/sti`, `invlpg`, `sgdt/sidt/lgdt/lidt`, and
+`cpuidex` IR signatures. Port selectors remain i16, with i8/i16/i32 data.
+The descriptor-table APIs retain the instruction-owned access: ten bytes in
+64-bit mode, six bytes for the fork's default 32-bit form. INVLPG keeps its
+address operand without introducing an ordinary load. CPUID writes its four
+i32 results to the output array in EAX/EBX/ECX/EDX slot order.
+
+`utils/lint/sync-x86-system-effects.py` also maintains these native opcodes'
+implicit registers and memory effects. CLI/STI update ambient IF/VIF state;
+they preserve arithmetic flags and must not consume an undefined compiler
+EFLAGS value. The old descriptions failed machine verification at function
+entry even though ordinary assembly emission succeeded.
+
+Run `tests/verify-system-completion.py` using `--compiler`, `--llc`, or
+`--backend-llc` as above. It checks live/dead port reads, full-width port
+values, descriptor sizes and unchanged surrounding memory, unmapped access
+boundaries, all CPUID outputs and restoration of callee-saved RBX/EBX.
+The native completion runners enable LLVM machine verification in NeverC
+as well as in the full fork. These checks qualify compiler transport; they
+do not execute privileged I/O or change host interrupt/descriptor state.
+
 ### CR/DR register ops
 
 CR and DR registers must be **reserved** in `X86RegisterInfo.cpp` to prevent

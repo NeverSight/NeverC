@@ -54,7 +54,8 @@ def compile_case(args, directory, operation, result, opt):
             f" {before}\n unsigned __int64 remaining = __builtin_ia32_{operation}(indices, values, mask);\n"
             f" {finish}\n}}\n")
         common = [str(args.compiler), "--target=x86_64-pc-windows-msvc", "-" + opt,
-                  "-ffreestanding", "-fno-lto", "-fno-stack-protector", str(source)]
+                  "-ffreestanding", "-fno-lto", "-fno-stack-protector",
+                  "-mllvm", "-verify-machineinstrs", str(source)]
         commands = [common + ["-S", "-emit-llvm", "-o", str(ir)]]
         if not args.backend_llc:
             commands.append(common + ["-c", "-o", str(output)])

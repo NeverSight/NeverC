@@ -60,7 +60,8 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None):
         f'{result} probe({parameters}) {{\n'
         f'  {prefix}{builtin}({arguments});\n}}\n')
     command = [str(compiler), "-target", "x86_64-pc-windows-msvc", "-" + opt,
-               "-ffreestanding", "-fno-lto", "-fno-stack-protector", str(source)]
+               "-ffreestanding", "-fno-lto", "-fno-stack-protector",
+                  "-mllvm", "-verify-machineinstrs", str(source)]
     outputs = [(["-S", "-emit-llvm"], ir)]
     if not backend:
         outputs.append((["-c"], output))

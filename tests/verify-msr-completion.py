@@ -50,7 +50,8 @@ def compile_case(args, directory, kind, opt, bits):
                           f'{result} probe(unsigned int index, unsigned __int64 value) {{\n'
                           f' {statement}\n}}\n')
         common = [str(args.compiler), "--target=x86_64-pc-windows-msvc", "-" + opt,
-                  "-ffreestanding", "-fno-lto", "-fno-stack-protector", str(source)]
+                  "-ffreestanding", "-fno-lto", "-fno-stack-protector",
+                  "-mllvm", "-verify-machineinstrs", str(source)]
         commands = [common + ["-S", "-emit-llvm", "-o", str(ir)]]
         if not args.backend_llc:
             commands.append(common + ["-c", "-o", str(output)])
