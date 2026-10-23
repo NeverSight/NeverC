@@ -3374,6 +3374,71 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_clts:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__builtin_ia32_verr_reg:
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_verr_reg,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_verr_mem:
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_verr_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_verw_reg:
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_verw_reg,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_verw_mem:
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_verw_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_sldt_reg16:
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_sldt_reg16,
+                                   {});
+  case X86::BI__builtin_ia32_sldt_reg32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_sldt_reg32,
+                                   {});
+  case X86::BI__builtin_ia32_sldt_reg64:
+    return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_sldt_reg64,
+                                   {});
+  case X86::BI__builtin_ia32_sldt_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_sldt_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_str_reg16:
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_str_reg16, {});
+  case X86::BI__builtin_ia32_str_reg32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_str_reg32, {});
+  case X86::BI__builtin_ia32_str_reg64:
+    return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_str_reg64, {});
+  case X86::BI__builtin_ia32_str_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_str_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_smsw_reg16:
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_smsw_reg16,
+                                   {});
+  case X86::BI__builtin_ia32_smsw_reg32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_smsw_reg32,
+                                   {});
+  case X86::BI__builtin_ia32_smsw_reg64:
+    return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_smsw_reg64,
+                                   {});
+  case X86::BI__builtin_ia32_smsw_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_smsw_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_lldt_reg:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lldt_reg,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_lldt_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lldt_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_ltr_reg:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_ltr_reg,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_ltr_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_ltr_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_lmsw_reg:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lmsw_reg,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_lmsw_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lmsw_mem,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_invd:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invd, {});
   case X86::BI__builtin_ia32_hreset:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_hreset,
                                    {Ops[0]});

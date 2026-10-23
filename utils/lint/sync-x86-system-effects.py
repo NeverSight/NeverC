@@ -19,6 +19,8 @@ EFFECTS = {
     "HRESET": (1, ("EAX",), (), ()),
     "INVLPGB64": (0, ("RAX", "EDX", "ECX"), (), ()),
     "TLBSYNC": (0, (), (), ()),
+    "LKGS16r": (1, (), (), ("MayLoad",)),
+    "LKGS16m": (5, (), (), ("MayLoad",)),
     "WRMSRNS": (0, ("EAX", "ECX", "EDX"), (), ()),
     "RDMSRLIST": (0, ("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad", "MayStore")),
     "WRMSRLIST": (0, ("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad",)),
@@ -60,6 +62,26 @@ EFFECTS = {
 
 }
 
+REGISTER_RESULTS = {f"{operation}{bits}r"
+                    for operation in ("SLDT", "STR", "SMSW")
+                    for bits in (16, 32, 64)}
+for name in REGISTER_RESULTS:
+    EFFECTS[name] = (1, (), (), ())
+for operation in ("SLDT", "STR", "SMSW"):
+    name = operation + ("m" if operation == "STR" else "16m")
+    EFFECTS[name] = (5, (), (), ("MayStore",))
+for operation in ("VERR", "VERW", "LLDT", "LTR", "LMSW"):
+    for form in ("r", "m"):
+        name = operation + ("16" if operation in ("LLDT", "LMSW") else "") + form
+        # LTR reads and atomically sets the descriptor's busy bit even when
+        # its selector comes from a register. LLDT and VERIFY read the GDT/LDT.
+        memory = (("MayLoad",) if form == "m" or operation != "LMSW" else ())
+        if operation == "LTR":
+            memory += ("MayStore",)
+        definitions = ("EFLAGS",) if operation in ("VERR", "VERW") else ()
+        EFFECTS[name] = (5 if form == "m" else 1, (), definitions, memory)
+EFFECTS["INVD"] = (0, (), (), ("MayLoad", "MayStore"))
+
 
 def implicit_sequence(text, sequence):
     start = text.index("    /* 0 */ X86::EFLAGS,")
@@ -87,7 +109,8 @@ def synchronize(text):
         if not match:
             raise ValueError(f"missing instruction descriptor: {name}")
         fields = match.group(2).split(",\t")
-        explicit_defs = 1 if name in ("MOV64rc", "MOV64cr", "MOV64rd", "MOV64dr") else 0
+        explicit_defs = int(name in REGISTER_RESULTS or
+                            name in ("MOV64rc", "MOV64cr", "MOV64rd", "MOV64dr"))
         if len(fields) != 10 or fields[1:3] != [str(explicit_operands), str(explicit_defs)]:
             raise ValueError(f"unexpected explicit operands: {name}")
         fields[5:8] = [str(len(uses)), str(len(definitions)), f"X86ImpOpBase + {offset}"]

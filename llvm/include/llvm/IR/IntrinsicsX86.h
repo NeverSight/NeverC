@@ -1031,6 +1031,7 @@ enum X86Intrinsics : unsigned {
     x86_indwordstring,                               // llvm.x86.indwordstring
     x86_int,                                         // llvm.x86.int
     x86_int2c,                                       // llvm.x86.int2c
+    x86_invd,                                        // llvm.x86.invd
     x86_invept,                                      // llvm.x86.invept
     x86_invlpg,                                      // llvm.x86.invlpg
     x86_invlpgb,                                     // llvm.x86.invlpgb
@@ -1050,7 +1051,11 @@ enum X86Intrinsics : unsigned {
     x86_lidt,                                        // llvm.x86.lidt
     x86_lkgs_mem,                                    // llvm.x86.lkgs.mem
     x86_lkgs_reg,                                    // llvm.x86.lkgs.reg
+    x86_lldt_mem,                                    // llvm.x86.lldt.mem
+    x86_lldt_reg,                                    // llvm.x86.lldt.reg
     x86_llwpcb,                                      // llvm.x86.llwpcb
+    x86_lmsw_mem,                                    // llvm.x86.lmsw.mem
+    x86_lmsw_reg,                                    // llvm.x86.lmsw.reg
     x86_loadiwkey,                                   // llvm.x86.loadiwkey
     x86_lsl,                                         // llvm.x86.lsl
     x86_lsl_mem16,                                   // llvm.x86.lsl.mem16
@@ -1059,6 +1064,8 @@ enum X86Intrinsics : unsigned {
     x86_lsl_reg16,                                   // llvm.x86.lsl.reg16
     x86_lsl_reg32,                                   // llvm.x86.lsl.reg32
     x86_lsl_reg64,                                   // llvm.x86.lsl.reg64
+    x86_ltr_mem,                                     // llvm.x86.ltr.mem
+    x86_ltr_reg,                                     // llvm.x86.ltr.reg
     x86_lwpins32,                                    // llvm.x86.lwpins32
     x86_lwpins64,                                    // llvm.x86.lwpins64
     x86_lwpval32,                                    // llvm.x86.lwpval32
@@ -1189,7 +1196,15 @@ enum X86Intrinsics : unsigned {
     x86_sha256msg2,                                  // llvm.x86.sha256msg2
     x86_sha256rnds2,                                 // llvm.x86.sha256rnds2
     x86_sidt,                                        // llvm.x86.sidt
+    x86_sldt_mem,                                    // llvm.x86.sldt.mem
+    x86_sldt_reg16,                                  // llvm.x86.sldt.reg16
+    x86_sldt_reg32,                                  // llvm.x86.sldt.reg32
+    x86_sldt_reg64,                                  // llvm.x86.sldt.reg64
     x86_slwpcb,                                      // llvm.x86.slwpcb
+    x86_smsw_mem,                                    // llvm.x86.smsw.mem
+    x86_smsw_reg16,                                  // llvm.x86.smsw.reg16
+    x86_smsw_reg32,                                  // llvm.x86.smsw.reg32
+    x86_smsw_reg64,                                  // llvm.x86.smsw.reg64
     x86_sse_cmp_ps,                                  // llvm.x86.sse.cmp.ps
     x86_sse_cmp_ss,                                  // llvm.x86.sse.cmp.ss
     x86_sse_comieq_ss,                               // llvm.x86.sse.comieq.ss
@@ -1366,6 +1381,10 @@ enum X86Intrinsics : unsigned {
     x86_stosd,                                       // llvm.x86.stosd
     x86_stosq,                                       // llvm.x86.stosq
     x86_stosw,                                       // llvm.x86.stosw
+    x86_str_mem,                                     // llvm.x86.str.mem
+    x86_str_reg16,                                   // llvm.x86.str.reg16
+    x86_str_reg32,                                   // llvm.x86.str.reg32
+    x86_str_reg64,                                   // llvm.x86.str.reg64
     x86_sttilecfg,                                   // llvm.x86.sttilecfg
     x86_stui,                                        // llvm.x86.stui
     x86_subborrow_32,                                // llvm.x86.subborrow.32
@@ -1439,6 +1458,10 @@ enum X86Intrinsics : unsigned {
     x86_vcvtneps2bf16256,                            // llvm.x86.vcvtneps2bf16256
     x86_vcvtps2ph_128,                               // llvm.x86.vcvtps2ph.128
     x86_vcvtps2ph_256,                               // llvm.x86.vcvtps2ph.256
+    x86_verr_mem,                                    // llvm.x86.verr.mem
+    x86_verr_reg,                                    // llvm.x86.verr.reg
+    x86_verw_mem,                                    // llvm.x86.verw.mem
+    x86_verw_reg,                                    // llvm.x86.verw.reg
     x86_vgf2p8affineinvqb_128,                       // llvm.x86.vgf2p8affineinvqb.128
     x86_vgf2p8affineinvqb_256,                       // llvm.x86.vgf2p8affineinvqb.256
     x86_vgf2p8affineinvqb_512,                       // llvm.x86.vgf2p8affineinvqb.512

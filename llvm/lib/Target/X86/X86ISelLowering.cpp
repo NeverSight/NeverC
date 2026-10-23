@@ -26059,6 +26059,161 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
   return DAG.getMergeValues({Status, SDValue(Access, ChainIndex)}, DL);
 }
 
+// Preserve native widths and keep every memory operand inside its instruction.
+static SDValue lowerDescriptorState(SDValue Op, const X86Subtarget &Subtarget,
+                                    SelectionDAG &DAG) {
+  enum class ResultKind { Read, Verify, Write };
+  unsigned Opcode;
+  ResultKind Kind;
+  bool Memory;
+  switch (Op.getConstantOperandVal(1)) {
+  default:
+    llvm_unreachable("unexpected descriptor state intrinsic");
+  case Intrinsic::x86_verr_reg:
+    Opcode = X86::VERRr;
+    Kind = ResultKind::Verify;
+    Memory = false;
+    break;
+  case Intrinsic::x86_verr_mem:
+    Opcode = X86::VERRm;
+    Kind = ResultKind::Verify;
+    Memory = true;
+    break;
+  case Intrinsic::x86_verw_reg:
+    Opcode = X86::VERWr;
+    Kind = ResultKind::Verify;
+    Memory = false;
+    break;
+  case Intrinsic::x86_verw_mem:
+    Opcode = X86::VERWm;
+    Kind = ResultKind::Verify;
+    Memory = true;
+    break;
+  case Intrinsic::x86_sldt_reg16:
+    Opcode = X86::SLDT16r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_sldt_reg32:
+    Opcode = X86::SLDT32r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_sldt_reg64:
+    Opcode = X86::SLDT64r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_sldt_mem:
+    Opcode = X86::SLDT16m;
+    Kind = ResultKind::Write;
+    Memory = true;
+    break;
+  case Intrinsic::x86_str_reg16:
+    Opcode = X86::STR16r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_str_reg32:
+    Opcode = X86::STR32r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_str_reg64:
+    Opcode = X86::STR64r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_str_mem:
+    Opcode = X86::STRm;
+    Kind = ResultKind::Write;
+    Memory = true;
+    break;
+  case Intrinsic::x86_smsw_reg16:
+    Opcode = X86::SMSW16r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_smsw_reg32:
+    Opcode = X86::SMSW32r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_smsw_reg64:
+    Opcode = X86::SMSW64r;
+    Kind = ResultKind::Read;
+    Memory = false;
+    break;
+  case Intrinsic::x86_smsw_mem:
+    Opcode = X86::SMSW16m;
+    Kind = ResultKind::Write;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lldt_reg:
+    Opcode = X86::LLDT16r;
+    Kind = ResultKind::Write;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lldt_mem:
+    Opcode = X86::LLDT16m;
+    Kind = ResultKind::Write;
+    Memory = true;
+    break;
+  case Intrinsic::x86_ltr_reg:
+    Opcode = X86::LTRr;
+    Kind = ResultKind::Write;
+    Memory = false;
+    break;
+  case Intrinsic::x86_ltr_mem:
+    Opcode = X86::LTRm;
+    Kind = ResultKind::Write;
+    Memory = true;
+    break;
+  case Intrinsic::x86_lmsw_reg:
+    Opcode = X86::LMSW16r;
+    Kind = ResultKind::Write;
+    Memory = false;
+    break;
+  case Intrinsic::x86_lmsw_mem:
+    Opcode = X86::LMSW16m;
+    Kind = ResultKind::Write;
+    Memory = true;
+    break;
+  }
+  const EVT VT = Op.getValueType();
+  if (Kind == ResultKind::Read && VT == MVT::i64 && !Subtarget.is64Bit())
+    report_fatal_error("64-bit descriptor state result requires 64-bit mode");
+  const SDLoc DL(Op);
+  SmallVector<SDValue, 6> Operands;
+  if (Memory) {
+    const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
+    Operands = {Op.getOperand(2), DAG.getTargetConstant(1, DL, MVT::i8),
+                DAG.getRegister(0, PtrVT),
+                DAG.getTargetConstant(0, DL, MVT::i32),
+                DAG.getRegister(0, MVT::i16)};
+  } else if (Kind != ResultKind::Read) {
+    Operands.push_back(Op.getOperand(2));
+  }
+  Operands.push_back(Op.getOperand(0));
+  if (Kind == ResultKind::Write)
+    return SDValue(DAG.getMachineNode(Opcode, DL, MVT::Other, Operands), 0);
+  if (Kind == ResultKind::Read) {
+    // In particular, do not replace SMSW r32/r64 with a zero-extended r16.
+    // Implementation-defined or undefined upper bits remain native.
+    auto *Access =
+        DAG.getMachineNode(Opcode, DL, DAG.getVTList(VT, MVT::Other), Operands);
+    return DAG.getMergeValues({SDValue(Access, 0), SDValue(Access, 1)}, DL);
+  }
+  auto *Access = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue), Operands);
+  SDValue ZF(
+      DAG.getMachineNode(X86::SETCCr, DL, MVT::i8,
+                         {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8),
+                          SDValue(Access, 1)}),
+      0);
+  return DAG.getMergeValues({ZF, SDValue(Access, 0)}, DL);
+}
+
 static SDValue lowerBoundedSystemState(SDValue Op,
                                        const X86Subtarget &Subtarget,
                                        SelectionDAG &DAG) {
@@ -26068,6 +26223,8 @@ static SDValue lowerBoundedSystemState(SDValue Op,
   switch (ID) {
   default:
     llvm_unreachable("unexpected bounded system intrinsic");
+  case Intrinsic::x86_invd:
+    return SDValue(DAG.getMachineNode(X86::INVD, DL, MVT::Other, Chain), 0);
   case Intrinsic::x86_hreset:
     Chain = DAG.getCopyToReg(Chain, DL, X86::EAX, Op.getOperand(2), SDValue());
     return SDValue(DAG.getMachineNode(X86::HRESET, DL, MVT::Other,
@@ -26403,6 +26560,31 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                          Op.getOperand(2), DAG.getConstant(0, dl, MVT::i32),
                          DAG.getConstant(0, dl, MVT::i32));
     }
+    case Intrinsic::x86_verr_reg:
+    case Intrinsic::x86_verr_mem:
+    case Intrinsic::x86_verw_reg:
+    case Intrinsic::x86_verw_mem:
+    case Intrinsic::x86_sldt_reg16:
+    case Intrinsic::x86_sldt_reg32:
+    case Intrinsic::x86_sldt_reg64:
+    case Intrinsic::x86_sldt_mem:
+    case Intrinsic::x86_str_reg16:
+    case Intrinsic::x86_str_reg32:
+    case Intrinsic::x86_str_reg64:
+    case Intrinsic::x86_str_mem:
+    case Intrinsic::x86_smsw_reg16:
+    case Intrinsic::x86_smsw_reg32:
+    case Intrinsic::x86_smsw_reg64:
+    case Intrinsic::x86_smsw_mem:
+    case Intrinsic::x86_lldt_reg:
+    case Intrinsic::x86_lldt_mem:
+    case Intrinsic::x86_ltr_reg:
+    case Intrinsic::x86_ltr_mem:
+    case Intrinsic::x86_lmsw_reg:
+    case Intrinsic::x86_lmsw_mem:
+      return lowerDescriptorState(Op, Subtarget, DAG);
+
+    case Intrinsic::x86_invd:
     case Intrinsic::x86_hreset:
     case Intrinsic::x86_tlbsync:
     case Intrinsic::x86_invlpgb:

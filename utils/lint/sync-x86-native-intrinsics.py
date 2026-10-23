@@ -36,6 +36,15 @@ DECLARATIONS = {
     "lkgs_mem": ("Done", "PTR"),
 }
 DECLARATIONS["lsl"] = ("I32", "I32")
+DECLARATIONS["invd"] = ("Done",)
+for operation in ("verr", "verw", "lldt", "ltr", "lmsw"):
+    result = "I8" if operation in ("verr", "verw") else "Done"
+    DECLARATIONS[f"{operation}_reg"] = (result, "I16")
+    DECLARATIONS[f"{operation}_mem"] = (result, "PTR")
+for operation in ("sldt", "str", "smsw"):
+    for bits in (16, 32, 64):
+        DECLARATIONS[f"{operation}_reg{bits}"] = (f"I{bits}",)
+    DECLARATIONS[f"{operation}_mem"] = ("Done", "PTR")
 for operation in ("lar", "lsl"):
     for bits in (16, 32, 64):
         for source in ("reg", "mem"):

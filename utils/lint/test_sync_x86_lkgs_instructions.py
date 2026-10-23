@@ -28,7 +28,7 @@ class LKGSTablesTest(unittest.TestCase):
             fields = LKGS.TABLES.descriptor(table, name)
             self.assertEqual(fields[9].split(", ")[1], expected)
             self.assertIn("UnmodeledSideEffects", fields[9])
-            self.assertEqual("MayLoad" in fields[9], name.endswith("m"))
+            self.assertIn("MayLoad", fields[9])  # Both forms read the descriptor.
 
     def test_corrupt_modrm_extension_is_rejected(self):
         table = (LKGS.TABLES.TARGET / "X86GenInstrInfo.inc").read_text()

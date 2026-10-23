@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1514).
+   1554).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -249,6 +249,43 @@ selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
 assembly dialects. It executes surrounding scalar code while intercepting
 privileged instructions, so it does not qualify successful processor-history
 reset, descriptor loading, interprocessor invalidation or synchronization.
+
+### Descriptor and machine-state access
+
+The following builtins emit native instructions through matching fixed LLVM
+IR signatures; replace the builtin's underscores with dots after `llvm.x86.`:
+
+| Builtin suffix | C signature | Result/effect |
+| --- | --- | --- |
+| `{verr,verw}_reg` | `unsigned char (unsigned short)` | Actual ZF, 1 for accessible/readable or writable |
+| `{verr,verw}_mem` | `unsigned char (const void *)` | Same completion, with an instruction-owned m16 selector |
+| `{sldt,str,smsw}_reg{16,32,64}` | `unsigned short/unsigned/unsigned long long (void)` | Native register result at the named operand width |
+| `{sldt,str,smsw}_mem` | `void (void *)` | Instruction-owned m16 output, regardless of code mode |
+| `{lldt,ltr,lmsw}_reg` | `void (unsigned short)` | Native selector/status-word input |
+| `{lldt,ltr,lmsw}_mem` | `void (const void *)` | Instruction-owned m16 input |
+| `invd` | `void (void)` | Native cache invalidation without writeback |
+
+Each suffix is prefixed with `__builtin_ia32_`. The full LLVM fork supports
+both code modes and rejects 64-bit register results on i386. Memory APIs use
+AS0 and the default address width, without imposing C alignment. Wider SMSW
+register forms are never synthesized by extending a 16-bit read: native upper
+bits depend on mode and processor. The other instructions' privilege, UMIP,
+descriptor and fault checks likewise remain native. LTR's descriptor busy-bit
+update is a read/write effect even with a register selector. LLDT, LKGS and
+VERR/VERW retain their implicit descriptor reads. All APIs remain ordered even
+when their results are unused; no API promises a software descriptor model.
+
+`tests/verify-descriptor-state-completion.py` checks operand encodings, widths,
+ZF transport, repeated/dead effects, memory ordering, unmapped boundaries and
+saved registers at O0/O2, including ELF/COFF/Mach-O and both assembly dialects.
+Safe user-mode queries are compared with an independent assembly oracle in
+isolated processes, with explicit UMIP/host-availability skips. The separate
+`tests/verify-descriptor-state-qemu.py` runs disposable CPL0 TCG guests against
+GDT/LDT/TSS and CR0 state. It checks LTR busy-bit writes, both LLDT/LTR/LMSW
+operand forms, native verification, m16 output boundaries and LMSW's inability
+to clear PE. INVD's successful guest fallthrough does not qualify physical
+cache discard. Both scripts accept the usual `--compiler`, `--llc` and
+`--backend-llc` routes; QEMU additionally needs clang, ld.lld and GNU objcopy.
 
 ### Descriptor queries (LAR / LSL)
 

@@ -616,6 +616,76 @@ TEST_F(X86PrivilegedIntrinTest, BoundedSystemEffectsUseNativeInstructions) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, DescriptorStateEffectsRemainNativeWhenUnused) {
+  constexpr const char *Source = R"(
+    void probe(unsigned short selector, void *memory) {
+      (void)__builtin_ia32_verr_reg(selector);
+      (void)__builtin_ia32_verr_reg(selector);
+      (void)__builtin_ia32_verr_mem(memory);
+      (void)__builtin_ia32_verr_mem(memory);
+      (void)__builtin_ia32_verw_reg(selector);
+      (void)__builtin_ia32_verw_reg(selector);
+      (void)__builtin_ia32_verw_mem(memory);
+      (void)__builtin_ia32_verw_mem(memory);
+      (void)__builtin_ia32_sldt_reg16();
+      (void)__builtin_ia32_sldt_reg16();
+      (void)__builtin_ia32_sldt_reg32();
+      (void)__builtin_ia32_sldt_reg32();
+      (void)__builtin_ia32_sldt_reg64();
+      (void)__builtin_ia32_sldt_reg64();
+      (void)__builtin_ia32_sldt_mem(memory);
+      (void)__builtin_ia32_sldt_mem(memory);
+      (void)__builtin_ia32_str_reg16();
+      (void)__builtin_ia32_str_reg16();
+      (void)__builtin_ia32_str_reg32();
+      (void)__builtin_ia32_str_reg32();
+      (void)__builtin_ia32_str_reg64();
+      (void)__builtin_ia32_str_reg64();
+      (void)__builtin_ia32_str_mem(memory);
+      (void)__builtin_ia32_str_mem(memory);
+      (void)__builtin_ia32_smsw_reg16();
+      (void)__builtin_ia32_smsw_reg16();
+      (void)__builtin_ia32_smsw_reg32();
+      (void)__builtin_ia32_smsw_reg32();
+      (void)__builtin_ia32_smsw_reg64();
+      (void)__builtin_ia32_smsw_reg64();
+      (void)__builtin_ia32_smsw_mem(memory);
+      (void)__builtin_ia32_smsw_mem(memory);
+      (void)__builtin_ia32_lldt_reg(selector);
+      (void)__builtin_ia32_lldt_reg(selector);
+      (void)__builtin_ia32_lldt_mem(memory);
+      (void)__builtin_ia32_lldt_mem(memory);
+      (void)__builtin_ia32_ltr_reg(selector);
+      (void)__builtin_ia32_ltr_reg(selector);
+      (void)__builtin_ia32_ltr_mem(memory);
+      (void)__builtin_ia32_ltr_mem(memory);
+      (void)__builtin_ia32_lmsw_reg(selector);
+      (void)__builtin_ia32_lmsw_reg(selector);
+      (void)__builtin_ia32_lmsw_mem(memory);
+      (void)__builtin_ia32_lmsw_mem(memory);
+      (void)__builtin_ia32_invd();
+      (void)__builtin_ia32_invd();
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Assembly] = compileToAsm(Source, "descriptor_state", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const auto &[Instruction, Count] :
+         {std::pair{"verr", 4}, std::pair{"verw", 4}, std::pair{"sldt", 8},
+          std::pair{"str", 8}, std::pair{"smsw", 8}, std::pair{"lldt", 4},
+          std::pair{"ltr", 4}, std::pair{"lmsw", 4}, std::pair{"invd", 2}}) {
+      const std::regex Pattern(std::string("\\t") + Instruction +
+                               "[\\t\\r\\n]");
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Pattern),
+                              std::sregex_iterator()),
+                Count)
+          << Assembly;
+    }
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, HresetBuiltinRequiresItsTargetFeature) {
   auto [RC, Error] = compileToAsm(
       "void query(unsigned control) { __builtin_ia32_hreset(control); }",
