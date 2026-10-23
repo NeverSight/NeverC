@@ -186,8 +186,10 @@ must not introduce an additional memory access. Both VMREAD and VMWRITE define
 EFLAGS, and VMWRITE's field and value are inputs, not register definitions.
 The full LLVM fork owns these properties in `X86InstrVMX.td`; this pruned tree's
 corresponding descriptors are maintained by
-`python3 utils/lint/sync-x86-vmcs-effects.py --write` and checked in generated
-table CI. This does not reorder opcode or intrinsic IDs.
+`python3 utils/lint/sync-x86-vmx-effects.py --write` and checked in generated
+table CI. The generator also owns the EFLAGS definitions of VMX management
+instructions, the m64 reads of VMCLEAR/VMPTRLD/VMXON, and the m64 write of VMPTRST.
+This does not reorder opcode or intrinsic IDs.
 
 Run `python3 tests/verify-vmcs-completion.py --compiler build-neverc/bin/neverc`
 with `capstone`, `lief`, and `unicorn` installed to check both live and dead
@@ -199,6 +201,12 @@ execution still requires a VMX environment. NeverC's pruned X86 backend currentl
 targets x86-64. Run the same test with `--llc /path/to/fork/llc` to cover the LLVM
 fork's x86-64 and i386 intrinsic lowering, including its separate 32-bit forms.
 The frontend test uses freestanding headers, so it needs no Windows SDK.
+Use `--family access` or `--family management` for a focused run. Management
+coverage keeps the explicit memory operand at 64 bits in both code modes and
+checks that an unmapped operand is not accessed before the VMX instruction.
+VMLAUNCH/VMRESUME are tested only on their falling-through VMfail paths; guest
+entry or late entry failure transfers control through the VMCS and is not a
+normal intrinsic return.
 
 ### TSX (xbegin, xabort, xend, xtest)
 

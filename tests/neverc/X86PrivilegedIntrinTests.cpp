@@ -1,9 +1,11 @@
 #include "NeverCTestFixture.h"
 
+#include <regex>
+
 class X86PrivilegedIntrinTest : public NeverCTest {
 protected:
-  std::pair<int, std::string> compileToAsm(const char *src,
-                                           const char *stem) {
+  std::pair<int, std::string> compileToAsm(const char *src, const char *stem,
+                                           const char *opt = "-O2") {
     auto srcFile = tmpFile(std::string(stem) + ".c");
     writeFile(srcFile, src);
     auto outFile = tmpFile(std::string(stem) + ".s");
@@ -12,7 +14,8 @@ protected:
     // allocator that is otherwise injected by default contributes hundreds of
     // functions with inline asm of their own.
     auto r = ncc({"--target=x86_64-pc-windows-msvc", "-fno-builtin-mimalloc",
-                  "-O2", "-S", srcFile.string(), "-o", outFile.string()});
+                  "-ffreestanding", "-fno-lto", opt, "-S", srcFile.string(),
+                  "-o", outFile.string()});
     if (r.exitCode != 0) return {r.exitCode, r.err};
     return {0, readFile(outFile)};
   }
@@ -197,6 +200,35 @@ TEST_F(X86PrivilegedIntrinTest, VmxParameterizedOpsLowerCorrectly) {
   EXPECT_NE(s.find("vmclear"), std::string::npos) << "expected vmclear\n" << s;
   EXPECT_NE(s.find("vmptrld"), std::string::npos) << "expected vmptrld\n" << s;
   EXPECT_NE(s.find("vmxon"), std::string::npos) << "expected vmxon\n" << s;
+}
+
+TEST_F(X86PrivilegedIntrinTest, VmreadOwnsItsConditionalMemoryWrite) {
+  // A register VMREAD followed by a C/IR store writes the destination even on
+  // VMfail. Require the native memory form, including when status is unused.
+  const std::regex memoryRead(R"(vmread\s+qword ptr \[[^\]]+\], [a-z0-9]+)");
+  for (const char *opt : {"-O0", "-O2"}) {
+    for (bool dead : {false, true}) {
+      SCOPED_TRACE(opt);
+      SCOPED_TRACE(dead);
+      const char *source = dead ? R"(
+        #include <intrin.h>
+        void access(unsigned __int64 field, unsigned __int64 *destination) {
+          __vmx_vmread(field, destination);
+        }
+      )"
+                                : R"(
+        #include <intrin.h>
+        unsigned char access(unsigned __int64 field,
+                             unsigned __int64 *destination) {
+          return __vmx_vmread(field, destination);
+        }
+      )";
+      auto [rc, assembly] = compileToAsm(source, "vmread_memory", opt);
+      ASSERT_EQ(rc, 0) << assembly;
+      EXPECT_TRUE(std::regex_search(assembly, memoryRead)) << assembly;
+      EXPECT_EQ(assembly.find("#APP"), std::string::npos) << assembly;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
