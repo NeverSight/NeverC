@@ -9,7 +9,9 @@ on:
       - 'utils/lint/sort-diagnostic-groups.py'
       - 'llvm/include/llvm/IR/IntrinsicsX86.h'
       - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
+      - 'llvm/lib/Target/X86/X86GenInstrInfo.inc'
       - 'utils/lint/sort-x86-intrinsics.py'
+      - 'utils/lint/sync-x86-vmcs-effects.py'
       - '.github/workflows/lint-generated-td.yml'
   pull_request:
     paths:
@@ -19,7 +21,9 @@ on:
       - 'utils/lint/sort-diagnostic-groups.py'
       - 'llvm/include/llvm/IR/IntrinsicsX86.h'
       - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
+      - 'llvm/lib/Target/X86/X86GenInstrInfo.inc'
       - 'utils/lint/sort-x86-intrinsics.py'
+      - 'utils/lint/sync-x86-vmcs-effects.py'
       - '.github/workflows/lint-generated-td.yml'
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
@@ -87,3 +91,6 @@ jobs:
           echo "If this step fails, run locally:"
           echo "  python3 utils/lint/sort-x86-intrinsics.py --write"
           echo "and commit the result."
+
+      - name: Verify VMCS instruction effects
+        run: python3 utils/lint/sync-x86-vmcs-effects.py

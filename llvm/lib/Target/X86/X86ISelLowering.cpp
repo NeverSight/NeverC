@@ -26390,14 +26390,17 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDValue Chain = Op.getOperand(0);
       SDValue Field = Op.getOperand(2);
       SDValue DstPtr = Op.getOperand(3);
-      SDVTList VmTys = DAG.getVTList(MVT::i64, MVT::Other, MVT::Glue);
-      SDNode *VM = DAG.getMachineNode(X86::VMREAD64rr, dl, VmTys,
-          {Field, Chain});
-      SDValue ReadVal = SDValue(VM, 0);
-      Chain = SDValue(VM, 1);
-      SDValue Glue = SDValue(VM, 2);
-      Chain = DAG.getStore(Chain, dl, ReadVal, DstPtr,
-                           MachinePointerInfo(), Align(8));
+      // A failed VMREAD must leave the destination untouched. In particular,
+      // do not turn it into the register form followed by an unconditional
+      // store: that also introduces a memory fault on a VMfail path.
+      SDVTList VmTys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *VM = DAG.getMachineNode(
+          X86::VMREAD64mr, dl, VmTys,
+          {DstPtr, DAG.getTargetConstant(1, dl, MVT::i8),
+           DAG.getRegister(0, MVT::i64), DAG.getTargetConstant(0, dl, MVT::i32),
+           DAG.getRegister(0, MVT::i16), Field, Chain});
+      Chain = SDValue(VM, 0);
+      SDValue Glue = SDValue(VM, 1);
       SDVTList SetTys = DAG.getVTList(MVT::i8, MVT::Glue);
       SDNode *SetZ = DAG.getMachineNode(X86::SETCCr, dl, SetTys,
           {DAG.getTargetConstant(X86::COND_E, dl, MVT::i8), Glue});

@@ -179,6 +179,27 @@ VMX operations (vmlaunch, vmresume, vmwrite, etc.) report success/failure via
 EFLAGS. The lowering emits `sete` + `setb` after the VMX instruction and
 encodes the result as: 0 = success, 1 = fail (ZF), 2 = fail (CF).
 
+`__vmx_vmread` lowers to the memory form of VMREAD. The instruction owns the
+conditional write; do not emit a register VMREAD followed by an unconditional
+LLVM store. On VMfail the destination must remain unchanged, and the compiler
+must not introduce an additional memory access. Both VMREAD and VMWRITE define
+EFLAGS, and VMWRITE's field and value are inputs, not register definitions.
+The full LLVM fork owns these properties in `X86InstrVMX.td`; this pruned tree's
+corresponding descriptors are maintained by
+`python3 utils/lint/sync-x86-vmcs-effects.py --write` and checked in generated
+table CI. This does not reorder opcode or intrinsic IDs.
+
+Run `python3 tests/verify-vmcs-completion.py --compiler build-neverc/bin/neverc`
+with `capstone`, `lief`, and `unicorn` installed to check both live and dead
+status results at O0/O2. The test intercepts the actual VMCS instruction, checks
+its operands, supplies each architectural completion, and executes the remaining
+machine code. Failed reads include unchanged and unmapped destinations. This
+qualifies compiler transport and native intrinsic emission; successful privileged
+execution still requires a VMX environment. NeverC's pruned X86 backend currently
+targets x86-64. Run the same test with `--llc /path/to/fork/llc` to cover the LLVM
+fork's x86-64 and i386 intrinsic lowering, including its separate 32-bit forms.
+The frontend test uses freestanding headers, so it needs no Windows SDK.
+
 ### TSX (xbegin, xabort, xend, xtest)
 
 - **xbegin**: XBEGIN pseudo has `UsesCustomInserter` flag. The custom inserter
