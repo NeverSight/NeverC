@@ -8376,7 +8376,13 @@ static const char MnemonicTable[] =
     "\010tdphf8ps"
     "\013tmmultf32ps"
     "\013tileloaddrs"
-    "\015tileloaddrst1";
+    "\015tileloaddrst1"
+    "\013tcvtrowd2ps"
+    "\017tcvtrowps2bf16h"
+    "\017tcvtrowps2bf16l"
+    "\015tcvtrowps2phh"
+    "\015tcvtrowps2phl"
+    "\012tilemovrow";
 
 // Feature bitsets.
 enum : uint8_t {
@@ -11589,6 +11595,16 @@ static const MatchEntry MatchTable0[] = {
   { 8192 /* t1mskcq */, X86::T1MSKC64rm, Convert__Reg1_1__Mem645_0, AMFBS_None, { MCK_Mem64, MCK_GR64 }, },
   { 8200 /* tcmmimfp16ps */, X86::TCMMIMFP16PS, Convert__Reg1_2__Tie0_3_3__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
   { 8213 /* tcmmrlfp16ps */, X86::TCMMRLFP16PS, Convert__Reg1_2__Tie0_3_3__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
+  { 18789 /* tcvtrowd2ps */, X86::TCVTROWD2PSrte, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR32, MCK_TILE, MCK_VR512 }, },
+  { 18789 /* tcvtrowd2ps */, X86::TCVTROWD2PSrti, Convert__Reg1_2__Reg1_1__ImmUnsignedi81_0, AMFBS_In64BitMode, { MCK_ImmUnsignedi8, MCK_TILE, MCK_VR512 }, },
+  { 18801 /* tcvtrowps2bf16h */, X86::TCVTROWPS2BF16Hrte, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR32, MCK_TILE, MCK_VR512 }, },
+  { 18801 /* tcvtrowps2bf16h */, X86::TCVTROWPS2BF16Hrti, Convert__Reg1_2__Reg1_1__ImmUnsignedi81_0, AMFBS_In64BitMode, { MCK_ImmUnsignedi8, MCK_TILE, MCK_VR512 }, },
+  { 18817 /* tcvtrowps2bf16l */, X86::TCVTROWPS2BF16Lrte, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR32, MCK_TILE, MCK_VR512 }, },
+  { 18817 /* tcvtrowps2bf16l */, X86::TCVTROWPS2BF16Lrti, Convert__Reg1_2__Reg1_1__ImmUnsignedi81_0, AMFBS_In64BitMode, { MCK_ImmUnsignedi8, MCK_TILE, MCK_VR512 }, },
+  { 18833 /* tcvtrowps2phh */, X86::TCVTROWPS2PHHrte, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR32, MCK_TILE, MCK_VR512 }, },
+  { 18833 /* tcvtrowps2phh */, X86::TCVTROWPS2PHHrti, Convert__Reg1_2__Reg1_1__ImmUnsignedi81_0, AMFBS_In64BitMode, { MCK_ImmUnsignedi8, MCK_TILE, MCK_VR512 }, },
+  { 18847 /* tcvtrowps2phl */, X86::TCVTROWPS2PHLrte, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR32, MCK_TILE, MCK_VR512 }, },
+  { 18847 /* tcvtrowps2phl */, X86::TCVTROWPS2PHLrti, Convert__Reg1_2__Reg1_1__ImmUnsignedi81_0, AMFBS_In64BitMode, { MCK_ImmUnsignedi8, MCK_TILE, MCK_VR512 }, },
   { 8226 /* tdcall */, X86::TDCALL, Convert_NoOperands, AMFBS_None, {  }, },
   { 8233 /* tdpbf16ps */, X86::TDPBF16PS, Convert__Reg1_2__Tie0_1_1__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
   { 18713 /* tdpbf8ps */, X86::TDPBF8PS, Convert__Reg1_2__Tie0_1_1__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
@@ -11633,6 +11649,8 @@ static const MatchEntry MatchTable0[] = {
   { 18775 /* tileloaddrst1 */, X86::TILELOADDRST1_EVEX, Convert__Reg1_1__SibMem5_0, AMFBS_In64BitMode, { MCK_SibMem, MCK_TILE }, },
   { 8331 /* tileloaddt1 */, X86::TILELOADDT1, Convert__Reg1_1__SibMem5_0, AMFBS_In64BitMode, { MCK_SibMem, MCK_TILE }, },
   { 8331 /* tileloaddt1 */, X86::TILELOADDT1_EVEX, Convert__Reg1_1__SibMem5_0, AMFBS_In64BitMode, { MCK_SibMem, MCK_TILE }, },
+  { 18861 /* tilemovrow */, X86::TILEMOVROWrte, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR32, MCK_TILE, MCK_VR512 }, },
+  { 18861 /* tilemovrow */, X86::TILEMOVROWrti, Convert__Reg1_2__Reg1_1__ImmUnsignedi81_0, AMFBS_In64BitMode, { MCK_ImmUnsignedi8, MCK_TILE, MCK_VR512 }, },
   { 8343 /* tilerelease */, X86::TILERELEASE, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 8355 /* tilestored */, X86::TILESTORED, Convert__SibMem5_1__Reg1_0, AMFBS_In64BitMode, { MCK_TILE, MCK_SibMem }, },
   { 8355 /* tilestored */, X86::TILESTORED_EVEX, Convert__SibMem5_1__Reg1_0, AMFBS_In64BitMode, { MCK_TILE, MCK_SibMem }, },
@@ -29357,6 +29375,16 @@ static const MatchEntry MatchTable1[] = {
   { 8177 /* t1mskc */, X86::T1MSKC64rm, Convert__Reg1_0__Mem645_1, AMFBS_None, { MCK_GR64, MCK_Mem64 }, },
   { 8200 /* tcmmimfp16ps */, X86::TCMMIMFP16PS, Convert__Reg1_0__Tie0_1_1__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
   { 8213 /* tcmmrlfp16ps */, X86::TCMMRLFP16PS, Convert__Reg1_0__Tie0_1_1__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
+  { 18789 /* tcvtrowd2ps */, X86::TCVTROWD2PSrte, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_GR32 }, },
+  { 18789 /* tcvtrowd2ps */, X86::TCVTROWD2PSrti, Convert__Reg1_0__Reg1_1__ImmUnsignedi81_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_ImmUnsignedi8 }, },
+  { 18801 /* tcvtrowps2bf16h */, X86::TCVTROWPS2BF16Hrte, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_GR32 }, },
+  { 18801 /* tcvtrowps2bf16h */, X86::TCVTROWPS2BF16Hrti, Convert__Reg1_0__Reg1_1__ImmUnsignedi81_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_ImmUnsignedi8 }, },
+  { 18817 /* tcvtrowps2bf16l */, X86::TCVTROWPS2BF16Lrte, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_GR32 }, },
+  { 18817 /* tcvtrowps2bf16l */, X86::TCVTROWPS2BF16Lrti, Convert__Reg1_0__Reg1_1__ImmUnsignedi81_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_ImmUnsignedi8 }, },
+  { 18833 /* tcvtrowps2phh */, X86::TCVTROWPS2PHHrte, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_GR32 }, },
+  { 18833 /* tcvtrowps2phh */, X86::TCVTROWPS2PHHrti, Convert__Reg1_0__Reg1_1__ImmUnsignedi81_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_ImmUnsignedi8 }, },
+  { 18847 /* tcvtrowps2phl */, X86::TCVTROWPS2PHLrte, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_GR32 }, },
+  { 18847 /* tcvtrowps2phl */, X86::TCVTROWPS2PHLrti, Convert__Reg1_0__Reg1_1__ImmUnsignedi81_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_ImmUnsignedi8 }, },
   { 8226 /* tdcall */, X86::TDCALL, Convert_NoOperands, AMFBS_None, {  }, },
   { 8233 /* tdpbf16ps */, X86::TDPBF16PS, Convert__Reg1_0__Tie0_1_1__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
   { 18713 /* tdpbf8ps */, X86::TDPBF8PS, Convert__Reg1_0__Tie0_1_1__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_TILE, MCK_TILE, MCK_TILE }, },
@@ -29401,6 +29429,8 @@ static const MatchEntry MatchTable1[] = {
   { 18775 /* tileloaddrst1 */, X86::TILELOADDRST1_EVEX, Convert__Reg1_0__SibMem5_1, AMFBS_In64BitMode, { MCK_TILE, MCK_SibMem }, },
   { 8331 /* tileloaddt1 */, X86::TILELOADDT1, Convert__Reg1_0__SibMem5_1, AMFBS_In64BitMode, { MCK_TILE, MCK_SibMem }, },
   { 8331 /* tileloaddt1 */, X86::TILELOADDT1_EVEX, Convert__Reg1_0__SibMem5_1, AMFBS_In64BitMode, { MCK_TILE, MCK_SibMem }, },
+  { 18861 /* tilemovrow */, X86::TILEMOVROWrte, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_GR32 }, },
+  { 18861 /* tilemovrow */, X86::TILEMOVROWrti, Convert__Reg1_0__Reg1_1__ImmUnsignedi81_2, AMFBS_In64BitMode, { MCK_VR512, MCK_TILE, MCK_ImmUnsignedi8 }, },
   { 8343 /* tilerelease */, X86::TILERELEASE, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 8355 /* tilestored */, X86::TILESTORED, Convert__SibMem5_0__Reg1_1, AMFBS_In64BitMode, { MCK_SibMem, MCK_TILE }, },
   { 8355 /* tilestored */, X86::TILESTORED_EVEX, Convert__SibMem5_0__Reg1_1, AMFBS_In64BitMode, { MCK_SibMem, MCK_TILE }, },

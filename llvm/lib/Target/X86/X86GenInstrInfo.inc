@@ -18477,7 +18477,31 @@ namespace X86 {
     TILELOADDRST1	= 18462,
     TILELOADDRST1_EVEX	= 18463,
     PTILELOADDRST1	= 18464,
-    INSTRUCTION_LIST_END = 18465
+    TCVTROWD2PSrte	= 18465,
+    PTCVTROWD2PSrte	= 18466,
+    TCVTROWD2PSrti	= 18467,
+    PTCVTROWD2PSrti	= 18468,
+    TCVTROWPS2BF16Hrte	= 18469,
+    PTCVTROWPS2BF16Hrte	= 18470,
+    TCVTROWPS2BF16Hrti	= 18471,
+    PTCVTROWPS2BF16Hrti	= 18472,
+    TCVTROWPS2BF16Lrte	= 18473,
+    PTCVTROWPS2BF16Lrte	= 18474,
+    TCVTROWPS2BF16Lrti	= 18475,
+    PTCVTROWPS2BF16Lrti	= 18476,
+    TCVTROWPS2PHHrte	= 18477,
+    PTCVTROWPS2PHHrte	= 18478,
+    TCVTROWPS2PHHrti	= 18479,
+    PTCVTROWPS2PHHrti	= 18480,
+    TCVTROWPS2PHLrte	= 18481,
+    PTCVTROWPS2PHLrte	= 18482,
+    TCVTROWPS2PHLrti	= 18483,
+    PTCVTROWPS2PHLrti	= 18484,
+    TILEMOVROWrte	= 18485,
+    PTILEMOVROWrte	= 18486,
+    TILEMOVROWrti	= 18487,
+    PTILEMOVROWrti	= 18488,
+    INSTRUCTION_LIST_END = 18489
   };
 
 } // end namespace X86
@@ -20868,9 +20892,9 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18465];
+  MCInstrDesc Insts[18489];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
-  MCOperandInfo OperandInfo[5420];
+  MCOperandInfo OperandInfo[5432];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
   MCPhysReg ImplicitOps[617];
 };
@@ -20887,6 +20911,30 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18488,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18488 = PTILEMOVROWrti
+    { 18487,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe803e0046829ULL },  // Inst #18487 = TILEMOVROWrti
+    { 18486,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18486 = PTILEMOVROWrte
+    { 18485,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5420,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe8a56000482aULL },  // Inst #18485 = TILEMOVROWrte
+    { 18484,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18484 = PTCVTROWPS2PHLrti
+    { 18483,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe83be0047829ULL },  // Inst #18483 = TCVTROWPS2PHLrti
+    { 18482,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18482 = PTCVTROWPS2PHLrte
+    { 18481,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5420,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe8b6e000482aULL },  // Inst #18481 = TCVTROWPS2PHLrte
+    { 18480,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18480 = PTCVTROWPS2PHHrti
+    { 18479,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe803e0046029ULL },  // Inst #18479 = TCVTROWPS2PHHrti
+    { 18478,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18478 = PTCVTROWPS2PHHrte
+    { 18477,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5420,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe8b6e000402aULL },  // Inst #18477 = TCVTROWPS2PHHrte
+    { 18476,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18476 = PTCVTROWPS2BF16Lrti
+    { 18475,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe83be0047029ULL },  // Inst #18475 = TCVTROWPS2BF16Lrti
+    { 18474,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18474 = PTCVTROWPS2BF16Lrte
+    { 18473,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5420,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe8b6e000502aULL },  // Inst #18473 = TCVTROWPS2BF16Lrte
+    { 18472,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18472 = PTCVTROWPS2BF16Hrti
+    { 18471,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe803e0047829ULL },  // Inst #18471 = TCVTROWPS2BF16Hrti
+    { 18470,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18470 = PTCVTROWPS2BF16Hrte
+    { 18469,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5420,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe8b6e000582aULL },  // Inst #18469 = TCVTROWPS2BF16Hrte
+    { 18468,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18468 = PTCVTROWD2PSrti
+    { 18467,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe803e0047029ULL },  // Inst #18467 = TCVTROWD2PSrti
+    { 18466,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18466 = PTCVTROWD2PSrte
+    { 18465,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5420,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe8a56000502aULL },  // Inst #18465 = TCVTROWD2PSrte
     { 18464,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1119,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18464 = PTILELOADDRST1
     { 18463,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2560004816ULL },  // Inst #18463 = TILELOADDRST1_EVEX
     { 18462,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2520004816ULL },  // Inst #18462 = TILELOADDRST1
@@ -40457,6 +40505,10 @@ extern const X86InstrTable X86Descs = {
     /* 5411 */ { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(1) },
     /* 5415 */ { X86::GR8_NOREXRegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR8_NOREXRegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { X86::GR8_NOREXRegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
     /* 5418 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5420 */ { X86::VR512RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::TILERegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5423 */ { X86::VR512RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5426 */ { X86::VR512RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::TILERegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
+    /* 5429 */ { X86::VR512RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
   }, {
     /* 0 */
     /* 0 */ X86::EFLAGS,
@@ -58164,6 +58216,30 @@ extern const char X86InstrNameData[] = {
   /* 258498 */ "TILELOADDRST1\0"
   /* 258512 */ "TILELOADDRST1_EVEX\0"
   /* 258531 */ "PTILELOADDRST1\0"
+  /* 258546 */ "TCVTROWD2PSrte\0"
+  /* 258561 */ "PTCVTROWD2PSrte\0"
+  /* 258577 */ "TCVTROWD2PSrti\0"
+  /* 258592 */ "PTCVTROWD2PSrti\0"
+  /* 258608 */ "TCVTROWPS2BF16Hrte\0"
+  /* 258627 */ "PTCVTROWPS2BF16Hrte\0"
+  /* 258647 */ "TCVTROWPS2BF16Hrti\0"
+  /* 258666 */ "PTCVTROWPS2BF16Hrti\0"
+  /* 258686 */ "TCVTROWPS2BF16Lrte\0"
+  /* 258705 */ "PTCVTROWPS2BF16Lrte\0"
+  /* 258725 */ "TCVTROWPS2BF16Lrti\0"
+  /* 258744 */ "PTCVTROWPS2BF16Lrti\0"
+  /* 258764 */ "TCVTROWPS2PHHrte\0"
+  /* 258781 */ "PTCVTROWPS2PHHrte\0"
+  /* 258799 */ "TCVTROWPS2PHHrti\0"
+  /* 258816 */ "PTCVTROWPS2PHHrti\0"
+  /* 258834 */ "TCVTROWPS2PHLrte\0"
+  /* 258851 */ "PTCVTROWPS2PHLrte\0"
+  /* 258869 */ "TCVTROWPS2PHLrti\0"
+  /* 258886 */ "PTCVTROWPS2PHLrti\0"
+  /* 258904 */ "TILEMOVROWrte\0"
+  /* 258918 */ "PTILEMOVROWrte\0"
+  /* 258933 */ "TILEMOVROWrti\0"
+  /* 258947 */ "PTILEMOVROWrti\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60493,10 +60569,34 @@ extern const unsigned X86InstrNameIndices[] = {
     258498U,
     258512U,
     258531U,
+    258546U,
+    258561U,
+    258577U,
+    258592U,
+    258608U,
+    258627U,
+    258647U,
+    258666U,
+    258686U,
+    258705U,
+    258725U,
+    258744U,
+    258764U,
+    258781U,
+    258799U,
+    258816U,
+    258834U,
+    258851U,
+    258869U,
+    258886U,
+    258904U,
+    258918U,
+    258933U,
+    258947U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18465);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18489);
 }
 
 } // end namespace llvm
@@ -60556,7 +60656,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18465);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18489);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -97711,6 +97811,54 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     8193,
     /* PTILELOADDRST1 */
     6519,
+    /* TCVTROWD2PSrte */
+    64454,
+    /* PTCVTROWD2PSrte */
+    64457,
+    /* TCVTROWD2PSrti */
+    64460,
+    /* PTCVTROWD2PSrti */
+    64463,
+    /* TCVTROWPS2BF16Hrte */
+    64454,
+    /* PTCVTROWPS2BF16Hrte */
+    64457,
+    /* TCVTROWPS2BF16Hrti */
+    64460,
+    /* PTCVTROWPS2BF16Hrti */
+    64463,
+    /* TCVTROWPS2BF16Lrte */
+    64454,
+    /* PTCVTROWPS2BF16Lrte */
+    64457,
+    /* TCVTROWPS2BF16Lrti */
+    64460,
+    /* PTCVTROWPS2BF16Lrti */
+    64463,
+    /* TCVTROWPS2PHHrte */
+    64454,
+    /* PTCVTROWPS2PHHrte */
+    64457,
+    /* TCVTROWPS2PHHrti */
+    64460,
+    /* PTCVTROWPS2PHHrti */
+    64463,
+    /* TCVTROWPS2PHLrte */
+    64454,
+    /* PTCVTROWPS2PHLrte */
+    64457,
+    /* TCVTROWPS2PHLrti */
+    64460,
+    /* PTCVTROWPS2PHLrti */
+    64463,
+    /* TILEMOVROWrte */
+    64454,
+    /* PTILEMOVROWrte */
+    64457,
+    /* TILEMOVROWrti */
+    64460,
+    /* PTILEMOVROWrti */
+    64463,
   };
 
   using namespace OpTypes;
@@ -134374,6 +134522,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     opaquemem, 
     /* WRITE_SYSREG64 */
     i32imm, GR64,
+      VR512, TILE, GR32,
+      VR512, u8imm, GR32,
+      VR512, TILE, i32u8imm,
+      VR512, u8imm, i32u8imm,
   };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -153022,9 +153174,33 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // TILELOADDRST1 = 18462
     CEFBS_In64BitMode, // TILELOADDRST1_EVEX = 18463
     CEFBS_In64BitMode, // PTILELOADDRST1 = 18464
+    CEFBS_In64BitMode, // TCVTROWD2PSrte = 18465
+    CEFBS_In64BitMode, // PTCVTROWD2PSrte = 18466
+    CEFBS_In64BitMode, // TCVTROWD2PSrti = 18467
+    CEFBS_In64BitMode, // PTCVTROWD2PSrti = 18468
+    CEFBS_In64BitMode, // TCVTROWPS2BF16Hrte = 18469
+    CEFBS_In64BitMode, // PTCVTROWPS2BF16Hrte = 18470
+    CEFBS_In64BitMode, // TCVTROWPS2BF16Hrti = 18471
+    CEFBS_In64BitMode, // PTCVTROWPS2BF16Hrti = 18472
+    CEFBS_In64BitMode, // TCVTROWPS2BF16Lrte = 18473
+    CEFBS_In64BitMode, // PTCVTROWPS2BF16Lrte = 18474
+    CEFBS_In64BitMode, // TCVTROWPS2BF16Lrti = 18475
+    CEFBS_In64BitMode, // PTCVTROWPS2BF16Lrti = 18476
+    CEFBS_In64BitMode, // TCVTROWPS2PHHrte = 18477
+    CEFBS_In64BitMode, // PTCVTROWPS2PHHrte = 18478
+    CEFBS_In64BitMode, // TCVTROWPS2PHHrti = 18479
+    CEFBS_In64BitMode, // PTCVTROWPS2PHHrti = 18480
+    CEFBS_In64BitMode, // TCVTROWPS2PHLrte = 18481
+    CEFBS_In64BitMode, // PTCVTROWPS2PHLrte = 18482
+    CEFBS_In64BitMode, // TCVTROWPS2PHLrti = 18483
+    CEFBS_In64BitMode, // PTCVTROWPS2PHLrti = 18484
+    CEFBS_In64BitMode, // TILEMOVROWrte = 18485
+    CEFBS_In64BitMode, // PTILEMOVROWrte = 18486
+    CEFBS_In64BitMode, // TILEMOVROWrti = 18487
+    CEFBS_In64BitMode, // PTILEMOVROWrti = 18488
   };
 
-  assert(Opcode < 18465);
+  assert(Opcode < 18489);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

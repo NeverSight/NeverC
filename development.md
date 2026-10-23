@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1495).
+   1514).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -502,15 +502,58 @@ completions inject architectural results; they do not qualify hardware AMX
 arithmetic, configuration validity, cache hints, faults or restart behavior.
 Use `--llc` or `--backend-llc` to select those routes, and `--keep` for artifacts.
 
-The twelve AMX-AVX512 row interfaces are still pending in NeverC, along with
-the broader encoding and state-transition API work. A successful native object
-build alone does not establish those remaining contracts.
+### Native AMX row results
+
+The physical tile interface also provides twelve AMX-AVX512 builtins. Each
+name below has the `__builtin_ia32_` prefix. A trailing `i` selects an immediate
+row; the other form consumes all 32 bits of an unsigned integer row operand.
+
+| Register-row / immediate-row names | Result |
+|---|---|
+| `tcvtrowd2ps` / `tcvtrowd2psi` | 16 floats |
+| `tcvtrowps2bf16h` / `tcvtrowps2bf16hi` | 32 bfloat16 values |
+| `tcvtrowps2bf16l` / `tcvtrowps2bf16li` | 32 bfloat16 values |
+| `tcvtrowps2phh` / `tcvtrowps2phhi` | 32 float16 values |
+| `tcvtrowps2phl` / `tcvtrowps2phli` | 32 float16 values |
+| `tilemovrow` / `tilemovrowi` | 16 integers |
+
+Arguments are a constant tile index in `[0, 7]` and a row operand. NeverC
+rejects nonconstant or out-of-range immediate rows instead of truncating them;
+all encoded imm8 values in `[0, 255]` remain available. The architectural
+meaning of row bits belongs to the instruction, including values outside a
+configured tile. The compiler preserves dynamic row bits and all 512 result
+bits. These are side-effecting accesses to physical tile state, including when
+the result is discarded. Mixing physical rows with managed `x86_amx` values is
+rejected by the same ownership check used for physical compute instructions.
+
+Both `amx-avx512` and `avx10.2` are required, through a function target attribute
+or `-mamx-avx512 -mavx10.2`. Matching `-mno-` switches disable the feature.
+The target macros are `__AMX_AVX512__`, `__AVX10_2__` and
+`__AVX10_2_512__`. In this backend AVX10.2 implies the existing AVX10.1 512-bit
+feature set; this addition qualifies the row APIs, not every AVX10.2 opcode.
+The full LLVM fork accepts the older `avx10.1-256` IR feature spelling so
+NeverC's implied feature list crosses the compiler boundary without warnings.
+
+`tests/verify-amx-row-completion.py` covers all physical tiles, every encoded
+imm8, all 32 ZMM and row GPR numbers, O0/O2, ELF/COFF/Mach-O and both assembly
+dialects. Controlled completions check repeated reads, full-width dynamic
+indices, four vector element types, ordinary memory ordering and saved C
+registers. A 32-result pressure case also checks spill/reload flow and Win64
+nonvolatile XMM preservation. Unicorn executes scalar instructions; the harness handles vector
+moves and injects distinct 512-bit row results. This qualifies compiler
+operand/result flow, not AMX arithmetic, hardware faults or restart behavior.
+The full fork, NeverC and NeverC-to-fork routes each run 20,570 checks. Select
+those routes with `--llc` or `--backend-llc`, and retain artifacts with `--keep`.
+
+Segment/address-width and forced-encoding APIs, plus complete state-transition
+contracts, remain separate work. Native object generation alone does not
+establish those contracts.
 
 ## Testing
 
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
-29 tests cover native instruction emission, semantic regressions, builtin
+36 tests cover native instruction emission, semantic regressions, builtin
 type/selector diagnostics and the absence of inline assembly. The
 `compileToAsm()` helper enables the machine verifier for the Windows x64
 target; tests exercise O0/O2 where optimization affects the contract.

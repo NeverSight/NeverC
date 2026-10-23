@@ -153,7 +153,7 @@ bool X86TargetInfo::initFeatureMap(
     if (F.size() > 1 && F.drop_front(1).starts_with("avx10.")) {
       if (F[0] == '+') {
         HasAVX10 = true;
-        if (F.ends_with("512"))
+        if (F.ends_with("512") || F == "+avx10.2")
           HasAVX10_512 = true;
         LastAVX10 = Feature;
       } else if (HasAVX10 && F == "-avx10.1-256") {
@@ -297,6 +297,8 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       HasAVX10_1 = true;
     } else if (Feature == "+avx10.1-512") {
       HasAVX10_1_512 = true;
+    } else if (Feature == "+avx10.2") {
+      HasAVX10_2 = true;
     } else if (Feature == "+avx512cd") {
       HasAVX512CD = true;
     } else if (Feature == "+avx512vpopcntdq") {
@@ -412,6 +414,8 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       HasAMXTILE = true;
     } else if (Feature == "+amx-complex") {
       HasAMXCOMPLEX = true;
+    } else if (Feature == "+amx-avx512") {
+      HasAMXAVX512 = true;
     } else if (Feature == "+amx-fp8") {
       HasAMXFP8 = true;
     } else if (Feature == "+amx-movrs") {
@@ -746,6 +750,10 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__AVX10_1__");
   if (HasAVX10_1_512)
     Builder.defineMacro("__AVX10_1_512__");
+  if (HasAVX10_2) {
+    Builder.defineMacro("__AVX10_2__");
+    Builder.defineMacro("__AVX10_2_512__");
+  }
   if (HasAVX512CD)
     Builder.defineMacro("__AVX512CD__");
   if (HasAVX512VPOPCNTDQ)
@@ -851,6 +859,8 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__AMX_FP16__");
   if (HasAMXCOMPLEX)
     Builder.defineMacro("__AMX_COMPLEX__");
+  if (HasAMXAVX512)
+    Builder.defineMacro("__AMX_AVX512__");
   if (HasAMXFP8)
     Builder.defineMacro("__AMX_FP8__");
   if (HasAMXMOVRS)
@@ -964,6 +974,7 @@ bool X86TargetInfo::isValidFeatureName(llvm::StringRef Name) const {
       .Case("aes", true)
       .Case("amx-bf16", true)
       .Case("amx-complex", true)
+      .Case("amx-avx512", true)
       .Case("amx-fp8", true)
       .Case("amx-movrs", true)
       .Case("amx-tf32", true)
@@ -973,6 +984,7 @@ bool X86TargetInfo::isValidFeatureName(llvm::StringRef Name) const {
       .Case("avx", true)
       .Case("avx10.1-256", true)
       .Case("avx10.1-512", true)
+      .Case("avx10.2", true)
       .Case("avx2", true)
       .Case("avx512f", true)
       .Case("avx512cd", true)
@@ -1083,6 +1095,7 @@ bool X86TargetInfo::hasFeature(llvm::StringRef Feature) const {
       .Case("aes", HasAES)
       .Case("amx-bf16", HasAMXBF16)
       .Case("amx-complex", HasAMXCOMPLEX)
+      .Case("amx-avx512", HasAMXAVX512)
       .Case("amx-fp8", HasAMXFP8)
       .Case("amx-movrs", HasAMXMOVRS)
       .Case("amx-tf32", HasAMXTF32)
@@ -1092,6 +1105,7 @@ bool X86TargetInfo::hasFeature(llvm::StringRef Feature) const {
       .Case("avx", SSELevel >= AVX)
       .Case("avx10.1-256", HasAVX10_1)
       .Case("avx10.1-512", HasAVX10_1_512)
+      .Case("avx10.2", HasAVX10_2)
       .Case("avx2", SSELevel >= AVX2)
       .Case("avx512f", SSELevel >= AVX512F)
       .Case("avx512cd", HasAVX512CD)

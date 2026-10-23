@@ -536,6 +536,7 @@ constexpr FeatureBitset ImpliedFeaturesAMX_BF16 = FeatureAMX_TILE;
 constexpr FeatureBitset ImpliedFeaturesAMX_FP16 = FeatureAMX_TILE;
 constexpr FeatureBitset ImpliedFeaturesAMX_INT8 = FeatureAMX_TILE;
 constexpr FeatureBitset ImpliedFeaturesAMX_COMPLEX = FeatureAMX_TILE;
+constexpr FeatureBitset ImpliedFeaturesAMX_AVX512 = FeatureAMX_TILE;
 constexpr FeatureBitset ImpliedFeaturesAMX_FP8 = FeatureAMX_TILE;
 constexpr FeatureBitset ImpliedFeaturesAMX_MOVRS = FeatureAMX_TILE;
 constexpr FeatureBitset ImpliedFeaturesAMX_TF32 = FeatureAMX_TILE;
@@ -566,6 +567,7 @@ constexpr FeatureBitset ImpliedFeaturesAVX10_1 =
     FeatureAVX512FP16;
 constexpr FeatureBitset ImpliedFeaturesAVX10_1_512 =
     FeatureAVX10_1 | FeatureEVEX512;
+constexpr FeatureBitset ImpliedFeaturesAVX10_2 = FeatureAVX10_1_512;
 
 // APX Features
 constexpr FeatureBitset ImpliedFeaturesEGPR = {};

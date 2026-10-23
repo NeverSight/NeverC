@@ -74,6 +74,101 @@ TEST_F(X86PrivilegedIntrinTest, AmxComputeAndMovrsUseNativeInstructions) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, AmxRowsReturnNative512BitVectors) {
+  constexpr const char *Source = R"(
+    typedef float FloatRow __attribute__((vector_size(64)));
+    typedef __bf16 BfloatRow __attribute__((vector_size(64)));
+    typedef _Float16 HalfRow __attribute__((vector_size(64)));
+    typedef int IntRow __attribute__((vector_size(64)));
+    __attribute__((target("amx-avx512,avx10.2")))
+    void rows(unsigned row, FloatRow *f, BfloatRow *b, HalfRow *h, IntRow *i) {
+      f[0] = __builtin_ia32_tcvtrowd2ps(0, row);
+      f[1] = __builtin_ia32_tcvtrowd2psi(7, 255);
+      b[0] = __builtin_ia32_tcvtrowps2bf16h(1, row);
+      b[1] = __builtin_ia32_tcvtrowps2bf16hi(6, 0);
+      b[2] = __builtin_ia32_tcvtrowps2bf16l(2, row);
+      b[3] = __builtin_ia32_tcvtrowps2bf16li(5, 15);
+      h[0] = __builtin_ia32_tcvtrowps2phh(3, row);
+      h[1] = __builtin_ia32_tcvtrowps2phhi(4, 16);
+      h[2] = __builtin_ia32_tcvtrowps2phl(4, row);
+      h[3] = __builtin_ia32_tcvtrowps2phli(3, 31);
+      i[0] = __builtin_ia32_tilemovrow(5, row);
+      i[1] = __builtin_ia32_tilemovrowi(2, 1);
+      (void)__builtin_ia32_tilemovrow(5, row);
+      (void)__builtin_ia32_tilemovrow(5, row);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "amx_rows", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Name :
+         {"tcvtrowd2ps", "tcvtrowps2bf16h", "tcvtrowps2bf16l", "tcvtrowps2phh",
+          "tcvtrowps2phl", "tilemovrow"}) {
+      const std::regex Instruction(std::string("\\t") + Name + "\\t");
+      const auto Count = std::distance(
+          std::sregex_iterator(Assembly.begin(), Assembly.end(), Instruction),
+          std::sregex_iterator());
+      EXPECT_EQ(Count, std::string(Name) == "tilemovrow" ? 4 : 2) << Assembly;
+    }
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxRowFeaturesAndImmediateOperandsAreChecked) {
+  for (const char *Call : {"__builtin_ia32_tilemovrow(8, row)",
+                           "__builtin_ia32_tcvtrowd2ps(row, row)",
+                           "__builtin_ia32_tcvtrowps2bf16hi(0, row)",
+                           "__builtin_ia32_tcvtrowps2phli(0, 256)",
+                           "__builtin_ia32_tilemovrowi(0, -1)"}) {
+    const std::string Source =
+        "__attribute__((target(\"amx-avx512,avx10.2\"))) "
+        "void f(unsigned row) { (void)" +
+        std::string(Call) + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "amx_invalid_row");
+    EXPECT_NE(RC, 0) << Call << '\n' << Error;
+    EXPECT_TRUE(Error.find("outside the valid range") != std::string::npos ||
+                Error.find("constant integer") != std::string::npos)
+        << Error;
+  }
+  for (const char *Features : {"amx-avx512", "avx10.2"}) {
+    const std::string Source = "__attribute__((target(\"" +
+                               std::string(Features) +
+                               "\"))) void f(unsigned row) { "
+                               "(void)__builtin_ia32_tilemovrow(0, row); }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "amx_missing_row_feature");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find("needs target feature"), std::string::npos) << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxRowDriverFlagsControlFeaturesAndMacros) {
+  auto Source = tmpFile("amx_row_features.c");
+  auto Object = tmpFile("amx_row_features.obj");
+  writeFile(Source, R"(
+    #if !defined(__AMX_AVX512__) || !defined(__AMX_TILE__) || \
+        !defined(__AVX10_2__) || !defined(__AVX10_2_512__)
+    #error missing row features
+    #endif
+    void f(unsigned row) { (void)__builtin_ia32_tilemovrow(0, row); }
+  )");
+  for (const char *Feature : {"amx-avx512", "avx10.2"}) {
+    for (bool Enabled : {false, true}) {
+      const std::string Enable = std::string("-m") + Feature;
+      const std::string Disable = std::string("-mno-") + Feature;
+      auto Result = ncc({"--target=x86_64-pc-windows-msvc", "-ffreestanding",
+                         "-fno-builtin-mimalloc", "-fno-lto", "-c",
+                         "-mamx-avx512", "-mavx10.2",
+                         Enabled ? Disable : Enable, Enabled ? Enable : Disable,
+                         Source.string(), "-o", Object.string()});
+      EXPECT_EQ(Result.exitCode == 0, Enabled) << Result.err;
+      if (!Enabled)
+        EXPECT_NE(Result.err.find("missing row features"), std::string::npos)
+            << Result.err;
+    }
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, AmxFeaturesAndTileIndicesAreChecked) {
   for (const char *Call :
        {"__builtin_ia32_tdpbf8ps(0, 0, 1)", "__builtin_ia32_tdpbhf8ps(0, 1, 1)",
@@ -104,21 +199,24 @@ TEST_F(X86PrivilegedIntrinTest, AmxFeaturesAndTileIndicesAreChecked) {
 }
 
 TEST_F(X86PrivilegedIntrinTest, AmxPhysicalAndManagedTilesCannotBeMixed) {
-  constexpr const char *Source = R"(
-    typedef int Tile __attribute__((vector_size(1024)));
-    __attribute__((target("amx-tile,amx-fp8,avx512f")))
-    void f(const void *p, void *q) {
-      Tile t = __builtin_ia32_tileloadd64_internal(2, 16, p, 64);
-      __builtin_ia32_tdpbf8ps(0, 1, 2);
-      __builtin_ia32_tilestored64_internal(2, 16, q, 64, t);
+  for (const char *Call : {"__builtin_ia32_tdpbf8ps(0, 1, 2)",
+                           "__builtin_ia32_tilemovrow(0, 1)"}) {
+    const std::string Source =
+        "typedef int Tile __attribute__((vector_size(1024))); "
+        "__attribute__((target(\"amx-fp8,amx-avx512,avx10.2\"))) "
+        "void f(const void *p, void *q) { "
+        "Tile t = __builtin_ia32_tileloadd64_internal(2, 16, p, 64); "
+        "(void)" +
+        std::string(Call) +
+        "; "
+        "__builtin_ia32_tilestored64_internal(2, 16, q, 64, t); }";
+    for (const char *Opt : {"-O0", "-O2"}) {
+      auto [RC, Error] = compileToAsm(Source.c_str(), "mixed_amx_models", Opt);
+      EXPECT_NE(RC, 0) << Error;
+      EXPECT_NE(Error.find("cannot mix physical AMX tile intrinsics"),
+                std::string::npos)
+          << Error;
     }
-  )";
-  for (const char *Opt : {"-O0", "-O2"}) {
-    auto [RC, Error] = compileToAsm(Source, "mixed_amx_models", Opt);
-    EXPECT_NE(RC, 0) << Error;
-    EXPECT_NE(Error.find("cannot mix physical AMX tile intrinsics"),
-              std::string::npos)
-        << Error;
   }
 }
 

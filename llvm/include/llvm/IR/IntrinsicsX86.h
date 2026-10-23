@@ -1360,6 +1360,16 @@ enum X86Intrinsics : unsigned {
     x86_tcmmimfp16ps_internal,                       // llvm.x86.tcmmimfp16ps.internal
     x86_tcmmrlfp16ps,                                // llvm.x86.tcmmrlfp16ps
     x86_tcmmrlfp16ps_internal,                       // llvm.x86.tcmmrlfp16ps.internal
+    x86_tcvtrowd2ps,                                 // llvm.x86.tcvtrowd2ps
+    x86_tcvtrowd2psi,                                // llvm.x86.tcvtrowd2psi
+    x86_tcvtrowps2bf16h,                             // llvm.x86.tcvtrowps2bf16h
+    x86_tcvtrowps2bf16hi,                            // llvm.x86.tcvtrowps2bf16hi
+    x86_tcvtrowps2bf16l,                             // llvm.x86.tcvtrowps2bf16l
+    x86_tcvtrowps2bf16li,                            // llvm.x86.tcvtrowps2bf16li
+    x86_tcvtrowps2phh,                               // llvm.x86.tcvtrowps2phh
+    x86_tcvtrowps2phhi,                              // llvm.x86.tcvtrowps2phhi
+    x86_tcvtrowps2phl,                               // llvm.x86.tcvtrowps2phl
+    x86_tcvtrowps2phli,                              // llvm.x86.tcvtrowps2phli
     x86_tdpbf16ps,                                   // llvm.x86.tdpbf16ps
     x86_tdpbf16ps_internal,                          // llvm.x86.tdpbf16ps.internal
     x86_tdpbf8ps,                                    // llvm.x86.tdpbf8ps
@@ -1383,6 +1393,8 @@ enum X86Intrinsics : unsigned {
     x86_tileloaddrst164,                             // llvm.x86.tileloaddrst164
     x86_tileloaddt164,                               // llvm.x86.tileloaddt164
     x86_tileloaddt164_internal,                      // llvm.x86.tileloaddt164.internal
+    x86_tilemovrow,                                  // llvm.x86.tilemovrow
+    x86_tilemovrowi,                                 // llvm.x86.tilemovrowi
     x86_tilerelease,                                 // llvm.x86.tilerelease
     x86_tilestored64,                                // llvm.x86.tilestored64
     x86_tilestored64_internal,                       // llvm.x86.tilestored64.internal

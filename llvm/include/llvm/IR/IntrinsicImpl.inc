@@ -75,7 +75,7 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   {llvm::StringLiteral(""), 0, 370},
   {llvm::StringLiteral("aarch64"), 370, 1432},
   // x86 entries must be sorted alphabetically: utils/lint/sort-x86-intrinsics.py
-  {llvm::StringLiteral("x86"), 1802, 1502},
+  {llvm::StringLiteral("x86"), 1802, 1514},
 };
 #endif
 
@@ -3223,6 +3223,16 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.tcmmimfp16ps.internal",
   "llvm.x86.tcmmrlfp16ps",
   "llvm.x86.tcmmrlfp16ps.internal",
+  "llvm.x86.tcvtrowd2ps",
+  "llvm.x86.tcvtrowd2psi",
+  "llvm.x86.tcvtrowps2bf16h",
+  "llvm.x86.tcvtrowps2bf16hi",
+  "llvm.x86.tcvtrowps2bf16l",
+  "llvm.x86.tcvtrowps2bf16li",
+  "llvm.x86.tcvtrowps2phh",
+  "llvm.x86.tcvtrowps2phhi",
+  "llvm.x86.tcvtrowps2phl",
+  "llvm.x86.tcvtrowps2phli",
   "llvm.x86.tdpbf16ps",
   "llvm.x86.tdpbf16ps.internal",
   "llvm.x86.tdpbf8ps",
@@ -3246,6 +3256,8 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.tileloaddrst164",
   "llvm.x86.tileloaddt164",
   "llvm.x86.tileloaddt164.internal",
+  "llvm.x86.tilemovrow",
+  "llvm.x86.tilemovrowi",
   "llvm.x86.tilerelease",
   "llvm.x86.tilestored64",
   "llvm.x86.tilestored64.internal",
@@ -3803,6 +3815,7 @@ static const uint8_t OTable[] = {
   0,
   0,
   0,
+  0,
   0
 };
 
@@ -4204,27 +4217,29 @@ static const unsigned IIT_Table[] = {
   0x3b3b3b, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x2c2c3b, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998,
   0x2c2c2c, (1U<<31) | 3998, 0x2c2c2c, (1U<<31) | 3998, 0x4a4a4a, (1U<<31) | 3998, 0x3b3b3b, 0,
   0x52E0, 0x54E0, 0x55E0, 0x53E0, 0xe0, 0x0, (1U<<31) | 1724, (1U<<31) | 2522,
-  0x444, 0x555, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222,
-  0x2220, 0x2220, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222,
-  0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, 0x2220, 0x2, 0x5e20,
-  (1U<<31) | 2755, 0x5e20, 0x5e20, 0x5e20, (1U<<31) | 2755, 0x0, 0x5e20, (1U<<31) | 4215,
-  0x20, (1U<<31) | 592, 0x2220, 0x4442, 0xe0, 0x4442, 0x55, 0x550,
+  0x444, 0x555, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x427c, 0x427c,
+  (1U<<31) | 4238, (1U<<31) | 4238, (1U<<31) | 4238, (1U<<31) | 4238, 0x426d, 0x426d, 0x426d, 0x426d,
+  0x2220, (1U<<31) | 4222, 0x2220, 0x2220, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222,
+  0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, 0x2220,
+  0x2, 0x5e20, (1U<<31) | 2755, 0x5e20, 0x5e20, 0x5e20, (1U<<31) | 2755, 0x424c,
+  0x424c, 0x0, 0x5e20, (1U<<31) | 4215, 0x20, (1U<<31) | 592, 0x2220, 0x4442,
+  0xe0, 0x4442, 0x55, 0x550, 0xe7a, 0xe7b, 0xe7a, 0xe7b,
   0xe7a, 0xe7b, 0xe7a, 0xe7b, 0xe7a, 0xe7b, 0xe7a, 0xe7b,
-  0xe7a, 0xe7b, 0xe7a, 0xe7b, (1U<<31) | 2888, (1U<<31) | 2900, 0x47a3b, 0x47b3b,
-  0x22c2c2c, 0x22d2d2d, (1U<<31) | 175, 0x22c2c2c, 0x22d2d2d, (1U<<31) | 175, 0x2c2c2c, 0x2d2d2d,
-  (1U<<31) | 566, 0xE2, 2, 0xE2, 0xE0, 0xE52, (1U<<31) | 4232, 2,
-  0x552, 0xe52, 0, 0xE2, 0x595a5a, 0x5a5a5a, 0x595a5a5a, 0x4a4a4a4a,
-  0x4a4a4a4a, (1U<<31) | 1839, 0x4a4a4a, 0x4b4b4b, 0x4a4a4a, 0x4b4b4b, 0x0, 0x0,
-  0x40, 0x50, 0x40, 0x50, 0x540, 0x540, 0x540, 0x5ee5,
-  0x540, 0x40, 0xe40, 0xe50, 0xe40, 0xe50, 0x20, 0x4,
-  0x0, 0x45, 0x8989, 0x8a8a, 0x7a7a, 0x7b7b, 0x8989, 0x7a7a,
-  (1U<<31) | 323, (1U<<31) | 355, (1U<<31) | 270, (1U<<31) | 291, 0x2c4a, 0x2c59, 0x2c3b, 0x4a59,
-  0x2c4a, 0x2c59, 0x2c3b, 0x4a59, 0x3b4a, 0x3b59, 0x3b4a, 0x3b59,
-  0x2c3b, 0x4a59, 0x3b4a, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a4a4a4a, 0x594a4a59,
-  0x594a4a59, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x4a3b3b4a, 0x2c2c2c2c,
-  0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b,
-  0x0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0,
-  0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x4440, 0x0, 0x4
+  (1U<<31) | 2888, (1U<<31) | 2900, 0x47a3b, 0x47b3b, 0x22c2c2c, 0x22d2d2d, (1U<<31) | 175, 0x22c2c2c,
+  0x22d2d2d, (1U<<31) | 175, 0x2c2c2c, 0x2d2d2d, (1U<<31) | 566, 0xE2, 2, 0xE2,
+  0xE0, 0xE52, (1U<<31) | 4232, 2, 0x552, 0xe52, 0, 0xE2,
+  0x595a5a, 0x5a5a5a, 0x595a5a5a, 0x4a4a4a4a, 0x4a4a4a4a, (1U<<31) | 1839, 0x4a4a4a, 0x4b4b4b,
+  0x4a4a4a, 0x4b4b4b, 0x0, 0x0, 0x40, 0x50, 0x40, 0x50,
+  0x540, 0x540, 0x540, 0x5ee5, 0x540, 0x40, 0xe40, 0xe50,
+  0xe40, 0xe50, 0x20, 0x4, 0x0, 0x45, 0x8989, 0x8a8a,
+  0x7a7a, 0x7b7b, 0x8989, 0x7a7a, (1U<<31) | 323, (1U<<31) | 355, (1U<<31) | 270, (1U<<31) | 291,
+  0x2c4a, 0x2c59, 0x2c3b, 0x4a59, 0x2c4a, 0x2c59, 0x2c3b, 0x4a59,
+  0x3b4a, 0x3b59, 0x3b4a, 0x3b59, 0x2c3b, 0x4a59, 0x3b4a, 0x4a4a4a4a,
+  0x594a4a59, 0x594a4a59, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a,
+  0x3b3b3b3b, 0x4a3b3b4a, 0x4a3b3b4a, 0x2c2c2c2c, 0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b,
+  0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x0, 0x44e0, 0x44e0, 0x44e0,
+  0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0,
+  0x44e0, 0x4440, 0x0, 0x4
 };
 
 static const unsigned char IIT_LongEncodingTable[] = {
@@ -4659,6 +4674,7 @@ static const unsigned char IIT_LongEncodingTable[] = {
   /* 4222 */ 51, 3, 3, 3, 51, 51, 51, 0,
   /* 4230 */ 59, 0,
   /* 4232 */ 21, 5, 2, 5, 5, 0,
+  /* 4238 */ 13, 48, 2, 4, 0,
   255
 };
 
@@ -8171,6 +8187,16 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.tcmmimfp16ps.internal
     110, // llvm.x86.tcmmrlfp16ps
     11, // llvm.x86.tcmmrlfp16ps.internal
+    108, // llvm.x86.tcvtrowd2ps
+    112, // llvm.x86.tcvtrowd2psi
+    108, // llvm.x86.tcvtrowps2bf16h
+    112, // llvm.x86.tcvtrowps2bf16hi
+    108, // llvm.x86.tcvtrowps2bf16l
+    112, // llvm.x86.tcvtrowps2bf16li
+    108, // llvm.x86.tcvtrowps2phh
+    112, // llvm.x86.tcvtrowps2phhi
+    108, // llvm.x86.tcvtrowps2phl
+    112, // llvm.x86.tcvtrowps2phli
     110, // llvm.x86.tdpbf16ps
     11, // llvm.x86.tdpbf16ps.internal
     110, // llvm.x86.tdpbf8ps
@@ -8194,6 +8220,8 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     108, // llvm.x86.tileloaddrst164
     108, // llvm.x86.tileloaddt164
     11, // llvm.x86.tileloaddt164.internal
+    108, // llvm.x86.tilemovrow
+    112, // llvm.x86.tilemovrowi
     11, // llvm.x86.tilerelease
     108, // llvm.x86.tilestored64
     11, // llvm.x86.tilestored64.internal
@@ -8368,6 +8396,13 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
       AS[0] = {2, getIntrinsicArgAttributeSet(C, 0)};
       AS[1] = {AttributeList::FunctionIndex, getIntrinsicFnAttributeSet(C, 7)};
       NumAttrs = 2;
+      break;
+    }
+    case 112: {
+      AS[0] = {1, getIntrinsicArgAttributeSet(C, 0)};
+      AS[1] = {2, getIntrinsicArgAttributeSet(C, 0)};
+      AS[2] = {AttributeList::FunctionIndex, getIntrinsicFnAttributeSet(C, 7)};
+      NumAttrs = 3;
       break;
     }
     case 108: {

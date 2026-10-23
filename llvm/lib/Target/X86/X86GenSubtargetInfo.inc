@@ -202,7 +202,9 @@ enum {
   FeatureAMXFP8 = 186,
   FeatureAMXMOVRS = 187,
   FeatureAMXTF32 = 188,
-  NumSubtargetFeatures = 189
+  FeatureAMXAVX512 = 189,
+  FeatureAVX10_2 = 190,
+  NumSubtargetFeatures = 191
 };
 } // end namespace X86
 } // end namespace llvm
@@ -226,6 +228,8 @@ GET_SUBTARGETINFO_MACRO(HasAMXINT8, false, hasAMXINT8)
 GET_SUBTARGETINFO_MACRO(HasAMXFP8, false, hasAMXFP8)
 GET_SUBTARGETINFO_MACRO(HasAMXMOVRS, false, hasAMXMOVRS)
 GET_SUBTARGETINFO_MACRO(HasAMXTF32, false, hasAMXTF32)
+GET_SUBTARGETINFO_MACRO(HasAMXAVX512, false, hasAMXAVX512)
+GET_SUBTARGETINFO_MACRO(HasAVX10_2, false, hasAVX10_2)
 GET_SUBTARGETINFO_MACRO(HasAMXTILE, false, hasAMXTILE)
 GET_SUBTARGETINFO_MACRO(HasAVX10_1, false, hasAVX10_1)
 GET_SUBTARGETINFO_MACRO(HasAVX10_1_512, false, hasAVX10_1_512)
@@ -405,6 +409,7 @@ extern const llvm::SubtargetFeatureKV X86FeatureKV[] = {
   { "adx", "Support ADX instructions", X86::FeatureADX, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "aes", "Enable AES instructions", X86::FeatureAES, { { { 0x0ULL, 0x200000000ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "allow-light-256-bit", "Enable generation of 256-bit load/stores even if we prefer 128-bit", X86::TuningAllowLight256Bit, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
+  { "amx-avx512", "Support AMX-AVX512 instructions", X86::FeatureAMXAVX512, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-bf16", "Support AMX-BF16 instructions", X86::FeatureAMXBF16, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-complex", "Support AMX-COMPLEX instructions", X86::FeatureAMXCOMPLEX, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-fp16", "Support AMX amx-fp16 instructions", X86::FeatureAMXFP16, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
@@ -416,6 +421,7 @@ extern const llvm::SubtargetFeatureKV X86FeatureKV[] = {
   { "avx", "Enable AVX instructions", X86::FeatureAVX, { { { 0x0ULL, 0x2000000000ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx10.1-256", "Support AVX10.1 up to 256-bit instruction", X86::FeatureAVX10_1, { { { 0x20200002180000ULL, 0x6b800000000000ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx10.1-512", "Support AVX10.1 up to 512-bit instruction", X86::FeatureAVX10_1_512, { { { 0x20000000800ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
+  { "avx10.2", "Support AVX10.2 instructions", X86::FeatureAVX10_2, { { { 0x1000ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx2", "Enable AVX2 instructions", X86::FeatureAVX2, { { { 0x200ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx512bf16", "Support bfloat16 floating point", X86::FeatureBF16, { { { 0x800000ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx512bitalg", "Enable AVX-512 Bit Algorithms", X86::FeatureBITALG, { { { 0x800000ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
@@ -58301,6 +58307,8 @@ void llvm::X86Subtarget::ParseSubtargetFeatures(StringRef CPU, StringRef TuneCPU
   if (Bits[X86::FeatureAMXFP8]) HasAMXFP8 = true;
   if (Bits[X86::FeatureAMXMOVRS]) HasAMXMOVRS = true;
   if (Bits[X86::FeatureAMXTF32]) HasAMXTF32 = true;
+  if (Bits[X86::FeatureAMXAVX512]) HasAMXAVX512 = true;
+  if (Bits[X86::FeatureAVX10_2]) HasAVX10_2 = true;
   if (Bits[X86::FeatureAMXTILE]) HasAMXTILE = true;
   if (Bits[X86::FeatureAVX] && X86SSELevel < AVX) X86SSELevel = AVX;
   if (Bits[X86::FeatureAVX2] && X86SSELevel < AVX2) X86SSELevel = AVX2;
@@ -58517,7 +58525,7 @@ extern const llvm::MCWriteProcResEntry X86WriteProcResTable[];
 extern const llvm::MCWriteLatencyEntry X86WriteLatencyTable[];
 extern const llvm::MCReadAdvanceEntry X86ReadAdvanceTable[];
 X86GenSubtargetInfo::X86GenSubtargetInfo(const Triple &TT, StringRef CPU, StringRef TuneCPU, StringRef FS)
-  : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef(X86FeatureKV, 188), ArrayRef(X86SubTypeKV, 90),
+  : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef(X86FeatureKV, 190), ArrayRef(X86SubTypeKV, 90),
                         X86WriteProcResTable, X86WriteLatencyTable, X86ReadAdvanceTable, 
                         nullptr, nullptr, nullptr) {}
 

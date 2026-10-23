@@ -26122,6 +26122,94 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_tcvtrowd2ps:
+    case Intrinsic::x86_tcvtrowd2psi:
+    case Intrinsic::x86_tcvtrowps2bf16h:
+    case Intrinsic::x86_tcvtrowps2bf16hi:
+    case Intrinsic::x86_tcvtrowps2bf16l:
+    case Intrinsic::x86_tcvtrowps2bf16li:
+    case Intrinsic::x86_tcvtrowps2phh:
+    case Intrinsic::x86_tcvtrowps2phhi:
+    case Intrinsic::x86_tcvtrowps2phl:
+    case Intrinsic::x86_tcvtrowps2phli:
+    case Intrinsic::x86_tilemovrow:
+    case Intrinsic::x86_tilemovrowi: {
+      if (!Subtarget.is64Bit() || !Subtarget.hasAMXAVX512() ||
+          !Subtarget.hasAVX10_2() || !Subtarget.hasEVEX512())
+        report_fatal_error("AMX row intrinsic requires amx-avx512 and avx10.2 "
+                           "with 512-bit vectors");
+      unsigned Opcode;
+      bool Immediate;
+      switch (IntNo) {
+      default:
+        llvm_unreachable("unexpected AMX row intrinsic");
+      case Intrinsic::x86_tcvtrowd2ps:
+        Opcode = X86::PTCVTROWD2PSrte;
+        Immediate = false;
+        break;
+      case Intrinsic::x86_tcvtrowd2psi:
+        Opcode = X86::PTCVTROWD2PSrti;
+        Immediate = true;
+        break;
+      case Intrinsic::x86_tcvtrowps2bf16h:
+        Opcode = X86::PTCVTROWPS2BF16Hrte;
+        Immediate = false;
+        break;
+      case Intrinsic::x86_tcvtrowps2bf16hi:
+        Opcode = X86::PTCVTROWPS2BF16Hrti;
+        Immediate = true;
+        break;
+      case Intrinsic::x86_tcvtrowps2bf16l:
+        Opcode = X86::PTCVTROWPS2BF16Lrte;
+        Immediate = false;
+        break;
+      case Intrinsic::x86_tcvtrowps2bf16li:
+        Opcode = X86::PTCVTROWPS2BF16Lrti;
+        Immediate = true;
+        break;
+      case Intrinsic::x86_tcvtrowps2phh:
+        Opcode = X86::PTCVTROWPS2PHHrte;
+        Immediate = false;
+        break;
+      case Intrinsic::x86_tcvtrowps2phhi:
+        Opcode = X86::PTCVTROWPS2PHHrti;
+        Immediate = true;
+        break;
+      case Intrinsic::x86_tcvtrowps2phl:
+        Opcode = X86::PTCVTROWPS2PHLrte;
+        Immediate = false;
+        break;
+      case Intrinsic::x86_tcvtrowps2phli:
+        Opcode = X86::PTCVTROWPS2PHLrti;
+        Immediate = true;
+        break;
+      case Intrinsic::x86_tilemovrow:
+        Opcode = X86::PTILEMOVROWrte;
+        Immediate = false;
+        break;
+      case Intrinsic::x86_tilemovrowi:
+        Opcode = X86::PTILEMOVROWrti;
+        Immediate = true;
+        break;
+      }
+      const SDLoc DL(Op);
+      const auto *Tile = dyn_cast<ConstantSDNode>(Op.getOperand(2));
+      if (!Tile || Tile->getZExtValue() > 7)
+        report_fatal_error("AMX row requires a constant tile index in [0, 7]");
+      SDValue Row = Op.getOperand(3);
+      if (Immediate) {
+        const auto *Index = dyn_cast<ConstantSDNode>(Row);
+        if (!Index || Index->getZExtValue() > 255)
+          report_fatal_error(
+              "AMX immediate row requires a constant index in [0, 255]");
+        Row = DAG.getTargetConstant(Index->getZExtValue(), DL, MVT::i32);
+      }
+      auto *Read = DAG.getMachineNode(
+          Opcode, DL, DAG.getVTList(Op.getValueType(), MVT::Other),
+          {DAG.getTargetConstant(Tile->getZExtValue(), DL, MVT::i8), Row,
+           Op.getOperand(0)});
+      return DAG.getMergeValues({SDValue(Read, 0), SDValue(Read, 1)}, DL);
+    }
     case Intrinsic::x86_tdpbf8ps:
     case Intrinsic::x86_tdpbhf8ps:
     case Intrinsic::x86_tdphbf8ps:
@@ -35808,6 +35896,65 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     MIB.addReg(TMMImmToTMMReg(MI.getOperand(2).getImm()), RegState::Undef);
 
     MI.eraseFromParent(); // The pseudo is gone now.
+    return BB;
+  }
+  case X86::PTCVTROWD2PSrte:
+  case X86::PTCVTROWD2PSrti:
+  case X86::PTCVTROWPS2BF16Hrte:
+  case X86::PTCVTROWPS2BF16Hrti:
+  case X86::PTCVTROWPS2BF16Lrte:
+  case X86::PTCVTROWPS2BF16Lrti:
+  case X86::PTCVTROWPS2PHHrte:
+  case X86::PTCVTROWPS2PHHrti:
+  case X86::PTCVTROWPS2PHLrte:
+  case X86::PTCVTROWPS2PHLrti:
+  case X86::PTILEMOVROWrte:
+  case X86::PTILEMOVROWrti: {
+    unsigned Opcode;
+    switch (MI.getOpcode()) {
+    default:
+      llvm_unreachable("unexpected AMX row pseudo");
+    case X86::PTCVTROWD2PSrte:
+      Opcode = X86::TCVTROWD2PSrte;
+      break;
+    case X86::PTCVTROWD2PSrti:
+      Opcode = X86::TCVTROWD2PSrti;
+      break;
+    case X86::PTCVTROWPS2BF16Hrte:
+      Opcode = X86::TCVTROWPS2BF16Hrte;
+      break;
+    case X86::PTCVTROWPS2BF16Hrti:
+      Opcode = X86::TCVTROWPS2BF16Hrti;
+      break;
+    case X86::PTCVTROWPS2BF16Lrte:
+      Opcode = X86::TCVTROWPS2BF16Lrte;
+      break;
+    case X86::PTCVTROWPS2BF16Lrti:
+      Opcode = X86::TCVTROWPS2BF16Lrti;
+      break;
+    case X86::PTCVTROWPS2PHHrte:
+      Opcode = X86::TCVTROWPS2PHHrte;
+      break;
+    case X86::PTCVTROWPS2PHHrti:
+      Opcode = X86::TCVTROWPS2PHHrti;
+      break;
+    case X86::PTCVTROWPS2PHLrte:
+      Opcode = X86::TCVTROWPS2PHLrte;
+      break;
+    case X86::PTCVTROWPS2PHLrti:
+      Opcode = X86::TCVTROWPS2PHLrti;
+      break;
+    case X86::PTILEMOVROWrte:
+      Opcode = X86::TILEMOVROWrte;
+      break;
+    case X86::PTILEMOVROWrti:
+      Opcode = X86::TILEMOVROWrti;
+      break;
+    }
+    BuildMI(*BB, MI, MIMD, TII->get(Opcode), MI.getOperand(0).getReg())
+        .addReg(TMMImmToTMMReg(MI.getOperand(1).getImm()), RegState::Undef)
+        .add(MI.getOperand(2));
+    MI.eraseFromParent();
     return BB;
   }
   case X86::PTILEZERO: {

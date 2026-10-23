@@ -2615,6 +2615,9 @@ OPTION(prefix_1, "-malign-branch=", malign_branch_EQ, CommaJoined, m_Group,
 OPTION(prefix_1, "-malign-double", malign_double, Flag, m_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0,
        "Align doubles to two words in structs (x86 only)", nullptr, nullptr)
+OPTION(prefix_1, "-mamx-avx512", mamx_avx512, Flag,
+       m_x86_Features_Group, INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0,
+       nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mamx-bf16", mamx_bf16, Flag, m_x86_Features_Group, INVALID,
        nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
        nullptr)
@@ -2666,6 +2669,9 @@ OPTION(prefix_1, "-mavx10.1-512", mavx10_1_512, Flag,
        DefaultVis | DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mavx10.1", mavx10_1, Flag, INVALID, mavx10_1_256, nullptr,
        TargetSpecific, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_1, "-mavx10.2", mavx10_2, Flag,
+       m_x86_AVX10_Features_Group, INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0,
+       nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mavx2", mavx2, Flag, m_x86_Features_Group, INVALID, nullptr,
        TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mavx512bf16", mavx512bf16, Flag, m_x86_Features_Group,
@@ -3024,6 +3030,9 @@ OPTION(prefix_1, "-mno-adx", mno_adx, Flag, m_x86_Features_Group, INVALID,
 OPTION(prefix_1, "-mno-aes", mno_aes, Flag, m_x86_Features_Group, INVALID,
        nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
        nullptr)
+OPTION(prefix_1, "-mno-amx-avx512", mno_amx_avx512, Flag,
+       m_x86_Features_Group, INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0,
+       nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mno-amx-bf16", mno_amx_bf16, Flag, m_x86_Features_Group,
        INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr,
        nullptr, nullptr)
@@ -3063,6 +3072,9 @@ OPTION(prefix_1, "-mno-avx10.1-512", mno_avx10_1_512, Flag,
        DefaultVis | DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mno-avx10.1", mno_avx10_1, Flag, INVALID, mno_avx10_1_256,
        nullptr, TargetSpecific, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_1, "-mno-avx10.2", mno_avx10_2, Flag,
+       m_x86_AVX10_Features_Group, INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0,
+       nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-mno-avx2", mno_avx2, Flag, m_x86_Features_Group, INVALID,
        nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
        nullptr)

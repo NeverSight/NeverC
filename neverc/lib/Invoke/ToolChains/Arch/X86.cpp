@@ -185,8 +185,9 @@ void x86::getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
     assert(Name.starts_with("avx10.") && "Invalid AVX10 feature name.");
     llvm::StringRef Version, Width;
     std::tie(Version, Width) = Name.substr(6).split('-');
-    assert(Version == "1" && "Invalid AVX10 feature name.");
-    assert((Width == "256" || Width == "512") && "Invalid AVX10 feature name.");
+    assert(((Version == "1" && (Width == "256" || Width == "512")) ||
+            (Version == "2" && Width.empty())) &&
+           "Invalid AVX10 feature name.");
 #endif
 
     Features.push_back(Args.MakeArgString((IsNegative ? "-" : "+") + Name));

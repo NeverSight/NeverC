@@ -1535,6 +1535,12 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
   /* 15601 */ "tmmultf32ps\t\0"
   /* 15614 */ "tileloaddrs\t\0"
   /* 15627 */ "tileloaddrst1\t\0"
+  /* 15642 */ "tcvtrowd2ps\t\0"
+  /* 15655 */ "tcvtrowps2bf16h\t\0"
+  /* 15672 */ "tcvtrowps2bf16l\t\0"
+  /* 15689 */ "tcvtrowps2phh\t\0"
+  /* 15704 */ "tcvtrowps2phl\t\0"
+  /* 15719 */ "tilemovrow\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20006,6 +20012,30 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     672169228U,	// TILELOADDRST1
     672169228U,	// TILELOADDRST1_EVEX
     0U,	// PTILELOADDRST1
+    2148564251U,	// TCVTROWD2PSrte
+    0U,	// PTCVTROWD2PSrte
+    2148564251U,	// TCVTROWD2PSrti
+    0U,	// PTCVTROWD2PSrti
+    2148564264U,	// TCVTROWPS2BF16Hrte
+    0U,	// PTCVTROWPS2BF16Hrte
+    2148564264U,	// TCVTROWPS2BF16Hrti
+    0U,	// PTCVTROWPS2BF16Hrti
+    2148564281U,	// TCVTROWPS2BF16Lrte
+    0U,	// PTCVTROWPS2BF16Lrte
+    2148564281U,	// TCVTROWPS2BF16Lrti
+    0U,	// PTCVTROWPS2BF16Lrti
+    2148564298U,	// TCVTROWPS2PHHrte
+    0U,	// PTCVTROWPS2PHHrte
+    2148564298U,	// TCVTROWPS2PHHrti
+    0U,	// PTCVTROWPS2PHHrti
+    2148564313U,	// TCVTROWPS2PHLrte
+    0U,	// PTCVTROWPS2PHLrte
+    2148564313U,	// TCVTROWPS2PHLrti
+    0U,	// PTCVTROWPS2PHLrti
+    2148564328U,	// TILEMOVROWrte
+    0U,	// PTILEMOVROWrte
+    2148564328U,	// TILEMOVROWrti
+    0U,	// PTILEMOVROWrti
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38474,6 +38504,30 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// TILELOADDRST1
     0U,	// TILELOADDRST1_EVEX
     0U,	// PTILELOADDRST1
+    16U,	// TCVTROWD2PSrte
+    0U,	// PTCVTROWD2PSrte
+    112U,	// TCVTROWD2PSrti
+    0U,	// PTCVTROWD2PSrti
+    16U,	// TCVTROWPS2BF16Hrte
+    0U,	// PTCVTROWPS2BF16Hrte
+    112U,	// TCVTROWPS2BF16Hrti
+    0U,	// PTCVTROWPS2BF16Hrti
+    16U,	// TCVTROWPS2BF16Lrte
+    0U,	// PTCVTROWPS2BF16Lrte
+    112U,	// TCVTROWPS2BF16Lrti
+    0U,	// PTCVTROWPS2BF16Lrti
+    16U,	// TCVTROWPS2PHHrte
+    0U,	// PTCVTROWPS2PHHrte
+    112U,	// TCVTROWPS2PHHrti
+    0U,	// PTCVTROWPS2PHHrti
+    16U,	// TCVTROWPS2PHLrte
+    0U,	// PTCVTROWPS2PHLrte
+    112U,	// TCVTROWPS2PHLrti
+    0U,	// PTCVTROWPS2PHLrti
+    16U,	// TILEMOVROWrte
+    0U,	// PTILEMOVROWrte
+    112U,	// TILEMOVROWrti
+    0U,	// PTILEMOVROWrti
 };
 
   // Emit the opcode for the instruction.

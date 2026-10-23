@@ -1853,6 +1853,12 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 19068 */ "tmmultf32ps\t\0"
   /* 19081 */ "tileloaddrs\t\0"
   /* 19094 */ "tileloaddrst1\t\0"
+  /* 19109 */ "tcvtrowd2ps\t\0"
+  /* 19122 */ "tcvtrowps2bf16h\t\0"
+  /* 19139 */ "tcvtrowps2bf16l\t\0"
+  /* 19156 */ "tcvtrowps2phh\t\0"
+  /* 19171 */ "tcvtrowps2phl\t\0"
+  /* 19186 */ "tilemovrow\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20324,6 +20330,30 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     1428119U,	// TILELOADDRST1
     1428119U,	// TILELOADDRST1_EVEX
     0U,	// PTILELOADDRST1
+    1103284902U,	// TCVTROWD2PSrte
+    0U,	// PTCVTROWD2PSrte
+    4836006U,	// TCVTROWD2PSrti
+    0U,	// PTCVTROWD2PSrti
+    1103284915U,	// TCVTROWPS2BF16Hrte
+    0U,	// PTCVTROWPS2BF16Hrte
+    4836019U,	// TCVTROWPS2BF16Hrti
+    0U,	// PTCVTROWPS2BF16Hrti
+    1103284932U,	// TCVTROWPS2BF16Lrte
+    0U,	// PTCVTROWPS2BF16Lrte
+    4836036U,	// TCVTROWPS2BF16Lrti
+    0U,	// PTCVTROWPS2BF16Lrti
+    1103284949U,	// TCVTROWPS2PHHrte
+    0U,	// PTCVTROWPS2PHHrte
+    4836053U,	// TCVTROWPS2PHHrti
+    0U,	// PTCVTROWPS2PHHrti
+    1103284964U,	// TCVTROWPS2PHLrte
+    0U,	// PTCVTROWPS2PHLrte
+    4836068U,	// TCVTROWPS2PHLrti
+    0U,	// PTCVTROWPS2PHLrti
+    1103284979U,	// TILEMOVROWrte
+    0U,	// PTILEMOVROWrte
+    4836083U,	// TILEMOVROWrti
+    0U,	// PTILEMOVROWrti
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38792,6 +38822,30 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// TILELOADDRST1
     0U,	// TILELOADDRST1_EVEX
     0U,	// PTILELOADDRST1
+    8U,	// TCVTROWD2PSrte
+    0U,	// PTCVTROWD2PSrte
+    144U,	// TCVTROWD2PSrti
+    0U,	// PTCVTROWD2PSrti
+    8U,	// TCVTROWPS2BF16Hrte
+    0U,	// PTCVTROWPS2BF16Hrte
+    144U,	// TCVTROWPS2BF16Hrti
+    0U,	// PTCVTROWPS2BF16Hrti
+    8U,	// TCVTROWPS2BF16Lrte
+    0U,	// PTCVTROWPS2BF16Lrte
+    144U,	// TCVTROWPS2BF16Lrti
+    0U,	// PTCVTROWPS2BF16Lrti
+    8U,	// TCVTROWPS2PHHrte
+    0U,	// PTCVTROWPS2PHHrte
+    144U,	// TCVTROWPS2PHHrti
+    0U,	// PTCVTROWPS2PHHrti
+    8U,	// TCVTROWPS2PHLrte
+    0U,	// PTCVTROWPS2PHLrte
+    144U,	// TCVTROWPS2PHLrti
+    0U,	// PTCVTROWPS2PHLrti
+    8U,	// TILEMOVROWrte
+    0U,	// PTILEMOVROWrte
+    144U,	// TILEMOVROWrti
+    0U,	// PTILEMOVROWrti
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57260,6 +57314,30 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// TILELOADDRST1
     0U,	// TILELOADDRST1_EVEX
     0U,	// PTILELOADDRST1
+    0U,	// TCVTROWD2PSrte
+    0U,	// PTCVTROWD2PSrte
+    0U,	// TCVTROWD2PSrti
+    0U,	// PTCVTROWD2PSrti
+    0U,	// TCVTROWPS2BF16Hrte
+    0U,	// PTCVTROWPS2BF16Hrte
+    0U,	// TCVTROWPS2BF16Hrti
+    0U,	// PTCVTROWPS2BF16Hrti
+    0U,	// TCVTROWPS2BF16Lrte
+    0U,	// PTCVTROWPS2BF16Lrte
+    0U,	// TCVTROWPS2BF16Lrti
+    0U,	// PTCVTROWPS2BF16Lrti
+    0U,	// TCVTROWPS2PHHrte
+    0U,	// PTCVTROWPS2PHHrte
+    0U,	// TCVTROWPS2PHHrti
+    0U,	// PTCVTROWPS2PHHrti
+    0U,	// TCVTROWPS2PHLrte
+    0U,	// PTCVTROWPS2PHLrte
+    0U,	// TCVTROWPS2PHLrti
+    0U,	// PTCVTROWPS2PHLrti
+    0U,	// TILEMOVROWrte
+    0U,	// PTILEMOVROWrte
+    0U,	// TILEMOVROWrti
+    0U,	// PTILEMOVROWrti
 };
 
   // Emit the opcode for the instruction.

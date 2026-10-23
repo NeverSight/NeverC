@@ -141,6 +141,20 @@ TARGET_BUILTIN(__builtin_ia32_prefetchi, "vvC*Ui", "nc", "prefetchi")
 TARGET_BUILTIN(__builtin_ia32_cmpccxadd32, "Siv*SiSiIi", "n", "cmpccxadd")
 TARGET_BUILTIN(__builtin_ia32_cmpccxadd64, "SLLiv*SLLiSLLiIi", "n", "cmpccxadd")
 
+// AMX-AVX512 architectural tile rows.
+TARGET_BUILTIN(__builtin_ia32_tcvtrowd2ps, "V16fIUcUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowd2psi, "V16fIUcIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16h, "V32yIUcUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16hi, "V32yIUcIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16l, "V32yIUcUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16li, "V32yIUcIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phh, "V32xIUcUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phhi, "V32xIUcIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phl, "V32xIUcUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phli, "V32xIUcIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tilemovrow, "V16iIUcUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tilemovrowi, "V16iIUcIUi", "nV:512:", "amx-avx512,avx10.2")
+
 // AMX_FP16 FP16
 TARGET_BUILTIN(__builtin_ia32_tdpfp16ps, "vIUcIUcIUc", "n", "amx-fp16")
 

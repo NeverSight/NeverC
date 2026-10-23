@@ -498,6 +498,12 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
   switch (BuiltinID) {
   default:
     return false;
+  case X86::BI__builtin_ia32_tcvtrowd2ps:
+  case X86::BI__builtin_ia32_tcvtrowps2bf16h:
+  case X86::BI__builtin_ia32_tcvtrowps2bf16l:
+  case X86::BI__builtin_ia32_tcvtrowps2phh:
+  case X86::BI__builtin_ia32_tcvtrowps2phl:
+  case X86::BI__builtin_ia32_tilemovrow:
   case X86::BI__builtin_ia32_tileloadd64:
   case X86::BI__builtin_ia32_tileloaddt164:
   case X86::BI__builtin_ia32_tileloaddrs64:
@@ -505,6 +511,14 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_tilestored64:
   case X86::BI__builtin_ia32_tilezero:
     return CheckX86BuiltinTileArgumentsRange(TheCall, 0);
+  case X86::BI__builtin_ia32_tcvtrowd2psi:
+  case X86::BI__builtin_ia32_tcvtrowps2bf16hi:
+  case X86::BI__builtin_ia32_tcvtrowps2bf16li:
+  case X86::BI__builtin_ia32_tcvtrowps2phhi:
+  case X86::BI__builtin_ia32_tcvtrowps2phli:
+  case X86::BI__builtin_ia32_tilemovrowi:
+    return CheckX86BuiltinTileArgumentsRange(TheCall, 0) ||
+           SemaBuiltinConstantArgRange(TheCall, 1, 0, 255);
   case X86::BI__builtin_ia32_tdpbssd:
   case X86::BI__builtin_ia32_tdpbsud:
   case X86::BI__builtin_ia32_tdpbusd:

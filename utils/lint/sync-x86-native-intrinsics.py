@@ -41,6 +41,35 @@ AMX_SIGNATURES = {
     **{name: (("Done", "I8", "PTR", "I64"), "llvm.x86.tileloadd64")
        for name in ("tileloaddrs64", "tileloaddrst164")},
 }
+ROW_IMMEDIATES = set()
+for suffix, result in (("tcvtrowd2ps", ("V16", "F32")),
+                       ("tcvtrowps2bf16h", ("V32", "BF16")),
+                       ("tcvtrowps2bf16l", ("V32", "BF16")),
+                       ("tcvtrowps2phh", ("V32", "F16")),
+                       ("tcvtrowps2phl", ("V32", "F16")),
+                       ("tilemovrow", ("V16", "I32"))):
+    for immediate in (False, True):
+        name = suffix + ("i" if immediate else "")
+        AMX_SIGNATURES[name] = (result + ("I8", "I32"), "llvm.x86.tileloadd64")
+        if immediate:
+            ROW_IMMEDIATES.add(name)
+
+
+def immediate_pair_attribute(impl, attributes):
+    # The existing tile-load recipe owns arg0's ImmArg and conservative
+    # function effects. Row-immediate APIs additionally require arg1 constant.
+    body = ("      AS[0] = {1, getIntrinsicArgAttributeSet(C, 0)};\n"
+            "      AS[1] = {2, getIntrinsicArgAttributeSet(C, 0)};\n"
+            "      AS[2] = {AttributeList::FunctionIndex, getIntrinsicFnAttributeSet(C, 7)};\n"
+            "      NumAttrs = 3;\n      break;\n    }\n")
+    existing = re.search(r"    case (\d+): \{\n" + re.escape(body), impl)
+    if existing:
+        return existing.group(1), impl
+    index = max(int(value) for value, _ in attributes) + 1
+    anchor = "    case 108: {\n"
+    if impl.count(anchor) != 1:
+        raise ValueError("expected one conservative immediate-argument recipe")
+    return str(index), impl.replace(anchor, f"    case {index}: {{\n" + body + anchor, 1)
 
 
 def encode_signature(signature, impl):
@@ -91,24 +120,25 @@ def synchronize(write):
         raise ValueError("the VMREAD signature must not be overloaded")
     additions = []
     cpp_names = dict(enum_entries)
-    updated_impl = impl
+    immediate_pair, updated_impl = immediate_pair_attribute(impl, attributes)
     declarations = {suffix: (signature, PROTOTYPE)
                     for suffix, signature in DECLARATIONS.items()}
     declarations.update(AMX_SIGNATURES)
     for suffix, (signature, prototype) in declarations.items():
         source = names.index(prototype)
+        attribute = immediate_pair if suffix in ROW_IMMEDIATES else attributes[source][0]
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:
             index = names.index(name)
             if (cpp_names.get(cpp) != name or encoding_value(types[index]) != encoding_value(encoding) or
-                    attributes[index][0] != attributes[source][0] or overloads[index + 1]):
+                    attributes[index][0] != attribute or overloads[index + 1]):
                 raise ValueError(f"native signature metadata disagrees with its schema: {name}")
             continue
         if cpp in cpp_names:
             raise ValueError(f"intrinsic enum/name mismatch: {cpp}")
         additions.append({"cpp": cpp, "name": name, "iit": encoding,
-                          "attr_val": attributes[source][0], "overloaded": False})
+                          "attr_val": attribute, "overloaded": False})
     # Like INT, CR/DR accesses have conservative effects and an immediate first
     # argument. Older NeverC metadata omitted the immediate restriction.
     register_attr = attributes[names.index("llvm.x86.int")][0]
