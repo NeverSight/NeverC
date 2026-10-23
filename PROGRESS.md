@@ -1,5 +1,47 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-23
+
+- Cutoff: **2026-10-23T01:00:58Z**. Reviewed dev: [8ba280aec7838fde4c48cc827e2aa1a1e2d2e18d](https://github.com/NeverSight/NeverC/commit/8ba280aec7838fde4c48cc827e2aa1a1e2d2e18d).
+- The [comparison since the previous reviewed implementation](https://github.com/NeverSight/NeverC/compare/3348b87369af877d7e2873d7543a54ac31db2140...8ba280aec7838fde4c48cc827e2aa1a1e2d2e18d) contains **156 commits / 60 changed paths**. Both commit pages were retrieved (100/56). This includes merged diagnostic histories, not 156 independent product features. The prior report-only commit and PROGRESS.md change are excluded from product progress.
+- Yesterday's artifact-policy serialization repair [PR #21](https://github.com/NeverSight/NeverC/pull/21) was merged externally at **2026-10-22T11:09:50Z**, merge commit [78898d78](https://github.com/NeverSight/NeverC/commit/78898d78986fd3391bb4e5261a96447c4996532b). This review did not merge it and does not duplicate it.
+- **No new compiler/runtime defect was statically established; no source repair was submitted.** This update changes only the progress document.
+- Read root AGENTS.md, README contribution guidance, docs/local-dev.md, .github/ci-policy.md and relevant repository skill guides. Root and complete neverc/lib, tests/neverc and utils/ci subtree inventories contain no additional AGENTS/CONTRIBUTING files. The full repository recursive-tree request failed, so unrelated subtrees are not represented as checked. dev is the default, push-enabled, unprotected branch; the returned ruleset is disabled.
+- Strict static-only limits override execution guidance: no project, build, test, benchmark, repository script, dynamic analysis or manual CI action was run.
+
+## Activity and review queue
+
+At the cutoff: **9 ordinary open issues / 0 open PRs**. Complete all-state issue and PR inventories returned 19 and 9 entries, respectively, followed by empty second pages. Since **2026-10-22T01:05:23Z**, no ordinary issue opened or closed; no new PR opened; **one PR (#21) merged** and no other PR closed. Interval issue comments and PR review comments were empty. #21 has no submitted reviews in the returned review list. There is no active PR awaiting review; unresolved CI evidence remains a release-readiness concern. No issue state, label or assignee was changed.
+
+## Bounded static review
+
+- **Frontend.cpp**, changed not_fn path and local callers: read functionalInvocabilitySource, functionalNotFnInvokeBinding, functionalFunctionInvokeSource, traverseNotFnFactory, traverseNotFnCall and emitted record offsets. Checked the exact owned root and SDK declaration binding, original noexcept-expression guards, arity/parameter bounds, forwarding/type checks, separate signature/exception/runtime obligations, and once-only traversal of the original receiver and arguments. Checked the new NotFn offset entry against the admitted pointer-storage branch. This is not proof of all AST shapes or target ABI behavior.
+- **MathSDK.cpp**, selected source-proof boundaries: read bindNotFnOwnedInputAliases, NotFnPointerSourceProof factory/publicInvokeSources/callDefaults and the public wrapper/storage predicates. Traced the SourceAlias callback through the matching Frontend.h declaration and frontend call. Reviewed bounded alias traversal, retained default occurrence identity, selected helper binding, separate public invocation deduction and reference qualification, and scoped cleanup of proof state. The full 1,856-line aggregate MathSDK delta and other graph helpers were not exhaustively audited.
+- **Regression source:** read the five new TranslateTests.cpp not_fn fixture bodies and their standalone five-addition source, NotFnRegisteredGTestsTests.py, not_fn_registered_gtests.py, FrontendReplayProtocolTests.py and FrontendProtocolDriver.cpp. Inspected preservation/hash checks and the request/--output/environment contract. These sources describe checks; none were executed here, and their declared counts/hashes were not independently recomputed.
+- **Replay tooling:** read the complete check-cpp-current216-elf-combined-808.py and changed private-runtime downloader hunks. Inspected fixed source/producer/artifact identity checks, bounded subprocess handling, response acceptance/refusal checks and invocation inventory. Did not download or execute an artifact. The new workflow wiring was read, not changed.
+- Large Frontend.cpp and MathSDK.cpp content reads initially returned empty content; immutable blob reads recovered the full text used for the selected sections above. Unrelated compiler, linker/runtime, SDK parity, remaining diagnostic scripts and historical piecewise publication uncertainty remain outside this pass. No resolution of the historical uncertain write is claimed; it was not retried.
+
+## Existing CI, exact heads only
+
+Sampled **2026-10-23T00:59:08Z–2026-10-23T01:00:58Z** for **8ba280ae**. These are GitHub's existing/automatic observations, not tests run by this review. Complete run/check inventories include empty second pages.
+
+- **12 workflows:** 3 success, 1 failure, 5 in progress and 3 queued at sampling. The Python workflow's overall queued state does not hide its already failed Linux-x64 child.
+- **57 checks:** 11 success, 2 failure, 7 in progress, 5 queued and 32 skipped.
+- [Linux ARM64 run 39852837848](https://github.com/NeverSight/NeverC/actions/runs/39852837848), job **120147850984**: Build neverc succeeded; **Install neverc failed**; packaging and later tests were skipped. The full job-log request returned Transport closed, so the root cause is not established.
+- [Python bindings run 39852838233](https://github.com/NeverSight/NeverC/actions/runs/39852838233), Linux-x64 job **120151472089**: **Check plugin global state (Linux) failed**. Its full log also returned Transport closed. The Linux-ARM64 bindings child and Official artifact policy check succeeded; remaining platform children are running/queued. This is not a full bindings pass.
+- [Source diagnostic run 39852838040](https://github.com/NeverSight/NeverC/actions/runs/39852838040) is successful but comprises **one source-metadata job and 32 skipped jobs**. In particular, its combined-808 and not_fn diagnostic jobs were skipped at this head. Commit-message claims about 216 requests, 129 GTests and generated/native products are author-reported, not independently validated by this pass.
+
+## Suggested priorities
+
+1. **Diagnose the two current failed CI jobs before treating artifacts as ready.** Dependency: readable exact-head full logs. Acceptance: identify the failing command/root cause and retain platform-specific evidence; do not infer a shared cause from similar status.
+2. **Close the not_fn regression evidence gap.** Dependency: completed exact-revision frontend/generated-program and combined-808 results with source/artifact lineage. Acceptance: distinguish the newly admitted pointer/signature slice from unsupported callable forms and verify the preserved pair regression obligations; metadata-only success is insufficient.
+3. **Continue a bounded source-proof and lowering review.** Dependency: the current not_fn descriptor, graph and lowering interfaces. Acceptance: document concrete invariants and any counterexample before proposing a minimal repair, including alias/default occurrence and lifetime/ABI boundaries. No delivery date or completion percentage is implied.
+
+<details>
+<summary>Previous snapshots and historical daily records (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-22
 
 - Cutoff: **2026-10-22T01:05:23Z**. Reviewed dev: [3348b87369af877d7e2873d7543a54ac31db2140](https://github.com/NeverSight/NeverC/commit/3348b87369af877d7e2873d7543a54ac31db2140).
@@ -1535,3 +1577,9 @@ No implementation changes since ee83c2e1; two progress-only commits excluded fro
 ## Daily record — 2026-10-22
 
 Inventoried 316 incoming commits and 209 net changed paths; reviewed the bounded linker ownership, Mach-O policy, fixture source and artifact-gate contracts above. Published the statically proven serialization-only gate repair as draft #21, not into dev. Recorded complete initial activity counts and the new review-created PR separately. Current dev has three failed workflows with one diagnosed textual gate and two inaccessible root-cause logs. Preserved all prior progress text and human edits. No execution, manual CI, issue mutation, merge or deployment.
+
+</details>
+
+## Daily record — 2026-10-23
+
+Inventoried 156 commits / 60 changed paths and completed the bounded not_fn/source-proof, fixture and replay-contract review above. Yesterday's PR #21 is merged; no new source defect or repair was established. Recorded 9 open issues / 0 open PRs and the exact-head CI failures, running/queued work and diagnostic skip limits. Updated only this English progress snapshot and record while preserving all prior text and human edits verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
