@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include <cstdio>
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
@@ -26166,6 +26167,11 @@ public:
                 A.NotFnOwnedQuerySources, AliasSource)
             : approvedFunctionalNotFnPointerFactorySource(A.S, A.Sources, A.Context, *Source,
                 Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource));
+        std::fprintf(stderr, "OWNED_NOT_FN_FACTORY line=%u shape=%u owned=%u source=%u approved=%u dependencies=%zu selections=%zu\n",
+            A.Sources.getPresumedLineNumber(Call->getExprLoc()),
+            static_cast<unsigned>(bool(Shape)), static_cast<unsigned>(bool(Owned)),
+            static_cast<unsigned>(bool(Source)), static_cast<unsigned>(Approved),
+            Dependencies.size(), Selections.size());
         if (!Approved) {
           A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
                    "The selected default, alias, trait and constructor source graph must be complete.");
@@ -26234,6 +26240,10 @@ public:
           Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
           A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
           functionalFunctionInvokeSource(A, Runtime->InvokeCall, &*Runtime);
+    std::fprintf(stderr, "OWNED_NOT_FN_CALL line=%u owned=%u signature=%u exception=%u negation=%u source=%u\n",
+        A.Sources.getPresumedLineNumber(Call->getExprLoc()), static_cast<unsigned>(bool(Owned)),
+        static_cast<unsigned>(bool(Signature)), static_cast<unsigned>(bool(Exception)),
+        static_cast<unsigned>(NegationSource), static_cast<unsigned>(Source));
     // Consume the selected operator's real enable_if/default packet, including
     // its original primary spelling, rather than assuming that void means valid.
     bool SelectedDefault = false;
@@ -26260,6 +26270,9 @@ public:
               NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits, A.NotFnOwnedQuerySources)
           : approvedFunctionalNotFnPointerCallDefaults(A.S, A.Sources, A.Context, *Runtime, *Use,
               NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits);
+      std::fprintf(stderr, "OWNED_NOT_FN_DEFAULT line=%u selected=%u source=%u\n",
+          A.Sources.getPresumedLineNumber(Call->getExprLoc()),
+          static_cast<unsigned>(SelectedDefault), static_cast<unsigned>(Source));
       if (!SelectedDefault) { Source = false; break; }
     }
     if (!Source || !SelectedDefault ||
@@ -30309,6 +30322,16 @@ public:
   }
   bool retainNeverCOperationTraitSource(
       ASTContext &Context, unsigned Count, const SourceLocation &Location) override {
+    static unsigned OwnedTraitRequests = 0;
+    if (OwnedTraitRequests++ < 16384) {
+      const auto &SM = Context.getSourceManager();
+      const auto Origin = S.sdkFile(SM, Location);
+      const auto P = SM.getPresumedLoc(Location);
+      std::fprintf(stderr, "OWNED_TRAIT_RETENTION count=%u rawloc=%u owned=%u root=%s path=%s line=%u column=%u diagnostics=%zu\n",
+          Count, Location.getRawEncoding(), static_cast<unsigned>(S.owns(SM, Location)),
+          Origin ? Origin->Root.c_str() : "-", Origin ? Origin->Path.c_str() : "-",
+          P.isValid() ? P.getLine() : 0, P.isValid() ? P.getColumn() : 0, S.Diagnostics.size());
+    }
     if (!S.coreV2() || !S.Diagnostics.empty())
       return false;
     if (!S.owns(Context.getSourceManager(), Location)) {
@@ -30341,6 +30364,13 @@ public:
       unsigned Count, bool Attempted, bool Complete,
       const CXXDestructorDecl *Destructor, const FunctionProtoType *DestructionPrototype,
       bool DestructionLookupAttempted, bool DestructionExceptionAttempted) override {
+    static unsigned OwnedTraitEvents = 0;
+    if (OwnedTraitEvents++ < 16384 && Query && Query->getNumArgs() == 2)
+      std::fprintf(stderr, "OWNED_TRAIT_EVENT ptr=%p trait=%u args=%u rawloc=%u target=%s input=%s operands=%u attempted=%u complete=%u rootkind=%s\n",
+          static_cast<const void *>(Query), static_cast<unsigned>(Query->getTrait()), Query->getNumArgs(),
+          Query->getExprLoc().getRawEncoding(), Query->getArg(0)->getType().getAsString().c_str(),
+          Query->getArg(1)->getType().getAsString().c_str(), Count, static_cast<unsigned>(Attempted),
+          static_cast<unsigned>(Complete), Root ? Root->getStmtClassName() : "-");
     if (!S.coreV2() || !S.Diagnostics.empty())
       return;
     OperationTraitSource Source{Root, {}, Attempted, Complete, Destructor,
