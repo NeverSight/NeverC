@@ -29,7 +29,7 @@ class AMXTablesTest(unittest.TestCase):
         bad = re.sub(r"(0x)[a-f0-9]+(ULL[^\n]+ = TDPBF8PS)",
                      r"\g<1>0\2", self.table, count=1)
         self.assertNotEqual(self.table, bad)
-        with self.assertRaisesRegex(ValueError, "stale AMX instruction"):
+        with self.assertRaisesRegex(ValueError, "stale native instruction"):
             AMX.synchronize_instructions(bad)
 
     def test_both_writers_cover_every_opcode(self):

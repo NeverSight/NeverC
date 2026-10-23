@@ -16,6 +16,9 @@ TABLE = ROOT / "llvm/lib/Target/X86/X86GenInstrInfo.inc"
 # Explicit operand count, implicit uses/definitions, memory effects.
 EFFECTS = {
     "CLTS": (0, (), (), ()),
+    "HRESET": (1, ("EAX",), (), ()),
+    "INVLPGB64": (0, ("RAX", "EDX", "ECX"), (), ()),
+    "TLBSYNC": (0, (), (), ()),
     "WRMSRNS": (0, ("EAX", "ECX", "EDX"), (), ()),
     "RDMSRLIST": (0, ("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad", "MayStore")),
     "WRMSRLIST": (0, ("RSI", "RDI", "RCX"), ("RCX",), ("MayLoad",)),

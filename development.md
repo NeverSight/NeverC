@@ -212,6 +212,44 @@ The native completion runners enable LLVM machine verification in NeverC
 as well as in the full fork. These checks qualify compiler transport; they
 do not execute privileged I/O or change host interrupt/descriptor state.
 
+### Bounded history, translation and GS-state operations
+
+`__builtin_ia32_hreset(unsigned control)` emits HRESET with the complete EAX
+input and an immediate zero; the architecture ignores imm8. It requires the
+`hreset` target feature, supplied by a function attribute or `-mhreset`.
+The standard `_hreset(int)` wrapper in `<x86gprintrin.h>` now calls this native
+builtin. Its installed `hresetintrin.h` retains the LLVM source license.
+
+`__builtin_ia32_invlpgb(unsigned long long address_control, unsigned ids,
+unsigned count)` transports rAX, EDX and ECX in that order. The control/address
+word remains an integer, including its low control bits; it is not dereferenced
+by the compiler. `__builtin_ia32_tlbsync()` emits the actual synchronization
+instruction. The shared IR names are `llvm.x86.invlpgb` and `llvm.x86.tlbsync`.
+The full LLVM fork additionally provides `llvm.x86.invlpgb32(i32, i32, i32)`
+for the 32-bit target, rejecting mode mismatches. Its existing INVLPGB machine
+descriptions omitted the ECX input; both backends now retain all three inputs.
+Address-size overrides remain separate from these default-mode APIs.
+
+`__builtin_ia32_lkgs_reg(unsigned short selector)` and
+`__builtin_ia32_lkgs_mem(const void *selector)` map to `llvm.x86.lkgs.reg(i16)`
+and `llvm.x86.lkgs.mem(ptr)`. Both require 64-bit mode. The memory form owns
+its m16 selector read, including unaligned access and native fault ordering.
+Descriptor validation, the GS selector/descriptor-cache update and the
+IA32_KERNEL_GS_BASE update remain inside LKGS; the compiler does not synthesize
+segment state. The full fork owns its definitions in `X86InstrSystem.td`.
+`sync-x86-lkgs-instructions.py` appends the two forms to NeverC's pruned tables,
+reusing the explicit-schema table machinery for descriptors, operand shapes,
+both printers and both assembler dialects. Existing opcode numbers stay fixed.
+
+All four instructions remain ordered effects and preserve arithmetic flags.
+`tests/verify-bounded-system-completion.py` supports the usual compiler, full
+LLVM and NeverC-to-fork modes. It checks actual input operands, full live input
+values, repeated effects, memory ordering, saved registers and unmapped LKGS
+selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
+assembly dialects. It executes surrounding scalar code while intercepting
+privileged instructions, so it does not qualify successful processor-history
+reset, descriptor loading, interprocessor invalidation or synchronization.
+
 ### Descriptor queries (LAR / LSL)
 
 `__builtin_ia32_lar_{reg,mem}{16,32,64}` and the corresponding `lsl` builtins

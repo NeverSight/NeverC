@@ -29,6 +29,11 @@ DECLARATIONS = {
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
     "vmread_reg": ("STRUCT2", "I64", "I8", "I64", "I64"),
     "vmwrite_mem": ("I8", "I64", "PTR"),
+    "hreset": ("Done", "I32"),
+    "invlpgb": ("Done", "I64", "I32", "I32"),
+    "tlbsync": ("Done",),
+    "lkgs_reg": ("Done", "I16"),
+    "lkgs_mem": ("Done", "PTR"),
 }
 DECLARATIONS["lsl"] = ("I32", "I32")
 for operation in ("lar", "lsl"):

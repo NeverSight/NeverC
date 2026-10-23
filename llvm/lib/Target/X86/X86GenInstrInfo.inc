@@ -18501,7 +18501,9 @@ namespace X86 {
     PTILEMOVROWrte	= 18486,
     TILEMOVROWrti	= 18487,
     PTILEMOVROWrti	= 18488,
-    INSTRUCTION_LIST_END = 18489
+    LKGS16r	= 18489,
+    LKGS16m	= 18490,
+    INSTRUCTION_LIST_END = 18491
   };
 
 } // end namespace X86
@@ -20892,7 +20894,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18489];
+  MCInstrDesc Insts[18491];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5432];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -20911,6 +20913,8 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18490,	5,	0,	0,	1486,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3826ULL },  // Inst #18490 = LKGS16m
+    { 18489,	1,	0,	0,	1487,	0,	0,	X86ImpOpBase + 0,	767,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x3836ULL },  // Inst #18489 = LKGS16r
     { 18488,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5429,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18488 = PTILEMOVROWrti
     { 18487,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5426,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xe803e0046829ULL },  // Inst #18487 = TILEMOVROWrti
     { 18486,	3,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18486 = PTILEMOVROWrte
@@ -37956,7 +37960,7 @@ extern const X86InstrTable X86Descs = {
     { 1446,	6,	0,	0,	8,	0,	1,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x4080004819ULL },  // Inst #1446 = INVVPID64
     { 1445,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x7960011019ULL },  // Inst #1445 = INVPCID64_EVEX
     { 1444,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x4100004819ULL },  // Inst #1444 = INVPCID64
-    { 1443,	0,	0,	0,	8,	2,	0,	X86ImpOpBase + 261,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x8000207eULL },  // Inst #1443 = INVLPGB64
+    { 1443,	0,	0,	0,	8,	3,	0,	X86ImpOpBase + 261,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x8000207eULL },  // Inst #1443 = INVLPGB64
     { 1442,	0,	0,	0,	697,	2,	0,	X86ImpOpBase + 259,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x8000205fULL },  // Inst #1442 = INVLPGA64
     { 1441,	5,	0,	0,	1477,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80002027ULL },  // Inst #1441 = INVLPG
     { 1440,	6,	0,	0,	8,	0,	1,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x7860011019ULL },  // Inst #1440 = INVEPT64_EVEX
@@ -38031,7 +38035,7 @@ extern const X86InstrTable X86Descs = {
     { 1371,	7,	1,	0,	150,	1,	0,	X86ImpOpBase + 65,	431,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException), 0x3e88003819ULL },  // Inst #1371 = HSUBPSrm
     { 1370,	3,	1,	0,	151,	1,	0,	X86ImpOpBase + 65,	438,	0|(1ULL<<MCID::MayRaiseFPException), 0x3e90002829ULL },  // Inst #1370 = HSUBPDrr
     { 1369,	7,	1,	0,	150,	1,	0,	X86ImpOpBase + 65,	431,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException), 0x3e90002819ULL },  // Inst #1369 = HSUBPDrm
-    { 1368,	1,	0,	0,	8,	1,	0,	X86ImpOpBase + 35,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x7800047040ULL },  // Inst #1368 = HRESET
+    { 1368,	1,	0,	0,	8,	1,	0,	X86ImpOpBase + 17,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x7800047040ULL },  // Inst #1368 = HRESET
     { 1367,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::Terminator)|(1ULL<<MCID::UnmodeledSideEffects), 0x7a00000001ULL },  // Inst #1367 = HLT
     { 1366,	3,	1,	0,	151,	1,	0,	X86ImpOpBase + 65,	438,	0|(1ULL<<MCID::MayRaiseFPException), 0x3e08003829ULL },  // Inst #1366 = HADDPSrr
     { 1365,	7,	1,	0,	150,	1,	0,	X86ImpOpBase + 65,	431,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException), 0x3e08003819ULL },  // Inst #1365 = HADDPSrm
@@ -58240,6 +58244,8 @@ extern const char X86InstrNameData[] = {
   /* 258918 */ "PTILEMOVROWrte\0"
   /* 258933 */ "TILEMOVROWrti\0"
   /* 258947 */ "PTILEMOVROWrti\0"
+  /* 258962 */ "LKGS16r\0"
+  /* 258970 */ "LKGS16m\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60593,10 +60599,12 @@ extern const unsigned X86InstrNameIndices[] = {
     258918U,
     258933U,
     258947U,
+    258962U,
+    258970U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18489);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18491);
 }
 
 } // end namespace llvm
@@ -60656,7 +60664,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18489);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18491);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -97859,6 +97867,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64460,
     /* PTILEMOVROWrti */
     64463,
+    /* LKGS16r */
+    3677,
+    /* LKGS16m */
+    3676,
   };
 
   using namespace OpTypes;
@@ -153198,9 +153210,11 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // PTILEMOVROWrte = 18486
     CEFBS_In64BitMode, // TILEMOVROWrti = 18487
     CEFBS_In64BitMode, // PTILEMOVROWrti = 18488
+    CEFBS_In64BitMode, // LKGS16r = 18489
+    CEFBS_In64BitMode, // LKGS16m = 18490
   };
 
-  assert(Opcode < 18489);
+  assert(Opcode < 18491);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

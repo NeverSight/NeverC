@@ -4,7 +4,9 @@
 The LLVM fork's X86InstrAMX.td owns the instruction definitions. This schema
 uses existing operand/printing forms, preserving every preexisting opcode and
 feature number. It updates descriptors, operand types, both assembly writers,
-both assembler dialects, and subtarget features together.
+both assembler dialects, and subtarget features together. The descriptor and
+assembler helpers also accept an explicit schema for other append-only
+instruction families; omitted schemas keep the AMX behavior.
 """
 
 import argparse
@@ -15,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = ROOT / "llvm/lib/Target/X86"
-# Name, prototype, encoded opcode/map/prefix (X86II values), asm mnemonic.
+# Name, prototype, opcode/map/prefix/optional form (X86II), asm mnemonic.
 INSTRUCTIONS = []
 for name, prefix in (("TDPBF8PS", 0), ("TDPBHF8PS", 3),
                      ("TDPHBF8PS", 2), ("TDPHF8PS", 1)):
@@ -100,16 +102,16 @@ def row_operands(text, pseudo, immediate):
     return text, operand_offset, type_offset
 
 
-def synchronize_instructions(text):
-    for name, prototype, encoding, _ in INSTRUCTIONS:
+def synchronize_instructions(text, instructions=INSTRUCTIONS, rows=ROWS):
+    for name, prototype, encoding, _ in instructions:
         ids = enums(text)
         total = int(re.search(r"INSTRUCTION_LIST_END = (\d+)", text).group(1))
         opcode = ids.get(name, total)
         fields = descriptor(text, prototype)
         fields[0] = str(opcode)
         row_type_offset = None
-        if name in ROWS:
-            pseudo, immediate = ROWS[name]
+        if name in rows:
+            pseudo, immediate = rows[name]
             text, operand_offset, row_type_offset = row_operands(text, pseudo, immediate)
             fields[4], fields[8] = "8", str(operand_offset)
             flags = ("Pseudo", "MayLoad", "MayStore", "UsesCustomInserter", "UnmodeledSideEffects") if pseudo else ("UnmodeledSideEffects",)
@@ -117,14 +119,16 @@ def synchronize_instructions(text):
         if encoding:
             flags, tsflags = fields[9].split(", ")
             old = int(tsflags.removesuffix("ULL"), 16)
-            byte, opmap, prefix = encoding
+            byte, opmap, prefix = encoding[:3]
             mask = (255 << 31) | (15 << 13) | (3 << 11)
             value = (old & ~mask) | (byte << 31) | (opmap << 13) | (prefix << 11)
-            if name in ROWS:
+            if len(encoding) == 4:
+                value = (value & ~127) | encoding[3]
+            if name in rows:
                 # Row operations use a tile source, not an SSE execution domain.
                 # The register-row form places its GPR in EVEX.vvvv (Op3).
                 value &= ~((3 << 27) | 127)
-                value |= 41 if ROWS[name][1] else 42
+                value |= 41 if rows[name][1] else 42
             fields[9] = f"{flags}, {hex(value)}ULL"
         joined = ",\t".join(fields)
         line = f"    {{ {joined} }},  // Inst #{opcode} = {name}\n"
@@ -143,7 +147,7 @@ def synchronize_instructions(text):
             if (line not in text or offsets[opcode] != type_offset or
                     (str(indices[opcode]), name) not in strings or
                     f"CEFBS_In64BitMode, // {name} = {opcode}" not in text):
-                raise ValueError(f"stale AMX instruction table: {name}")
+                raise ValueError(f"stale native instruction table: {name}")
             continue
         offset = int(strings[-1][0]) + len(strings[-1][1]) + 1
         _, end, _ = array(text, "extern const char X86InstrNameData[] = {")
@@ -166,13 +170,13 @@ def synchronize_instructions(text):
     return text
 
 
-def synchronize_writer(text, ids):
+def synchronize_writer(text, ids, instructions=INSTRUCTIONS):
     mask = int(re.search(r"return \{AsmStrs\+\(Bits & (\d+)\)-1, Bits\};", text).group(1))
     start, end, strings = array(text, "  static const char AsmStrs[] = {")
     data = "".join(ast.literal_eval('"' + s + '"') for s in re.findall(r'"([^"\n]*)"', strings))
     offsets = {}
     addition = ""
-    for _, _, _, mnemonic in INSTRUCTIONS:
+    for _, _, _, mnemonic in instructions:
         if mnemonic is None or mnemonic in offsets:
             continue
         value = mnemonic + "\t\0"
@@ -182,7 +186,7 @@ def synchronize_writer(text, ids):
             addition += f'  /* {offset} */ "{mnemonic}\\t\\0"\n'
             data += value
         if offset + 1 > mask:
-            raise ValueError("AMX assembly string does not fit the writer's offset field")
+            raise ValueError("assembly string does not fit the writer's offset field")
         offsets[mnemonic] = offset
     text = text[:end] + addition + text[end:]
     for declaration in re.findall(r"  static const uint\d+_t OpInfo\d\[\] = \{", text):
@@ -194,7 +198,7 @@ def synchronize_writer(text, ids):
         by_id = {value: name for name, value in ids.items()}
         while len(expected) < len(ids):
             expected.append((0, by_id[len(expected)]))
-        for name, prototype, _, mnemonic in INSTRUCTIONS:
+        for name, prototype, _, mnemonic in instructions:
             value = values[ids[prototype]][0] if mnemonic else 0
             if mnemonic and "OpInfo0" in declaration:
                 value = (value & ~mask) | (offsets[mnemonic] + 1)
@@ -208,13 +212,13 @@ def synchronize_writer(text, ids):
     return text
 
 
-def synchronize_matcher(text):
+def synchronize_matcher(text, instructions=INSTRUCTIONS, rows=ROWS, require64=False):
     start = text.index("static const char MnemonicTable[] =")
     end = text.index(";", start)
     data = "".join(ast.literal_eval('"' + s + '"') for s in re.findall(r'"([^"\n]*)"', text[start:end]))
     offsets = {}
     addition = ""
-    for _, _, _, mnemonic in INSTRUCTIONS:
+    for _, _, _, mnemonic in instructions:
         if mnemonic is None or mnemonic in offsets:
             continue
         value = chr(len(mnemonic)) + mnemonic
@@ -228,7 +232,7 @@ def synchronize_matcher(text):
     for dialect in (0, 1):
         start, end, content = array(text, f"static const MatchEntry MatchTable{dialect}[] = {{")
         lines = [line for line in content.splitlines() if line.strip()]
-        for name, prototype, _, mnemonic in INSTRUCTIONS:
+        for name, prototype, _, mnemonic in instructions:
             if not mnemonic:
                 continue
             matches = [line for line in lines if f"X86::{prototype}," in line]
@@ -236,16 +240,18 @@ def synchronize_matcher(text):
                 raise ValueError(f"expected one assembler prototype: {prototype}")
             line = re.sub(r"\{ \d+ /\* \w+ \*/", f"{{ {offsets[mnemonic]} /* {mnemonic} */", matches[0], count=1)
             line = line.replace(f"X86::{prototype},", f"X86::{name},")
-            if name in ROWS:
-                _, immediate = ROWS[name]
+            if name in rows:
+                _, immediate = rows[name]
                 classes = ["MCK_VR512", "MCK_TILE", "MCK_ImmUnsignedi8" if immediate else "MCK_GR32"]
                 if dialect == 0:
                     classes.reverse()
                 line = re.sub(r"\{ MCK_[^}]+\}", "{ " + ", ".join(classes) + " }", line)
                 line = line.replace("AMFBS_None", "AMFBS_In64BitMode")
+            if require64:
+                line = line.replace("AMFBS_None", "AMFBS_In64BitMode")
             existing = [value for value in lines if f"X86::{name}," in value]
             if existing and existing != [line]:
-                raise ValueError(f"stale AMX assembler entry: {name}")
+                raise ValueError(f"stale native assembler entry: {name}")
             if not existing:
                 lines.append(line)
         lines.sort(key=lambda line: re.search(r"/\* (\S+) \*/", line).group(1))

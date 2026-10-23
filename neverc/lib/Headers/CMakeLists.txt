@@ -118,6 +118,7 @@ set(x86_files
   fmaintrin.h
   fxsrintrin.h
   gfniintrin.h
+  hresetintrin.h
   ia32intrin.h
   immintrin.h
   invpcidintrin.h

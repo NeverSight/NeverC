@@ -580,6 +580,50 @@ TEST_F(X86PrivilegedIntrinTest, DeadAndRepeatedSegmentLimitReadsRemainOrdered) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, BoundedSystemEffectsUseNativeInstructions) {
+  constexpr const char *Source = R"(
+    #include <x86gprintrin.h>
+    __attribute__((target("hreset")))
+    void query(unsigned control, unsigned long long address, unsigned ids,
+               unsigned count, unsigned short selector, const void *memory) {
+      _hreset(control);
+      __builtin_ia32_lkgs_reg(selector);
+      __builtin_ia32_lkgs_mem(memory);
+      __builtin_ia32_invlpgb(address, ids, count);
+      __builtin_ia32_tlbsync();
+      _hreset(control);
+      __builtin_ia32_lkgs_reg(selector);
+      __builtin_ia32_lkgs_mem(memory);
+      __builtin_ia32_invlpgb(address, ids, count);
+      __builtin_ia32_tlbsync();
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Assembly] = compileToAsm(Source, "bounded_system", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const auto &[Instruction, Count] :
+         {std::pair{"hreset", 2}, std::pair{"lkgs", 4}, std::pair{"invlpgb", 2},
+          std::pair{"tlbsync", 2}}) {
+      const std::regex Pattern(std::string("\\t") + Instruction +
+                               "[\\t\\r\\n]");
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Pattern),
+                              std::sregex_iterator()),
+                Count)
+          << Assembly;
+    }
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, HresetBuiltinRequiresItsTargetFeature) {
+  auto [RC, Error] = compileToAsm(
+      "void query(unsigned control) { __builtin_ia32_hreset(control); }",
+      "hreset_without_feature");
+  EXPECT_NE(RC, 0);
+  EXPECT_NE(Error.find("hreset"), std::string::npos) << Error;
+}
+
 TEST_F(X86PrivilegedIntrinTest, SegmentLimitLowersCorrectly) {
   auto [rc, s] = compileToAsm(
       "unsigned int do_lsl(unsigned int sel) { return __segmentlimit(sel); }\n",

@@ -3374,6 +3374,20 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_clts:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__builtin_ia32_hreset:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_hreset,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_invlpgb:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpgb,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_tlbsync:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_tlbsync, {});
+  case X86::BI__builtin_ia32_lkgs_reg:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lkgs_reg,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_lkgs_mem:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lkgs_mem,
+                                   {Ops[0]});
   case X86::BI__builtin_ia32_wrmsrns:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_wrmsrns,
                                    {Ops[0], Ops[1]});

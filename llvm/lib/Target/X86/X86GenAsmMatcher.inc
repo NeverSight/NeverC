@@ -8382,7 +8382,8 @@ static const char MnemonicTable[] =
     "\017tcvtrowps2bf16l"
     "\015tcvtrowps2phh"
     "\015tcvtrowps2phl"
-    "\012tilemovrow";
+    "\012tilemovrow"
+    "\004lkgs";
 
 // Feature bitsets.
 enum : uint8_t {
@@ -9863,6 +9864,8 @@ static const MatchEntry MatchTable0[] = {
   { 4306 /* ljmpl */, X86::FARJMP32m, Convert__Mem5_1, AMFBS_None, { MCK__STAR_, MCK_Mem }, },
   { 4312 /* ljmpq */, X86::FARJMP64m, Convert__Mem5_1, AMFBS_In64BitMode, { MCK__STAR_, MCK_Mem }, },
   { 4318 /* ljmpw */, X86::FARJMP16m, Convert__Mem5_1, AMFBS_None, { MCK__STAR_, MCK_Mem }, },
+  { 18872 /* lkgs */, X86::LKGS16r, Convert__Reg1_0, AMFBS_In64BitMode, { MCK_GR16 }, },
+  { 18872 /* lkgs */, X86::LKGS16m, Convert__Mem165_0, AMFBS_In64BitMode, { MCK_Mem16 }, },
   { 4329 /* lldtw */, X86::LLDT16r, Convert__Reg1_0, AMFBS_None, { MCK_GR16 }, },
   { 4329 /* lldtw */, X86::LLDT16m, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
   { 4335 /* llwpcb */, X86::LLWPCB, Convert__Reg1_0, AMFBS_None, { MCK_GR32 }, },
@@ -27641,6 +27644,8 @@ static const MatchEntry MatchTable1[] = {
   { 4290 /* lidt */, X86::LIDT64m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 4301 /* ljmp */, X86::FARJMP64m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 4301 /* ljmp */, X86::FARJMP32m, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18872 /* lkgs */, X86::LKGS16r, Convert__Reg1_0, AMFBS_In64BitMode, { MCK_GR16 }, },
+  { 18872 /* lkgs */, X86::LKGS16m, Convert__Mem165_0, AMFBS_In64BitMode, { MCK_Mem16 }, },
   { 4324 /* lldt */, X86::LLDT16r, Convert__Reg1_0, AMFBS_None, { MCK_GR16 }, },
   { 4324 /* lldt */, X86::LLDT16m, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
   { 4335 /* llwpcb */, X86::LLWPCB, Convert__Reg1_0, AMFBS_None, { MCK_GR32 }, },

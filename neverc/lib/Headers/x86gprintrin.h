@@ -1,6 +1,8 @@
 #ifndef __X86GPRINTRIN_H
 #define __X86GPRINTRIN_H
 
+#include <hresetintrin.h>
+
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
     defined(__CRC32__)
 #include <crc32intrin.h>

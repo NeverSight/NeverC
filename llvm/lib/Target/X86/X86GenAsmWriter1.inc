@@ -1541,6 +1541,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
   /* 15689 */ "tcvtrowps2phh\t\0"
   /* 15704 */ "tcvtrowps2phl\t\0"
   /* 15719 */ "tilemovrow\t\0"
+  /* 15731 */ "lkgs\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20036,6 +20037,8 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// PTILEMOVROWrte
     2148564328U,	// TILEMOVROWrti
     0U,	// PTILEMOVROWrti
+    32116U,	// LKGS16r
+    97652U,	// LKGS16m
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38528,6 +38531,8 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// PTILEMOVROWrte
     112U,	// TILEMOVROWrti
     0U,	// PTILEMOVROWrti
+    0U,	// LKGS16r
+    0U,	// LKGS16m
 };
 
   // Emit the opcode for the instruction.

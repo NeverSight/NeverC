@@ -1859,6 +1859,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 19156 */ "tcvtrowps2phh\t\0"
   /* 19171 */ "tcvtrowps2phl\t\0"
   /* 19186 */ "tilemovrow\t\0"
+  /* 19198 */ "lkgs\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20354,6 +20355,8 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// PTILEMOVROWrte
     4836083U,	// TILEMOVROWrti
     0U,	// PTILEMOVROWrti
+    51967U,	// LKGS16r
+    445183U,	// LKGS16m
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38846,6 +38849,8 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// PTILEMOVROWrte
     144U,	// TILEMOVROWrti
     0U,	// PTILEMOVROWrti
+    0U,	// LKGS16r
+    0U,	// LKGS16m
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57338,6 +57343,8 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// PTILEMOVROWrte
     0U,	// TILEMOVROWrti
     0U,	// PTILEMOVROWrti
+    0U,	// LKGS16r
+    0U,	// LKGS16m
 };
 
   // Emit the opcode for the instruction.
