@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdio>
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -14830,13 +14831,30 @@ const CXXMethodDecl *approvedFunctionalNotFnPointerNegation(const State &S,
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Negation->getArg(0)->IgnoreParens());
   const auto *Temporary = Receiver && Receiver->getCastKind() == CK_NoOp
       ? dyn_cast<MaterializeTemporaryExpr>(Receiver->getSubExpr()->IgnoreParens()) : nullptr;
-  if (!Receiver || !Receiver->isLValue() ||
-      !Context.hasSameType(Receiver->getType(), Context.getConstType(Target->getReturnType())) ||
-      !Temporary || Temporary->getExtendingDecl() || !Temporary->isLValue() ||
-      !Context.hasSameType(Temporary->getType(), Target->getReturnType()) ||
-      Temporary->getSubExpr()->IgnoreParens() != Call.InvokeCall ||
-      !Call.InvokeCall || !Call.InvokeCall->isPRValue() ||
-      !Context.hasSameType(Call.InvokeCall->getType(), Target->getReturnType())) return (std::fprintf(stderr, "CUSTOM_NEGATION_METHOD_FALSE line=%u mode=%u\n", __LINE__, static_cast<unsigned>(Call.Mode)), nullptr);
+  const auto ObserveReceiver = [&](const char *Name, bool Rejected) {
+    if (Rejected) {
+      std::fprintf(stderr, "CUSTOM_NEGATION_RECEIVER_PREDICATE mode=%u name=%s rejected=1\n",
+          static_cast<unsigned>(Call.Mode), Name);
+      static unsigned Dumps = 0;
+      if (Dumps++ == 0) {
+        std::fprintf(stderr, "CUSTOM_NEGATION_RECEIVER_AST_BEGIN\n");
+        Negation->dump(llvm::errs(), Context);
+        std::fprintf(stderr, "CUSTOM_NEGATION_INVOKE_AST_BEGIN\n");
+        if (Call.InvokeCall) Call.InvokeCall->dump(llvm::errs(), Context);
+        std::fprintf(stderr, "CUSTOM_NEGATION_EXPECTED_RESULT_TYPE_BEGIN\n");
+        Target->getReturnType().dump(llvm::errs(), Context);
+        std::fprintf(stderr, "CUSTOM_NEGATION_RECEIVER_AST_END\n");
+      }
+    }
+    return Rejected;
+  };
+  if (ObserveReceiver("receiver-node", !Receiver) || ObserveReceiver("receiver-value-kind", !Receiver->isLValue()) ||
+      ObserveReceiver("receiver-qualified-type", !Context.hasSameType(Receiver->getType(), Context.getConstType(Target->getReturnType()))) ||
+      ObserveReceiver("materialized-temporary-node", !Temporary) || ObserveReceiver("lifetime-extension", Temporary->getExtendingDecl()) || ObserveReceiver("temporary-value-kind", !Temporary->isLValue()) ||
+      ObserveReceiver("temporary-exact-type", !Context.hasSameType(Temporary->getType(), Target->getReturnType())) ||
+      ObserveReceiver("original-invoke-expression", Temporary->getSubExpr()->IgnoreParens() != Call.InvokeCall) ||
+      ObserveReceiver("invoke-node", !Call.InvokeCall) || ObserveReceiver("invoke-value-kind", !Call.InvokeCall->isPRValue()) ||
+      ObserveReceiver("invoke-exact-result-type", !Context.hasSameType(Call.InvokeCall->getType(), Target->getReturnType()))) return (std::fprintf(stderr, "CUSTOM_NEGATION_METHOD_FALSE line=%u mode=%u\n", __LINE__, static_cast<unsigned>(Call.Mode)), nullptr);
   return Method;
 }
 
