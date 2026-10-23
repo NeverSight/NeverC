@@ -26040,6 +26040,24 @@ static SDValue EmitMaskedTruncSStore(bool SignedSat, SDValue Chain,
   return DAG.getMemIntrinsicNode(Opc, DL, VTs, Ops, MemVT, MMO);
 }
 
+// Preserve both VMX completion flags until they have been captured. All VMX
+// status builtins use 0 = success, 1 = VMfailValid (ZF), 2 = VMfailInvalid
+// (CF).
+static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
+                                SelectionDAG &DAG) {
+  auto *ZF = DAG.getMachineNode(
+      X86::SETCCr, DL, DAG.getVTList(MVT::i8, MVT::Glue),
+      {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8), SDValue(Access, 1)});
+  auto *CF = DAG.getMachineNode(X86::SETCCr, DL, MVT::i8,
+                                DAG.getTargetConstant(X86::COND_B, DL, MVT::i8),
+                                SDValue(ZF, 1));
+  SDValue Status =
+      DAG.getNode(ISD::OR, DL, MVT::i8, SDValue(ZF, 0),
+                  DAG.getNode(ISD::SHL, DL, MVT::i8, SDValue(CF, 0),
+                              DAG.getConstant(1, DL, MVT::i8)));
+  return DAG.getMergeValues({Status, SDValue(Access, 0)}, DL);
+}
+
 static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                                       SelectionDAG &DAG) {
   unsigned IntNo = Op.getConstantOperandVal(1);
@@ -26312,20 +26330,23 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                          ? X86::VMLAUNCH : X86::VMRESUME;
       SDVTList VmTys = DAG.getVTList(MVT::Other, MVT::Glue);
       SDNode *VM = DAG.getMachineNode(Opc, dl, VmTys, Chain);
-      Chain = SDValue(VM, 0);
-      SDValue Glue = SDValue(VM, 1);
-      SDVTList SetTys = DAG.getVTList(MVT::i8, MVT::Glue);
-      SDNode *SetZ = DAG.getMachineNode(X86::SETCCr, dl, SetTys,
-          {DAG.getTargetConstant(X86::COND_E, dl, MVT::i8), Glue});
-      Glue = SDValue(SetZ, 1);
-      SDNode *SetB = DAG.getMachineNode(X86::SETCCr, dl, MVT::i8,
-          {DAG.getTargetConstant(X86::COND_B, dl, MVT::i8), Glue});
-      SDValue ZF = SDValue(SetZ, 0);
-      SDValue CF = SDValue(SetB, 0);
-      SDValue Shifted = DAG.getNode(ISD::SHL, dl, MVT::i8, CF,
-                                    DAG.getConstant(1, dl, MVT::i8));
-      SDValue Result = DAG.getNode(ISD::OR, dl, MVT::i8, ZF, Shifted);
-      return DAG.getMergeValues({Result, Chain}, dl);
+      return getVMXCompletion(VM, dl, DAG);
+    }
+    case Intrinsic::x86_invept:
+    case Intrinsic::x86_invvpid: {
+      if (!Subtarget.is64Bit())
+        report_fatal_error(
+            "64-bit VMX invalidation intrinsic requires 64-bit mode");
+      const SDLoc DL(Op);
+      const unsigned Opcode =
+          IntNo == Intrinsic::x86_invept ? X86::INVEPT64 : X86::INVVPID64;
+      auto *Access = DAG.getMachineNode(
+          Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue),
+          {Op.getOperand(2), Op.getOperand(3),
+           DAG.getTargetConstant(1, DL, MVT::i8), DAG.getRegister(0, MVT::i64),
+           DAG.getTargetConstant(0, DL, MVT::i32), DAG.getRegister(0, MVT::i16),
+           Op.getOperand(0)});
+      return getVMXCompletion(Access, DL, DAG);
     }
     case llvm::Intrinsic::x86_vmxon:
     case llvm::Intrinsic::x86_vmclear:
@@ -26347,20 +26368,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDVTList VmTys = DAG.getVTList(MVT::Other, MVT::Glue);
       SDNode *VM = DAG.getMachineNode(Opc, dl, VmTys,
           {Ptr, Scale, Index, Disp, Segment, Chain});
-      Chain = SDValue(VM, 0);
-      SDValue Glue = SDValue(VM, 1);
-      SDVTList SetTys = DAG.getVTList(MVT::i8, MVT::Glue);
-      SDNode *SetZ = DAG.getMachineNode(X86::SETCCr, dl, SetTys,
-          {DAG.getTargetConstant(X86::COND_E, dl, MVT::i8), Glue});
-      Glue = SDValue(SetZ, 1);
-      SDNode *SetB = DAG.getMachineNode(X86::SETCCr, dl, MVT::i8,
-          {DAG.getTargetConstant(X86::COND_B, dl, MVT::i8), Glue});
-      SDValue ZF = SDValue(SetZ, 0);
-      SDValue CF = SDValue(SetB, 0);
-      SDValue Shifted = DAG.getNode(ISD::SHL, dl, MVT::i8, CF,
-                                    DAG.getConstant(1, dl, MVT::i8));
-      SDValue Result = DAG.getNode(ISD::OR, dl, MVT::i8, ZF, Shifted);
-      return DAG.getMergeValues({Result, Chain}, dl);
+      return getVMXCompletion(VM, dl, DAG);
     }
     case llvm::Intrinsic::x86_vmwrite: {
       SDLoc dl(Op);
@@ -26370,20 +26378,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDVTList VmTys = DAG.getVTList(MVT::Other, MVT::Glue);
       SDNode *VM = DAG.getMachineNode(X86::VMWRITE64rr, dl, VmTys,
           {Field, Val, Chain});
-      Chain = SDValue(VM, 0);
-      SDValue Glue = SDValue(VM, 1);
-      SDVTList SetTys = DAG.getVTList(MVT::i8, MVT::Glue);
-      SDNode *SetZ = DAG.getMachineNode(X86::SETCCr, dl, SetTys,
-          {DAG.getTargetConstant(X86::COND_E, dl, MVT::i8), Glue});
-      Glue = SDValue(SetZ, 1);
-      SDNode *SetB = DAG.getMachineNode(X86::SETCCr, dl, MVT::i8,
-          {DAG.getTargetConstant(X86::COND_B, dl, MVT::i8), Glue});
-      SDValue ZF = SDValue(SetZ, 0);
-      SDValue CF = SDValue(SetB, 0);
-      SDValue Shifted = DAG.getNode(ISD::SHL, dl, MVT::i8, CF,
-                                    DAG.getConstant(1, dl, MVT::i8));
-      SDValue Result = DAG.getNode(ISD::OR, dl, MVT::i8, ZF, Shifted);
-      return DAG.getMergeValues({Result, Chain}, dl);
+      return getVMXCompletion(VM, dl, DAG);
     }
     case llvm::Intrinsic::x86_vmread: {
       SDLoc dl(Op);
@@ -26399,20 +26394,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
           {DstPtr, DAG.getTargetConstant(1, dl, MVT::i8),
            DAG.getRegister(0, MVT::i64), DAG.getTargetConstant(0, dl, MVT::i32),
            DAG.getRegister(0, MVT::i16), Field, Chain});
-      Chain = SDValue(VM, 0);
-      SDValue Glue = SDValue(VM, 1);
-      SDVTList SetTys = DAG.getVTList(MVT::i8, MVT::Glue);
-      SDNode *SetZ = DAG.getMachineNode(X86::SETCCr, dl, SetTys,
-          {DAG.getTargetConstant(X86::COND_E, dl, MVT::i8), Glue});
-      Glue = SDValue(SetZ, 1);
-      SDNode *SetB = DAG.getMachineNode(X86::SETCCr, dl, MVT::i8,
-          {DAG.getTargetConstant(X86::COND_B, dl, MVT::i8), Glue});
-      SDValue ZF = SDValue(SetZ, 0);
-      SDValue CF = SDValue(SetB, 0);
-      SDValue Shifted = DAG.getNode(ISD::SHL, dl, MVT::i8, CF,
-                                    DAG.getConstant(1, dl, MVT::i8));
-      SDValue Result = DAG.getNode(ISD::OR, dl, MVT::i8, ZF, Shifted);
-      return DAG.getMergeValues({Result, Chain}, dl);
+      return getVMXCompletion(VM, dl, DAG);
     }
     case llvm::Intrinsic::x86_cpuidex: {
       SDLoc dl(Op);

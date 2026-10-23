@@ -21,6 +21,8 @@ EFFECTS = {
     "VMCLEARm": (0, "MayLoad"), "VMPTRLDm": (0, "MayLoad"),
     "VMPTRSTm": (0, "MayStore"), "VMXON": (0, "MayLoad"),
     "VMXOFF": (0, None), "VMLAUNCH": (0, None), "VMRESUME": (0, None),
+    "INVEPT64": (0, "MayLoad"), "INVEPT64_EVEX": (0, "MayLoad"),
+    "INVVPID64": (0, "MayLoad"), "INVVPID64_EVEX": (0, "MayLoad"),
 }
 
 

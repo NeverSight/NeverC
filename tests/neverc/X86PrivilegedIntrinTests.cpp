@@ -21,6 +21,29 @@ protected:
   }
 };
 
+TEST_F(X86PrivilegedIntrinTest,
+       IntrinsicRenumberingPreservesChainlessPatterns) {
+  constexpr const char *Source = R"(
+    typedef long long Pair __attribute__((vector_size(16)));
+    __attribute__((target("pclmul")))
+    Pair multiply(Pair x, Pair y) {
+      return __builtin_ia32_pclmulqdq128(x, y, 0);
+    }
+    __attribute__((target("crc32")))
+    unsigned int checksum(unsigned int x, unsigned int y) {
+      return __builtin_ia32_crc32si(x, y);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "chainless_intrinsics", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    EXPECT_NE(Assembly.find("\tpclmulqdq"), std::string::npos) << Assembly;
+    EXPECT_NE(Assembly.find("\tcrc32"), std::string::npos) << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // MSR: rdmsr / wrmsr — true intrinsic lowering (no InlineAsm markers)
 // ---------------------------------------------------------------------------

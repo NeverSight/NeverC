@@ -8,9 +8,13 @@ on:
       - 'neverc/include/neverc/Foundation/DiagnosticGroups.td.h'
       - 'utils/lint/sort-diagnostic-groups.py'
       - 'llvm/include/llvm/IR/IntrinsicsX86.h'
+      - 'llvm/include/llvm/IR/IntrinsicEnums.inc'
+      - 'llvm/include/llvm/IR/IntrinsicImpl.inc'
       - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
       - 'llvm/lib/Target/X86/X86GenInstrInfo.inc'
       - 'utils/lint/sort-x86-intrinsics.py'
+      - 'utils/lint/test_sort_x86_intrinsics.py'
+      - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
       - '.github/workflows/lint-generated-td.yml'
   pull_request:
@@ -20,9 +24,13 @@ on:
       - 'neverc/include/neverc/Foundation/DiagnosticGroups.td.h'
       - 'utils/lint/sort-diagnostic-groups.py'
       - 'llvm/include/llvm/IR/IntrinsicsX86.h'
+      - 'llvm/include/llvm/IR/IntrinsicEnums.inc'
+      - 'llvm/include/llvm/IR/IntrinsicImpl.inc'
       - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
       - 'llvm/lib/Target/X86/X86GenInstrInfo.inc'
       - 'utils/lint/sort-x86-intrinsics.py'
+      - 'utils/lint/test_sort_x86_intrinsics.py'
+      - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
       - '.github/workflows/lint-generated-td.yml'
 
@@ -94,3 +102,9 @@ jobs:
 
       - name: Verify VMX instruction effects
         run: python3 utils/lint/sync-x86-vmx-effects.py
+
+      - name: Verify native intrinsic signatures
+        run: python3 utils/lint/sync-x86-native-intrinsics.py
+
+      - name: Test intrinsic metadata synchronization
+        run: python3 utils/lint/test_sort_x86_intrinsics.py

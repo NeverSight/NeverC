@@ -32,6 +32,7 @@ MANAGEMENT = ("vmclear", "vmptrld", "vmptrst", "vmxon", "vmxoff",
               "vmlaunch", "vmresume")
 MEMORY_MANAGEMENT = {"vmclear", "vmptrld", "vmptrst", "vmxon"}
 VOID_MANAGEMENT = {"vmptrst", "vmxoff"}
+INVALIDATION = ("invept", "invvpid")
 
 
 def compile_case(compiler, directory, operation, dead, opt, backend=None):
@@ -39,21 +40,25 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None):
     source = directory / (name + ".c")
     output = directory / (name + ".obj")
     ir = directory / (name + ".ll")
-    if operation in MANAGEMENT:
+    if operation in INVALIDATION:
+        parameters = "unsigned __int64 type, const void *descriptor"
+        arguments = "type, descriptor"
+    elif operation in MANAGEMENT:
         parameters = "unsigned __int64 *operand" if operation in MEMORY_MANAGEMENT else "void"
         arguments = "operand" if operation in MEMORY_MANAGEMENT else ""
     else:
         second = "unsigned __int64 *out" if operation == "vmread" else "unsigned __int64 value"
         parameters = f"unsigned __int64 field, {second}"
         arguments = "field, out" if operation == "vmread" else "field, value"
-    builtin = {"vmxon": "on", "vmxoff": "off"}.get(operation, operation)
+    builtin = ("__builtin_ia32_" + operation if operation in INVALIDATION else
+               "__vmx_" + {"vmxon": "on", "vmxoff": "off"}.get(operation, operation))
     returns_void = dead or operation in VOID_MANAGEMENT
     result = "void" if returns_void else "unsigned char"
     prefix = "" if returns_void else "return "
     source.write_text(
         '#include <intrin.h>\n'
         f'{result} probe({parameters}) {{\n'
-        f'  {prefix}__vmx_{builtin}({arguments});\n}}\n')
+        f'  {prefix}{builtin}({arguments});\n}}\n')
     command = [str(compiler), "-target", "x86_64-pc-windows-msvc", "-" + opt,
                "-ffreestanding", "-fno-lto", "-fno-stack-protector", str(source)]
     outputs = [(["-S", "-emit-llvm"], ir)]
@@ -90,7 +95,7 @@ def compile_ir(llc, directory, operation, dead, opt, bits):
         intrinsic = "llvm.x86." + operation
     else:
         integer = f"i{bits}"
-        second = "ptr" if operation == "vmread" else integer
+        second = "ptr" if operation == "vmread" or operation in INVALIDATION else integer
         types = f"{integer}, {second}"
         parameters = f"{integer} %field, {second} %second"
         intrinsic = "llvm.x86." + operation + ("32" if bits == 32 else "")
@@ -147,8 +152,10 @@ def execute(code, operation, dead, status, mapped, bits=64):
     destination = DATA + 13  # VMREAD has no alignment requirement.
     if mapped:
         machine.mem_map(DATA, PAGE)
-        machine.mem_write(destination, struct.pack(word, SENTINEL & mask))
-    second = destination if operation == "vmread" else VALUE & mask
+        initial = (struct.pack("<QQ", SENTINEL, VALUE) if operation in INVALIDATION else
+                   struct.pack(word, SENTINEL & mask))
+        machine.mem_write(destination, initial)
+    second = destination if operation == "vmread" or operation in INVALIDATION else VALUE & mask
     if bits == 64:
         machine.reg_write(regs.UC_X86_REG_RCX, FIELD)
         machine.reg_write(regs.UC_X86_REG_RDX, second)
@@ -171,6 +178,16 @@ def execute(code, operation, dead, status, mapped, bits=64):
     if operation == "vmwrite":
         if register(machine, instruction, operands[1].reg) != VALUE & mask:
             raise AssertionError("VMWRITE value was truncated or swapped")
+    elif operation in INVALIDATION:
+        descriptor = operands[1]
+        if descriptor.type != capstone.x86.X86_OP_MEM or descriptor.size != 16:
+            raise AssertionError("VMX invalidation descriptor must remain m128")
+        if address(machine, instruction, descriptor) != destination:
+            raise AssertionError("VMX invalidation descriptor address changed")
+        if not mapped:
+            # A faulting descriptor is still owned by the instruction, not an
+            # eager compiler-generated read. Stop before supplying completion.
+            return
     else:
         destination_operand = operands[0]
         if destination_operand.type == capstone.x86.X86_OP_MEM:
@@ -200,6 +217,9 @@ def execute(code, operation, dead, status, mapped, bits=64):
         expected = (VALUE if status == 0 else SENTINEL) & mask
         if actual != expected:
             raise AssertionError(f"VMREAD memory is {actual:#x}, expected {expected:#x}")
+    if operation in INVALIDATION:
+        if bytes(machine.mem_read(destination, 16)) != initial:
+            raise AssertionError("VMX invalidation descriptor was modified")
 
 
 def execute_management(code, operation, dead, status, bits):
@@ -271,14 +291,17 @@ def main():
     mode.add_argument("--llc", type=Path, help="test the LLVM fork directly in both word sizes")
     parser.add_argument("--backend-llc", type=Path,
                         help="compile NeverC's emitted IR using this LLVM fork")
-    parser.add_argument("--family", choices=("access", "management", "all"), default="all")
+    parser.add_argument("--family", choices=("access", "management", "invalidation", "all"),
+                        default="all")
     args = parser.parse_args()
     if args.llc and args.backend_llc:
         parser.error("--backend-llc tests frontend IR and cannot be combined with --llc")
     count = 0
-    operations = (() if args.family == "management" else ("vmread", "vmwrite"))
-    if args.family != "access":
+    operations = ("vmread", "vmwrite") if args.family in ("access", "all") else ()
+    if args.family in ("management", "all"):
         operations += MANAGEMENT
+    if args.family in ("invalidation", "all"):
+        operations += INVALIDATION
     with tempfile.TemporaryDirectory(prefix="neverc-vmcs-") as temp:
         for bits in ((32, 64) if args.llc else (64,)):
             for opt in ("O0", "O2"):
@@ -302,8 +325,10 @@ def main():
                                     raise AssertionError(f"{name}, status={status}: {error}") from error
                                 count += 1
                             continue
-                        for status in (0, 1, 2):
-                            for mapped in ((True, False) if operation == "vmread" and status else (True,)):
+                        for status in ((0, 1, 2, None) if operation in INVALIDATION else (0, 1, 2)):
+                            mappings = ((False,) if status is None else
+                                        (True, False) if operation == "vmread" and status else (True,))
+                            for mapped in mappings:
                                 try:
                                     execute(code, operation, dead, status, mapped, bits)
                                 except (AssertionError, unicorn.UcError) as error:

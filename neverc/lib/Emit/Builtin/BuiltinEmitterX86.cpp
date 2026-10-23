@@ -3409,6 +3409,13 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite,
                                    {Ops[0], Ops[1]});
   }
+  case X86::BI__builtin_ia32_invept:
+  case X86::BI__builtin_ia32_invvpid: {
+    const auto IID = BuiltinID == X86::BI__builtin_ia32_invept
+                         ? llvm::Intrinsic::x86_invept
+                         : llvm::Intrinsic::x86_invvpid;
+    return Builder.CreateIntrinsic(Int8Ty, IID, {Ops[0], Ops[1]});
+  }
   case X86::BI__vmx_vmread: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmread,
                                    {Ops[0], Ops[1]});

@@ -1029,8 +1029,10 @@ enum X86Intrinsics : unsigned {
     x86_indwordstring,                               // llvm.x86.indwordstring
     x86_int,                                         // llvm.x86.int
     x86_int2c,                                       // llvm.x86.int2c
+    x86_invept,                                      // llvm.x86.invept
     x86_invlpg,                                      // llvm.x86.invlpg
     x86_invpcid,                                     // llvm.x86.invpcid
+    x86_invvpid,                                     // llvm.x86.invvpid
     x86_inword,                                      // llvm.x86.inword
     x86_inwordstring,                                // llvm.x86.inwordstring
     x86_ldtilecfg,                                   // llvm.x86.ldtilecfg

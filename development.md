@@ -76,27 +76,35 @@ table can't find the pattern because the ID it checks no longer matches.
 3. The name table in `IntrinsicImpl.inc` must be sorted alphabetically (binary
    search). The enum in `IntrinsicsX86.h` must match this order. Use
    `utils/lint/sort-x86-intrinsics.py --write` after adding entries.
+   The sorter moves the overload bitmap with the name, type and attribute
+   entries. DAGISel remapping must read its baseline enum and pattern table
+   from the same revision, including when that revision was a sync point.
+   Both `OPC_CheckChild0Integer` (without chain) and
+   `OPC_CheckChild1Integer` (with chain) carry intrinsic IDs. Omitting the
+   former left PCLMUL/CRC32 patterns stale after earlier additions. The sorter
+   rejects remaps that change VBR byte width because those also require
+   regeneration of matcher branch offsets.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1487).
+   1489).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
-The `OPC_CheckChild1Integer` directives use VBR encoding of `intrinsic_id * 2`.
+The `OPC_CheckChild0Integer` and `OPC_CheckChild1Integer` directives use VBR
+encoding of `intrinsic_id * 2`.
 A 2-byte VBR `A|128,B` decodes to `A + B*128`, and the intrinsic ID is
 `decoded / 2`.
 
 To remap after inserting N entries at various sorted positions:
 
 1. Build old→new ID mapping by comparing the old and new sorted enum lists
-2. For each `OPC_CheckChild1Integer` in the file, decode the VBR value
+2. For each intrinsic ID matcher in the file, decode the VBR value
 3. If `decoded/2` matches an old x86 intrinsic ID, replace with `new_id * 2`
 4. Re-encode as VBR
 
-A reference script was used for this: read the old enum from
-`git show <pre-change-commit>^:IntrinsicsX86.h`, diff against current, compute
-shifts, and patch all 115 affected entries.
+The sorter reads the baseline enum and DAGISel from the same revision,
+computes the ID shifts by intrinsic name, and patches the affected matchers.
 
 ## Intrinsic Lowering Patterns
 
@@ -196,8 +204,22 @@ The full LLVM fork owns these properties in `X86InstrVMX.td`; this pruned tree's
 corresponding descriptors are maintained by
 `python3 utils/lint/sync-x86-vmx-effects.py --write` and checked in generated
 table CI. The generator also owns the EFLAGS definitions of VMX management
-instructions, the m64 reads of VMCLEAR/VMPTRLD/VMXON, and the m64 write of VMPTRST.
+instructions, the m64 reads of VMCLEAR/VMPTRLD/VMXON, the m64 write of VMPTRST,
+and the EFLAGS definitions and m128 reads of INVEPT/INVVPID.
 This does not reorder opcode or intrinsic IDs.
+
+`__builtin_ia32_invept` and `__builtin_ia32_invvpid` take an
+`unsigned long long` type selector and a `const void *` descriptor, and return
+the same `unsigned char` completion status. The full 64-bit selector reaches
+the instruction, and the descriptor access remains instruction-owned. Their
+native IR signatures are `i8 @llvm.x86.invept(i64, ptr)` and
+`i8 @llvm.x86.invvpid(i64, ptr)`, matching the full LLVM fork. These APIs use
+the default pointer address space; they do not encode segment overrides or
+forced alternative instruction encodings. Run
+`python3 utils/lint/sync-x86-native-intrinsics.py --write` to install their
+declarations while preserving the identities of existing intrinsics across
+the enum, name, type, attribute, overload and instruction-selection tables.
+Generated-table CI checks these declarations and the metadata sorter's tests.
 
 Run `python3 tests/verify-vmcs-completion.py --compiler build-neverc/bin/neverc`
 with `capstone`, `lief`, and `unicorn` installed to check both live and dead
@@ -209,7 +231,10 @@ execution still requires a VMX environment. NeverC's pruned X86 backend currentl
 targets x86-64. Run the same test with `--llc /path/to/fork/llc` to cover the LLVM
 fork's x86-64 and i386 intrinsic lowering, including its separate 32-bit forms.
 The frontend test uses freestanding headers, so it needs no Windows SDK.
-Use `--family access` or `--family management` for a focused run. Management
+Use `--family access`, `--family management`, or `--family invalidation` for a
+focused run. Invalidation coverage checks the complete type selector, the
+unchanged m128 descriptor, all three completion statuses, and the unmapped
+descriptor boundary before supplying completion. Management
 coverage keeps the explicit memory operand at 64 bits in both code modes and
 checks that an unmapped operand is not accessed before the VMX instruction.
 VMLAUNCH/VMRESUME are tested only on their falling-through VMfail paths; guest
@@ -303,7 +328,7 @@ segfaults:**
 
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
-23 tests that compile C source to assembly and check for expected instruction
+25 tests that compile C source to assembly and check for expected instruction
 mnemonics. Uses `compileToAsm()` helper with `--target=x86_64-pc-windows-msvc
 -O2 -S`. Also verifies `#APP` (InlineAsm marker) is absent.
 

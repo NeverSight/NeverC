@@ -143,6 +143,11 @@ TARGET_BUILTIN(__builtin_ia32_aand64, "vv*SOi", "n", "raoint")
 TARGET_BUILTIN(__builtin_ia32_aor64, "vv*SOi", "n", "raoint")
 TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 
+// VMX translation invalidation uses the full 64-bit type selector and an m128
+// descriptor. These are side effects, including when their status is unused.
+BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
+BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
+
 #undef BUILTIN
 #undef TARGET_BUILTIN
 #undef TARGET_HEADER_BUILTIN

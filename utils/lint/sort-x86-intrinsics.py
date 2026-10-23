@@ -139,9 +139,38 @@ def parse_attr_map(content):
     return entries
 
 
+def parse_overload_table(content):
+    """Return overload flags indexed by intrinsic ID, including ID zero."""
+    start = content.index("static const uint8_t OTable[] = {")
+    brace = content.index("{", start)
+    end = content.index("};", brace)
+    flags = []
+    for entry in content[brace + 1:end].split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if not re.fullmatch(r"0(?:\s*\|\s*\(1\s*<<\s*[0-7]\))*", entry):
+            raise ValueError(f"unexpected overload bitmap entry: {entry}")
+        bits = {int(n) for n in re.findall(r"1\s*<<\s*([0-7])", entry)}
+        flags.extend(i in bits for i in range(8))
+    return flags
+
+
+def replace_overload_table(content, flags):
+    start = content.index("static const uint8_t OTable[] = {")
+    brace = content.index("{", start)
+    end = content.index("};", brace)
+    lines = []
+    for offset in range(0, len(flags), 8):
+        line = "  0" + "".join(f" | (1<<{i})" for i, value in
+                               enumerate(flags[offset:offset + 8]) if value)
+        lines.append(line)
+    return content[:brace + 1] + "\n" + ",\n".join(lines) + "\n" + content[end:]
+
+
 # ── Sort and rebuild ─────────────────────────────────────────────────────
 
-def sort_x86_intrinsics():
+def sort_x86_intrinsics(additions=()):
     enum_text = ENUM_PATH.read_text()
     inc_text = INC_PATH.read_text()
 
@@ -149,6 +178,7 @@ def sort_x86_intrinsics():
     all_names = parse_name_table(inc_text)
     all_iit = parse_iit_table(inc_text)
     all_attr = parse_attr_map(inc_text)
+    all_overloads = parse_overload_table(inc_text)
 
     # Determine x86 range from TargetInfos
     m = re.search(
@@ -162,6 +192,7 @@ def sort_x86_intrinsics():
         f"Enum has {len(enum_entries)} entries but TargetInfo says {x86_count}"
 
     first_id = x86_offset + 1  # IDs are 1-based, offset is 0-based count before x86
+    assert len(all_overloads) >= first_id + x86_count, "overload bitmap is too short"
 
     # Build mapping: index within x86 → (cpp_name, llvm_name, iit, attr)
     x86_records = []
@@ -175,7 +206,16 @@ def sort_x86_intrinsics():
             "name": all_names[name_idx] if name_idx < len(all_names) else enum_entries[i][1],
             "iit": all_iit[iit_idx] if iit_idx < len(all_iit) else "0",
             "attr_val": all_attr[iit_idx][0] if iit_idx < len(all_attr) else "11",
+            "overloaded": all_overloads[global_id],
         })
+
+    existing = {r["name"] for r in x86_records}
+    for record in additions:
+        if record["name"] in existing:
+            raise ValueError(f"duplicate intrinsic addition: {record['name']}")
+        existing.add(record["name"])
+        x86_records.append(dict(record))
+    new_count = len(x86_records)
 
     # Sort by name
     sorted_records = sorted(x86_records, key=lambda r: r["name"])
@@ -185,7 +225,7 @@ def sort_x86_intrinsics():
         for i in range(len(x86_records))
     )
 
-    if already_sorted:
+    if already_sorted and not additions:
         return None, None, x86_count
 
     # Rebuild enum
@@ -264,13 +304,25 @@ def sort_x86_intrinsics():
         + new_inc[attr_end:]
     )
 
-    return new_enum_text, new_inc, x86_count
+    # 4. Overload bitmap. Unlike the other tables this includes ID zero. Moving
+    # an intrinsic's ID must move its bit too, or getDeclaration may consume
+    # nonexistent overload types or give a different intrinsic the wrong type.
+    new_overloads = (all_overloads[:first_id]
+                     + [r["overloaded"] for r in sorted_records]
+                     + all_overloads[first_id + x86_count:len(all_names) + 1])
+    new_inc = replace_overload_table(new_inc, new_overloads)
+    if new_count != x86_count:
+        new_inc = re.sub(
+            r'(\{llvm::StringLiteral\("x86"\),\s*\d+,\s*)\d+(\})',
+            lambda m: m.group(1) + str(new_count) + m.group(2), new_inc, count=1)
+
+    return new_enum_text, new_inc, new_count
 
 
 # ── X86GenDAGISel.inc ID synchronisation ─────────────────────────────────
 
 _VBR_RE = re.compile(
-    r'(OPC_CheckChild1Integer,\s*)'
+    r'(OPC_CheckChild[01]Integer,\s*)'
     r'((?:\d+\|128,\s*)*\d+)'
     r'(,?\s*)'
 )
@@ -283,8 +335,8 @@ def _find_baseline(current_count):
     tracking the smallest parent count.  Stop when the count stops
     decreasing or we hit a commit that also updated DAGISel (sync point).
 
-    Returns (old_names, baseline_commit) where baseline_commit is the
-    oldest addition commit (whose parent has the correct DAGISel).
+    Returns (old_names, baseline_ref), where baseline_ref names the exact
+    revision containing both those enum names and the matching DAGISel.
     Returns (None, None) if no baseline is found.
     """
     rel_enum = str(ENUM_PATH.relative_to(REPO))
@@ -336,7 +388,7 @@ def _find_baseline(current_count):
             if count < best_count:
                 best_names = names
                 best_count = count
-                best_commit = commit
+                best_commit = f"{commit}^"
             elif best_names is not None:
                 break
         except subprocess.CalledProcessError:
@@ -358,7 +410,7 @@ def _build_remap(old_names, new_names):
 
 
 def _patch_dagisel(text, remap):
-    """Rewrite OPC_CheckChild1Integer VBR values per the remap dict."""
+    """Rewrite chained/chainless intrinsic ID operands without moving branches."""
     count = 0
     def replacer(m):
         nonlocal count
@@ -372,21 +424,31 @@ def _patch_dagisel(text, remap):
             return m.group(0)
         new_encoded = remap[intrinsic_id] * 2
         new_vbr = encode_vbr(new_encoded)
+        if len(new_vbr) != len(byte_strs):
+            raise ValueError("intrinsic remap changes matcher width; regenerate DAGISel")
         count += 1
+        suffix = re.sub(r"[ \t]+(\r?\n)", r"\1", suffix)
         return f"{prefix}{','.join(new_vbr)}{suffix}"
     new_text = _VBR_RE.sub(replacer, text)
     return new_text, count
 
 
 def _get_original_dagisel(baseline_commit):
-    """Get the correct DAGISel text from before intrinsic additions started."""
+    """Read DAGISel from the same revision as the baseline enum names."""
     rel = str(DAGISEL_PATH.relative_to(REPO))
     try:
         return subprocess.check_output(
-            ["git", "-C", str(REPO), "show", f"{baseline_commit}^:{rel}"],
+            ["git", "-C", str(REPO), "show", f"{baseline_commit}:{rel}"],
             text=True, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         return None
+
+
+def _same_dagisel(left, right):
+    # Earlier generated tables retain trailing blanks. Do not rewrite unrelated
+    # matcher rows merely because a later remap emits clean changed lines.
+    return ([line.rstrip(" \t") for line in left.splitlines()]
+            == [line.rstrip(" \t") for line in right.splitlines()])
 
 
 def check_dagisel():
@@ -419,7 +481,7 @@ def check_dagisel():
     golden, count = _patch_dagisel(original, remap)
     current = DAGISEL_PATH.read_text()
 
-    if golden == current:
+    if _same_dagisel(golden, current):
         return True, 0, "X86GenDAGISel.inc IDs are consistent"
 
     return False, count, (
@@ -459,9 +521,9 @@ def sync_dagisel(write=False):
     new_text, count = _patch_dagisel(original, remap)
 
     if count == 0:
-        return 0, "no OPC_CheckChild1Integer entries needed patching"
+        return 0, "no intrinsic ID matcher entries needed patching"
 
-    if new_text == DAGISEL_PATH.read_text():
+    if _same_dagisel(new_text, DAGISEL_PATH.read_text()):
         return 0, "X86GenDAGISel.inc already up to date"
 
     if write:
