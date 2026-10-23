@@ -310,6 +310,31 @@ TEST_F(X86PrivilegedIntrinTest, VmreadOwnsItsConditionalMemoryWrite) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, VmcsRegisterReadAndMemoryWriteUseNativeForms) {
+  constexpr const char *Source = R"(
+    unsigned long long read_register(unsigned long long field,
+                                     unsigned long long prior,
+                                     unsigned char *status) {
+      return __builtin_ia32_vmread_reg(field, prior, status);
+    }
+    unsigned char write_memory(unsigned long long field, const void *source) {
+      return __builtin_ia32_vmwrite_mem(field, source);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "vmcs_native_forms", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    EXPECT_TRUE(std::regex_search(
+        Assembly, std::regex("\\tvmread\\t[a-z0-9]+, [a-z0-9]+")))
+        << Assembly;
+    EXPECT_TRUE(std::regex_search(
+        Assembly, std::regex("\\tvmwrite\\t[a-z0-9]+, qword ptr \\[")))
+        << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // VMX status flag encoding: vmlaunch returns 0/1/2 via sete+setb
 // ---------------------------------------------------------------------------

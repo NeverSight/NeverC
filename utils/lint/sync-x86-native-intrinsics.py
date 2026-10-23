@@ -27,6 +27,8 @@ DECLARATIONS = {
     "wrmsrns": ("Done", "I32", "I64"),
     "rdmsrlist": ("I64", "PTR", "PTR", "I64"),
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
+    "vmread_reg": ("STRUCT2", "I64", "I8", "I64", "I64"),
+    "vmwrite_mem": ("I8", "I64", "PTR"),
 }
 PROTOTYPE = "llvm.x86.vmread"
 REGISTER_SIGNATURES = {
@@ -39,9 +41,31 @@ def encode_signature(signature, impl):
     codes = {name: int(value) for name, value in
              re.findall(r"\bIIT_(\w+) = (\d+),", impl)}
     values = [codes[name] for name in signature]
-    if len(values) > 7 or any(value >= 16 for value in values):
-        raise ValueError("native signature needs a long IIT encoding")
-    return hex(sum(value << (4 * i) for i, value in enumerate(values)))
+    if len(values) <= 7 and all(value < 16 for value in values):
+        return hex(sum(value << (4 * i) for i, value in enumerate(values))), impl
+    start = impl.index("static const unsigned char IIT_LongEncodingTable[] = {")
+    end = impl.index("};", start)
+    table = impl[impl.index("{", start) + 1:end]
+    tokens = re.sub(r"/\*.*?\*/", "", table)
+    data = [int(value) for value in tokens.split(",") if value.strip()]
+    if not data or data[-1] != 255:
+        raise ValueError("long IIT table lacks its sentinel")
+    sequence = values + [codes["Done"]]
+    for offset in range(len(data) - len(sequence)):
+        if data[offset:offset + len(sequence)] == sequence:
+            return f"(1U<<31) | {offset}", impl
+    offset = len(data) - 1
+    sentinel = re.search(r"\b255(?=\s*$)", table)
+    if not sentinel:
+        raise ValueError("long IIT table sentinel has an unexpected spelling")
+    addition = f"/* {offset} */ " + ", ".join(map(str, sequence)) + ",\n  255"
+    updated = table[:sentinel.start()] + addition + table[sentinel.end():]
+    return f"(1U<<31) | {offset}", impl[:impl.index("{", start) + 1] + updated + impl[end:]
+
+
+def encoding_value(text):
+    long_encoding = re.fullmatch(r"\(1U<<31\)\s*\|\s*(\d+)", text)
+    return (1 << 31) | int(long_encoding.group(1)) if long_encoding else int(text, 0)
 
 
 def synchronize(write):
@@ -61,12 +85,13 @@ def synchronize(write):
         raise ValueError("the VMREAD signature must not be overloaded")
     additions = []
     cpp_names = dict(enum_entries)
+    updated_impl = impl
     for suffix, signature in DECLARATIONS.items():
-        cpp, name = "x86_" + suffix, "llvm.x86." + suffix
-        encoding = encode_signature(signature, impl)
+        cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
+        encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:
             index = names.index(name)
-            if (cpp_names.get(cpp) != name or int(types[index], 0) != int(encoding, 0) or
+            if (cpp_names.get(cpp) != name or encoding_value(types[index]) != encoding_value(encoding) or
                     attributes[index][0] != attributes[source][0] or overloads[index + 1]):
                 raise ValueError(f"native signature metadata disagrees with its schema: {name}")
             continue
@@ -77,17 +102,17 @@ def synchronize(write):
     # Like INT, CR/DR accesses have conservative effects and an immediate first
     # argument. Older NeverC metadata omitted the immediate restriction.
     register_attr = attributes[names.index("llvm.x86.int")][0]
-    updated_impl = impl
     for suffix, signature in REGISTER_SIGNATURES.items():
         name = "llvm.x86." + suffix
         index = names.index(name)
-        if int(types[index], 0) != int(encode_signature(signature, impl), 0) or overloads[index + 1]:
+        encoding, _ = encode_signature(signature, impl)
+        if int(types[index], 0) != int(encoding, 0) or overloads[index + 1]:
             raise ValueError(f"invalid system register signature: {name}")
         updated_impl = re.sub(r"^    \d+, // " + re.escape(name) + r"$",
                               f"    {register_attr}, // {name}", updated_impl, flags=re.MULTILINE)
     if updated_impl != impl:
         if not write:
-            raise ValueError("system register immediate attributes are stale; run with --write")
+            raise ValueError("native signature or immediate attributes are stale; run with --write")
         SORTER.INC_PATH.write_text(updated_impl)
     if not additions:
         return

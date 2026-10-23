@@ -26044,10 +26044,11 @@ static SDValue EmitMaskedTruncSStore(bool SignedSat, SDValue Chain,
 // status builtins use 0 = success, 1 = VMfailValid (ZF), 2 = VMfailInvalid
 // (CF).
 static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
-                                SelectionDAG &DAG) {
-  auto *ZF = DAG.getMachineNode(
-      X86::SETCCr, DL, DAG.getVTList(MVT::i8, MVT::Glue),
-      {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8), SDValue(Access, 1)});
+                                SelectionDAG &DAG, unsigned ChainIndex = 0) {
+  auto *ZF =
+      DAG.getMachineNode(X86::SETCCr, DL, DAG.getVTList(MVT::i8, MVT::Glue),
+                         {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8),
+                          SDValue(Access, ChainIndex + 1)});
   auto *CF = DAG.getMachineNode(X86::SETCCr, DL, MVT::i8,
                                 DAG.getTargetConstant(X86::COND_B, DL, MVT::i8),
                                 SDValue(ZF, 1));
@@ -26055,7 +26056,7 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
       DAG.getNode(ISD::OR, DL, MVT::i8, SDValue(ZF, 0),
                   DAG.getNode(ISD::SHL, DL, MVT::i8, SDValue(CF, 0),
                               DAG.getConstant(1, DL, MVT::i8)));
-  return DAG.getMergeValues({Status, SDValue(Access, 0)}, DL);
+  return DAG.getMergeValues({Status, SDValue(Access, ChainIndex)}, DL);
 }
 
 static SDValue lowerSystemRegisterAccess(SDValue Op, SelectionDAG &DAG) {
@@ -26394,6 +26395,29 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDNode *VM = DAG.getMachineNode(Opc, dl, VmTys,
           {Ptr, Scale, Index, Disp, Segment, Chain});
       return getVMXCompletion(VM, dl, DAG);
+    }
+    case llvm::Intrinsic::x86_vmread_reg: {
+      const SDLoc DL(Op);
+      auto *Access = DAG.getMachineNode(
+          X86::VMREAD64rr, DL, DAG.getVTList(MVT::i64, MVT::Other, MVT::Glue),
+          {Op.getOperand(2), Op.getOperand(0)});
+      SDValue Completion = getVMXCompletion(Access, DL, DAG, 1);
+      SDValue Success = DAG.getSetCC(
+          DL, MVT::i8, Completion, DAG.getConstant(0, DL, MVT::i8), ISD::SETEQ);
+      SDValue Value = DAG.getSelect(DL, MVT::i64, Success, SDValue(Access, 0),
+                                    Op.getOperand(3));
+      return DAG.getMergeValues({Value, Completion, Completion.getValue(1)},
+                                DL);
+    }
+    case llvm::Intrinsic::x86_vmwrite_mem: {
+      const SDLoc DL(Op);
+      auto *Access = DAG.getMachineNode(
+          X86::VMWRITE64rm, DL, DAG.getVTList(MVT::Other, MVT::Glue),
+          {Op.getOperand(2), Op.getOperand(3),
+           DAG.getTargetConstant(1, DL, MVT::i8), DAG.getRegister(0, MVT::i64),
+           DAG.getTargetConstant(0, DL, MVT::i32), DAG.getRegister(0, MVT::i16),
+           Op.getOperand(0)});
+      return getVMXCompletion(Access, DL, DAG);
     }
     case llvm::Intrinsic::x86_vmwrite: {
       SDLoc dl(Op);

@@ -148,6 +148,11 @@ TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
 BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 
+// Register VMREAD returns the prior value on VMfail and writes i8 status.
+BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
+// VMWRITE owns the source memory access, including privilege/fault ordering.
+BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
+
 // Native REP operations; counts are element counts, not byte lengths.
 BUILTIN(__builtin_ia32_movsb, "vv*vC*ULLi", "n")
 BUILTIN(__builtin_ia32_movsw, "vv*vC*ULLi", "n")

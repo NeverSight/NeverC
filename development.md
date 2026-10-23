@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1493).
+   1495).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -311,6 +311,40 @@ Add `--backend-llc /path/to/fork/llc` to the frontend run to compile NeverC's
 actual emitted LLVM IR with the full fork and test the resulting machine code.
 This checks the shared intrinsic names and signatures across both compilers.
 
+The register and memory-source forms also have explicit native interfaces:
+
+```c
+unsigned long long __builtin_ia32_vmread_reg(unsigned long long field,
+                                            unsigned long long prior,
+                                            unsigned char *status);
+unsigned char __builtin_ia32_vmwrite_mem(unsigned long long field,
+                                        const void *source);
+```
+
+`llvm.x86.vmread.reg(i64 field, i64 prior)` returns `{i64, i8}`: the field
+value on success or `prior` on either VMfail, followed by the usual status.
+The C builtin stores that status to the caller's valid writable byte pointer;
+this is an ordinary C output, not a VMREAD memory destination. Lowering emits
+register VMREAD, captures CF/ZF before arithmetic, and selects the prior value
+on failure. Both results may be discarded without removing the access.
+`llvm.x86.vmwrite.mem(i64 field, ptr source)` returns i8 status and emits the
+memory-source instruction; it does not preload the pointed-to word. The full
+fork has matching `.reg32` and `.mem32` code-mode APIs with i32 field/value
+operands. Wrong-mode APIs fail explicitly. Pointer APIs use address space 0.
+
+`sync-x86-native-intrinsics.py` also owns the long IIT signature for VMREAD's
+two results. New long signatures append before the sentinel, preserving all
+existing offsets; generator tests protect reuse, idempotence and the exact
+result/argument types. Intrinsic insertion still remaps every indexed table
+and the DAG matcher IDs together.
+
+`tests/verify-vmcs-forms-completion.py` checks these forms at O0/O2, including
+each result independently, discarded results, repeated operations with
+independent statuses, full-width values, memory barriers, saved registers and
+unmapped memory-source boundaries. `--llc` and `--backend-llc` select direct
+full-fork and NeverC-to-fork verification as above. Controlled completions test
+compiler transport; they do not establish hardware VMCS execution or faults.
+
 ### TSX (xbegin, xabort, xend, xtest)
 
 - **xbegin**: XBEGIN pseudo has `UsesCustomInserter` flag. The custom inserter
@@ -430,7 +464,7 @@ segfaults:**
 
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
-28 tests cover native instruction emission, semantic regressions, builtin
+29 tests cover native instruction emission, semantic regressions, builtin
 type/selector diagnostics and the absence of inline assembly. The
 `compileToAsm()` helper enables the machine verifier for the Windows x64
 target; tests exercise O0/O2 where optimization affects the contract.

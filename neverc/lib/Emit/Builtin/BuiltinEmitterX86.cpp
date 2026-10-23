@@ -3439,6 +3439,16 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI_lgdt: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lgdt, {Ops[0]});
   }
+  case X86::BI__builtin_ia32_vmread_reg: {
+    auto *Call = Builder.CreateCall(
+        ME.getIntrinsic(llvm::Intrinsic::x86_vmread_reg), {Ops[0], Ops[1]});
+    Builder.CreateAlignedStore(Builder.CreateExtractValue(Call, 1), Ops[2],
+                               Align(1));
+    return Builder.CreateExtractValue(Call, 0);
+  }
+  case X86::BI__builtin_ia32_vmwrite_mem:
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite_mem,
+                                   {Ops[0], Ops[1]});
   case X86::BI__vmx_vmwrite: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite,
                                    {Ops[0], Ops[1]});

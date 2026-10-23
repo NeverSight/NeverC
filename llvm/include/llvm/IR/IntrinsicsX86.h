@@ -1417,8 +1417,10 @@ enum X86Intrinsics : unsigned {
     x86_vmptrld,                                     // llvm.x86.vmptrld
     x86_vmptrst,                                     // llvm.x86.vmptrst
     x86_vmread,                                      // llvm.x86.vmread
+    x86_vmread_reg,                                  // llvm.x86.vmread.reg
     x86_vmresume,                                    // llvm.x86.vmresume
     x86_vmwrite,                                     // llvm.x86.vmwrite
+    x86_vmwrite_mem,                                 // llvm.x86.vmwrite.mem
     x86_vmxoff,                                      // llvm.x86.vmxoff
     x86_vmxon,                                       // llvm.x86.vmxon
     x86_vsha512msg1,                                 // llvm.x86.vsha512msg1
