@@ -201,6 +201,9 @@ BUILTIN(__builtin_ia32_stac, "v", "n")
 BUILTIN(__builtin_ia32_hlt, "v", "n")
 BUILTIN(__builtin_ia32_vmfunc_eptp_switch, "vUi", "n")
 
+// GETSEC fallthrough leaves: full GPR transport, constant EAX leaf 0 or 6..8.
+BUILTIN(__builtin_ia32_getsec_bounded, "ULLiIULLiULLiULLiULLiULLi*", "n")
+
 // SGX returns rAX, stores rBX/rCX/rDX in a three-word array, and stores CF:ZF.
 TARGET_BUILTIN(__builtin_ia32_encls, "ULLiULLiULLiULLiULLiULLi*Uc*", "n", "sgx")
 TARGET_BUILTIN(__builtin_ia32_enclv, "ULLiULLiULLiULLiULLiULLi*Uc*", "n", "sgx")

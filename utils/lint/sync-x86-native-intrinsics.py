@@ -70,6 +70,8 @@ REGISTER_SIGNATURES = {
     "writecr": ("Done", "I32", "I64"), "writedr": ("Done", "I32", "I64"),
 }
 FIRST_IMMEDIATE_SIGNATURES = {
+    "getsec_bounded": ("STRUCT4", "I64", "I64", "I64", "I64",
+                        "I64", "I64", "I64", "I64"),
     "enclu_bounded": ("STRUCT5", "I64", "I64", "I64", "I64", "I8",
                        "I64", "I64", "I64", "I64"),
 }

@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1571).
+   1572).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -324,6 +324,35 @@ Controlled memory updates independently check optimizer ordering. The contract
 assumes the handler preserves the compiler's register ABI; it does not transport
 arbitrary handler machine state or qualify privileged interrupt gates. Tests
 separately retain the Microsoft assertion's non-returning behavior.
+
+### Bounded SMX register transport
+
+`__builtin_ia32_getsec_bounded(a, b, c, d, registers_out)` transports full
+RAX/RBX/RCX/RDX values, returns RAX and stores the other three results to
+`unsigned long long` cells after the native instruction. Its constant first
+argument selects CAPABILITIES (0), PARAMETERS (6), SMCTRL (7) or WAKEUP (8)
+through its low EAX. The full LLVM fork exposes `llvm.x86.getsec.bounded`
+and `llvm.x86.getsec.bounded32`, each returning four natural-width registers
+from four inputs. This includes prior register bits retained on leaf-dependent
+paths. No flags are returned; the allowed leaves preserve arithmetic flags,
+and no incoming compiler flag state is part of this API.
+
+The frontend and backend share `llvm/IR/X86SmxIntrinsics.h`. Reserved or
+transferring leaves, dynamic selection and wrong code modes are rejected.
+Code16 is not supported by this intrinsic. LLVM has no separate SMX target
+feature gate here: native CPUID/CR4.SMXE, privilege, chipset and measured-state
+checks remain processor behavior. Conservative instruction memory effects
+also retain SMCTRL/WAKEUP's external state changes. This does not provide the
+complete-state continuation ABI for ENTERACCS, EXITAC, SENTER or SEXIT.
+
+`tests/verify-sgx-supervisor-completion.py --bounded-getsec` checks every allowed
+leaf and register output, full-width inputs, dead/repeated calls, input liveness,
+ordered memory, unmapped scalar inputs and native object/assembly round trips.
+The real CPL3 oracle compares faults and, if SMXE permits a query, all four
+returned registers against independent instruction bytes. Injected diagnostic
+outputs qualify compiler transport rather than implementing SMX behavior.
+The contract follows Intel's [SDM Volume 2D](https://cdrdv2.intel.com/v1/dl/getContent/671143),
+chapter 7, including the unchanged-register cases in PARAMETERS.
 
 ### SGX supervisor, VMM and bounded user completion
 

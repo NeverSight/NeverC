@@ -51,6 +51,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
+#include "llvm/IR/X86SmxIntrinsics.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -26120,6 +26121,46 @@ static SDValue lowerSGXFallthrough(SDValue Op, const X86Subtarget &Subtarget,
   return DAG.getMergeValues(Results, DL);
 }
 
+// Bound the leaf before transporting register state. GETSEC itself owns all
+// implicit accesses, cross-processor effects and privilege/feature checks.
+static SDValue lowerGetsecBounded(SDValue Op, const X86Subtarget &Subtarget,
+                                  SelectionDAG &DAG) {
+  const bool Wide = true;
+  if (!Subtarget.is64Bit())
+    report_fatal_error("GETSEC intrinsic does not match the target code mode");
+  const auto *Control = dyn_cast<ConstantSDNode>(Op.getOperand(2));
+  if (!Control)
+    report_fatal_error("bounded GETSEC requires a constant leaf");
+  if (!X86::isBoundedGetsecLeaf(Control->getZExtValue()))
+    report_fatal_error("bounded GETSEC requires a fallthrough leaf (0, 6..8)");
+  const SDLoc DL(Op);
+  const MVT VT = Wide ? MVT::i64 : MVT::i32;
+  const unsigned Registers[] = {
+      Wide ? X86::RAX : X86::EAX, Wide ? X86::RBX : X86::EBX,
+      Wide ? X86::RCX : X86::ECX, Wide ? X86::RDX : X86::EDX};
+  SDValue Chain = Op.getOperand(0), Glue;
+  for (unsigned I = 0; I != 4; ++I) {
+    SDValue Input = Op.getOperand(I + 2);
+    if (I == 0)
+      Input = DAG.getConstant(Control->getAPIntValue(), DL, VT);
+    Chain = DAG.getCopyToReg(Chain, DL, Registers[I], Input, Glue);
+    Glue = Chain.getValue(1);
+  }
+  auto *Access = DAG.getMachineNode(
+      X86::GETSEC, DL, DAG.getVTList(MVT::Other, MVT::Glue), {Chain, Glue});
+  Chain = SDValue(Access, 0);
+  Glue = SDValue(Access, 1);
+  SmallVector<SDValue, 5> Results;
+  for (unsigned Register : Registers) {
+    SDValue Value = DAG.getCopyFromReg(Chain, DL, Register, VT, Glue);
+    Results.push_back(Value);
+    Chain = Value.getValue(1);
+    Glue = Value.getValue(2);
+  }
+  Results.push_back(Chain);
+  return DAG.getMergeValues(Results, DL);
+}
+
 // Preserve native widths and keep every memory operand inside its instruction.
 static SDValue lowerDescriptorState(SDValue Op, const X86Subtarget &Subtarget,
                                     SelectionDAG &DAG) {
@@ -26684,6 +26725,9 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_enclv:
     case Intrinsic::x86_enclu_bounded:
       return lowerSGXFallthrough(Op, Subtarget, DAG);
+
+    case Intrinsic::x86_getsec_bounded:
+      return lowerGetsecBounded(Op, Subtarget, DAG);
 
     case Intrinsic::x86_verr_reg:
     case Intrinsic::x86_verr_mem:

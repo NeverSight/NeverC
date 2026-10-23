@@ -775,6 +775,47 @@ TEST_F(X86PrivilegedIntrinTest, SgxBoundedUserRejectsUnownedContinuations) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, SmxBoundedLeavesUseNativeRegisterTransport) {
+  for (unsigned Leaf : {0, 6, 7, 8}) {
+    SCOPED_TRACE(Leaf);
+    const std::string Source =
+        "unsigned long long query(unsigned long long b, unsigned long long c, "
+        "unsigned long long d, unsigned long long *out) {"
+        "__builtin_ia32_getsec_bounded(" +
+        std::to_string(0x8000000100000000ULL | Leaf) +
+        "ULL,b,c,d,out);"
+        "return __builtin_ia32_getsec_bounded(" +
+        std::to_string(Leaf) + "ULL,b,c,d,out); }";
+    for (const char *Opt : {"-O0", "-O2"}) {
+      auto [RC, Assembly] = compileToAsm(Source.c_str(), "getsec_bounded", Opt);
+      ASSERT_EQ(RC, 0) << Assembly;
+      const std::regex Pattern("\\tgetsec[\\t\\r\\n]");
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Pattern),
+                              std::sregex_iterator()),
+                2)
+          << Assembly;
+      EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+    }
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, SmxBoundedLeavesRejectUnownedTransitions) {
+  for (const char *Leaf : {"a", "1", "2", "3", "4", "5", "9", "0xffffffffULL",
+                           "0x8000000100000002ULL"}) {
+    SCOPED_TRACE(Leaf);
+    const std::string Source = "unsigned long long query(unsigned long long a, "
+                               "unsigned long long *out) {"
+                               "return __builtin_ia32_getsec_bounded(" +
+                               std::string(Leaf) + ",0,0,0,out); }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "getsec_unowned");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find(std::string(Leaf) == "a" ? "constant" : "fallthrough"),
+              std::string::npos)
+        << Error;
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, HresetBuiltinRequiresItsTargetFeature) {
   auto [RC, Error] = compileToAsm(
       "void query(unsigned control) { __builtin_ia32_hreset(control); }",

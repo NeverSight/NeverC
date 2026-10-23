@@ -1027,6 +1027,7 @@ enum X86Intrinsics : unsigned {
     x86_fxrstor64,                                   // llvm.x86.fxrstor64
     x86_fxsave,                                      // llvm.x86.fxsave
     x86_fxsave64,                                    // llvm.x86.fxsave64
+    x86_getsec_bounded,                              // llvm.x86.getsec.bounded
     x86_hlt,                                         // llvm.x86.hlt
     x86_hreset,                                      // llvm.x86.hreset
     x86_inbyte,                                      // llvm.x86.inbyte
