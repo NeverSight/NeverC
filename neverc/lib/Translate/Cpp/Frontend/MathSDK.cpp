@@ -7827,8 +7827,11 @@ class UtilityTupleQueryGraph
           cstddefOrigin(S, SM, Cast->getExprLoc(), "libcxx", "__type_traits/invoke.h") &&
           notFnInvokeParameter(Parameter);
     };
+    // The retained template argument is P for an rvalue invocation, while
+    // declval<P>() and the actual forwarded receiver both have category P&&.
+    const auto ReceiverType = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
     if (!Context.hasSameType(Target->getArg(0)->getType(), Bound.getNonReferenceType()) ||
-        Target->getArg(0)->getValueKind() != Expr::getValueKindForType(Bound) ||
+        Target->getArg(0)->getValueKind() != Expr::getValueKindForType(ReceiverType) ||
         !Operand(Target->getArg(0), Bound, 0)) return false;
     for (unsigned I = 0; I < Pack.size(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
