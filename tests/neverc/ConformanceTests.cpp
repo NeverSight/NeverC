@@ -121,6 +121,8 @@ volatile unsigned bits = 0x80000000U;
 unsigned calls;
 unsigned next(void) { ++calls; return bits; }
 Pair pair(void) { ++calls; return (Pair){0x8172635445362718ULL, 0xfedcba9876543210ULL}; }
+unsigned char bytes[4] = {0, 0, 128, 63};
+unsigned char (*array(void))[4] { ++calls; return &bytes; }
 int main(void) {
   if (one != 1.0f) return 1;
   if (__builtin_bit_cast(int, 0xffffffffU) != -1) return 2;
@@ -138,6 +140,14 @@ int main(void) {
   float nan = __builtin_bit_cast(float, value);
   if (__builtin_bit_cast(unsigned, nan) != value) return 6;
   if (!__builtin_bit_cast(bool, (unsigned char)1)) return 7;
+  if (__builtin_bit_cast(float, *array()) != 1.0f || calls != 3) return 8;
+  unsigned char nested[2][2] = {{0, 0}, {128, 63}};
+  if (__builtin_bit_cast(unsigned, nested) != 0x3f800000U) return 9;
+  volatile unsigned char volatile_bytes[4] = {0, 0, 0, 128};
+  if (__builtin_bit_cast(unsigned, volatile_bytes) != 0x80000000U) return 10;
+  float _Complex complex_value = 1.0f + 2.0fi;
+  if (__builtin_bit_cast(unsigned long long, complex_value) !=
+      0x400000003f800000ULL) return 11;
   return 0;
 }
 )c");

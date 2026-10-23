@@ -751,7 +751,9 @@ validates equal object sizes, evaluates the source once and reinterprets its
 representation through the existing scalar/vector/aggregate cast machinery.
 Invalid, incomplete, variable-sized, atomic or array destination types fail
 clearly. Tests cover constant initializers, signed values, floating-point bit
-patterns, aggregates, vectors and wide integers.
+patterns, aggregates, vectors and wide integers. Array sources retain their
+object representation instead of decaying to pointers; their address is
+evaluated once. Volatile arrays use an explicit volatile aggregate copy.
 
 Qualification passes 4,704 full-LLVM encoding/completion checks and 2,928
 checks on each C route. Each C route also passes 96 real descriptor queries

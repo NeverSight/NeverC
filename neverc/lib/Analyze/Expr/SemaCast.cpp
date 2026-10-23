@@ -758,11 +758,20 @@ ExprResult Sema::OnBitCastExpr(Expr *E, ParsedType DestTy,
   ExprResult Value = DefaultLvalueConversion(E);
   if (Value.isInvalid())
     return ExprError();
-  auto *Temporary = new (Context) CompoundLiteralExpr(
-      BuiltinLoc, Context.getTrivialTypeSourceInfo(From, BuiltinLoc), From,
-      VK_LValue, Value.get(), !CurContext->isFunctionOrMethod());
+  Expr *Representation = E;
+  // Arrays do not undergo lvalue-to-rvalue conversion. An artificial array
+  // compound literal initialized by that lvalue leaves a pointer APValue in
+  // the constant evaluator, not a copy of the array's object representation.
+  // Read nonvolatile arrays directly; the cast retains their alignment and
+  // evaluates the address once. Volatile arrays still need the explicit
+  // aggregate copy so every source access keeps its volatile qualification.
+  if (!From->isArrayType() ||
+      Context.getBaseElementType(E->getType()).isVolatileQualified())
+    Representation = new (Context) CompoundLiteralExpr(
+        BuiltinLoc, Context.getTrivialTypeSourceInfo(From, BuiltinLoc), From,
+        VK_LValue, Value.get(), !CurContext->isFunctionOrMethod());
   return CStyleCastExpr::Create(
-      Context, To, VK_PRValue, CK_LValueToRValueBitCast, Temporary,
+      Context, To, VK_PRValue, CK_LValueToRValueBitCast, Representation,
       CurFPFeatureOverrides(), TInfo, BuiltinLoc, RParenLoc);
 }
 
