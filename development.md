@@ -147,6 +147,14 @@ SDNode *N = DAG.getMachineNode(X86::XSETBV, dl, Tys, {Chain, Glue});
 The Glue chain prevents the scheduler from reordering the CopyToReg nodes past
 the instruction that consumes them.
 
+`python3 tests/verify-msr-completion.py --compiler build-neverc/bin/neverc`
+checks the MSR index, both halves of EDX:EAX, read-result reconstruction, and
+retention of reads whose result is unused at O0/O2. It uses the same Python
+dependencies as the VMX completion test. `--llc /path/to/fork/llc` tests both
+LLVM code modes directly; `--backend-llc /path/to/fork/llc` instead compiles
+NeverC's actual emitted IR with the full LLVM fork. These are controlled
+compiler-transport checks, not privileged execution against hardware MSRs.
+
 ### CR/DR register ops
 
 CR and DR registers must be **reserved** in `X86RegisterInfo.cpp` to prevent
