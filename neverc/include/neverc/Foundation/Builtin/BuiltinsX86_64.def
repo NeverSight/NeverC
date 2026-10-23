@@ -176,6 +176,10 @@ BUILTIN(__builtin_ia32_tlbsync, "v", "n")
 BUILTIN(__builtin_ia32_lkgs_reg, "vUs", "n")
 BUILTIN(__builtin_ia32_lkgs_mem, "vvC*", "n")
 
+// SGX returns rAX, stores rBX/rCX/rDX in a three-word array, and stores CF:ZF.
+TARGET_BUILTIN(__builtin_ia32_encls, "ULLiULLiULLiULLiULLiULLi*Uc*", "n", "sgx")
+TARGET_BUILTIN(__builtin_ia32_enclv, "ULLiULLiULLiULLiULLiULLi*Uc*", "n", "sgx")
+
 // Native descriptor/machine state. Memory forms own exactly one m16 operand.
 BUILTIN(__builtin_ia32_verr_reg, "UcUs", "n")
 BUILTIN(__builtin_ia32_verr_mem, "UcvC*", "n")

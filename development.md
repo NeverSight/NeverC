@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1554).
+   1556).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -249,6 +249,43 @@ selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
 assembly dialects. It executes surrounding scalar code while intercepting
 privileged instructions, so it does not qualify successful processor-history
 reset, descriptor loading, interprocessor invalidation or synchronization.
+
+### SGX supervisor and VMM completion
+
+`__builtin_ia32_encls(a, b, c, d, registers_out, flags_out)` and `enclv` take
+four `unsigned long long` inputs for RAX/RBX/RCX/RDX, return the full native
+RAX value, and store RBX/RCX/RDX to three `unsigned long long` output cells.
+The `unsigned char` flag output is `CF | (ZF << 1)`. These output stores are
+ordinary C accesses after the instruction. Input register values retain all
+bits, even though only EAX selects a leaf. Callers must supply valid scalar
+values for all four arguments; implicit enclave accesses use the architectural
+DS/mode rules inside the instruction.
+
+The shared IR APIs `llvm.x86.encls` and `llvm.x86.enclv` return
+`{i64, i64, i64, i64, i8}` from four i64 arguments. The full fork also supplies
+`encls32` and `enclv32` with four i32 inputs/results plus i8 flags. Mode
+mismatches and a missing `sgx` target feature are diagnosed. Both backends
+model all four implicit input/output registers, EFLAGS and conservative memory
+effects. Scalar status is captured before arithmetic can overwrite flags;
+dead results cannot remove or combine the native operations.
+
+On leaves that preserve arithmetic flags, the flag byte reflects unmodelled
+incoming machine flags and is not a defined status. A lifter must retain its
+explicit incoming flag state for those leaves. These bounded APIs do not
+provide ENCLU's entry/exit/resume continuations or full enclave state transport.
+Native privilege, feature, EPC and VMX checks remain hardware behavior.
+
+The installed `<sgxintrin.h>`, included through `<immintrin.h>` or
+`<x86intrin.h>`, provides the standard `_encls_u32` and `_enclv_u32` wrappers
+using these builtins. Their three-element `__SIZE_TYPE__` arrays retain the
+standard input/output contract and their return is the low 32 bits of RAX.
+The header retains the LLVM source license. `tests/verify-sgx-supervisor-completion.py`
+checks independent/all register and flag uses, retained dead/repeated calls,
+input liveness, memory ordering, RBX restoration, standard wrappers and
+unmapped input boundaries at O0/O2. It covers ELF/COFF/Mach-O and both assembly
+dialects. Isolated Linux x64 children additionally compare real CPL3 #UD faults
+with independently encoded bytes. Controlled output injection qualifies
+compiler transport, not successful privileged enclave operations.
 
 ### Descriptor and machine-state access
 

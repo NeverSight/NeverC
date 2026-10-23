@@ -251,6 +251,8 @@
 #include <avxvnniint16intrin.h>
 #endif
 
+#include <sgxintrin.h>
+
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
     defined(__RDPID__)
 /// Reads the value of the IA32_TSC_AUX MSR (0xc0000103).

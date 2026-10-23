@@ -3374,6 +3374,22 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_clts:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__builtin_ia32_encls:
+  case X86::BI__builtin_ia32_enclv: {
+    const auto ID = BuiltinID == X86::BI__builtin_ia32_encls
+                        ? Intrinsic::x86_encls
+                        : Intrinsic::x86_enclv;
+    auto *Call = Builder.CreateCall(ME.getIntrinsic(ID),
+                                    {Ops[0], Ops[1], Ops[2], Ops[3]});
+    for (unsigned I = 0; I != 3; ++I) {
+      auto *Address = Builder.CreateConstGEP1_32(Int64Ty, Ops[4], I);
+      Builder.CreateDefaultAlignedStore(Builder.CreateExtractValue(Call, I + 1),
+                                        Address);
+    }
+    Builder.CreateDefaultAlignedStore(Builder.CreateExtractValue(Call, 4),
+                                      Ops[5]);
+    return Builder.CreateExtractValue(Call, 0);
+  }
   case X86::BI__builtin_ia32_verr_reg:
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_verr_reg,
                                    {Ops[0]});

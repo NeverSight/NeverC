@@ -686,6 +686,51 @@ TEST_F(X86PrivilegedIntrinTest, DescriptorStateEffectsRemainNativeWhenUnused) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, SgxSupervisorBuiltinsAndHeadersAreNative) {
+  constexpr const char *Source = R"(
+    #include <immintrin.h>
+    __attribute__((target("sgx")))
+    unsigned long long query(unsigned long long a, unsigned long long b,
+                             unsigned long long c, unsigned long long d,
+                             unsigned long long *out, unsigned char *flags,
+                             __SIZE_TYPE__ *data) {
+      unsigned long long result = __builtin_ia32_encls(a, b, c, d, out, flags);
+      result ^= __builtin_ia32_enclv(a, b, c, d, out, flags);
+      result ^= _encls_u32((unsigned)a, data);
+      result ^= _enclv_u32((unsigned)a, data);
+      return result;
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Assembly] = compileToAsm(Source, "sgx_supervisor", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Instruction : {"encls", "enclv"}) {
+      const std::regex Pattern(std::string("\\t") + Instruction +
+                               "[\\t\\r\\n]");
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Pattern),
+                              std::sregex_iterator()),
+                2)
+          << Assembly;
+    }
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest,
+       SgxSupervisorBuiltinsRequireTheirTargetFeature) {
+  for (const char *Operation : {"encls", "enclv"}) {
+    const std::string Source = "unsigned long long query(unsigned long long "
+                               "*out, unsigned char *flags) {"
+                               "return __builtin_ia32_" +
+                               std::string(Operation) +
+                               "(0, 0, 0, 0, out, flags); }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "sgx_without_feature");
+    EXPECT_NE(RC, 0);
+    EXPECT_NE(Error.find("sgx"), std::string::npos) << Error;
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, HresetBuiltinRequiresItsTargetFeature) {
   auto [RC, Error] = compileToAsm(
       "void query(unsigned control) { __builtin_ia32_hreset(control); }",

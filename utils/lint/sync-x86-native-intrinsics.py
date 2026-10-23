@@ -37,6 +37,9 @@ DECLARATIONS = {
 }
 DECLARATIONS["lsl"] = ("I32", "I32")
 DECLARATIONS["invd"] = ("Done",)
+for operation in ("encls", "enclv"):
+    DECLARATIONS[operation] = ("STRUCT5", "I64", "I64", "I64", "I64", "I8",
+                               "I64", "I64", "I64", "I64")
 for operation in ("verr", "verw", "lldt", "ltr", "lmsw"):
     result = "I8" if operation in ("verr", "verw") else "Done"
     DECLARATIONS[f"{operation}_reg"] = (result, "I16")

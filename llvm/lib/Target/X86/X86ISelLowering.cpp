@@ -26059,6 +26059,51 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
   return DAG.getMergeValues({Status, SDValue(Access, ChainIndex)}, DL);
 }
 
+// SGX owns its implicit DS accesses, enclave state and privilege/fault checks.
+// Preserve all four natural-width GPRs and capture CF/ZF before flag
+// arithmetic.
+static SDValue lowerSGXSupervisor(SDValue Op, const X86Subtarget &Subtarget,
+                                  SelectionDAG &DAG) {
+  const unsigned ID = Op.getConstantOperandVal(1);
+  if (!Subtarget.is64Bit())
+    report_fatal_error("SGX intrinsic does not match the target code mode");
+  if (!Subtarget.hasSGX())
+    report_fatal_error("SGX intrinsic requires the sgx target feature");
+  const SDLoc DL(Op);
+  const MVT VT = MVT::i64;
+  const unsigned Registers[] = {X86::RAX, X86::RBX, X86::RCX, X86::RDX};
+  SDValue Chain = Op.getOperand(0), Glue;
+  for (unsigned I = 0; I != 4; ++I) {
+    Chain =
+        DAG.getCopyToReg(Chain, DL, Registers[I], Op.getOperand(I + 2), Glue);
+    Glue = Chain.getValue(1);
+  }
+  const unsigned Opcode = ID == Intrinsic::x86_encls ? X86::ENCLS : X86::ENCLV;
+  auto *Access = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue), {Chain, Glue});
+  Chain = SDValue(Access, 0);
+  Glue = SDValue(Access, 1);
+  SmallVector<SDValue, 6> Results;
+  for (unsigned Register : Registers) {
+    SDValue Value = DAG.getCopyFromReg(Chain, DL, Register, VT, Glue);
+    Results.push_back(Value);
+    Chain = Value.getValue(1);
+    Glue = Value.getValue(2);
+  }
+  auto *CF = DAG.getMachineNode(
+      X86::SETCCr, DL, DAG.getVTList(MVT::i8, MVT::Glue),
+      {DAG.getTargetConstant(X86::COND_B, DL, MVT::i8), Glue});
+  auto *ZF = DAG.getMachineNode(
+      X86::SETCCr, DL, MVT::i8,
+      {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8), SDValue(CF, 1)});
+  Results.push_back(
+      DAG.getNode(ISD::OR, DL, MVT::i8, SDValue(CF, 0),
+                  DAG.getNode(ISD::SHL, DL, MVT::i8, SDValue(ZF, 0),
+                              DAG.getConstant(1, DL, MVT::i8))));
+  Results.push_back(Chain);
+  return DAG.getMergeValues(Results, DL);
+}
+
 // Preserve native widths and keep every memory operand inside its instruction.
 static SDValue lowerDescriptorState(SDValue Op, const X86Subtarget &Subtarget,
                                     SelectionDAG &DAG) {
@@ -26560,6 +26605,10 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                          Op.getOperand(2), DAG.getConstant(0, dl, MVT::i32),
                          DAG.getConstant(0, dl, MVT::i32));
     }
+    case Intrinsic::x86_encls:
+    case Intrinsic::x86_enclv:
+      return lowerSGXSupervisor(Op, Subtarget, DAG);
+
     case Intrinsic::x86_verr_reg:
     case Intrinsic::x86_verr_mem:
     case Intrinsic::x86_verw_reg:
