@@ -1362,6 +1362,8 @@ enum X86Intrinsics : unsigned {
     x86_tcmmrlfp16ps_internal,                       // llvm.x86.tcmmrlfp16ps.internal
     x86_tdpbf16ps,                                   // llvm.x86.tdpbf16ps
     x86_tdpbf16ps_internal,                          // llvm.x86.tdpbf16ps.internal
+    x86_tdpbf8ps,                                    // llvm.x86.tdpbf8ps
+    x86_tdpbhf8ps,                                   // llvm.x86.tdpbhf8ps
     x86_tdpbssd,                                     // llvm.x86.tdpbssd
     x86_tdpbssd_internal,                            // llvm.x86.tdpbssd.internal
     x86_tdpbsud,                                     // llvm.x86.tdpbsud
@@ -1372,9 +1374,13 @@ enum X86Intrinsics : unsigned {
     x86_tdpbuud_internal,                            // llvm.x86.tdpbuud.internal
     x86_tdpfp16ps,                                   // llvm.x86.tdpfp16ps
     x86_tdpfp16ps_internal,                          // llvm.x86.tdpfp16ps.internal
+    x86_tdphbf8ps,                                   // llvm.x86.tdphbf8ps
+    x86_tdphf8ps,                                    // llvm.x86.tdphf8ps
     x86_testui,                                      // llvm.x86.testui
     x86_tileloadd64,                                 // llvm.x86.tileloadd64
     x86_tileloadd64_internal,                        // llvm.x86.tileloadd64.internal
+    x86_tileloaddrs64,                               // llvm.x86.tileloaddrs64
+    x86_tileloaddrst164,                             // llvm.x86.tileloaddrst164
     x86_tileloaddt164,                               // llvm.x86.tileloaddt164
     x86_tileloaddt164_internal,                      // llvm.x86.tileloaddt164.internal
     x86_tilerelease,                                 // llvm.x86.tilerelease
@@ -1382,6 +1388,7 @@ enum X86Intrinsics : unsigned {
     x86_tilestored64_internal,                       // llvm.x86.tilestored64.internal
     x86_tilezero,                                    // llvm.x86.tilezero
     x86_tilezero_internal,                           // llvm.x86.tilezero.internal
+    x86_tmmultf32ps,                                 // llvm.x86.tmmultf32ps
     x86_tpause,                                      // llvm.x86.tpause
     x86_umonitor,                                    // llvm.x86.umonitor
     x86_umwait,                                      // llvm.x86.umwait

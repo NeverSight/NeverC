@@ -460,6 +460,49 @@ segfaults:**
    - Correct machine code bytes (`f3 6c` = rep insb, not `f3 a4` = rep movsb)
    - Correct register state (DX=port, RDI/RSI=buffer, RCX=count)
 
+### Native AMX compute and MOVRS
+
+The physical tile interface now includes `__builtin_ia32_tdpbf8ps`,
+`tdpbhf8ps`, `tdphbf8ps`, `tdphf8ps`, `tmmultf32ps`, `tileloaddrs64` and
+`tileloaddrst164` (all with the same `__builtin_ia32_` prefix). Their native
+LLVM signatures match the full fork. Compute operations take three distinct
+constant tile numbers in `[0, 7]`. Loads take a constant tile number, a const
+linear pointer and a full-width byte stride. The compiler preserves the
+instruction-owned memory accesses and architectural tile state; it does not
+preload memory or implement the instruction with inline assembly.
+
+The feature names are `amx-fp8`, `amx-movrs` and `amx-tf32`, each implying
+`amx-tile`. TF32 retains the fork's historical instruction support, rather than
+claiming that withdrawn instruction is present in current processors. The
+physical tile bank must not be mixed in one function with compiler-managed
+`x86_amx` values. Both compilers reject this before instruction selection,
+including release builds; otherwise an allocator-generated tile configuration
+can invalidate the physical operation. Out-of-range physical tile indices also
+receive a backend diagnostic with assertions disabled.
+
+`utils/lint/sync-x86-amx-instructions.py` owns the pruned AMX descriptors,
+operand metadata, native encodings, both assembly writers/matchers, compression
+pairs and appended feature bits. Existing opcode and feature IDs stay stable.
+Assembly writers have different mnemonic-offset bit widths, which must not
+overwrite their operand-printing commands. EGPR target functions can compress
+eligible tile loads to VEX when their allocated address registers fit; explicit
+EVEX assembly retains its requested encoding. These pointer intrinsics do not
+provide an API for forcing an encoding or choosing segment/address width.
+
+`tests/verify-amx-native-completion.py` checks all 336 distinct tile triples for
+each compute operation, all load destinations, O0/O2, ELF/COFF/Mach-O and both
+assembly dialects. It also checks forced EVEX assembly with extended GPRs and
+controlled completions with high pointers/strides, repeated operations, tile
+bank inputs/outputs, ordinary memory ordering and saved C registers. The full
+fork, NeverC and NeverC-to-fork routes each cover 10,794 checks. Controlled
+completions inject architectural results; they do not qualify hardware AMX
+arithmetic, configuration validity, cache hints, faults or restart behavior.
+Use `--llc` or `--backend-llc` to select those routes, and `--keep` for artifacts.
+
+The twelve AMX-AVX512 row interfaces are still pending in NeverC, along with
+the broader encoding and state-transition API work. A successful native object
+build alone does not establish those remaining contracts.
+
 ## Testing
 
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))

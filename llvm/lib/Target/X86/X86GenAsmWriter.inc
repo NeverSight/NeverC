@@ -1846,6 +1846,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 18960 */ "rep;outsb (%rsi), %dx\0"
   /* 18982 */ "rep;outsw (%rsi), %dx\0"
   /* 19004 */ "rep;outsl (%rsi), %dx\0"
+  /* 19026 */ "tdpbf8ps\t\0"
+  /* 19036 */ "tdpbhf8ps\t\0"
+  /* 19047 */ "tdphbf8ps\t\0"
+  /* 19058 */ "tdphf8ps\t\0"
+  /* 19068 */ "tmmultf32ps\t\0"
+  /* 19081 */ "tileloaddrs\t\0"
+  /* 19094 */ "tileloaddrst1\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20300,7 +20307,24 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     18961U,	// REP_OUTSB_64
     19005U,	// REP_OUTSL_64
     18983U,	// REP_OUTSW_64
-  };
+      0U,	// WRITE_SYSREG64
+    1201457747U,	// TDPBF8PS
+    0U,	// PTDPBF8PS
+    1201457757U,	// TDPBHF8PS
+    0U,	// PTDPBHF8PS
+    1201457768U,	// TDPHBF8PS
+    0U,	// PTDPHBF8PS
+    1201457779U,	// TDPHF8PS
+    0U,	// PTDPHF8PS
+    1201457789U,	// TMMULTF32PS
+    0U,	// PTMMULTF32PS
+    1428106U,	// TILELOADDRS
+    1428106U,	// TILELOADDRS_EVEX
+    0U,	// PTILELOADDRS
+    1428119U,	// TILELOADDRST1
+    1428119U,	// TILELOADDRST1_EVEX
+    0U,	// PTILELOADDRST1
+};
 
   static const uint16_t OpInfo1[] = {
     0U,	// PHI
@@ -38751,7 +38775,24 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_OUTSB_64
     0U,	// REP_OUTSL_64
     0U,	// REP_OUTSW_64
-  };
+      0U,	// WRITE_SYSREG64
+    8U,	// TDPBF8PS
+    0U,	// PTDPBF8PS
+    8U,	// TDPBHF8PS
+    0U,	// PTDPBHF8PS
+    8U,	// TDPHBF8PS
+    0U,	// PTDPHBF8PS
+    8U,	// TDPHF8PS
+    0U,	// PTDPHF8PS
+    8U,	// TMMULTF32PS
+    0U,	// PTMMULTF32PS
+    0U,	// TILELOADDRS
+    0U,	// TILELOADDRS_EVEX
+    0U,	// PTILELOADDRS
+    0U,	// TILELOADDRST1
+    0U,	// TILELOADDRST1_EVEX
+    0U,	// PTILELOADDRST1
+};
 
   static const uint8_t OpInfo2[] = {
     0U,	// PHI
@@ -57202,7 +57243,24 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_OUTSB_64
     0U,	// REP_OUTSL_64
     0U,	// REP_OUTSW_64
-  };
+      0U,	// WRITE_SYSREG64
+    0U,	// TDPBF8PS
+    0U,	// PTDPBF8PS
+    0U,	// TDPBHF8PS
+    0U,	// PTDPBHF8PS
+    0U,	// TDPHBF8PS
+    0U,	// PTDPHBF8PS
+    0U,	// TDPHF8PS
+    0U,	// PTDPHF8PS
+    0U,	// TMMULTF32PS
+    0U,	// PTMMULTF32PS
+    0U,	// TILELOADDRS
+    0U,	// TILELOADDRS_EVEX
+    0U,	// PTILELOADDRS
+    0U,	// TILELOADDRST1
+    0U,	// TILELOADDRST1_EVEX
+    0U,	// PTILELOADDRST1
+};
 
   // Emit the opcode for the instruction.
   uint64_t Bits = 0;

@@ -3449,6 +3449,22 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmwrite_mem:
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite_mem,
                                    {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_tdpbf8ps:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tdpbf8ps), Ops);
+  case X86::BI__builtin_ia32_tdpbhf8ps:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tdpbhf8ps), Ops);
+  case X86::BI__builtin_ia32_tdphbf8ps:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tdphbf8ps), Ops);
+  case X86::BI__builtin_ia32_tdphf8ps:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tdphf8ps), Ops);
+  case X86::BI__builtin_ia32_tmmultf32ps:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tmmultf32ps), Ops);
+  case X86::BI__builtin_ia32_tileloaddrs64:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tileloaddrs64),
+                              Ops);
+  case X86::BI__builtin_ia32_tileloaddrst164:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tileloaddrst164),
+                              Ops);
   case X86::BI__vmx_vmwrite: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite,
                                    {Ops[0], Ops[1]});

@@ -273,7 +273,9 @@ bool EvexToVexInstPass::runOnMachineFunction(MachineFunction &MF) {
   }
 #endif
   const X86Subtarget &ST = MF.getSubtarget<X86Subtarget>();
-  if (!ST.hasAVX512())
+  // APX addressing also uses EVEX without requiring AVX-512. In particular,
+  // native tile loads selected with EGPR can use VEX when RA chose low GPRs.
+  if (!ST.hasAVX512() && !ST.hasEGPR())
     return false;
 
   bool Changed = false;

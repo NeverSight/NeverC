@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install/check native system signatures in the pruned LLVM tables.
+"""Install/check native system and tile signatures in the pruned LLVM tables.
 
 These APIs have fixed signatures, no overload parameters, and conservative
 memory effects. Keep existing intrinsic identities,
@@ -34,6 +34,12 @@ PROTOTYPE = "llvm.x86.vmread"
 REGISTER_SIGNATURES = {
     "readcr": ("I64", "I32"), "readdr": ("I64", "I32"),
     "writecr": ("Done", "I32", "I64"), "writedr": ("Done", "I32", "I64"),
+}
+AMX_SIGNATURES = {
+    **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")
+       for name in ("tdpbf8ps", "tdpbhf8ps", "tdphbf8ps", "tdphf8ps", "tmmultf32ps")},
+    **{name: (("Done", "I8", "PTR", "I64"), "llvm.x86.tileloadd64")
+       for name in ("tileloaddrs64", "tileloaddrst164")},
 }
 
 
@@ -86,7 +92,11 @@ def synchronize(write):
     additions = []
     cpp_names = dict(enum_entries)
     updated_impl = impl
-    for suffix, signature in DECLARATIONS.items():
+    declarations = {suffix: (signature, PROTOTYPE)
+                    for suffix, signature in DECLARATIONS.items()}
+    declarations.update(AMX_SIGNATURES)
+    for suffix, (signature, prototype) in declarations.items():
+        source = names.index(prototype)
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

@@ -199,7 +199,10 @@ enum {
   TuningSlowUAMem32 = 183,
   TuningUseGLMDivSqrtCosts = 184,
   TuningUseSLMArithCosts = 185,
-  NumSubtargetFeatures = 186
+  FeatureAMXFP8 = 186,
+  FeatureAMXMOVRS = 187,
+  FeatureAMXTF32 = 188,
+  NumSubtargetFeatures = 189
 };
 } // end namespace X86
 } // end namespace llvm
@@ -220,6 +223,9 @@ GET_SUBTARGETINFO_MACRO(HasAMXBF16, false, hasAMXBF16)
 GET_SUBTARGETINFO_MACRO(HasAMXCOMPLEX, false, hasAMXCOMPLEX)
 GET_SUBTARGETINFO_MACRO(HasAMXFP16, false, hasAMXFP16)
 GET_SUBTARGETINFO_MACRO(HasAMXINT8, false, hasAMXINT8)
+GET_SUBTARGETINFO_MACRO(HasAMXFP8, false, hasAMXFP8)
+GET_SUBTARGETINFO_MACRO(HasAMXMOVRS, false, hasAMXMOVRS)
+GET_SUBTARGETINFO_MACRO(HasAMXTF32, false, hasAMXTF32)
 GET_SUBTARGETINFO_MACRO(HasAMXTILE, false, hasAMXTILE)
 GET_SUBTARGETINFO_MACRO(HasAVX10_1, false, hasAVX10_1)
 GET_SUBTARGETINFO_MACRO(HasAVX10_1_512, false, hasAVX10_1_512)
@@ -402,7 +408,10 @@ extern const llvm::SubtargetFeatureKV X86FeatureKV[] = {
   { "amx-bf16", "Support AMX-BF16 instructions", X86::FeatureAMXBF16, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-complex", "Support AMX-COMPLEX instructions", X86::FeatureAMXCOMPLEX, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-fp16", "Support AMX amx-fp16 instructions", X86::FeatureAMXFP16, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
+  { "amx-fp8", "Support AMX-FP8 instructions", X86::FeatureAMXFP8, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-int8", "Support AMX-INT8 instructions", X86::FeatureAMXINT8, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
+  { "amx-movrs", "Support AMX-MOVRS instructions", X86::FeatureAMXMOVRS, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
+  { "amx-tf32", "Support AMX-TF32 instructions", X86::FeatureAMXTF32, { { { 0x100ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "amx-tile", "Support AMX-TILE instructions", X86::FeatureAMXTILE, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx", "Enable AVX instructions", X86::FeatureAVX, { { { 0x0ULL, 0x2000000000ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "avx10.1-256", "Support AVX10.1 up to 256-bit instruction", X86::FeatureAVX10_1, { { { 0x20200002180000ULL, 0x6b800000000000ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
@@ -58289,6 +58298,9 @@ void llvm::X86Subtarget::ParseSubtargetFeatures(StringRef CPU, StringRef TuneCPU
   if (Bits[X86::FeatureAMXCOMPLEX]) HasAMXCOMPLEX = true;
   if (Bits[X86::FeatureAMXFP16]) HasAMXFP16 = true;
   if (Bits[X86::FeatureAMXINT8]) HasAMXINT8 = true;
+  if (Bits[X86::FeatureAMXFP8]) HasAMXFP8 = true;
+  if (Bits[X86::FeatureAMXMOVRS]) HasAMXMOVRS = true;
+  if (Bits[X86::FeatureAMXTF32]) HasAMXTF32 = true;
   if (Bits[X86::FeatureAMXTILE]) HasAMXTILE = true;
   if (Bits[X86::FeatureAVX] && X86SSELevel < AVX) X86SSELevel = AVX;
   if (Bits[X86::FeatureAVX2] && X86SSELevel < AVX2) X86SSELevel = AVX2;
@@ -58505,7 +58517,7 @@ extern const llvm::MCWriteProcResEntry X86WriteProcResTable[];
 extern const llvm::MCWriteLatencyEntry X86WriteLatencyTable[];
 extern const llvm::MCReadAdvanceEntry X86ReadAdvanceTable[];
 X86GenSubtargetInfo::X86GenSubtargetInfo(const Triple &TT, StringRef CPU, StringRef TuneCPU, StringRef FS)
-  : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef(X86FeatureKV, 185), ArrayRef(X86SubTypeKV, 90), 
+  : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef(X86FeatureKV, 188), ArrayRef(X86SubTypeKV, 90),
                         X86WriteProcResTable, X86WriteLatencyTable, X86ReadAdvanceTable, 
                         nullptr, nullptr, nullptr) {}
 

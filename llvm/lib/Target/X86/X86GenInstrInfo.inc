@@ -18461,7 +18461,23 @@ namespace X86 {
     REP_OUTSL_64	= 18446,
     REP_OUTSW_64	= 18447,
     WRITE_SYSREG64	= 18448,
-    INSTRUCTION_LIST_END = 18449
+    TDPBF8PS	= 18449,
+    PTDPBF8PS	= 18450,
+    TDPBHF8PS	= 18451,
+    PTDPBHF8PS	= 18452,
+    TDPHBF8PS	= 18453,
+    PTDPHBF8PS	= 18454,
+    TDPHF8PS	= 18455,
+    PTDPHF8PS	= 18456,
+    TMMULTF32PS	= 18457,
+    PTMMULTF32PS	= 18458,
+    TILELOADDRS	= 18459,
+    TILELOADDRS_EVEX	= 18460,
+    PTILELOADDRS	= 18461,
+    TILELOADDRST1	= 18462,
+    TILELOADDRST1_EVEX	= 18463,
+    PTILELOADDRST1	= 18464,
+    INSTRUCTION_LIST_END = 18465
   };
 
 } // end namespace X86
@@ -20852,7 +20868,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18449];
+  MCInstrDesc Insts[18465];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5420];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -20871,6 +20887,22 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18464,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1119,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18464 = PTILELOADDRST1
+    { 18463,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2560004816ULL },  // Inst #18463 = TILELOADDRST1_EVEX
+    { 18462,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2520004816ULL },  // Inst #18462 = TILELOADDRST1
+    { 18461,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1119,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18461 = PTILELOADDRS
+    { 18460,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2560005816ULL },  // Inst #18460 = TILELOADDRS_EVEX
+    { 18459,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2520005816ULL },  // Inst #18459 = TILELOADDRS
+    { 18458,	3,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	472,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18458 = PTMMULTF32PS
+    { 18457,	4,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1194,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xa42000482aULL },  // Inst #18457 = TMMULTF32PS
+    { 18456,	3,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	472,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18456 = PTDPHF8PS
+    { 18455,	4,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1194,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xfea001282aULL },  // Inst #18455 = TDPHF8PS
+    { 18454,	3,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	472,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18454 = PTDPHBF8PS
+    { 18453,	4,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1194,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xfea001302aULL },  // Inst #18453 = TDPHBF8PS
+    { 18452,	3,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	472,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18452 = PTDPBHF8PS
+    { 18451,	4,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1194,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xfea001382aULL },  // Inst #18451 = TDPBHF8PS
+    { 18450,	3,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	472,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18450 = PTDPBF8PS
+    { 18449,	4,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1194,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xfea001202aULL },  // Inst #18449 = TDPBF8PS
     { 18448,	2,	0,	0,	8,	0,	1,	X86ImpOpBase + 0,	5418,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18448 = WRITE_SYSREG64
     { 18447,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 611,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000681ULL },  // Inst #18447 = REP_OUTSW_64
     { 18446,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 611,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000701ULL },  // Inst #18446 = REP_OUTSL_64
@@ -58116,6 +58148,22 @@ extern const char X86InstrNameData[] = {
   /* 258310 */ "REP_OUTSL_64\0"
   /* 258323 */ "REP_OUTSW_64\0"
   /* 258336 */ "WRITE_SYSREG64\0"
+  /* 258351 */ "TDPBF8PS\0"
+  /* 258360 */ "PTDPBF8PS\0"
+  /* 258370 */ "TDPBHF8PS\0"
+  /* 258380 */ "PTDPBHF8PS\0"
+  /* 258391 */ "TDPHBF8PS\0"
+  /* 258401 */ "PTDPHBF8PS\0"
+  /* 258412 */ "TDPHF8PS\0"
+  /* 258421 */ "PTDPHF8PS\0"
+  /* 258431 */ "TMMULTF32PS\0"
+  /* 258443 */ "PTMMULTF32PS\0"
+  /* 258456 */ "TILELOADDRS\0"
+  /* 258468 */ "TILELOADDRS_EVEX\0"
+  /* 258485 */ "PTILELOADDRS\0"
+  /* 258498 */ "TILELOADDRST1\0"
+  /* 258512 */ "TILELOADDRST1_EVEX\0"
+  /* 258531 */ "PTILELOADDRST1\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60429,10 +60477,26 @@ extern const unsigned X86InstrNameIndices[] = {
     15207U, 2854U, 14368U, 2739U, 15495U, 855U, 3771U, 9862U, 
     11868U, 15340U, 258261U, 258273U, 258285U, 258297U, 258310U, 258323U,
     258336U,
+    258351U,
+    258360U,
+    258370U,
+    258380U,
+    258391U,
+    258401U,
+    258412U,
+    258421U,
+    258431U,
+    258443U,
+    258456U,
+    258468U,
+    258485U,
+    258498U,
+    258512U,
+    258531U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18449);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18465);
 }
 
 } // end namespace llvm
@@ -60492,7 +60556,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18449);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18465);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -97615,6 +97679,38 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64452,
     /* WRITE_SYSREG64 */
     64452,
+    /* TDPBF8PS */
+    8133,
+    /* PTDPBF8PS */
+    6498,
+    /* TDPBHF8PS */
+    8133,
+    /* PTDPBHF8PS */
+    6498,
+    /* TDPHBF8PS */
+    8133,
+    /* PTDPHBF8PS */
+    6498,
+    /* TDPHF8PS */
+    8133,
+    /* PTDPHF8PS */
+    6498,
+    /* TMMULTF32PS */
+    8133,
+    /* PTMMULTF32PS */
+    6498,
+    /* TILELOADDRS */
+    8189,
+    /* TILELOADDRS_EVEX */
+    8195,
+    /* PTILELOADDRS */
+    6517,
+    /* TILELOADDRST1 */
+    8191,
+    /* TILELOADDRST1_EVEX */
+    8193,
+    /* PTILELOADDRST1 */
+    6519,
   };
 
   using namespace OpTypes;
@@ -152910,9 +153006,25 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // REP_OUTSL_64 = 18446
     CEFBS_In64BitMode, // REP_OUTSW_64 = 18447
     CEFBS_In64BitMode, // WRITE_SYSREG64 = 18448
+    CEFBS_In64BitMode, // TDPBF8PS = 18449
+    CEFBS_In64BitMode, // PTDPBF8PS = 18450
+    CEFBS_In64BitMode, // TDPBHF8PS = 18451
+    CEFBS_In64BitMode, // PTDPBHF8PS = 18452
+    CEFBS_In64BitMode, // TDPHBF8PS = 18453
+    CEFBS_In64BitMode, // PTDPHBF8PS = 18454
+    CEFBS_In64BitMode, // TDPHF8PS = 18455
+    CEFBS_In64BitMode, // PTDPHF8PS = 18456
+    CEFBS_In64BitMode, // TMMULTF32PS = 18457
+    CEFBS_In64BitMode, // PTMMULTF32PS = 18458
+    CEFBS_In64BitMode, // TILELOADDRS = 18459
+    CEFBS_In64BitMode, // TILELOADDRS_EVEX = 18460
+    CEFBS_In64BitMode, // PTILELOADDRS = 18461
+    CEFBS_In64BitMode, // TILELOADDRST1 = 18462
+    CEFBS_In64BitMode, // TILELOADDRST1_EVEX = 18463
+    CEFBS_In64BitMode, // PTILELOADDRST1 = 18464
   };
 
-  assert(Opcode < 18449);
+  assert(Opcode < 18465);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

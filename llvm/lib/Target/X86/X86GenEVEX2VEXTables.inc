@@ -833,6 +833,8 @@ static const X86EvexToVexCompressTableEntry X86EvexToVex128CompressTable[] = {
   { X86::VXORPDZ128rr, X86::VXORPDrr },
   { X86::VXORPSZ128rm, X86::VXORPSrm },
   { X86::VXORPSZ128rr, X86::VXORPSrr },
+  { X86::TILELOADDRS_EVEX, X86::TILELOADDRS },
+  { X86::TILELOADDRST1_EVEX, X86::TILELOADDRST1 },
 };
 
 // X86 EVEX encoded instructions that have a VEX 256 encoding

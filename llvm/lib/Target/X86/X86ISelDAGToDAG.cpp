@@ -55,6 +55,54 @@ extern cl::opt<bool> IndirectBranchTracking;
 //===----------------------------------------------------------------------===//
 
 namespace {
+
+// Physical-register intrinsics own the architectural tile bank. Managed AMX
+// values let the allocator choose registers and synthesize configurations;
+// mixing those contracts can overwrite live tiles or configure the wrong bank.
+void checkAMXProgrammingModel(const Function &F) {
+  bool Physical = false;
+  bool Managed = false;
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB) {
+      const auto *Call = dyn_cast<CallBase>(&I);
+      const Function *Callee = Call ? Call->getCalledFunction() : nullptr;
+      if (!Callee || !Callee->isIntrinsic())
+        continue;
+      Managed |= Call->getType()->isX86_AMXTy() ||
+                 any_of(Call->args(), [](const Use &Arg) {
+                   return Arg->getType()->isX86_AMXTy();
+                 });
+      switch (Callee->getIntrinsicID()) {
+      case Intrinsic::x86_tilezero:
+      case Intrinsic::x86_tileloadd64:
+      case Intrinsic::x86_tileloaddt164:
+      case Intrinsic::x86_tileloaddrs64:
+      case Intrinsic::x86_tileloaddrst164:
+      case Intrinsic::x86_tilestored64:
+      case Intrinsic::x86_tdpbssd:
+      case Intrinsic::x86_tdpbsud:
+      case Intrinsic::x86_tdpbusd:
+      case Intrinsic::x86_tdpbuud:
+      case Intrinsic::x86_tdpbf16ps:
+      case Intrinsic::x86_tdpfp16ps:
+      case Intrinsic::x86_tcmmimfp16ps:
+      case Intrinsic::x86_tcmmrlfp16ps:
+      case Intrinsic::x86_tdpbf8ps:
+      case Intrinsic::x86_tdpbhf8ps:
+      case Intrinsic::x86_tdphbf8ps:
+      case Intrinsic::x86_tdphf8ps:
+      case Intrinsic::x86_tmmultf32ps:
+        Physical = true;
+        break;
+      default:
+        break;
+      }
+    }
+  if (Physical && Managed)
+    report_fatal_error(
+        "cannot mix physical AMX tile intrinsics with compiler-managed tiles");
+}
+
 /// This corresponds to X86AddressMode, but uses SDValue's instead of register
 /// numbers for the leaves of the matched tree.
 struct X86ISelAddressMode {
@@ -174,6 +222,7 @@ public:
         OptForMinSize(false), IndirectTlsSegRefs(false) {}
 
   bool runOnMachineFunction(MachineFunction &MF) override {
+    checkAMXProgrammingModel(MF.getFunction());
     // Reset the subtarget each time through.
     Subtarget = &MF.getSubtarget<X86Subtarget>();
     IndirectTlsSegRefs =
@@ -5266,9 +5315,15 @@ void X86DAGToDAGISel::Select(SDNode *Node) {
     }
     case Intrinsic::x86_tileloadd64:
     case Intrinsic::x86_tileloaddt164:
+    case Intrinsic::x86_tileloaddrs64:
+    case Intrinsic::x86_tileloaddrst164:
     case Intrinsic::x86_tilestored64: {
       if (!Subtarget->hasAMXTILE())
         break;
+      if ((IntNo == Intrinsic::x86_tileloaddrs64 ||
+           IntNo == Intrinsic::x86_tileloaddrst164) &&
+          !Subtarget->hasAMXMOVRS())
+        report_fatal_error("AMX MOVRS intrinsic requires amx-movrs");
       unsigned Opc;
       switch (IntNo) {
       default:
@@ -5279,12 +5334,21 @@ void X86DAGToDAGISel::Select(SDNode *Node) {
       case Intrinsic::x86_tileloaddt164:
         Opc = X86::PTILELOADDT1;
         break;
+      case Intrinsic::x86_tileloaddrs64:
+        Opc = X86::PTILELOADDRS;
+        break;
+      case Intrinsic::x86_tileloaddrst164:
+        Opc = X86::PTILELOADDRST1;
+        break;
       case Intrinsic::x86_tilestored64:
         Opc = X86::PTILESTORED;
         break;
       }
       // FIXME: Match displacement and scale.
       unsigned TIndex = Node->getConstantOperandVal(2);
+      if (TIndex > 7)
+        report_fatal_error(
+            "AMX memory intrinsic requires a tile index in [0, 7]");
       SDValue TReg = getI8Imm(TIndex, dl);
       SDValue Base = Node->getOperand(3);
       SDValue Scale = getI8Imm(1, dl);

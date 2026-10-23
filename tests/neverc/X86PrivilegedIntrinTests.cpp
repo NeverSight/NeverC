@@ -46,6 +46,81 @@ TEST_F(X86PrivilegedIntrinTest,
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, AmxComputeAndMovrsUseNativeInstructions) {
+  constexpr const char *Source = R"(
+    __attribute__((target("amx-fp8,amx-movrs,amx-tf32")))
+    void compute(const void *source, unsigned long long stride) {
+      __builtin_ia32_tileloaddrs64(3, source, stride);
+      __builtin_ia32_tileloaddrst164(4, source, stride);
+      __builtin_ia32_tdpbf8ps(0, 1, 2);
+      __builtin_ia32_tdpbhf8ps(3, 4, 5);
+      __builtin_ia32_tdphbf8ps(6, 7, 0);
+      __builtin_ia32_tdphf8ps(7, 2, 1);
+      __builtin_ia32_tmmultf32ps(5, 6, 4);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "amx_compute", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Name :
+         {"tileloaddrs", "tileloaddrst1", "tdpbf8ps", "tdpbhf8ps", "tdphbf8ps",
+          "tdphf8ps", "tmmultf32ps"})
+      EXPECT_NE(Assembly.find(std::string("\t") + Name + "\t"),
+                std::string::npos)
+          << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxFeaturesAndTileIndicesAreChecked) {
+  for (const char *Call :
+       {"__builtin_ia32_tdpbf8ps(0, 0, 1)", "__builtin_ia32_tdpbhf8ps(0, 1, 1)",
+        "__builtin_ia32_tdphbf8ps(8, 1, 2)", "__builtin_ia32_tdphf8ps(n, 1, 2)",
+        "__builtin_ia32_tmmultf32ps(0, 1, 8)",
+        "__builtin_ia32_tileloaddrs64(8, p, 64)",
+        "__builtin_ia32_tileloaddrst164(n, p, 64)"}) {
+    const std::string Source =
+        "__attribute__((target(\"amx-fp8,amx-movrs,amx-tf32\"))) "
+        "void f(unsigned n, const void *p) { " +
+        std::string(Call) + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "invalid_amx_operand");
+    EXPECT_NE(RC, 0) << Call << '\n' << Error;
+    EXPECT_TRUE(Error.find("different tiles") != std::string::npos ||
+                Error.find("outside the valid range") != std::string::npos ||
+                Error.find("constant integer") != std::string::npos)
+        << Error;
+  }
+  for (const char *Call : {"__builtin_ia32_tdpbf8ps(0, 1, 2)",
+                           "__builtin_ia32_tmmultf32ps(0, 1, 2)",
+                           "__builtin_ia32_tileloaddrs64(0, p, 64)"}) {
+    const std::string Source =
+        "void f(const void *p) { " + std::string(Call) + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "missing_amx_feature");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find("needs target feature"), std::string::npos) << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxPhysicalAndManagedTilesCannotBeMixed) {
+  constexpr const char *Source = R"(
+    typedef int Tile __attribute__((vector_size(1024)));
+    __attribute__((target("amx-tile,amx-fp8,avx512f")))
+    void f(const void *p, void *q) {
+      Tile t = __builtin_ia32_tileloadd64_internal(2, 16, p, 64);
+      __builtin_ia32_tdpbf8ps(0, 1, 2);
+      __builtin_ia32_tilestored64_internal(2, 16, q, 64, t);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Error] = compileToAsm(Source, "mixed_amx_models", Opt);
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find("cannot mix physical AMX tile intrinsics"),
+              std::string::npos)
+        << Error;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // MSR: rdmsr / wrmsr — true intrinsic lowering (no InlineAsm markers)
 // ---------------------------------------------------------------------------

@@ -26122,6 +26122,37 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_tdpbf8ps:
+    case Intrinsic::x86_tdpbhf8ps:
+    case Intrinsic::x86_tdphbf8ps:
+    case Intrinsic::x86_tdphf8ps:
+    case Intrinsic::x86_tmmultf32ps: {
+      const bool TF32 = IntNo == Intrinsic::x86_tmmultf32ps;
+      if (!Subtarget.is64Bit() || !Subtarget.hasAMXTILE() ||
+          (TF32 ? !Subtarget.hasAMXTF32() : !Subtarget.hasAMXFP8()))
+        report_fatal_error("AMX compute intrinsic requires its target feature");
+      const unsigned Opcode =
+          TF32                                ? X86::PTMMULTF32PS
+          : IntNo == Intrinsic::x86_tdpbf8ps  ? X86::PTDPBF8PS
+          : IntNo == Intrinsic::x86_tdpbhf8ps ? X86::PTDPBHF8PS
+          : IntNo == Intrinsic::x86_tdphbf8ps ? X86::PTDPHBF8PS
+                                              : X86::PTDPHF8PS;
+      SmallVector<SDValue, 4> Operands;
+      unsigned Seen = 0;
+      const SDLoc DL(Op);
+      for (unsigned I = 2; I != 5; ++I) {
+        const auto *Index = dyn_cast<ConstantSDNode>(Op.getOperand(I));
+        if (!Index || Index->getZExtValue() > 7 ||
+            (Seen & (1U << Index->getZExtValue())))
+          report_fatal_error(
+              "AMX compute requires distinct constant tile indices in [0, 7]");
+        Seen |= 1U << Index->getZExtValue();
+        Operands.push_back(
+            DAG.getTargetConstant(Index->getZExtValue(), DL, MVT::i8));
+      }
+      Operands.push_back(Op.getOperand(0));
+      return SDValue(DAG.getMachineNode(Opcode, DL, MVT::Other, Operands), 0);
+    }
     case llvm::Intrinsic::x86_rdpkru: {
       SDLoc dl(Op);
       SDVTList VTs = DAG.getVTList(MVT::i32, MVT::Other);
@@ -35435,7 +35466,8 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   const MIMetadata MIMD(MI);
 
   auto TMMImmToTMMReg = [](unsigned Imm) {
-    assert(Imm < 8 && "Illegal tmm index");
+    if (Imm >= 8)
+      report_fatal_error("AMX intrinsic requires a tile index in [0, 7]");
     return X86::TMM0 + Imm;
   };
   switch (MI.getOpcode()) {
@@ -35724,6 +35756,11 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   case X86::PTDPBUSD:
   case X86::PTDPBUUD:
   case X86::PTDPBF16PS:
+  case X86::PTDPBF8PS:
+  case X86::PTDPBHF8PS:
+  case X86::PTDPHBF8PS:
+  case X86::PTDPHF8PS:
+  case X86::PTMMULTF32PS:
   case X86::PTDPFP16PS: {
     unsigned Opc;
     switch (MI.getOpcode()) {
@@ -35747,6 +35784,21 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     case X86::PTDPFP16PS:
       Opc = X86::TDPFP16PS;
       break;
+    case X86::PTDPBF8PS:
+      Opc = X86::TDPBF8PS;
+      break;
+    case X86::PTDPBHF8PS:
+      Opc = X86::TDPBHF8PS;
+      break;
+    case X86::PTDPHBF8PS:
+      Opc = X86::TDPHBF8PS;
+      break;
+    case X86::PTDPHF8PS:
+      Opc = X86::TDPHF8PS;
+      break;
+    case X86::PTMMULTF32PS:
+      Opc = X86::TMMULTF32PS;
+      break;
     }
 
     MachineInstrBuilder MIB = BuildMI(*BB, MI, MIMD, TII->get(Opc));
@@ -35766,6 +35818,8 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   }
   case X86::PTILELOADD:
   case X86::PTILELOADDT1:
+  case X86::PTILELOADDRS:
+  case X86::PTILELOADDRST1:
   case X86::PTILESTORED: {
     unsigned Opc;
     switch (MI.getOpcode()) {
@@ -35776,6 +35830,12 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
       break;
     case X86::PTILELOADDT1:
       Opc = X86::TILELOADDT1;
+      break;
+    case X86::PTILELOADDRS:
+      Opc = Subtarget.hasEGPR() ? X86::TILELOADDRS_EVEX : X86::TILELOADDRS;
+      break;
+    case X86::PTILELOADDRST1:
+      Opc = Subtarget.hasEGPR() ? X86::TILELOADDRST1_EVEX : X86::TILELOADDRST1;
       break;
     case X86::PTILESTORED:
       Opc = X86::TILESTORED;
