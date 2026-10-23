@@ -35,6 +35,11 @@ EFFECTS = {
     "OUT8rr": (0, ("DX", "AL"), (), ()),
     "OUT16rr": (0, ("DX", "AX"), (), ()),
     "OUT32rr": (0, ("DX", "EAX"), (), ()),
+    # Intel defines the arithmetic flags as undefined after CR/DR MOVs.
+    "MOV64rc": (2, (), ("EFLAGS",), ()),
+    "MOV64cr": (2, (), ("EFLAGS",), ()),
+    "MOV64rd": (2, (), ("EFLAGS",), ()),
+    "MOV64dr": (2, (), ("EFLAGS",), ()),
 }
 
 
@@ -64,7 +69,8 @@ def synchronize(text):
         if not match:
             raise ValueError(f"missing instruction descriptor: {name}")
         fields = match.group(2).split(",\t")
-        if len(fields) != 10 or fields[1:3] != [str(explicit_operands), "0"]:
+        explicit_defs = 1 if name in ("MOV64rc", "MOV64cr", "MOV64rd", "MOV64dr") else 0
+        if len(fields) != 10 or fields[1:3] != [str(explicit_operands), str(explicit_defs)]:
             raise ValueError(f"unexpected explicit operands: {name}")
         fields[5:8] = [str(len(uses)), str(len(definitions)), f"X86ImpOpBase + {offset}"]
         flags, encoding = fields[9].split(", ", 1)

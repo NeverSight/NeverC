@@ -18460,7 +18460,8 @@ namespace X86 {
     REP_OUTSB_64	= 18445,
     REP_OUTSL_64	= 18446,
     REP_OUTSW_64	= 18447,
-    INSTRUCTION_LIST_END = 18448
+    WRITE_SYSREG64	= 18448,
+    INSTRUCTION_LIST_END = 18449
   };
 
 } // end namespace X86
@@ -20851,9 +20852,9 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18448];
+  MCInstrDesc Insts[18449];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
-  MCOperandInfo OperandInfo[5418];
+  MCOperandInfo OperandInfo[5420];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
   MCPhysReg ImplicitOps[574];
 };
@@ -20870,6 +20871,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18448,	2,	0,	0,	8,	0,	1,	X86ImpOpBase + 0,	5418,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18448 = WRITE_SYSREG64
     { 18447,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 565,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000681ULL },  // Inst #18447 = REP_OUTSW_64
     { 18446,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 565,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000701ULL },  // Inst #18446 = REP_OUTSL_64
     { 18445,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 565,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3704000601ULL },  // Inst #18445 = REP_OUTSB_64
@@ -37305,14 +37307,14 @@ extern const X86InstrTable X86Descs = {
     { 2015,	6,	1,	0,	68,	0,	0,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::FoldableAsLoad)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::Rematerializable), 0x4580020019ULL },  // Inst #2015 = MOV64rm
     { 2014,	2,	1,	0,	986,	0,	0,	X86ImpOpBase + 0,	180,	0|(1ULL<<MCID::MoveImm)|(1ULL<<MCID::Rematerializable)|(1ULL<<MCID::CheapAsAMove), 0x6380220030ULL },  // Inst #2014 = MOV64ri32
     { 2013,	2,	1,	0,	1763,	0,	0,	X86ImpOpBase + 0,	180,	0|(1ULL<<MCID::MoveImm)|(1ULL<<MCID::Rematerializable), 0x5c00260002ULL },  // Inst #2013 = MOV64ri
-    { 2012,	2,	1,	0,	1515,	0,	0,	X86ImpOpBase + 0,	1045,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1080002028ULL },  // Inst #2012 = MOV64rd
-    { 2011,	2,	1,	0,	1514,	0,	0,	X86ImpOpBase + 0,	1043,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1000002028ULL },  // Inst #2011 = MOV64rc
+    { 2012,	2,	1,	0,	1515,	0,	1,	X86ImpOpBase + 0,	1045,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1080002028ULL },  // Inst #2012 = MOV64rd
+    { 2011,	2,	1,	0,	1514,	0,	1,	X86ImpOpBase + 0,	1043,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1000002028ULL },  // Inst #2011 = MOV64rc
     { 2010,	2,	0,	0,	1508,	1,	0,	X86ImpOpBase + 100,	1017,	0|(1ULL<<MCID::MayStore), 0x5180260603ULL },  // Inst #2010 = MOV64o64a
     { 2009,	2,	0,	0,	1513,	1,	0,	X86ImpOpBase + 100,	1017,	0|(1ULL<<MCID::MayStore), 0x51801a0403ULL },  // Inst #2009 = MOV64o32a
     { 2008,	6,	0,	0,	140,	0,	0,	X86ImpOpBase + 0,	185,	0|(1ULL<<MCID::MayStore), 0x4480020018ULL },  // Inst #2008 = MOV64mr
     { 2007,	6,	0,	0,	140,	0,	0,	X86ImpOpBase + 0,	280,	0|(1ULL<<MCID::MayStore), 0x6380220020ULL },  // Inst #2007 = MOV64mi32
-    { 2006,	2,	1,	0,	1512,	0,	0,	X86ImpOpBase + 0,	1041,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1180002029ULL },  // Inst #2006 = MOV64dr
-    { 2005,	2,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	1039,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1100002029ULL },  // Inst #2005 = MOV64cr
+    { 2006,	2,	1,	0,	1512,	0,	1,	X86ImpOpBase + 0,	1041,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1180002029ULL },  // Inst #2006 = MOV64dr
+    { 2005,	2,	1,	0,	8,	0,	1,	X86ImpOpBase + 0,	1039,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1100002029ULL },  // Inst #2005 = MOV64cr
     { 2004,	2,	0,	0,	1507,	0,	1,	X86ImpOpBase + 100,	1017,	0|(1ULL<<MCID::MayLoad), 0x5080260603ULL },  // Inst #2004 = MOV64ao64
     { 2003,	2,	0,	0,	1511,	0,	1,	X86ImpOpBase + 100,	1017,	0|(1ULL<<MCID::MayLoad), 0x50801a0403ULL },  // Inst #2003 = MOV64ao32
     { 2002,	2,	1,	0,	1456,	0,	0,	X86ImpOpBase + 0,	1037,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x4700000129ULL },  // Inst #2002 = MOV32sr
@@ -40422,6 +40424,7 @@ extern const X86InstrTable X86Descs = {
     /* 5407 */ { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(1) },
     /* 5411 */ { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { X86::GR8RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(1) },
     /* 5415 */ { X86::GR8_NOREXRegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR8_NOREXRegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { X86::GR8_NOREXRegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5418 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
   }, {
     /* 0 */
     /* 0 */ X86::EFLAGS,
@@ -58105,6 +58108,7 @@ extern const char X86InstrNameData[] = {
   /* 258297 */ "REP_OUTSB_64\0"
   /* 258310 */ "REP_OUTSL_64\0"
   /* 258323 */ "REP_OUTSW_64\0"
+  /* 258336 */ "WRITE_SYSREG64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60417,10 +60421,11 @@ extern const unsigned X86InstrNameIndices[] = {
     14118U, 2710U, 14523U, 2802U, 10018U, 2499U, 5386U, 2362U, 
     15207U, 2854U, 14368U, 2739U, 15495U, 855U, 3771U, 9862U, 
     11868U, 15340U, 258261U, 258273U, 258285U, 258297U, 258310U, 258323U,
+    258336U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18448);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18449);
 }
 
 } // end namespace llvm
@@ -60480,7 +60485,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18448);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18449);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -97601,6 +97606,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64452,
     /* REP_OUTSW_64 */
     64452,
+    /* WRITE_SYSREG64 */
+    64452,
   };
 
   using namespace OpTypes;
@@ -134262,6 +134269,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     opaquemem, 
     /* XSAVES64 */
     opaquemem, 
+    /* WRITE_SYSREG64 */
+    i32imm, GR64,
   };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -152893,9 +152902,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // REP_OUTSB_64 = 18445
     CEFBS_In64BitMode, // REP_OUTSL_64 = 18446
     CEFBS_In64BitMode, // REP_OUTSW_64 = 18447
+    CEFBS_In64BitMode, // WRITE_SYSREG64 = 18448
   };
 
-  assert(Opcode < 18448);
+  assert(Opcode < 18449);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

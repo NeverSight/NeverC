@@ -7954,8 +7954,8 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.rdsspq
     11, // llvm.x86.rdtsc
     11, // llvm.x86.rdtscp
-    11, // llvm.x86.readcr
-    11, // llvm.x86.readdr
+    108, // llvm.x86.readcr
+    108, // llvm.x86.readdr
     11, // llvm.x86.rstorssp
     11, // llvm.x86.saveprevssp
     12, // llvm.x86.seh.lsda
@@ -8235,8 +8235,8 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.wrfsbase.64
     11, // llvm.x86.wrgsbase.32
     11, // llvm.x86.wrgsbase.64
-    11, // llvm.x86.writecr
-    11, // llvm.x86.writedr
+    108, // llvm.x86.writecr
+    108, // llvm.x86.writedr
     11, // llvm.x86.wrmsr
     11, // llvm.x86.wrmsrlist
     11, // llvm.x86.wrmsrns

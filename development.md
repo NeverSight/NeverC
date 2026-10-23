@@ -214,18 +214,36 @@ do not execute privileged I/O or change host interrupt/descriptor state.
 
 ### CR/DR register ops
 
-CR and DR registers must be **reserved** in `X86RegisterInfo.cpp` to prevent
-the register allocator from treating writes as dead:
+`__builtin_ia32_readcr/readdr(unsigned int index)` return a full unsigned
+64-bit value; `__builtin_ia32_writecr/writedr(index, value)` write one. The
+index must be a constant: CR0/2/3/4/8 or DR0..7. The existing Microsoft
+`__readcr*`, `__writecr*`, `__readdr` and `__writedr` spellings use the same
+IR/lowering. DR4/DR5 keep their own encodings and native alias/fault behavior.
+NeverC diagnoses invalid or dynamic indices before code generation, and IR
+verification also enforces `immarg` on these four signatures.
 
-```cpp
-for (MCPhysReg Reg : X86::CONTROL_REGRegClass)
-    Reserved.set(Reg);
-for (MCPhysReg Reg : X86::DEBUG_REGRegClass)
-    Reserved.set(Reg);
-```
+Reads use chained native MOV nodes. The former `CopyFromReg` lowering lost
+unused reads and merged repeated reads at O2. Writes use `WRITE_SYSREG64`,
+expanded to a real MOV before machine optimization. An ordinary register COPY
+does not model the access's ordered side effects or its undefined arithmetic
+flags. The system register bank remains reserved in `X86RegisterInfo.cpp`.
+Both read and write MOV descriptions define EFLAGS, as required by Intel's
+[SDM Volume 2B](https://cdrdv2.intel.com/v1/dl/getContent/671241).
 
-Without this, `mov cr3, rcx` gets DCE'd because the allocator sees no
-downstream use of CR3.
+`sync-x86-system-pseudos.py` owns the appended pseudo and its descriptor, name,
+operand and feature tables; it preserves all existing opcode numbers.
+`sync-x86-system-effects.py` owns the native MOV effects, and
+`sync-x86-native-intrinsics.py` owns the immediate signature attributes.
+The LLVM fork exposes matching 64-bit APIs and separate `readcr32/readdr32`
+and `writecr32/writedr32` APIs. Wrong-mode calls and CR8 in 32-bit mode fail
+explicitly.
+
+`tests/verify-system-register-completion.py` accepts `--compiler`, `--llc`,
+or `--backend-llc`, and `--spelling builtin|microsoft`. It intercepts every
+register access and checks all valid indices, full-width values, live/dead and
+repeated reads, repeated writes, write/read sequences, ordinary memory
+ordering, undefined-flag clobbers and callee-saved registers at O0/O2. These
+are controlled compiler completions, not native privileged execution tests.
 
 ### EFLAGS (pushfq / popfq)
 

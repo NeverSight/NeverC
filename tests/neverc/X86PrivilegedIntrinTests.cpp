@@ -1,5 +1,6 @@
 #include "NeverCTestFixture.h"
 
+#include <iterator>
 #include <regex>
 
 class X86PrivilegedIntrinTest : public NeverCTest {
@@ -13,9 +14,10 @@ protected:
     // the presence or absence of specific instructions and of "#APP", and the
     // allocator that is otherwise injected by default contributes hundreds of
     // functions with inline asm of their own.
-    auto r = ncc({"--target=x86_64-pc-windows-msvc", "-fno-builtin-mimalloc",
-                  "-ffreestanding", "-fno-lto", opt, "-S", srcFile.string(),
-                  "-o", outFile.string()});
+    auto r =
+        ncc({"--target=x86_64-pc-windows-msvc", "-fno-builtin-mimalloc",
+             "-ffreestanding", "-fno-lto", "-mllvm", "-verify-machineinstrs",
+             opt, "-S", srcFile.string(), "-o", outFile.string()});
     if (r.exitCode != 0) return {r.exitCode, r.err};
     return {0, readFile(outFile)};
   }
@@ -111,6 +113,53 @@ TEST_F(X86PrivilegedIntrinTest, DrRegisterOpsLowerCorrectly) {
   EXPECT_NE(s.find("mov\trax, dr7"), std::string::npos) << "expected mov rax, dr7\n" << s;
   EXPECT_NE(s.find("mov\tdr0, rcx"), std::string::npos) << "write_dr0 DCE'd or wrong\n" << s;
   EXPECT_NE(s.find("mov\tdr7, rcx"), std::string::npos) << "write_dr7 DCE'd or wrong\n" << s;
+}
+
+TEST_F(X86PrivilegedIntrinTest, SystemRegisterReadsRemainObservable) {
+  constexpr const char *Source = R"(
+    void discard(void) {
+      __readcr3();
+      __readcr3();
+      __readdr(4);
+      __readdr(4);
+    }
+    unsigned long long repeated(void) {
+      unsigned long long first = __builtin_ia32_readcr(8);
+      return first ^ __builtin_ia32_readcr(8);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "system_reads", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Register : {"cr3", "cr8", "dr4"}) {
+      const std::regex Read(std::string("\\tmov\\t[^,\\n]+, ") + Register);
+      EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(),
+                                                   Assembly.end(), Read),
+                              std::sregex_iterator()),
+                2)
+          << Assembly;
+    }
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, SystemRegisterIndicesAreChecked) {
+  for (const char *Source : {"void f(void) { __builtin_ia32_readcr(1); }",
+                             "void f(void) { __builtin_ia32_writecr(7, 0); }",
+                             "void f(void) { __builtin_ia32_readdr(8); }",
+                             "void f(void) { __builtin_ia32_writedr(9, 0); }",
+                             "void f(unsigned n) { __readdr(n); }",
+                             "void f(void) { __writedr(8, 0); }"}) {
+    SCOPED_TRACE(Source);
+    auto [RC, Error] = compileToAsm(Source, "invalid_system_register");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_TRUE(Error.find("control register index must be") !=
+                    std::string::npos ||
+                Error.find("outside the valid range") != std::string::npos ||
+                Error.find("constant integer") != std::string::npos)
+        << Error;
+  }
 }
 
 // ---------------------------------------------------------------------------

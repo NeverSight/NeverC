@@ -516,6 +516,27 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
+  switch (BuiltinID) {
+  case X86::BI__readdr:
+  case X86::BI__writedr:
+  case X86::BI__builtin_ia32_readdr:
+  case X86::BI__builtin_ia32_writedr:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 7);
+  case X86::BI__builtin_ia32_readcr:
+  case X86::BI__builtin_ia32_writecr: {
+    llvm::APSInt Index;
+    if (SemaBuiltinConstantArg(TheCall, 0, Index))
+      return true;
+    if (Index == 0 || Index == 2 || Index == 3 || Index == 4 || Index == 8)
+      return false;
+    return Diag(TheCall->getBeginLoc(),
+                diag::err_x86_builtin_invalid_control_register)
+           << TheCall->getArg(0)->getSourceRange();
+  }
+  default:
+    break;
+  }
+
   if (BuiltinID == X86::BI__builtin_cpu_supports)
     return semaBuiltinCpuSupports(*this, TI, TheCall);
 

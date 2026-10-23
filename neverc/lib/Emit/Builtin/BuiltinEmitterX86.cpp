@@ -3317,10 +3317,18 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr,
                                    {ConstantInt::get(Int32Ty, CRNum), Ops[0]});
   }
+  case X86::BI__builtin_ia32_readcr:
+    return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readcr,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_writecr:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr,
+                                   {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_readdr:
   case X86::BI__readdr: {
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readdr,
                                    {Ops[0]});
   }
+  case X86::BI__builtin_ia32_writedr:
   case X86::BI__writedr: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr,
                                    {Ops[0], Ops[1]});

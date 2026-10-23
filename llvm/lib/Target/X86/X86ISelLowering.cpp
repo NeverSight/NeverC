@@ -26058,6 +26058,63 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
   return DAG.getMergeValues({Status, SDValue(Access, 0)}, DL);
 }
 
+static SDValue lowerSystemRegisterAccess(SDValue Op, SelectionDAG &DAG) {
+  const unsigned ID = Op.getConstantOperandVal(1);
+  const bool Read = ID == Intrinsic::x86_readcr || ID == Intrinsic::x86_readdr;
+  const bool Control =
+      ID == Intrinsic::x86_readcr || ID == Intrinsic::x86_writecr;
+  const auto *Index = dyn_cast<ConstantSDNode>(Op.getOperand(2));
+  if (!Index)
+    report_fatal_error("CR/DR intrinsic requires a constant register index");
+  const uint64_t Number = Index->getZExtValue();
+  unsigned Register;
+  if (Control) {
+    switch (Number) {
+    case 0:
+      Register = X86::CR0;
+      break;
+    case 2:
+      Register = X86::CR2;
+      break;
+    case 3:
+      Register = X86::CR3;
+      break;
+    case 4:
+      Register = X86::CR4;
+      break;
+    case 8:
+      Register = X86::CR8;
+      break;
+    default:
+      report_fatal_error("invalid control register index");
+    }
+  } else {
+    static const unsigned Registers[] = {X86::DR0, X86::DR1, X86::DR2,
+                                         X86::DR3, X86::DR4, X86::DR5,
+                                         X86::DR6, X86::DR7};
+    if (Number >= std::size(Registers))
+      report_fatal_error("invalid debug register index");
+    Register = Registers[Number];
+  }
+
+  const SDLoc DL(Op);
+  if (!Read)
+    return SDValue(
+        DAG.getMachineNode(X86::WRITE_SYSREG64, DL, MVT::Other,
+                           {DAG.getTargetConstant(Register, DL, MVT::i32),
+                            Op.getOperand(3), Op.getOperand(0)}),
+        0);
+
+  // A CopyFromReg is not an instruction-owned read: dead copies disappear and
+  // repeated copies can be merged. Keep a real, chained MOV with side effects.
+  const MVT VT = MVT::i64;
+  const unsigned Opcode = Control ? X86::MOV64rc : X86::MOV64rd;
+  auto *Access =
+      DAG.getMachineNode(Opcode, DL, DAG.getVTList(VT, MVT::Other),
+                         {DAG.getRegister(Register, VT), Op.getOperand(0)});
+  return DAG.getMergeValues({SDValue(Access, 0), SDValue(Access, 1)}, DL);
+}
+
 static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                                       SelectionDAG &DAG) {
   unsigned IntNo = Op.getConstantOperandVal(1);
@@ -26215,71 +26272,11 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDNode *N = DAG.getMachineNode(X86::OUT32rr, dl, Tys, {Chain, Glue});
       return SDValue(N, 0);
     }
-    case llvm::Intrinsic::x86_readcr: {
-      SDLoc dl(Op);
-      SDValue Chain = Op.getOperand(0);
-      unsigned CRNum = Op.getConstantOperandVal(2);
-      unsigned CRReg;
-      switch (CRNum) {
-      case 0: CRReg = X86::CR0; break;
-      case 2: CRReg = X86::CR2; break;
-      case 3: CRReg = X86::CR3; break;
-      case 4: CRReg = X86::CR4; break;
-      case 8: CRReg = X86::CR8; break;
-      default: return Op;
-      }
-      SDValue Result = DAG.getCopyFromReg(Chain, dl, CRReg, MVT::i64);
-      return DAG.getMergeValues({Result, Result.getValue(1)}, dl);
-    }
-    case llvm::Intrinsic::x86_writecr: {
-      SDLoc dl(Op);
-      SDValue Chain = Op.getOperand(0);
-      if (!isa<ConstantSDNode>(Op.getOperand(2)))
-        return Op;
-      unsigned CRNum = Op.getConstantOperandVal(2);
-      unsigned CRReg;
-      switch (CRNum) {
-      case 0: CRReg = X86::CR0; break;
-      case 2: CRReg = X86::CR2; break;
-      case 3: CRReg = X86::CR3; break;
-      case 4: CRReg = X86::CR4; break;
-      case 8: CRReg = X86::CR8; break;
-      default: return Op;
-      }
-      // Copy the value into the physical control register. Control registers are
-      // reserved (see X86RegisterInfo::getReservedRegs), so this copy survives
-      // dead-machine-instruction elimination and is expanded into MOV64cr by
-      // X86InstrInfo::copyPhysReg.
-      return DAG.getCopyToReg(Chain, dl, CRReg, Op.getOperand(3));
-    }
-    case llvm::Intrinsic::x86_writedr: {
-      SDLoc dl(Op);
-      SDValue Chain = Op.getOperand(0);
-      if (!isa<ConstantSDNode>(Op.getOperand(2)))
-        return Op;
-      unsigned DRNum = Op.getConstantOperandVal(2);
-      if (DRNum > 7)
-        return Op;
-      static const unsigned DRRegs[] = {
-        X86::DR0, X86::DR1, X86::DR2, X86::DR3,
-        X86::DR4, X86::DR5, X86::DR6, X86::DR7
-      };
-      // Debug registers are reserved as well, so the copy is preserved and
-      // expanded into MOV64dr by X86InstrInfo::copyPhysReg.
-      return DAG.getCopyToReg(Chain, dl, DRRegs[DRNum], Op.getOperand(3));
-    }
-    case llvm::Intrinsic::x86_readdr: {
-      SDLoc dl(Op);
-      SDValue Chain = Op.getOperand(0);
-      unsigned DRNum = Op.getConstantOperandVal(2);
-      if (DRNum > 7) return Op;
-      static const unsigned DRRegs[] = {
-        X86::DR0, X86::DR1, X86::DR2, X86::DR3,
-        X86::DR4, X86::DR5, X86::DR6, X86::DR7
-      };
-      SDValue Result = DAG.getCopyFromReg(Chain, dl, DRRegs[DRNum], MVT::i64);
-      return DAG.getMergeValues({Result, Result.getValue(1)}, dl);
-    }
+    case Intrinsic::x86_readcr:
+    case Intrinsic::x86_writecr:
+    case Intrinsic::x86_readdr:
+    case Intrinsic::x86_writedr:
+      return lowerSystemRegisterAccess(Op, DAG);
     case llvm::Intrinsic::x86_invlpg:
     case llvm::Intrinsic::x86_sidt:
     case llvm::Intrinsic::x86_lidt:
@@ -35420,6 +35417,16 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   switch (MI.getOpcode()) {
   default:
     llvm_unreachable("Unexpected instr type to insert");
+  case X86::WRITE_SYSREG64: {
+    const unsigned Register = MI.getOperand(0).getImm();
+    const bool Control = X86::CONTROL_REGRegClass.contains(Register);
+    assert((Control || X86::DEBUG_REGRegClass.contains(Register)) &&
+           "invalid system register");
+    const unsigned Opcode = Control ? X86::MOV64cr : X86::MOV64dr;
+    BuildMI(*BB, MI, MIMD, TII->get(Opcode), Register).add(MI.getOperand(1));
+    MI.eraseFromParent();
+    return BB;
+  }
   case X86::TLS_addr64:
   case X86::TLS_base_addr64:
     return EmitLoweredTLSAddr(MI, BB);

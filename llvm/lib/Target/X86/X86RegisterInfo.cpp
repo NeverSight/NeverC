@@ -375,11 +375,7 @@ BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   // Set the SIMD floating point control register as reserved.
   Reserved.set(X86::MXCSR);
 
-  // Control and debug registers are special-purpose: they must never be picked
-  // for general allocation, and reserving them keeps copies into them (emitted
-  // when lowering __writecr/__writedr) from being deleted by dead-machine-instr
-  // elimination, which only spares physical-register defs that are live or
-  // reserved.
+  // Architectural system registers are ambient state, never allocatable values.
   for (MCPhysReg Reg : X86::CONTROL_REGRegClass)
     Reserved.set(Reg);
   for (MCPhysReg Reg : X86::DEBUG_REGRegClass)

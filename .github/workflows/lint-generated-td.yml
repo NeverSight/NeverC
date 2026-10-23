@@ -111,5 +111,10 @@ jobs:
       - name: Verify system instruction effects
         run: python3 utils/lint/sync-x86-system-effects.py
 
+      - name: Verify system instruction pseudos
+        run: |
+          python3 utils/lint/sync-x86-system-pseudos.py
+          python3 utils/lint/test_sync_x86_system_pseudos.py
+
       - name: Test intrinsic metadata synchronization
         run: python3 utils/lint/test_sort_x86_intrinsics.py

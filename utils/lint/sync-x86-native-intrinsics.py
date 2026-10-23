@@ -29,6 +29,10 @@ DECLARATIONS = {
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
 }
 PROTOTYPE = "llvm.x86.vmread"
+REGISTER_SIGNATURES = {
+    "readcr": ("I64", "I32"), "readdr": ("I64", "I32"),
+    "writecr": ("Done", "I32", "I64"), "writedr": ("Done", "I32", "I64"),
+}
 
 
 def encode_signature(signature, impl):
@@ -70,6 +74,21 @@ def synchronize(write):
             raise ValueError(f"intrinsic enum/name mismatch: {cpp}")
         additions.append({"cpp": cpp, "name": name, "iit": encoding,
                           "attr_val": attributes[source][0], "overloaded": False})
+    # Like INT, CR/DR accesses have conservative effects and an immediate first
+    # argument. Older NeverC metadata omitted the immediate restriction.
+    register_attr = attributes[names.index("llvm.x86.int")][0]
+    updated_impl = impl
+    for suffix, signature in REGISTER_SIGNATURES.items():
+        name = "llvm.x86." + suffix
+        index = names.index(name)
+        if int(types[index], 0) != int(encode_signature(signature, impl), 0) or overloads[index + 1]:
+            raise ValueError(f"invalid system register signature: {name}")
+        updated_impl = re.sub(r"^    \d+, // " + re.escape(name) + r"$",
+                              f"    {register_attr}, // {name}", updated_impl, flags=re.MULTILINE)
+    if updated_impl != impl:
+        if not write:
+            raise ValueError("system register immediate attributes are stale; run with --write")
+        SORTER.INC_PATH.write_text(updated_impl)
     if not additions:
         return
     if not write:
