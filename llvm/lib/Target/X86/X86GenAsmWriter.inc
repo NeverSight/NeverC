@@ -20369,6 +20369,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMPTRLDm_ADDR32
     0U,	// VMPTRSTm_ADDR32
     0U,	// VMXON_ADDR32
+    0U,	// LKGS16m_ADDR32
+    0U,	// LAR16rm_ADDR32
+    0U,	// LAR32rm_ADDR32
+    0U,	// LAR64rm_ADDR32
+    0U,	// LSL16rm_ADDR32
+    0U,	// LSL32rm_ADDR32
+    0U,	// LSL64rm_ADDR32
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38875,6 +38882,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMPTRLDm_ADDR32
     0U,	// VMPTRSTm_ADDR32
     0U,	// VMXON_ADDR32
+    0U,	// LKGS16m_ADDR32
+    0U,	// LAR16rm_ADDR32
+    0U,	// LAR32rm_ADDR32
+    0U,	// LAR64rm_ADDR32
+    0U,	// LSL16rm_ADDR32
+    0U,	// LSL32rm_ADDR32
+    0U,	// LSL64rm_ADDR32
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57381,6 +57395,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMPTRLDm_ADDR32
     0U,	// VMPTRSTm_ADDR32
     0U,	// VMXON_ADDR32
+    0U,	// LKGS16m_ADDR32
+    0U,	// LAR16rm_ADDR32
+    0U,	// LAR32rm_ADDR32
+    0U,	// LAR64rm_ADDR32
+    0U,	// LSL16rm_ADDR32
+    0U,	// LSL32rm_ADDR32
+    0U,	// LSL64rm_ADDR32
 };
 
   // Emit the opcode for the instruction.

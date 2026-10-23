@@ -2255,6 +2255,8 @@ public:
   ExprResult FormCStyleCastExpr(SourceLocation LParenLoc, TypeSourceInfo *Ty,
                                 SourceLocation RParenLoc, Expr *Op);
   CastKind PrepareScalarCast(ExprResult &src, QualType destType);
+  ExprResult OnBitCastExpr(Expr *E, ParsedType DestTy,
+                           SourceLocation BuiltinLoc, SourceLocation RParenLoc);
 
   ExprResult MaybeConvertParenListExprToParenExpr(Scope *S, Expr *ME);
 

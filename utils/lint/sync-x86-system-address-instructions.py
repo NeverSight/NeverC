@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Append system address-size pseudos without renumbering existing opcodes.
 
-The full fork owns these in X86InstrSVM.td, X86InstrMisc.td and X86InstrVMX.td.
+The full fork owns these in X86InstrSVM.td, X86InstrMisc.td, X86InstrVMX.td
+and X86InstrSystem.td.
 They retain exact inputs and effects until MC lowering adds the native 67.
 There is no new assembler mnemonic or machine-code encoding.
 """
@@ -23,7 +24,10 @@ EFFECTS = module("effects", "sync-x86-system-effects.py")
 IMPLICIT = tuple(op + "64" for op in ("VMLOAD", "VMSAVE", "INVLPGA", "INVLPGB"))
 VMX = ("VMREAD64mr", "VMWRITE64rm", "INVEPT64", "INVVPID64",
        "VMCLEARm", "VMPTRLDm", "VMPTRSTm", "VMXON")
-INSTRUCTIONS = tuple((op + "_ADDR32", op, None, None) for op in (*IMPLICIT, *VMX))
+DESCRIPTOR = ("LKGS16m", *(f"{op}{bits}rm" for op in ("LAR", "LSL")
+                           for bits in (16, 32, 64)))
+INSTRUCTIONS = tuple((op + "_ADDR32", op, None, None)
+                     for op in (*IMPLICIT, *VMX, *DESCRIPTOR))
 
 
 def synchronize_table(text):

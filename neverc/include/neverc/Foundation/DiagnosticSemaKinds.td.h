@@ -181,6 +181,8 @@ DIAG(err_block_extern_cant_init, CLASS_ERROR, (unsigned)diag::Severity::Error, "
 DIAG(err_break_not_in_loop_or_switch, CLASS_ERROR, (unsigned)diag::Severity::Error, "'break' statement not in loop or switch statement", 0, false, true, true, false, 2)
 DIAG(err_builtin_annotation_first_arg, CLASS_ERROR, (unsigned)diag::Severity::Error, "first argument to __builtin_annotation must be an integer", 0, false, true, true, false, 2)
 DIAG(err_builtin_annotation_second_arg, CLASS_ERROR, (unsigned)diag::Severity::Error, "second argument to __builtin_annotation must be a non-wide string constant", 0, false, true, true, false, 2)
+DIAG(err_builtin_bit_cast_size, CLASS_ERROR, (unsigned)diag::Severity::Error, "__builtin_bit_cast requires equal object sizes (%0 and %1)", 0, false, true, true, false, 0)
+DIAG(err_builtin_bit_cast_type, CLASS_ERROR, (unsigned)diag::Severity::Error, "__builtin_bit_cast requires complete fixed-size object types and a non-array destination", 0, false, true, true, false, 0)
 DIAG(err_builtin_definition, CLASS_ERROR, (unsigned)diag::Severity::Error, "definition of builtin function %0", 0, false, true, true, false, 2)
 DIAG(err_builtin_fn_use, CLASS_ERROR, (unsigned)diag::Severity::Error, "builtin functions must be directly called", 0, false, true, true, false, 2)
 DIAG(err_builtin_func_cast_more_than_one_arg, CLASS_ERROR, (unsigned)diag::Severity::Error, "function-style cast to a builtin type can only take one argument", 0, false, true, true, false, 2)

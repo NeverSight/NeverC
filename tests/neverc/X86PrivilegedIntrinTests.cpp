@@ -775,6 +775,107 @@ TEST_F(X86PrivilegedIntrinTest, SgxBoundedUserRejectsUnownedContinuations) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, FlagBuiltinsNeedNoPlatformHeaders) {
+  auto Source = tmpFile("portable-flags.c");
+  writeFile(Source, R"c(
+unsigned long long flags(void) { return __readeflags(); }
+void restore(unsigned long long flags) { __writeeflags(flags); }
+)c");
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      auto IR = tmpFile("portable-flags.ll");
+      const auto Compile =
+          ncc({std::string("--target=") + Target, Opt, "-S", "-emit-llvm",
+               "-ffreestanding", "-Werror", "-fno-builtin-mimalloc", "-fno-lto",
+               Source.string(), "-o", IR.string()});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+      const auto Text = readFile(IR);
+      EXPECT_NE(Text.find("call i64 @llvm.x86.flags.read.u64()"),
+                std::string::npos)
+          << Text;
+      EXPECT_NE(Text.find("call void @llvm.x86.flags.write.u64(i64"),
+                std::string::npos)
+          << Text;
+      EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+    }
+}
+
+TEST_F(X86PrivilegedIntrinTest, DescriptorAddressesKeepWidthSegmentAndResults) {
+  for (unsigned Width : {32, 64})
+    for (const auto &[Prefix, Segment] : {std::pair{0, ""},
+                                          {0x26, "es:"},
+                                          {0x2e, "cs:"},
+                                          {0x36, "ss:"},
+                                          {0x3e, "ds:"},
+                                          {0x64, "fs:"},
+                                          {0x65, "gs:"}}) {
+      SCOPED_TRACE(Width);
+      SCOPED_TRACE(Prefix);
+      const auto Controls =
+          std::to_string(Width) + "," + std::to_string(Prefix);
+      std::string Source = "void lkgs(unsigned long long offset) {"
+                           "__builtin_ia32_lkgs_address(offset," +
+                           Controls + ");}\n";
+      for (const char *Operation : {"lar", "lsl"})
+        for (unsigned Bits : {16, 32, 64}) {
+          const auto Name =
+              std::string(Operation) + "_mem" + std::to_string(Bits);
+          Source += "unsigned long long " + Name +
+                    "(unsigned long long offset, unsigned long long prior, "
+                    "unsigned char *zf) { return __builtin_ia32_" +
+                    Name + "_address(offset," + Controls + ",prior,zf);}\n";
+        }
+      for (const char *Opt : {"-O0", "-O2"}) {
+        auto [RC, Assembly] =
+            compileToAsm(Source.c_str(), "descriptor_address", Opt);
+        ASSERT_EQ(RC, 0) << Assembly;
+        for (const char *Mnemonic : {"lkgs", "lar", "lsl"})
+          EXPECT_TRUE(std::regex_search(
+              Assembly,
+              std::regex(std::string("\\t") + Mnemonic + "[wlq]?\\t")))
+              << Assembly;
+        EXPECT_NE(Assembly.find(std::string(Segment) +
+                                (Width == 64 ? "[rbx]" : "[ebx]")),
+                  std::string::npos)
+            << Assembly;
+        EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+      }
+    }
+}
+
+TEST_F(X86PrivilegedIntrinTest, DescriptorAddressesRejectInvalidControls) {
+  for (const auto &[Width, Segment] : {std::pair{"width", "0"},
+                                       {"64", "segment"},
+                                       {"0", "0"},
+                                       {"16", "0"},
+                                       {"128", "0"},
+                                       {"-1", "0"},
+                                       {"64", "1"},
+                                       {"64", "0x67"},
+                                       {"32", "0xf0"},
+                                       {"32", "-1"}})
+    for (const char *Operation : {"lkgs", "lar_mem16", "lar_mem32", "lar_mem64",
+                                  "lsl_mem16", "lsl_mem32", "lsl_mem64"}) {
+      SCOPED_TRACE(Width);
+      SCOPED_TRACE(Segment);
+      SCOPED_TRACE(Operation);
+      const std::string Source =
+          "void probe(unsigned width, unsigned segment, unsigned char *zf) {"
+          "__builtin_ia32_" +
+          std::string(Operation) + "_address(0," + Width + "," + Segment +
+          (std::string(Operation) == "lkgs" ? "" : ",0,zf") + ");}";
+      auto [RC, Error] = compileToAsm(Source.c_str(), "descriptor_bad_address");
+      EXPECT_NE(RC, 0) << Error;
+      EXPECT_NE(Error.find(std::string(Width) == "width" ||
+                                   std::string(Segment) == "segment"
+                               ? "constant"
+                               : "native memory addressing"),
+                std::string::npos)
+          << Error;
+    }
+}
+
 TEST_F(X86PrivilegedIntrinTest, VmxExplicitAddressesKeepWidthAndSegment) {
   for (unsigned Width : {32, 64})
     for (const auto &[Prefix, Segment] : {std::pair{0, ""},

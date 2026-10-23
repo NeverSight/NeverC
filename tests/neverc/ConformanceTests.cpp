@@ -108,6 +108,77 @@ int main(void) {
   compileRunAndCheck("nullptr-explicit-bool", source.string(), "-std=c23");
 }
 
+TEST_F(ConformanceTest, BitCastPreservesRepresentationsAndSingleEvaluation) {
+  auto Source = tmpFile("bit-cast.c");
+  writeFile(Source, R"c(
+#if !__has_builtin(__builtin_bit_cast)
+#error missing bit cast builtin
+#endif
+typedef unsigned long long Words __attribute__((vector_size(16)));
+typedef struct { unsigned long long a, b; } Pair;
+static const float one = __builtin_bit_cast(float, 0x3f800000U);
+volatile unsigned bits = 0x80000000U;
+unsigned calls;
+unsigned next(void) { ++calls; return bits; }
+Pair pair(void) { ++calls; return (Pair){0x8172635445362718ULL, 0xfedcba9876543210ULL}; }
+int main(void) {
+  if (one != 1.0f) return 1;
+  if (__builtin_bit_cast(int, 0xffffffffU) != -1) return 2;
+  float negative_zero = __builtin_bit_cast(float, next());
+  if (calls != 1 || __builtin_bit_cast(unsigned, negative_zero) != 0x80000000U)
+    return 3;
+  Words words = __builtin_bit_cast(Words, pair());
+  Pair recovered = __builtin_bit_cast(Pair, words);
+  if (calls != 2 || recovered.a != 0x8172635445362718ULL ||
+      recovered.b != 0xfedcba9876543210ULL) return 4;
+  unsigned _BitInt(128) wide = __builtin_bit_cast(unsigned _BitInt(128), recovered);
+  Pair again = __builtin_bit_cast(Pair, wide);
+  if (again.a != recovered.a || again.b != recovered.b) return 5;
+  unsigned value = 0x7fc12345U;
+  float nan = __builtin_bit_cast(float, value);
+  if (__builtin_bit_cast(unsigned, nan) != value) return 6;
+  if (!__builtin_bit_cast(bool, (unsigned char)1)) return 7;
+  return 0;
+}
+)c");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto Executable = tmpFile(std::string("bit-cast-") + Opt + ".exe");
+    std::vector<std::string> Args = {
+        "-std=c23",      "-fno-lto", "-fno-builtin-mimalloc", Opt,
+        Source.string(), "-o",       Executable.string()};
+    for (const auto &Flag : sysrootFlags())
+      Args.push_back(Flag);
+    for (const auto &Flag : archFlags())
+      Args.push_back(Flag);
+    for (const auto &Flag : linkFlags())
+      Args.push_back(Flag);
+    const auto Compile = ncc(Args);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.err;
+  }
+}
+
+TEST_F(ConformanceTest, BitCastRejectsInvalidObjectContracts) {
+  for (const char *Expression : {"__builtin_bit_cast(long long, value)",
+                                 "__builtin_bit_cast(void, value)",
+                                 "__builtin_bit_cast(struct Incomplete, value)",
+                                 "__builtin_bit_cast(unsigned[1], value)"}) {
+    SCOPED_TRACE(Expression);
+    auto Source = tmpFile("bad-bit-cast.c");
+    writeFile(Source, "struct Incomplete; void f(unsigned value) { (void)" +
+                          std::string(Expression) + "; }\n");
+    const auto Compile =
+        ncc({"-std=c23", "-fsyntax-only", "-ffreestanding", Source.string()});
+    EXPECT_NE(Compile.exitCode, 0);
+    EXPECT_LT(Compile.exitCode, 128) << Compile.err;
+    EXPECT_NE(Compile.err.find("__builtin_bit_cast requires"),
+              std::string::npos)
+        << Compile.err;
+  }
+}
+
 // ---- C99 / C11 feature files ----
 
 TEST_F(ConformanceTest, N636_ImplicitFunctionDecl) {

@@ -715,6 +715,52 @@ compiler tests, 81 binary checks, 29 generator tests and 12 plugin checks pass;
 the overload bitmap has no mismatches. The x86 schema retains all 18,495 prior
 opcode records unchanged and appends eight address-size pseudos (18,503 total).
 
+### Explicit descriptor-memory addresses
+
+`__builtin_ia32_lkgs_address(offset, address_bits, segment_prefix)` keeps the
+m16 selector access inside LKGS. The six
+`__builtin_ia32_{lar,lsl}_mem{16,32,64}_address` builtins take those same first
+three arguments, followed by a prior destination and an `unsigned char *`
+for the actual ZF. They return the operand-sized value, selecting the supplied
+prior on failure. The ZF pointer is an ordinary C output after completion.
+Offsets are `unsigned long long`; width and segment controls are constants
+with the same validation and native ordering as the VMX address APIs above.
+
+The matching native IR names are `llvm.x86.lkgs.address` and
+`llvm.x86.{lar,lsl}.mem{16,32,64}.address`. The full LLVM fork additionally
+provides `.address32` query forms for 16/32-bit results in i386 code, using an
+i32 offset and address width 16 or 32. Code16 and mismatched code modes fail
+explicitly. The system-address generator appends seven NeverC pseudos while
+retaining the earlier opcode identities; the full fork also owns the i386
+address-size pseudos.
+
+`tests/verify-descriptor-address-completion.py` checks all segment/width
+combinations, native operand bytes, register and memory ownership, independent
+result/ZF uses, failed-read priors, repeated/dead calls, live inputs and saved
+registers. It covers O0/O2 and all three object formats with the same direct
+LLVM, NeverC and NeverC-to-fork routes as the other completion harnesses.
+Linux C routes compare real default/GS queries against raw-byte oracles,
+including nonzero GS bases and narrow offsets with different high bits.
+LKGS CPL3 faults are compared separately; these do not qualify successful
+privileged descriptor loading.
+
+Generated C containing flag snapshots can use header-free `__readeflags` and
+`__writeeflags` on all three x64 object formats. NeverC's C23 parser also
+accepts the already-advertised `__builtin_bit_cast(type, expression)`: it
+validates equal object sizes, evaluates the source once and reinterprets its
+representation through the existing scalar/vector/aggregate cast machinery.
+Invalid, incomplete, variable-sized, atomic or array destination types fail
+clearly. Tests cover constant initializers, signed values, floating-point bit
+patterns, aggregates, vectors and wide integers.
+
+Qualification passes 4,704 full-LLVM encoding/completion checks and 2,928
+checks on each C route. Each C route also passes 96 real descriptor queries
+and 112 LKGS CPL3 fault-boundary comparisons. All 61 focused frontend tests,
+81 binary checks and 29 generator tests pass. The old descriptor-query matrix
+passes 1,174 controlled checks and 25 real queries. The target schema preserves
+all 387 registers and 18,503 previous opcode records, appending seven opcodes
+for a total of 18,510; both target schemas pass regeneration checks.
+
 ### TSX (xbegin, xabort, xend, xtest)
 
 - **xbegin**: XBEGIN pseudo has `UsesCustomInserter` flag. The custom inserter

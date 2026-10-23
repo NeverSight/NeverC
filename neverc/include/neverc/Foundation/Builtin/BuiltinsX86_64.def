@@ -265,6 +265,15 @@ BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
 
 // Integer offsets, explicit address width and architectural segment-prefix bytes.
+// Descriptor selectors stay inside the instruction after offset wrapping.
+BUILTIN(__builtin_ia32_lkgs_address, "vULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_lar_mem16_address, "UsULLiIUiIUiUsUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem32_address, "UiULLiIUiIUiUiUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem64_address, "ULLiULLiIUiIUiULLiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem16_address, "UsULLiIUiIUiUsUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem32_address, "UiULLiIUiIUiUiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem64_address, "ULLiULLiIUiIUiULLiUc*", "n")
+
 BUILTIN(__builtin_ia32_vmread_address, "UcULLiULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_vmwrite_mem_address, "UcULLiULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_invept_address, "UcULLiULLiIUiIUi", "n")

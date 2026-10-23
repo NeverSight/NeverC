@@ -1052,8 +1052,11 @@ enum X86Intrinsics : unsigned {
     x86_inword,                                      // llvm.x86.inword
     x86_inwordstring,                                // llvm.x86.inwordstring
     x86_lar_mem16,                                   // llvm.x86.lar.mem16
+    x86_lar_mem16_address,                           // llvm.x86.lar.mem16.address
     x86_lar_mem32,                                   // llvm.x86.lar.mem32
+    x86_lar_mem32_address,                           // llvm.x86.lar.mem32.address
     x86_lar_mem64,                                   // llvm.x86.lar.mem64
+    x86_lar_mem64_address,                           // llvm.x86.lar.mem64.address
     x86_lar_reg16,                                   // llvm.x86.lar.reg16
     x86_lar_reg32,                                   // llvm.x86.lar.reg32
     x86_lar_reg64,                                   // llvm.x86.lar.reg64
@@ -1061,6 +1064,7 @@ enum X86Intrinsics : unsigned {
     x86_ldtilecfg_internal,                          // llvm.x86.ldtilecfg.internal
     x86_lgdt,                                        // llvm.x86.lgdt
     x86_lidt,                                        // llvm.x86.lidt
+    x86_lkgs_address,                                // llvm.x86.lkgs.address
     x86_lkgs_mem,                                    // llvm.x86.lkgs.mem
     x86_lkgs_reg,                                    // llvm.x86.lkgs.reg
     x86_lldt_mem,                                    // llvm.x86.lldt.mem
@@ -1071,8 +1075,11 @@ enum X86Intrinsics : unsigned {
     x86_loadiwkey,                                   // llvm.x86.loadiwkey
     x86_lsl,                                         // llvm.x86.lsl
     x86_lsl_mem16,                                   // llvm.x86.lsl.mem16
+    x86_lsl_mem16_address,                           // llvm.x86.lsl.mem16.address
     x86_lsl_mem32,                                   // llvm.x86.lsl.mem32
+    x86_lsl_mem32_address,                           // llvm.x86.lsl.mem32.address
     x86_lsl_mem64,                                   // llvm.x86.lsl.mem64
+    x86_lsl_mem64_address,                           // llvm.x86.lsl.mem64.address
     x86_lsl_reg16,                                   // llvm.x86.lsl.reg16
     x86_lsl_reg32,                                   // llvm.x86.lsl.reg32
     x86_lsl_reg64,                                   // llvm.x86.lsl.reg64

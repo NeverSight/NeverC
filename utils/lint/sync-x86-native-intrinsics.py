@@ -76,6 +76,13 @@ FIRST_IMMEDIATE_SIGNATURES = {
                        "I64", "I64", "I64", "I64"),
 }
 ADDRESS_SIGNATURES = {
+    "lkgs_address": (("Done", "I64", "I32", "I32"), (1, 2)),
+    "lar_mem16_address": (("STRUCT2", "I16", "I8", "I64", "I32", "I32", "I16"), (1, 2)),
+    "lar_mem32_address": (("STRUCT2", "I32", "I8", "I64", "I32", "I32", "I32"), (1, 2)),
+    "lar_mem64_address": (("STRUCT2", "I64", "I8", "I64", "I32", "I32", "I64"), (1, 2)),
+    "lsl_mem16_address": (("STRUCT2", "I16", "I8", "I64", "I32", "I32", "I16"), (1, 2)),
+    "lsl_mem32_address": (("STRUCT2", "I32", "I8", "I64", "I32", "I32", "I32"), (1, 2)),
+    "lsl_mem64_address": (("STRUCT2", "I64", "I8", "I64", "I32", "I32", "I64"), (1, 2)),
     **{name + "_address": (("I8", "I64", "I64", "I32", "I32"), (2, 3))
        for name in ("vmread", "vmwrite_mem", "invept", "invvpid")},
     **{name + "_address": (("I8", "I64", "I32", "I32"), (1, 2))

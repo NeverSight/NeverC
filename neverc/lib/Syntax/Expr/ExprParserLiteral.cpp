@@ -33,6 +33,23 @@ ExprResult Parser::ParseBuiltinPrimaryExpression() {
   switch (T) {
   default:
     return ExprError();
+  case tok::kw___builtin_bit_cast: {
+    TypeResult DestTy = ParseTypeName();
+    if (DestTy.isInvalid() || RequireToken(tok::comma)) {
+      SkipUntil(tok::r_paren, StopAtSemi);
+      return ExprError();
+    }
+    ExprResult Value = ParseAssignmentExpression();
+    if (Value.isInvalid() || Tok.isNot(tok::r_paren)) {
+      if (!Value.isInvalid())
+        Diag(Tok, diag::err_expected) << tok::r_paren;
+      SkipUntil(tok::r_paren, StopAtSemi);
+      return ExprError();
+    }
+    Res = Actions.OnBitCastExpr(Value.get(), DestTy.get(), StartLoc,
+                                ConsumeParen());
+    break;
+  }
   case tok::kw___builtin_types_compatible_p: {
     TypeResult Ty1 = ParseTypeName();
     if (RequireToken(tok::comma)) {

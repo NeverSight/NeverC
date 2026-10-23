@@ -826,8 +826,9 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   // Paired native results expose the value as the C return and perform an
   // ordinary C store of the completion byte after the instruction finishes.
   auto getValueAndStatusIntrinsicCall = [this, &Ops](Intrinsic::ID ID) {
-    auto *Call = Builder.CreateCall(ME.getIntrinsic(ID), {Ops[0], Ops[1]});
-    Builder.CreateAlignedStore(Builder.CreateExtractValue(Call, 1), Ops[2],
+    auto *Call = Builder.CreateCall(
+        ME.getIntrinsic(ID), llvm::ArrayRef<llvm::Value *>(Ops).drop_back());
+    Builder.CreateAlignedStore(Builder.CreateExtractValue(Call, 1), Ops.back(),
                                Align(1));
     return Builder.CreateExtractValue(Call, 0);
   };
@@ -3623,6 +3624,21 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_reg64);
   case X86::BI__builtin_ia32_lsl_mem64:
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem64);
+  case X86::BI__builtin_ia32_lkgs_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_lkgs_address),
+                              Ops);
+  case X86::BI__builtin_ia32_lar_mem16_address:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_lar_mem16_address);
+  case X86::BI__builtin_ia32_lar_mem32_address:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_lar_mem32_address);
+  case X86::BI__builtin_ia32_lar_mem64_address:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_lar_mem64_address);
+  case X86::BI__builtin_ia32_lsl_mem16_address:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem16_address);
+  case X86::BI__builtin_ia32_lsl_mem32_address:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem32_address);
+  case X86::BI__builtin_ia32_lsl_mem64_address:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem64_address);
   case X86::BI__builtin_ia32_vmread_address:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmread_address),
                               Ops);

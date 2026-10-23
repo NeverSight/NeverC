@@ -734,6 +734,38 @@ void diagnoseCastQual(Sema &Self, const ExprResult &SrcExpr,
 }
 } // namespace
 
+ExprResult Sema::OnBitCastExpr(Expr *E, ParsedType DestTy,
+                               SourceLocation BuiltinLoc,
+                               SourceLocation RParenLoc) {
+  TypeSourceInfo *TInfo;
+  const QualType To = GetTypeFromParser(DestTy, &TInfo).getUnqualifiedType();
+  const QualType From = E->getType().getUnqualifiedType();
+  if (!To->isObjectType() || !From->isObjectType() || To->isArrayType() ||
+      To->isIncompleteType() || From->isIncompleteType() ||
+      To->isSizelessType() || From->isSizelessType() ||
+      To->isVariablyModifiedType() || From->isVariablyModifiedType() ||
+      To->isAtomicType() || From->isAtomicType())
+    return ExprError(Diag(BuiltinLoc, diag::err_builtin_bit_cast_type)
+                     << E->getSourceRange());
+  if (Context.getTypeSize(To) != Context.getTypeSize(From))
+    return ExprError(Diag(BuiltinLoc, diag::err_builtin_bit_cast_size)
+                     << From << To << E->getSourceRange());
+
+  // Materialize the exact source representation once, including rvalues and
+  // volatile reads. The existing representation-cast operation handles scalar,
+  // vector, complex and aggregate destinations without a numeric conversion or
+  // an alignment/aliasing assumption about the caller's source object.
+  ExprResult Value = DefaultLvalueConversion(E);
+  if (Value.isInvalid())
+    return ExprError();
+  auto *Temporary = new (Context) CompoundLiteralExpr(
+      BuiltinLoc, Context.getTrivialTypeSourceInfo(From, BuiltinLoc), From,
+      VK_LValue, Value.get(), !CurContext->isFunctionOrMethod());
+  return CStyleCastExpr::Create(
+      Context, To, VK_PRValue, CK_LValueToRValueBitCast, Temporary,
+      CurFPFeatureOverrides(), TInfo, BuiltinLoc, RParenLoc);
+}
+
 ExprResult Sema::FormCStyleCastExpr(SourceLocation LPLoc,
                                     TypeSourceInfo *CastTypeInfo,
                                     SourceLocation RPLoc, Expr *CastExpr) {

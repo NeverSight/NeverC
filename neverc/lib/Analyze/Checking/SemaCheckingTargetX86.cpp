@@ -540,18 +540,7 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
-  switch (BuiltinID) {
-  case X86::BI__builtin_ia32_int:
-    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
-  case X86::BI__builtin_ia32_vmread_address:
-  case X86::BI__builtin_ia32_vmwrite_mem_address:
-  case X86::BI__builtin_ia32_invept_address:
-  case X86::BI__builtin_ia32_invvpid_address:
-  case X86::BI__builtin_ia32_vmclear_address:
-  case X86::BI__builtin_ia32_vmptrld_address:
-  case X86::BI__builtin_ia32_vmptrst_address:
-  case X86::BI__builtin_ia32_vmxon_address: {
-    const unsigned WidthArgument = TheCall->getNumArgs() - 2;
+  auto CheckMemoryAddress = [&](unsigned WidthArgument) {
     llvm::APSInt Width, Prefix;
     if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
         SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Prefix))
@@ -559,11 +548,31 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     if (llvm::X86::isNativeMemoryAddressWidth(true, Width.getZExtValue()) &&
         llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
       return false;
-    return Diag(TheCall->getBeginLoc(),
-                diag::err_x86_builtin_invalid_memory_address)
-           << TheCall->getArg(WidthArgument)->getSourceRange()
-           << TheCall->getArg(WidthArgument + 1)->getSourceRange();
-  }
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(WidthArgument)->getSourceRange()
+                << TheCall->getArg(WidthArgument + 1)->getSourceRange());
+  };
+  switch (BuiltinID) {
+  case X86::BI__builtin_ia32_int:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
+  case X86::BI__builtin_ia32_lkgs_address:
+  case X86::BI__builtin_ia32_lar_mem16_address:
+  case X86::BI__builtin_ia32_lar_mem32_address:
+  case X86::BI__builtin_ia32_lar_mem64_address:
+  case X86::BI__builtin_ia32_lsl_mem16_address:
+  case X86::BI__builtin_ia32_lsl_mem32_address:
+  case X86::BI__builtin_ia32_lsl_mem64_address:
+    return CheckMemoryAddress(1);
+  case X86::BI__builtin_ia32_vmread_address:
+  case X86::BI__builtin_ia32_vmwrite_mem_address:
+  case X86::BI__builtin_ia32_invept_address:
+  case X86::BI__builtin_ia32_invvpid_address:
+  case X86::BI__builtin_ia32_vmclear_address:
+  case X86::BI__builtin_ia32_vmptrld_address:
+  case X86::BI__builtin_ia32_vmptrst_address:
+  case X86::BI__builtin_ia32_vmxon_address:
+    return CheckMemoryAddress(TheCall->getNumArgs() - 2);
   case X86::BI__builtin_ia32_getsec_bounded: {
     llvm::APSInt Control;
     if (SemaBuiltinConstantArg(TheCall, 0, Control))

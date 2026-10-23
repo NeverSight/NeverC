@@ -491,6 +491,7 @@ Parser::ParseCastExpression(CastParseKind ParseKind, bool isAddressOfOperand,
     Res = ParseAvailabilityCheckExpr(Tok.getLocation());
     break;
   case tok::kw___builtin_types_compatible_p:
+  case tok::kw___builtin_bit_cast:
   case tok::kw___builtin_va_arg:
   case tok::kw___builtin_offsetof:
   case tok::kw___builtin_choose_expr:

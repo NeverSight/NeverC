@@ -37,9 +37,9 @@ class SVMAddressTablesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stale.*instruction"):
             SVM.synchronize_table(corrupted)
 
-    def test_vmx_preserves_operand_classes_memory_and_flags(self):
+    def test_explicit_memory_preserves_operand_classes_memory_and_flags(self):
         text = (SVM.TABLES.TARGET / "X86GenInstrInfo.inc").read_text()
-        for prototype in SVM.VMX:
+        for prototype in (*SVM.VMX, *SVM.DESCRIPTOR):
             original = SVM.TABLES.descriptor(text, prototype)
             pseudo = SVM.TABLES.descriptor(text, prototype + "_ADDR32")
             self.assertEqual(pseudo[1:9], original[1:9], prototype)
