@@ -3341,6 +3341,18 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_wrmsr,
                                    {Ops[0], Ops[1]});
   }
+  case X86::BI__builtin_ia32_clts:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__builtin_ia32_wrmsrns:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_wrmsrns,
+                                   {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_rdmsrlist:
+  case X86::BI__builtin_ia32_wrmsrlist:
+    return Builder.CreateIntrinsic(Int64Ty,
+                                   BuiltinID == X86::BI__builtin_ia32_rdmsrlist
+                                       ? llvm::Intrinsic::x86_rdmsrlist
+                                       : llvm::Intrinsic::x86_wrmsrlist,
+                                   {Ops[0], Ops[1], Ops[2]});
   case X86::BI__readpmc: {
     llvm::CallInst *CI =
         Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_rdpmc), {Ops[0]});

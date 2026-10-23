@@ -148,6 +148,13 @@ TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
 BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 
+// Native processor-state effects. The list operations own their memory tables
+// and return the actual RCX completion mask.
+BUILTIN(__builtin_ia32_clts, "v", "n")
+BUILTIN(__builtin_ia32_wrmsrns, "vUiULLi", "n")
+BUILTIN(__builtin_ia32_rdmsrlist, "ULLivC*v*ULLi", "n")
+BUILTIN(__builtin_ia32_wrmsrlist, "ULLivC*vC*ULLi", "n")
+
 #undef BUILTIN
 #undef TARGET_BUILTIN
 #undef TARGET_HEADER_BUILTIN

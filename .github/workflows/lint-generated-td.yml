@@ -16,6 +16,7 @@ on:
       - 'utils/lint/test_sort_x86_intrinsics.py'
       - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
+      - 'utils/lint/sync-x86-system-effects.py'
       - '.github/workflows/lint-generated-td.yml'
   pull_request:
     paths:
@@ -32,6 +33,7 @@ on:
       - 'utils/lint/test_sort_x86_intrinsics.py'
       - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
+      - 'utils/lint/sync-x86-system-effects.py'
       - '.github/workflows/lint-generated-td.yml'
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
@@ -105,6 +107,9 @@ jobs:
 
       - name: Verify native intrinsic signatures
         run: python3 utils/lint/sync-x86-native-intrinsics.py
+
+      - name: Verify system instruction effects
+        run: python3 utils/lint/sync-x86-system-effects.py
 
       - name: Test intrinsic metadata synchronization
         run: python3 utils/lint/test_sort_x86_intrinsics.py

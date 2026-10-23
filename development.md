@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1489).
+   1493).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -155,13 +155,38 @@ SDNode *N = DAG.getMachineNode(X86::XSETBV, dl, Tys, {Chain, Glue});
 The Glue chain prevents the scheduler from reordering the CopyToReg nodes past
 the instruction that consumes them.
 
+`__builtin_ia32_wrmsrns(unsigned int index, unsigned long long value)` emits
+the operand-free nonserializing write through ECX and EDX:EAX. It shares the
+native MSR write operand transport while retaining the distinct WRMSRNS opcode.
+`__builtin_ia32_clts()` emits the processor-state instruction as a retained
+side effect. Neither builtin emits inline assembly.
+
 `python3 tests/verify-msr-completion.py --compiler build-neverc/bin/neverc`
 checks the MSR index, both halves of EDX:EAX, read-result reconstruction, and
-retention of reads whose result is unused at O0/O2. It uses the same Python
+retention of reads whose result is unused at O0/O2, including WRMSRNS. It uses the same Python
 dependencies as the VMX completion test. `--llc /path/to/fork/llc` tests both
 LLVM code modes directly; `--backend-llc /path/to/fork/llc` instead compiles
 NeverC's actual emitted IR with the full LLVM fork. These are controlled
 compiler-transport checks, not privileged execution against hardware MSRs.
+
+`__builtin_ia32_rdmsrlist(const void *indices, void *values, unsigned long long mask)`
+and `__builtin_ia32_wrmsrlist(const void *indices, const void *values, unsigned long long mask)`
+return `unsigned long long`. Their shared native IR signature is
+`i64 (ptr, ptr, i64)`. They pass the two linear table addresses in RSI/RDI and
+the full mask in RCX, then return the actual completion RCX. The instruction
+owns all table accesses and fault/restart progress. The LLVM fork rejects these
+APIs outside 64-bit mode. These fixed signatures are maintained by
+`utils/lint/sync-x86-native-intrinsics.py`; the matching implicit register and
+memory effects are maintained by `utils/lint/sync-x86-system-effects.py`.
+
+`tests/verify-msr-list-completion.py` supports the same `--compiler`, `--llc`,
+and `--backend-llc` modes. It checks full table pointers, high mask bits, result
+transport, live input-mask preservation, nonvolatile RSI/RDI restoration,
+unmapped table boundaries, and surrounding memory ordering. It injects both
+zero and a diagnostic nonzero RCX value to detect incorrect result transport;
+nonzero injection does not model a normal architectural return. Privileged MSR
+access and actual partial-progress exception/restart behavior need a suitable
+execution environment.
 
 ### CR/DR register ops
 

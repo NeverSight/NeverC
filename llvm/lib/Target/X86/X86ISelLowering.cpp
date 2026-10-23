@@ -26079,7 +26079,33 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                          Op.getOperand(2), DAG.getConstant(0, dl, MVT::i32),
                          DAG.getConstant(0, dl, MVT::i32));
     }
-    case llvm::Intrinsic::x86_wrmsr: {
+    case llvm::Intrinsic::x86_clts:
+      return SDValue(DAG.getMachineNode(X86::CLTS, SDLoc(Op), MVT::Other,
+                                        Op.getOperand(0)),
+                     0);
+    case llvm::Intrinsic::x86_rdmsrlist:
+    case llvm::Intrinsic::x86_wrmsrlist: {
+      if (!Subtarget.is64Bit())
+        report_fatal_error("MSRLIST intrinsic requires 64-bit mode");
+      const SDLoc DL(Op);
+      SDValue Chain = DAG.getCopyToReg(Op.getOperand(0), DL, X86::RSI,
+                                       Op.getOperand(2), SDValue());
+      Chain = DAG.getCopyToReg(Chain, DL, X86::RDI, Op.getOperand(3),
+                               Chain.getValue(1));
+      Chain = DAG.getCopyToReg(Chain, DL, X86::RCX, Op.getOperand(4),
+                               Chain.getValue(1));
+      const unsigned Opcode = IntNo == llvm::Intrinsic::x86_rdmsrlist
+                                  ? X86::RDMSRLIST
+                                  : X86::WRMSRLIST;
+      auto *Access =
+          DAG.getMachineNode(Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue),
+                             {Chain, Chain.getValue(1)});
+      SDValue Mask = DAG.getCopyFromReg(SDValue(Access, 0), DL, X86::RCX,
+                                        MVT::i64, SDValue(Access, 1));
+      return DAG.getMergeValues({Mask, Mask.getValue(1)}, DL);
+    }
+    case llvm::Intrinsic::x86_wrmsr:
+    case llvm::Intrinsic::x86_wrmsrns: {
       SDLoc dl(Op);
       SDValue Chain = Op.getOperand(0);
       SDValue Addr = Op.getOperand(2);   // i32 MSR address → ECX
@@ -26100,7 +26126,9 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
 
       SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
       SDValue Ops[] = {Chain, Glue};
-      SDNode *N = DAG.getMachineNode(X86::WRMSR, dl, Tys, Ops);
+      const unsigned Opcode =
+          IntNo == llvm::Intrinsic::x86_wrmsr ? X86::WRMSR : X86::WRMSRNS;
+      SDNode *N = DAG.getMachineNode(Opcode, dl, Tys, Ops);
       return SDValue(N, 0);
     }
     case llvm::Intrinsic::x86_inbyte: {

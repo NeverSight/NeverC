@@ -999,6 +999,7 @@ enum X86Intrinsics : unsigned {
     x86_clflushopt,                                  // llvm.x86.clflushopt
     x86_cli,                                         // llvm.x86.cli
     x86_clrssbsy,                                    // llvm.x86.clrssbsy
+    x86_clts,                                        // llvm.x86.clts
     x86_clui,                                        // llvm.x86.clui
     x86_clwb,                                        // llvm.x86.clwb
     x86_clzero,                                      // llvm.x86.clzero
@@ -1140,6 +1141,7 @@ enum X86Intrinsics : unsigned {
     x86_rdgsbase_32,                                 // llvm.x86.rdgsbase.32
     x86_rdgsbase_64,                                 // llvm.x86.rdgsbase.64
     x86_rdmsr,                                       // llvm.x86.rdmsr
+    x86_rdmsrlist,                                   // llvm.x86.rdmsrlist
     x86_rdpid,                                       // llvm.x86.rdpid
     x86_rdpkru,                                      // llvm.x86.rdpkru
     x86_rdpmc,                                       // llvm.x86.rdpmc
@@ -1438,6 +1440,8 @@ enum X86Intrinsics : unsigned {
     x86_writecr,                                     // llvm.x86.writecr
     x86_writedr,                                     // llvm.x86.writedr
     x86_wrmsr,                                       // llvm.x86.wrmsr
+    x86_wrmsrlist,                                   // llvm.x86.wrmsrlist
+    x86_wrmsrns,                                     // llvm.x86.wrmsrns
     x86_wrpkru,                                      // llvm.x86.wrpkru
     x86_wrssd,                                       // llvm.x86.wrssd
     x86_wrssq,                                       // llvm.x86.wrssq

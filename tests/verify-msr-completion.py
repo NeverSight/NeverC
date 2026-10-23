@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check native RDMSR/WRMSR operand and result transport at O0/O2.
+"""Check native RDMSR/WRMSR/WRMSRNS operand and result transport at O0/O2.
 
 Requires capstone, lief and unicorn. The real instruction's register inputs are
 checked, then a controlled read completion is supplied to the remaining code.
@@ -27,13 +27,14 @@ VALUES = ((0, 0), (0x80000123, 0x9172536485A6B7C8),
 
 def compile_case(args, directory, kind, opt, bits):
     name = f"{kind}_{opt}_{bits}"
-    intrinsic = "wrmsr" if kind == "write" else "rdmsr"
+    writing = kind in ("write", "write_ns")
+    intrinsic = "wrmsrns" if kind == "write_ns" else "wrmsr" if writing else "rdmsr"
     ir = directory / (name + ".ll")
     output = directory / (name + ".obj")
     if args.llc:
-        declaration = ("declare void @llvm.x86.wrmsr(i32, i64)" if kind == "write"
+        declaration = (f"declare void @llvm.x86.{intrinsic}(i32, i64)" if writing
                        else "declare i64 @llvm.x86.rdmsr(i32)")
-        call = ("call void @llvm.x86.wrmsr(i32 %index, i64 %value)" if kind == "write"
+        call = (f"call void @llvm.x86.{intrinsic}(i32 %index, i64 %value)" if writing
                 else "%result = call i64 @llvm.x86.rdmsr(i32 %index)")
         result = "i64" if kind == "read" else "void"
         terminator = "ret i64 %result" if kind == "read" else "ret void"
@@ -42,7 +43,8 @@ def compile_case(args, directory, kind, opt, bits):
     else:
         source = directory / (name + ".c")
         result = "unsigned __int64" if kind == "read" else "void"
-        statement = ("__writemsr(index, value);" if kind == "write" else
+        statement = ("__builtin_ia32_wrmsrns(index, value);" if kind == "write_ns" else
+                     "__writemsr(index, value);" if writing else
                      ("return " if kind == "read" else "") + "__readmsr(index);")
         source.write_text('#include <intrin.h>\n'
                           f'{result} probe(unsigned int index, unsigned __int64 value) {{\n'
@@ -93,28 +95,37 @@ def execute(code, kind, index, value, bits):
         machine.mem_write(stack_pointer + 4, struct.pack("<IQ", index, value))
     decoder = capstone.Cs(capstone.CS_ARCH_X86,
                           capstone.CS_MODE_64 if bits == 64 else capstone.CS_MODE_32)
-    mnemonic = "wrmsr" if kind == "write" else "rdmsr"
-    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == mnemonic]
-    if len(accesses) != 1:
-        raise AssertionError(f"expected one {mnemonic}, found {len(accesses)}")
-    instruction = accesses[0]
-    machine.emu_start(CODE, instruction.address, count=1000)
-    if machine.reg_read(ip) != instruction.address:
+    if kind == "write_ns":
+        # Capstone 5 predates this encoding. Prove the byte match is at an
+        # instruction boundary by decoding all preceding instructions.
+        encoding = bytes.fromhex("0f 01 c6")
+        offsets = [i for i in range(len(code)) if code.startswith(encoding, i)]
+        if len(offsets) != 1 or sum(i.size for i in decoder.disasm(code[:offsets[0]], CODE)) != offsets[0]:
+            raise AssertionError("expected one native WRMSRNS at an instruction boundary")
+        instruction_address, instruction_size = CODE + offsets[0], len(encoding)
+    else:
+        mnemonic = "wrmsr" if kind == "write" else "rdmsr"
+        accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == mnemonic]
+        if len(accesses) != 1:
+            raise AssertionError(f"expected one {mnemonic}, found {len(accesses)}")
+        instruction_address, instruction_size = accesses[0].address, accesses[0].size
+    machine.emu_start(CODE, instruction_address, count=1000)
+    if machine.reg_read(ip) != instruction_address:
         raise AssertionError("did not reach the MSR instruction")
     if machine.reg_read(regs.UC_X86_REG_ECX) != index:
         raise AssertionError("MSR index was changed")
-    if kind == "write":
+    if kind in ("write", "write_ns"):
         low = machine.reg_read(regs.UC_X86_REG_EAX)
         high = machine.reg_read(regs.UC_X86_REG_EDX)
         if low | high << 32 != value:
-            raise AssertionError("WRMSR did not receive the full EDX:EAX value")
+            raise AssertionError("MSR write did not receive the full EDX:EAX value")
     else:
         # RDMSR zeroes the upper halves of both destination registers in 64-bit mode.
         machine.reg_write(regs.UC_X86_REG_RAX if bits == 64 else regs.UC_X86_REG_EAX,
                           value & 0xFFFFFFFF)
         machine.reg_write(regs.UC_X86_REG_RDX if bits == 64 else regs.UC_X86_REG_EDX,
                           value >> 32)
-    machine.emu_start(instruction.address + instruction.size, STOP, count=1000)
+    machine.emu_start(instruction_address + instruction_size, STOP, count=1000)
     if machine.reg_read(ip) != STOP:
         raise AssertionError("MSR completion did not return")
     if kind == "read":
@@ -139,7 +150,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="neverc-msr-") as temp:
         for bits in ((32, 64) if args.llc else (64,)):
             for opt in ("O0", "O2"):
-                for kind in ("read", "read_dead", "write"):
+                for kind in ("read", "read_dead", "write", "write_ns"):
                     name, code = compile_case(args, Path(temp), kind, opt, bits)
                     for index, value in VALUES:
                         try:

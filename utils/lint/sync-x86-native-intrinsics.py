@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Install/check native VMX invalidation signatures in the pruned LLVM tables.
+"""Install/check native system signatures in the pruned LLVM tables.
 
-Both APIs have the established VMREAD signature: i8(i64, ptr), no overload
-parameters, and conservative memory effects. Keep existing intrinsic identities,
+These APIs have fixed signatures, no overload parameters, and conservative
+memory effects. Keep existing intrinsic identities,
 type encodings, overload bits, attributes and DAGISel references together when
 inserting their new IDs. This generator does not create machine opcodes.
 """
@@ -19,9 +19,25 @@ SPEC = importlib.util.spec_from_file_location(
 SORTER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SORTER)
 ENUMS = ROOT / "llvm/include/llvm/IR/IntrinsicEnums.inc"
-DECLARATIONS = (("x86_invept", "llvm.x86.invept"),
-                ("x86_invvpid", "llvm.x86.invvpid"))
+# Result followed by parameters, in LLVM's fixed IIT scalar/pointer vocabulary.
+DECLARATIONS = {
+    "invept": ("I8", "I64", "PTR"),
+    "invvpid": ("I8", "I64", "PTR"),
+    "clts": ("Done",),
+    "wrmsrns": ("Done", "I32", "I64"),
+    "rdmsrlist": ("I64", "PTR", "PTR", "I64"),
+    "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
+}
 PROTOTYPE = "llvm.x86.vmread"
+
+
+def encode_signature(signature, impl):
+    codes = {name: int(value) for name, value in
+             re.findall(r"\bIIT_(\w+) = (\d+),", impl)}
+    values = [codes[name] for name in signature]
+    if len(values) > 7 or any(value >= 16 for value in values):
+        raise ValueError("native signature needs a long IIT encoding")
+    return hex(sum(value << (4 * i) for i, value in enumerate(values)))
 
 
 def synchronize(write):
@@ -41,16 +57,18 @@ def synchronize(write):
         raise ValueError("the VMREAD signature must not be overloaded")
     additions = []
     cpp_names = dict(enum_entries)
-    for cpp, name in DECLARATIONS:
+    for suffix, signature in DECLARATIONS.items():
+        cpp, name = "x86_" + suffix, "llvm.x86." + suffix
+        encoding = encode_signature(signature, impl)
         if name in names:
             index = names.index(name)
-            if (cpp_names.get(cpp) != name or types[index] != types[source] or
+            if (cpp_names.get(cpp) != name or int(types[index], 0) != int(encoding, 0) or
                     attributes[index][0] != attributes[source][0] or overloads[index + 1]):
                 raise ValueError(f"native signature metadata disagrees with its schema: {name}")
             continue
         if cpp in cpp_names:
             raise ValueError(f"intrinsic enum/name mismatch: {cpp}")
-        additions.append({"cpp": cpp, "name": name, "iit": types[source],
+        additions.append({"cpp": cpp, "name": name, "iit": encoding,
                           "attr_val": attributes[source][0], "overloaded": False})
     if not additions:
         return

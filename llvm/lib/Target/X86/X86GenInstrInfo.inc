@@ -20855,7 +20855,7 @@ struct X86InstrTable {
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5418];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[570];
+  MCPhysReg ImplicitOps[574];
 };
 
 } // end namespace llvm
@@ -21100,7 +21100,7 @@ extern const X86InstrTable X86Descs = {
     { 18220,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	272,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x7b00004018ULL },  // Inst #18220 = WRSSD
     { 18219,	0,	0,	0,	1601,	3,	0,	X86ImpOpBase + 524,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x8000206fULL },  // Inst #18219 = WRPKRUr
     { 18218,	0,	0,	0,	8,	3,	0,	X86ImpOpBase + 524,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80002046ULL },  // Inst #18218 = WRMSRNS
-    { 18217,	0,	0,	0,	8,	3,	0,	X86ImpOpBase + 356,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80003046ULL },  // Inst #18217 = WRMSRLIST
+    { 18217,	0,	0,	0,	8,	3,	1,	X86ImpOpBase + 570,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x80003046ULL },  // Inst #18217 = WRMSRLIST
     { 18216,	0,	0,	0,	716,	3,	0,	X86ImpOpBase + 524,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1800002001ULL },  // Inst #18216 = WRMSR
     { 18215,	1,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	179,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5700023033ULL },  // Inst #18215 = WRGSBASE64
     { 18214,	1,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	202,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5700003033ULL },  // Inst #18214 = WRGSBASE
@@ -36425,7 +36425,7 @@ extern const X86InstrTable X86Descs = {
     { 2895,	0,	0,	0,	799,	1,	2,	X86ImpOpBase + 359,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1980002001ULL },  // Inst #2895 = RDPMC
     { 2894,	0,	0,	0,	1564,	1,	2,	X86ImpOpBase + 353,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x8000206eULL },  // Inst #2894 = RDPKRUr
     { 2893,	1,	1,	0,	1563,	0,	0,	X86ImpOpBase + 0,	179,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6380003037ULL },  // Inst #2893 = RDPID64
-    { 2892,	0,	0,	0,	8,	3,	0,	X86ImpOpBase + 356,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80003846ULL },  // Inst #2892 = RDMSRLIST
+    { 2892,	0,	0,	0,	8,	3,	1,	X86ImpOpBase + 570,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x80003846ULL },  // Inst #2892 = RDMSRLIST
     { 2891,	0,	0,	0,	701,	1,	2,	X86ImpOpBase + 353,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1900002001ULL },  // Inst #2891 = RDMSR
     { 2890,	1,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	179,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5700023031ULL },  // Inst #2890 = RDGSBASE64
     { 2889,	1,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	202,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5700003031ULL },  // Inst #2889 = RDGSBASE
@@ -40564,6 +40564,7 @@ extern const X86InstrTable X86Descs = {
     /* 556 */ X86::RDX, X86::RDI, X86::RAX, X86::RDI,
     /* 560 */ X86::DX, X86::RDI, X86::RCX, X86::RDI, X86::RCX,
     /* 565 */ X86::DX, X86::RSI, X86::RCX, X86::RSI, X86::RCX,
+    /* 570 */ X86::RSI, X86::RDI, X86::RCX, X86::RCX,
   }
 };
 

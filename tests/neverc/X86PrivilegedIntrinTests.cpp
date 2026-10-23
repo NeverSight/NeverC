@@ -51,10 +51,17 @@ TEST_F(X86PrivilegedIntrinTest, MsrIntrinsicsLowerCorrectly) {
   auto [rc, s] = compileToAsm(R"(
     unsigned __int64 read_msr(unsigned int addr) { return __readmsr(addr); }
     void write_msr(unsigned int addr, unsigned __int64 val) { __writemsr(addr, val); }
-  )", "msr");
+    void write_nonserializing(unsigned int addr, unsigned __int64 val) {
+      __builtin_ia32_wrmsrns(addr, val);
+    }
+    void clear_task_switched(void) { __builtin_ia32_clts(); }
+  )",
+                              "msr");
   ASSERT_EQ(rc, 0) << s;
   EXPECT_NE(s.find("rdmsr"), std::string::npos) << "expected rdmsr\n" << s;
   EXPECT_NE(s.find("wrmsr"), std::string::npos) << "expected wrmsr\n" << s;
+  EXPECT_NE(s.find("\twrmsrns"), std::string::npos) << s;
+  EXPECT_NE(s.find("\tclts"), std::string::npos) << s;
   EXPECT_EQ(s.find("#APP"), std::string::npos) << "intrinsic path must not use InlineAsm\n" << s;
 }
 
