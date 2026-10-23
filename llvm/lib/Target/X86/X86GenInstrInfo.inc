@@ -20856,7 +20856,7 @@ struct X86InstrTable {
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5420];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[574];
+  MCPhysReg ImplicitOps[617];
 };
 
 } // end namespace llvm
@@ -20872,12 +20872,12 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 extern const X86InstrTable X86Descs = {
   {
     { 18448,	2,	0,	0,	8,	0,	1,	X86ImpOpBase + 0,	5418,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18448 = WRITE_SYSREG64
-    { 18447,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 565,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000681ULL },  // Inst #18447 = REP_OUTSW_64
-    { 18446,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 565,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000701ULL },  // Inst #18446 = REP_OUTSL_64
-    { 18445,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 565,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3704000601ULL },  // Inst #18445 = REP_OUTSB_64
-    { 18444,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 560,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x3684000681ULL },  // Inst #18444 = REP_INSW_64
-    { 18443,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 560,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x3684000701ULL },  // Inst #18443 = REP_INSL_64
-    { 18442,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 560,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x3604000601ULL },  // Inst #18442 = REP_INSB_64
+    { 18447,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 611,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000681ULL },  // Inst #18447 = REP_OUTSW_64
+    { 18446,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 611,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3784000701ULL },  // Inst #18446 = REP_OUTSL_64
+    { 18445,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 611,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x3704000601ULL },  // Inst #18445 = REP_OUTSB_64
+    { 18444,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 605,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x3684000681ULL },  // Inst #18444 = REP_INSW_64
+    { 18443,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 605,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x3684000701ULL },  // Inst #18443 = REP_INSL_64
+    { 18442,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 605,	1,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x3604000601ULL },  // Inst #18442 = REP_INSB_64
     { 18441,	0,	0,	0,	2365,	0,	1,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80002056ULL },  // Inst #18441 = XTEST
     { 18440,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x80003868ULL },  // Inst #18440 = XSUSLDTRK
     { 18439,	0,	0,	0,	8,	2,	2,	X86ImpOpBase + 556,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5380002040ULL },  // Inst #18439 = XSTORE
@@ -36403,15 +36403,15 @@ extern const X86InstrTable X86Descs = {
     { 2919,	0,	0,	0,	721,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::Return)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Variadic)|(1ULL<<MCID::UnmodeledSideEffects), 0x6181c00101ULL },  // Inst #2919 = RET64
     { 2918,	0,	0,	0,	1403,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::Return)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::UnmodeledSideEffects), 0x6181c00081ULL },  // Inst #2918 = RET16
     { 2917,	1,	0,	0,	702,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::Return)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Variadic), 0x1c00000ULL },  // Inst #2917 = RET
-    { 2916,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 386,	1,	0|(1ULL<<MCID::MayStore), 0x5584000681ULL },  // Inst #2916 = REP_STOSW_64
-    { 2915,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 381,	1,	0|(1ULL<<MCID::MayStore), 0x5584020601ULL },  // Inst #2915 = REP_STOSQ_64
-    { 2914,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 381,	1,	0|(1ULL<<MCID::MayStore), 0x5584000701ULL },  // Inst #2914 = REP_STOSD_64
-    { 2913,	0,	0,	0,	78,	3,	2,	X86ImpOpBase + 376,	1,	0|(1ULL<<MCID::MayStore), 0x5504000601ULL },  // Inst #2913 = REP_STOSB_64
+    { 2916,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 587,	1,	0|(1ULL<<MCID::MayStore), 0x5584000681ULL },  // Inst #2916 = REP_STOSW_64
+    { 2915,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 599,	1,	0|(1ULL<<MCID::MayStore), 0x5584020601ULL },  // Inst #2915 = REP_STOSQ_64
+    { 2914,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 593,	1,	0|(1ULL<<MCID::MayStore), 0x5584000701ULL },  // Inst #2914 = REP_STOSD_64
+    { 2913,	0,	0,	0,	78,	4,	2,	X86ImpOpBase + 581,	1,	0|(1ULL<<MCID::MayStore), 0x5504000601ULL },  // Inst #2913 = REP_STOSB_64
     { 2912,	0,	0,	0,	78,	2,	1,	X86ImpOpBase + 367,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x798000000aULL },  // Inst #2912 = REP_PREFIX
-    { 2911,	0,	0,	0,	78,	3,	3,	X86ImpOpBase + 370,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5284000681ULL },  // Inst #2911 = REP_MOVSW_64
-    { 2910,	0,	0,	0,	78,	3,	3,	X86ImpOpBase + 370,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5284020601ULL },  // Inst #2910 = REP_MOVSQ_64
-    { 2909,	0,	0,	0,	78,	3,	3,	X86ImpOpBase + 370,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5284000701ULL },  // Inst #2909 = REP_MOVSD_64
-    { 2908,	0,	0,	0,	78,	3,	3,	X86ImpOpBase + 370,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5204000601ULL },  // Inst #2908 = REP_MOVSB_64
+    { 2911,	0,	0,	0,	78,	4,	3,	X86ImpOpBase + 574,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5284000681ULL },  // Inst #2911 = REP_MOVSW_64
+    { 2910,	0,	0,	0,	78,	4,	3,	X86ImpOpBase + 574,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5284020601ULL },  // Inst #2910 = REP_MOVSQ_64
+    { 2909,	0,	0,	0,	78,	4,	3,	X86ImpOpBase + 574,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5284000701ULL },  // Inst #2909 = REP_MOVSD_64
+    { 2908,	0,	0,	0,	78,	4,	3,	X86ImpOpBase + 574,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x5204000601ULL },  // Inst #2908 = REP_MOVSB_64
     { 2907,	0,	0,	0,	78,	2,	1,	X86ImpOpBase + 367,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x790000000aULL },  // Inst #2907 = REPNE_PREFIX
     { 2906,	0,	0,	0,	686,	0,	3,	X86ImpOpBase + 364,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80002079ULL },  // Inst #2906 = RDTSCP
     { 2905,	0,	0,	0,	861,	0,	2,	X86ImpOpBase + 362,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1880002001ULL },  // Inst #2905 = RDTSC
@@ -40568,6 +40568,13 @@ extern const X86InstrTable X86Descs = {
     /* 560 */ X86::DX, X86::RDI, X86::RCX, X86::RDI, X86::RCX,
     /* 565 */ X86::DX, X86::RSI, X86::RCX, X86::RSI, X86::RCX,
     /* 570 */ X86::RSI, X86::RDI, X86::RCX, X86::RCX,
+    /* 574 */ X86::RCX, X86::RDI, X86::RSI, X86::DF, X86::RCX, X86::RDI, X86::RSI,
+    /* 581 */ X86::AL, X86::RCX, X86::RDI, X86::DF, X86::RCX, X86::RDI,
+    /* 587 */ X86::AX, X86::RCX, X86::RDI, X86::DF, X86::RCX, X86::RDI,
+    /* 593 */ X86::EAX, X86::RCX, X86::RDI, X86::DF, X86::RCX, X86::RDI,
+    /* 599 */ X86::RAX, X86::RCX, X86::RDI, X86::DF, X86::RCX, X86::RDI,
+    /* 605 */ X86::DX, X86::RCX, X86::RDI, X86::DF, X86::RCX, X86::RDI,
+    /* 611 */ X86::DX, X86::RCX, X86::RSI, X86::DF, X86::RCX, X86::RSI,
   }
 };
 

@@ -327,7 +327,42 @@ If an instruction's `NumDefs` field in `X86GenInstrInfo.inc` is wrong, it
 causes segfaults during instruction emission. Example: VMWRITE64rr had
 `NumDefs=1` (wrong — vmwrite has no register output). Fixed to `NumDefs=0`.
 
-## REP Pseudo-Instructions (Port I/O String Ops)
+## Native REP String Operations
+
+The Microsoft `__movs*`, `__stos*`, `__in*string` and `__out*string` builtins
+and the 14 `__builtin_ia32_*` counterparts emit native LLVM intrinsics and
+one REP instruction. The dword move spelling is
+`__builtin_ia32_movsd_rep` / `llvm.x86.movsd.rep`, to distinguish it from
+scalar floating-point MOVSD. MOVS accepts a const source pointer; its builtin
+type must qualify the source element, not the preceding destination pointer.
+
+Memory-string counts are 64-bit in NeverC. String port I/O uses an unsigned
+32-bit count, zero-extended into RCX. These operations consume ambient DF;
+they do not introduce CLD/STD or change the platform ABI's DF requirements.
+The hardware instruction owns zero-count behavior, element order, overlapping
+accesses and fault/restart behavior. The API does not implement memcpy or
+memset, and does not expose partially completed machine state as a C return.
+
+`sync-x86-system-effects.py` maintains the pointer/count definitions, DF use,
+accumulator width and memory effects in the pruned instruction table. DF is a
+reserved architectural register, so the machine verifier can represent its
+ambient input. Port operations additionally have unmodeled I/O side effects.
+The full LLVM fork supplies the matching 64-bit APIs plus 32-bit-code-mode
+memory-string APIs with a `32` suffix; a mismatched code mode is rejected.
+
+`tests/verify-string-completion.py` runs MOVS/STOS in Unicorn against an
+independent sequential byte oracle. It covers O0/O2, every element width,
+zero/one/seven elements, both DF values, unaligned overlap, zero-count unmapped
+pointers, register preservation, and ordinary memory before/after the call.
+Controlled completions cover port I/O, full-width pointers/counts and garbage
+upper bits above the i32 port count. DF is changed at the instruction boundary
+and restored before C resumes. These checks do not execute host port I/O or
+qualify hardware fault/restart behavior.
+
+Run the script normally for NeverC, with `--spelling microsoft` for the
+Microsoft names, with `--llc /path/to/llc` for full-fork 32/64-bit IR, or with
+`--backend-llc /path/to/llc` for NeverC IR through the full fork. The current
+matrix has 544 cases per 64-bit route and 1,000 for the full fork.
 
 Port I/O string operations (`__inbytestring`, `__outbytestring`, etc.) are
 implemented via REP pseudo-instructions: `REP_INSB_64`, `REP_INSW_64`,
@@ -395,9 +430,10 @@ segfaults:**
 
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
-25 tests that compile C source to assembly and check for expected instruction
-mnemonics. Uses `compileToAsm()` helper with `--target=x86_64-pc-windows-msvc
--O2 -S`. Also verifies `#APP` (InlineAsm marker) is absent.
+28 tests cover native instruction emission, semantic regressions, builtin
+type/selector diagnostics and the absence of inline assembly. The
+`compileToAsm()` helper enables the machine verifier for the Windows x64
+target; tests exercise O0/O2 where optimization affects the contract.
 
 ### Unicorn binary verification ([`tests/verify-x86-intrin-binary.py`](tests/verify-x86-intrin-binary.py))
 

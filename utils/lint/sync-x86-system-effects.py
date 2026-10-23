@@ -40,6 +40,21 @@ EFFECTS = {
     "MOV64cr": (2, (), ("EFLAGS",), ()),
     "MOV64rd": (2, (), ("EFLAGS",), ()),
     "MOV64dr": (2, (), ("EFLAGS",), ()),
+    "REP_MOVSB_64": (0, ('RCX', 'RDI', 'RSI', 'DF'), ('RCX', 'RDI', 'RSI'), ('MayLoad', 'MayStore')),
+    "REP_MOVSW_64": (0, ('RCX', 'RDI', 'RSI', 'DF'), ('RCX', 'RDI', 'RSI'), ('MayLoad', 'MayStore')),
+    "REP_MOVSD_64": (0, ('RCX', 'RDI', 'RSI', 'DF'), ('RCX', 'RDI', 'RSI'), ('MayLoad', 'MayStore')),
+    "REP_MOVSQ_64": (0, ('RCX', 'RDI', 'RSI', 'DF'), ('RCX', 'RDI', 'RSI'), ('MayLoad', 'MayStore')),
+    "REP_STOSB_64": (0, ('AL', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_STOSW_64": (0, ('AX', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_STOSD_64": (0, ('EAX', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_STOSQ_64": (0, ('RAX', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_INSB_64": (0, ('DX', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_INSW_64": (0, ('DX', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_INSL_64": (0, ('DX', 'RCX', 'RDI', 'DF'), ('RCX', 'RDI'), ('MayStore',)),
+    "REP_OUTSB_64": (0, ('DX', 'RCX', 'RSI', 'DF'), ('RCX', 'RSI'), ('MayLoad',)),
+    "REP_OUTSW_64": (0, ('DX', 'RCX', 'RSI', 'DF'), ('RCX', 'RSI'), ('MayLoad',)),
+    "REP_OUTSL_64": (0, ('DX', 'RCX', 'RSI', 'DF'), ('RCX', 'RSI'), ('MayLoad',)),
+
 }
 
 
@@ -75,8 +90,11 @@ def synchronize(text):
         fields[5:8] = [str(len(uses)), str(len(definitions)), f"X86ImpOpBase + {offset}"]
         flags, encoding = fields[9].split(", ", 1)
         flags = re.sub(r"\|\(1ULL<<MCID::(?:MayLoad|MayStore|UnmodeledSideEffects)\)", "", flags)
+        # MOVS/STOS have their complete ordinary memory/register effects.
+        # Port I/O and the other system operations also have ambient effects.
+        side_effects = () if name.startswith(("REP_MOVS", "REP_STOS")) else ("UnmodeledSideEffects",)
         flags += "".join(f"|(1ULL<<MCID::{flag})" for flag in
-                         (*memory_effects, "UnmodeledSideEffects"))
+                         (*memory_effects, *side_effects))
         fields[9] = flags + ", " + encoding
         text = text[:match.start()] + match.group(1) + ",\t".join(fields) + \
             match.group(3) + text[match.end():]

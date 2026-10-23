@@ -375,6 +375,9 @@ BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   // Set the SIMD floating point control register as reserved.
   Reserved.set(X86::MXCSR);
 
+  // DF is ambient architectural state consumed by native string operations.
+  Reserved.set(X86::DF);
+
   // Architectural system registers are ambient state, never allocatable values.
   for (MCPhysReg Reg : X86::CONTROL_REGRegClass)
     Reserved.set(Reg);

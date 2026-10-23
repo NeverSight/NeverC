@@ -387,6 +387,44 @@ TEST_F(X86PrivilegedIntrinTest, RepStringOpsLowerCorrectly) {
   EXPECT_NE(s.find("stosq"), std::string::npos) << "expected stosq\n" << s;
 }
 
+TEST_F(X86PrivilegedIntrinTest, NativeStringInterfacesAcceptConstSources) {
+  constexpr const char *Source = R"(
+    #include <intrin.h>
+    #pragma clang diagnostic error "-Wincompatible-pointer-types-discards-qualifiers"
+    void strings(void *d, const void *s, unsigned long long n,
+                 unsigned long long value, unsigned short port) {
+      __movsb(d, s, n);
+      __movsw(d, s, n);
+      __movsd(d, s, n);
+      __movsq(d, s, n);
+      __builtin_ia32_movsb(d, s, n);
+      __builtin_ia32_movsw(d, s, n);
+      __builtin_ia32_movsd_rep(d, s, n);
+      __builtin_ia32_movsq(d, s, n);
+      __builtin_ia32_stosb(d, value, n);
+      __builtin_ia32_stosw(d, value, n);
+      __builtin_ia32_stosd(d, value, n);
+      __builtin_ia32_stosq(d, value, n);
+      __builtin_ia32_inbytestring(port, d, n);
+      __builtin_ia32_inwordstring(port, d, n);
+      __builtin_ia32_indwordstring(port, d, n);
+      __builtin_ia32_outbytestring(port, s, n);
+      __builtin_ia32_outwordstring(port, s, n);
+      __builtin_ia32_outdwordstring(port, s, n);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "native_strings", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Mnemonic :
+         {"movsb", "movsw", "movsd", "movsq", "stosb", "stosw", "stosd",
+          "stosq", "insb", "insw", "insd", "outsb", "outsw", "outsd"})
+      EXPECT_NE(Assembly.find(Mnemonic), std::string::npos) << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Port I/O string ops: inbytestring, outbytestring
 // ---------------------------------------------------------------------------

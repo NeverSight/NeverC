@@ -148,6 +148,22 @@ TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
 BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 
+// Native REP operations; counts are element counts, not byte lengths.
+BUILTIN(__builtin_ia32_movsb, "vv*vC*ULLi", "n")
+BUILTIN(__builtin_ia32_movsw, "vv*vC*ULLi", "n")
+BUILTIN(__builtin_ia32_movsd_rep, "vv*vC*ULLi", "n")
+BUILTIN(__builtin_ia32_movsq, "vv*vC*ULLi", "n")
+BUILTIN(__builtin_ia32_stosb, "vv*UcULLi", "n")
+BUILTIN(__builtin_ia32_stosw, "vv*UsULLi", "n")
+BUILTIN(__builtin_ia32_stosd, "vv*UiULLi", "n")
+BUILTIN(__builtin_ia32_stosq, "vv*ULLiULLi", "n")
+BUILTIN(__builtin_ia32_inbytestring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_inwordstring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_indwordstring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_outbytestring, "vUsvC*Ui", "n")
+BUILTIN(__builtin_ia32_outwordstring, "vUsvC*Ui", "n")
+BUILTIN(__builtin_ia32_outdwordstring, "vUsvC*Ui", "n")
+
 // Native processor-state effects. The list operations own their memory tables
 // and return the actual RCX completion mask.
 BUILTIN(__builtin_ia32_clts, "v", "n")

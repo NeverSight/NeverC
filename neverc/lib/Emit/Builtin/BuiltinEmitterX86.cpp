@@ -3106,34 +3106,42 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
         ME.getIntrinsic(Intrinsic::addressofreturnaddress, AllocaInt8PtrTy);
     return Builder.CreateCall(F);
   }
+  case X86::BI__builtin_ia32_movsb:
   case X86::BI__movsb: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsb,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_movsw:
   case X86::BI__movsw: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsw,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_movsd_rep:
   case X86::BI__movsd: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsd_rep,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_movsq:
   case X86::BI__movsq: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsq,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_stosb:
   case X86::BI__stosb: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosb,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_stosw:
   case X86::BI__stosw: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosw,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_stosd:
   case X86::BI__stosd: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosd,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_stosq:
   case X86::BI__stosq: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosq,
                                    {Ops[0], Ops[1], Ops[2]});
@@ -3162,26 +3170,32 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outdword,
                                    {Ops[0], Ops[1]});
   }
+  case X86::BI__builtin_ia32_inbytestring:
   case X86::BI__inbytestring: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_inbytestring,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_inwordstring:
   case X86::BI__inwordstring: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_inwordstring,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_indwordstring:
   case X86::BI__indwordstring: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_indwordstring,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_outbytestring:
   case X86::BI__outbytestring: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outbytestring,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_outwordstring:
   case X86::BI__outwordstring: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outwordstring,
                                    {Ops[0], Ops[1], Ops[2]});
   }
+  case X86::BI__builtin_ia32_outdwordstring:
   case X86::BI__outdwordstring: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outdwordstring,
                                    {Ops[0], Ops[1], Ops[2]});
