@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Append AMD system address-size pseudos without renumbering existing opcodes.
+"""Append system address-size pseudos without renumbering existing opcodes.
 
-The full fork owns these in X86InstrSVM.td and X86InstrMisc.td. They retain
-exact EAX/EDX/ECX inputs and effects until MC lowering adds the native 67.
+The full fork owns these in X86InstrSVM.td, X86InstrMisc.td and X86InstrVMX.td.
+They retain exact inputs and effects until MC lowering adds the native 67.
 There is no new assembler mnemonic or machine-code encoding.
 """
 
@@ -20,18 +20,21 @@ def module(name, filename):
 
 TABLES = module("tables", "sync-x86-amx-instructions.py")
 EFFECTS = module("effects", "sync-x86-system-effects.py")
-INSTRUCTIONS = tuple((op + "64_ADDR32", op + "64", None, None)
-                     for op in ("VMLOAD", "VMSAVE", "INVLPGA", "INVLPGB"))
+IMPLICIT = tuple(op + "64" for op in ("VMLOAD", "VMSAVE", "INVLPGA", "INVLPGB"))
+VMX = ("VMREAD64mr", "VMWRITE64rm", "INVEPT64", "INVVPID64",
+       "VMCLEARm", "VMPTRLDm", "VMPTRSTm", "VMXON")
+INSTRUCTIONS = tuple((op + "_ADDR32", op, None, None) for op in (*IMPLICIT, *VMX))
 
 
 def synchronize_table(text):
     overrides = {}
     for name, prototype, _, _ in INSTRUCTIONS:
-        uses = (("EAX", "EDX", "ECX") if prototype == "INVLPGB64" else
-                ("EAX", "ECX") if prototype == "INVLPGA64" else ("EAX",))
-        text, offset = EFFECTS.implicit_sequence(text, uses)
         fields = TABLES.descriptor(text, prototype)
-        fields[5:8] = [str(len(uses)), "0", f"X86ImpOpBase + {offset}"]
+        if prototype in IMPLICIT:
+            uses = (("EAX", "EDX", "ECX") if prototype == "INVLPGB64" else
+                    ("EAX", "ECX") if prototype == "INVLPGA64" else ("EAX",))
+            text, offset = EFFECTS.implicit_sequence(text, uses)
+            fields[5:8] = [str(len(uses)), "0", f"X86ImpOpBase + {offset}"]
         flags = fields[9].split(", ")[0]
         fields[9] = flags + "|(1ULL<<MCID::Pseudo), 0x0ULL"
         overrides[name] = fields

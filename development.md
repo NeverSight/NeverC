@@ -87,7 +87,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1572).
+   1580).
 
 ### How to update X86GenDAGISel.inc after enum changes
 
@@ -628,6 +628,67 @@ independent statuses, full-width values, memory barriers, saved registers and
 unmapped memory-source boundaries. `--llc` and `--backend-llc` select direct
 full-fork and NeverC-to-fork verification as above. Controlled completions test
 compiler transport; they do not establish hardware VMCS execution or faults.
+
+Explicit address APIs additionally preserve address-size and segment overrides:
+
+```c
+unsigned char __builtin_ia32_vmread_address(unsigned long long field,
+    unsigned long long offset, unsigned address_bits, unsigned segment_prefix);
+unsigned char __builtin_ia32_vmwrite_mem_address(unsigned long long field,
+    unsigned long long offset, unsigned address_bits, unsigned segment_prefix);
+unsigned char __builtin_ia32_invept_address(unsigned long long type,
+    unsigned long long offset, unsigned address_bits, unsigned segment_prefix);
+unsigned char __builtin_ia32_invvpid_address(unsigned long long type,
+    unsigned long long offset, unsigned address_bits, unsigned segment_prefix);
+unsigned char __builtin_ia32_vmclear_address(unsigned long long offset,
+    unsigned address_bits, unsigned segment_prefix);
+unsigned char __builtin_ia32_vmptrld_address(unsigned long long offset,
+    unsigned address_bits, unsigned segment_prefix);
+void __builtin_ia32_vmptrst_address(unsigned long long offset,
+    unsigned address_bits, unsigned segment_prefix);
+unsigned char __builtin_ia32_vmxon_address(unsigned long long offset,
+    unsigned address_bits, unsigned segment_prefix);
+```
+
+The last two arguments must be compile-time constants. NeverC accepts address
+width 32 or 64, and segment prefix 0 (native DS default), `0x26` (ES), `0x2e`
+(CS), `0x36` (SS), `0x3e` (DS), `0x64` (FS) or `0x65` (GS). These are actual
+prefix bytes, not LLVM address-space numbers. Native mode and segment rules
+apply, including ignored CS/DS/ES/SS bases in long mode. The integer offset is
+truncated before segment-base addition; lowering fixes the base to BX/EBX/RBX
+so the zero-prefix form cannot accidentally select SS through BP/SP allocation.
+The instruction owns memory access, privilege checks, VMfail and fault order.
+VMREAD still writes only on success. VMPTRST writes m64 in both code modes;
+VMCLEAR/VMPTRLD/VMXON read m64, and INVEPT/INVVPID read m128. Other than VMPTRST,
+the APIs return the same 0/1/2 completion status above.
+
+Native IR names use `.address`, for example `llvm.x86.vmread.address` and
+`llvm.x86.vmwrite.mem.address`. The full LLVM fork also provides `.address32`
+forms with natural i32 selector/offset arguments and address width 16 or 32.
+Wrong-code-mode and code16 use fail explicitly. These APIs emit legacy VMX
+encodings; forcing EVEX/APX remains a separate encoding contract.
+`X86NativeMemoryAddress.h` owns the width/prefix validation in both LLVM trees,
+and the native-intrinsic synchronizer owns the signatures and per-argument
+`immarg` attributes. Narrow addressing uses dedicated machine pseudos with
+normal pointer register classes and native memory/EFLAGS effects. MC lowering
+selects EBX (or BX in the full fork's i386 route) for the actual address.
+`sync-x86-system-address-instructions.py` appends these eight NeverC opcodes
+without renumbering existing IDs. Repeated or discarded calls retain effects.
+
+Run `tests/verify-vmx-address-completion.py` with the same `--compiler`, `--llc`
+and `--backend-llc` routes above. It checks all address-width/prefix choices,
+three object formats, assembly round trips, all VMX completions, full-width
+selectors, preserved live inputs/callee-saved registers, repeated and discarded
+results, memory ordering and unmapped operand boundaries at O0/O2. Direct LLVM
+O2 cases run the IR optimizer as well as code generation. On Linux x86-64 the
+C routes compare real CPL3 faults against independent raw-byte oracles.
+Controlled segment-base addition verifies transport only; descriptor validation
+and successful VMX operation still require a suitable execution environment.
+The current matrix passes 8,416 direct full-LLVM checks and 4,208 checks on
+each C route, with 896 real CPL3 fault boundaries per C route. All 58 focused
+compiler tests, 81 binary checks, 29 generator tests and 12 plugin checks pass;
+the overload bitmap has no mismatches. The x86 schema retains all 18,495 prior
+opcode records unchanged and appends eight address-size pseudos (18,503 total).
 
 ### TSX (xbegin, xabort, xend, xtest)
 

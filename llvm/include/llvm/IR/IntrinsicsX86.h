@@ -1040,6 +1040,7 @@ enum X86Intrinsics : unsigned {
     x86_int2c,                                       // llvm.x86.int2c
     x86_invd,                                        // llvm.x86.invd
     x86_invept,                                      // llvm.x86.invept
+    x86_invept_address,                              // llvm.x86.invept.address
     x86_invlpg,                                      // llvm.x86.invlpg
     x86_invlpga,                                     // llvm.x86.invlpga
     x86_invlpga_addr32,                              // llvm.x86.invlpga.addr32
@@ -1047,6 +1048,7 @@ enum X86Intrinsics : unsigned {
     x86_invlpgb_addr32,                              // llvm.x86.invlpgb.addr32
     x86_invpcid,                                     // llvm.x86.invpcid
     x86_invvpid,                                     // llvm.x86.invvpid
+    x86_invvpid_address,                             // llvm.x86.invvpid.address
     x86_inword,                                      // llvm.x86.inword
     x86_inwordstring,                                // llvm.x86.inwordstring
     x86_lar_mem16,                                   // llvm.x86.lar.mem16
@@ -1485,21 +1487,27 @@ enum X86Intrinsics : unsigned {
     x86_vgf2p8mulb_256,                              // llvm.x86.vgf2p8mulb.256
     x86_vgf2p8mulb_512,                              // llvm.x86.vgf2p8mulb.512
     x86_vmclear,                                     // llvm.x86.vmclear
+    x86_vmclear_address,                             // llvm.x86.vmclear.address
     x86_vmfunc_eptp_switch,                          // llvm.x86.vmfunc.eptp.switch
     x86_vmlaunch,                                    // llvm.x86.vmlaunch
     x86_vmload,                                      // llvm.x86.vmload
     x86_vmload_addr32,                               // llvm.x86.vmload.addr32
     x86_vmptrld,                                     // llvm.x86.vmptrld
+    x86_vmptrld_address,                             // llvm.x86.vmptrld.address
     x86_vmptrst,                                     // llvm.x86.vmptrst
+    x86_vmptrst_address,                             // llvm.x86.vmptrst.address
     x86_vmread,                                      // llvm.x86.vmread
+    x86_vmread_address,                              // llvm.x86.vmread.address
     x86_vmread_reg,                                  // llvm.x86.vmread.reg
     x86_vmresume,                                    // llvm.x86.vmresume
     x86_vmsave,                                      // llvm.x86.vmsave
     x86_vmsave_addr32,                               // llvm.x86.vmsave.addr32
     x86_vmwrite,                                     // llvm.x86.vmwrite
     x86_vmwrite_mem,                                 // llvm.x86.vmwrite.mem
+    x86_vmwrite_mem_address,                         // llvm.x86.vmwrite.mem.address
     x86_vmxoff,                                      // llvm.x86.vmxoff
     x86_vmxon,                                       // llvm.x86.vmxon
+    x86_vmxon_address,                               // llvm.x86.vmxon.address
     x86_vsha512msg1,                                 // llvm.x86.vsha512msg1
     x86_vsha512msg2,                                 // llvm.x86.vsha512msg2
     x86_vsha512rnds2,                                // llvm.x86.vsha512rnds2

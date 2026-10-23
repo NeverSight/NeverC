@@ -3623,6 +3623,30 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_reg64);
   case X86::BI__builtin_ia32_lsl_mem64:
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem64);
+  case X86::BI__builtin_ia32_vmread_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmread_address),
+                              Ops);
+  case X86::BI__builtin_ia32_vmwrite_mem_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_vmwrite_mem_address), Ops);
+  case X86::BI__builtin_ia32_invept_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_invept_address),
+                              Ops);
+  case X86::BI__builtin_ia32_invvpid_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_invvpid_address),
+                              Ops);
+  case X86::BI__builtin_ia32_vmclear_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmclear_address),
+                              Ops);
+  case X86::BI__builtin_ia32_vmptrld_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmptrld_address),
+                              Ops);
+  case X86::BI__builtin_ia32_vmptrst_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmptrst_address),
+                              Ops);
+  case X86::BI__builtin_ia32_vmxon_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmxon_address),
+                              Ops);
   case X86::BI__builtin_ia32_vmread_reg:
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_vmread_reg);
   case X86::BI__builtin_ia32_vmwrite_mem:

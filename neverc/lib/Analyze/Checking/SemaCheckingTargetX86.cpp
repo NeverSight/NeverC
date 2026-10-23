@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/IR/X86SmxIntrinsics.h"
 #include "llvm/Support/raw_ostream.h"
@@ -542,6 +543,27 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   switch (BuiltinID) {
   case X86::BI__builtin_ia32_int:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
+  case X86::BI__builtin_ia32_vmread_address:
+  case X86::BI__builtin_ia32_vmwrite_mem_address:
+  case X86::BI__builtin_ia32_invept_address:
+  case X86::BI__builtin_ia32_invvpid_address:
+  case X86::BI__builtin_ia32_vmclear_address:
+  case X86::BI__builtin_ia32_vmptrld_address:
+  case X86::BI__builtin_ia32_vmptrst_address:
+  case X86::BI__builtin_ia32_vmxon_address: {
+    const unsigned WidthArgument = TheCall->getNumArgs() - 2;
+    llvm::APSInt Width, Prefix;
+    if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
+        SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Prefix))
+      return true;
+    if (llvm::X86::isNativeMemoryAddressWidth(true, Width.getZExtValue()) &&
+        llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+      return false;
+    return Diag(TheCall->getBeginLoc(),
+                diag::err_x86_builtin_invalid_memory_address)
+           << TheCall->getArg(WidthArgument)->getSourceRange()
+           << TheCall->getArg(WidthArgument + 1)->getSourceRange();
+  }
   case X86::BI__builtin_ia32_getsec_bounded: {
     llvm::APSInt Control;
     if (SemaBuiltinConstantArg(TheCall, 0, Control))

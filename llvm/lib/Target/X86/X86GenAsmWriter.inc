@@ -20361,6 +20361,14 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMSAVE64_ADDR32
     0U,	// INVLPGA64_ADDR32
     0U,	// INVLPGB64_ADDR32
+    0U,	// VMREAD64mr_ADDR32
+    0U,	// VMWRITE64rm_ADDR32
+    0U,	// INVEPT64_ADDR32
+    0U,	// INVVPID64_ADDR32
+    0U,	// VMCLEARm_ADDR32
+    0U,	// VMPTRLDm_ADDR32
+    0U,	// VMPTRSTm_ADDR32
+    0U,	// VMXON_ADDR32
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38859,6 +38867,14 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMSAVE64_ADDR32
     0U,	// INVLPGA64_ADDR32
     0U,	// INVLPGB64_ADDR32
+    0U,	// VMREAD64mr_ADDR32
+    0U,	// VMWRITE64rm_ADDR32
+    0U,	// INVEPT64_ADDR32
+    0U,	// INVVPID64_ADDR32
+    0U,	// VMCLEARm_ADDR32
+    0U,	// VMPTRLDm_ADDR32
+    0U,	// VMPTRSTm_ADDR32
+    0U,	// VMXON_ADDR32
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57357,6 +57373,14 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMSAVE64_ADDR32
     0U,	// INVLPGA64_ADDR32
     0U,	// INVLPGB64_ADDR32
+    0U,	// VMREAD64mr_ADDR32
+    0U,	// VMWRITE64rm_ADDR32
+    0U,	// INVEPT64_ADDR32
+    0U,	// INVVPID64_ADDR32
+    0U,	// VMCLEARm_ADDR32
+    0U,	// VMPTRLDm_ADDR32
+    0U,	// VMPTRSTm_ADDR32
+    0U,	// VMXON_ADDR32
 };
 
   // Emit the opcode for the instruction.

@@ -345,6 +345,19 @@ static unsigned convertTailJumpOpcode(unsigned Opcode) {
   return Opcode;
 }
 
+// The machine phase retains the target pointer register class. Only the
+// final address encoding uses the narrower registers (and therefore native
+// 67 prefix). No standalone prefix or separate memory operation is emitted.
+static void lowerVMXAddressOverride(MCInst &Inst, unsigned Opcode,
+                                    unsigned BaseIndex, unsigned AddressBits) {
+  Inst.setOpcode(Opcode);
+  for (unsigned Index : {BaseIndex, BaseIndex + 2}) {
+    auto &Operand = Inst.getOperand(Index);
+    if (Operand.getReg())
+      Operand.setReg(getX86SubSuperRegister(Operand.getReg(), AddressBits));
+  }
+}
+
 void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   OutMI.setOpcode(MI->getOpcode());
 
@@ -443,6 +456,30 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
     assert(OutMI.getNumOperands() == X86::AddrNumOperands &&
            "Unexpected number of operands!");
     OutMI.setOpcode(convertTailJumpOpcode(OutMI.getOpcode()));
+    break;
+  case X86::VMREAD64mr_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::VMREAD64mr, 0, 32);
+    break;
+  case X86::VMWRITE64rm_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::VMWRITE64rm, 1, 32);
+    break;
+  case X86::INVEPT64_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::INVEPT64, 1, 32);
+    break;
+  case X86::INVVPID64_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::INVVPID64, 1, 32);
+    break;
+  case X86::VMCLEARm_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::VMCLEARm, 0, 32);
+    break;
+  case X86::VMPTRLDm_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::VMPTRLDm, 0, 32);
+    break;
+  case X86::VMPTRSTm_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::VMPTRSTm, 0, 32);
+    break;
+  case X86::VMXON_ADDR32:
+    lowerVMXAddressOverride(OutMI, X86::VMXON, 0, 32);
     break;
   case X86::VMLOAD64_ADDR32:
     OutMI.setOpcode(X86::VMLOAD64);

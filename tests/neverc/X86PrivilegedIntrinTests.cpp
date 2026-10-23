@@ -775,6 +775,80 @@ TEST_F(X86PrivilegedIntrinTest, SgxBoundedUserRejectsUnownedContinuations) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, VmxExplicitAddressesKeepWidthAndSegment) {
+  for (unsigned Width : {32, 64})
+    for (const auto &[Prefix, Segment] : {std::pair{0, ""},
+                                          {0x26, "es:"},
+                                          {0x2e, "cs:"},
+                                          {0x36, "ss:"},
+                                          {0x3e, "ds:"},
+                                          {0x64, "fs:"},
+                                          {0x65, "gs:"}}) {
+      SCOPED_TRACE(Width);
+      SCOPED_TRACE(Prefix);
+      std::string Source;
+      for (const char *Name : {"vmread", "vmwrite_mem", "invept", "invvpid",
+                               "vmclear", "vmptrld", "vmptrst", "vmxon"}) {
+        const bool Selector = std::string(Name) == "vmread" ||
+                              std::string(Name) == "vmwrite_mem" ||
+                              std::string(Name) == "invept" ||
+                              std::string(Name) == "invvpid";
+        const bool Void = std::string(Name) == "vmptrst";
+        Source += std::string(Void ? "void " : "unsigned char ") + Name +
+                  "(unsigned long long field, unsigned long long offset) {" +
+                  (Void ? "" : "return ") + "__builtin_ia32_" + Name +
+                  "_address(" + (Selector ? "field," : "") + "offset," +
+                  std::to_string(Width) + "," + std::to_string(Prefix) +
+                  ");}\n";
+      }
+      for (const char *Opt : {"-O0", "-O2"}) {
+        auto [RC, Assembly] = compileToAsm(Source.c_str(), "vmx_address", Opt);
+        ASSERT_EQ(RC, 0) << Assembly;
+        for (const char *Mnemonic : {"vmread", "vmwrite", "invept", "invvpid",
+                                     "vmclear", "vmptrld", "vmptrst", "vmxon"})
+          EXPECT_TRUE(std::regex_search(
+              Assembly, std::regex(std::string("\\t") + Mnemonic + "[ql]?\\t")))
+              << Assembly;
+        EXPECT_NE(Assembly.find(std::string(Segment) +
+                                (Width == 64 ? "[rbx]" : "[ebx]")),
+                  std::string::npos)
+            << Assembly;
+        EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+      }
+    }
+}
+
+TEST_F(X86PrivilegedIntrinTest, VmxExplicitAddressesRejectInvalidControls) {
+  for (const auto &[Width, Segment] : {std::pair{"width", "0"},
+                                       {"64", "segment"},
+                                       {"0", "0"},
+                                       {"16", "0"},
+                                       {"128", "0"},
+                                       {"-1", "0"},
+                                       {"64", "1"},
+                                       {"64", "0x67"},
+                                       {"32", "0xf0"},
+                                       {"32", "-1"}})
+    for (bool Selector : {false, true}) {
+      SCOPED_TRACE(Width);
+      SCOPED_TRACE(Segment);
+      SCOPED_TRACE(Selector);
+      const std::string Source =
+          "void probe(unsigned width, unsigned segment) {" +
+          std::string(Selector ? "__builtin_ia32_vmread_address(0,0,"
+                               : "__builtin_ia32_vmptrst_address(0,") +
+          Width + "," + Segment + ");}";
+      auto [RC, Error] = compileToAsm(Source.c_str(), "vmx_bad_address");
+      EXPECT_NE(RC, 0) << Error;
+      EXPECT_NE(Error.find(std::string(Width) == "width" ||
+                                   std::string(Segment) == "segment"
+                               ? "constant"
+                               : "native memory addressing"),
+                std::string::npos)
+          << Error;
+    }
+}
+
 TEST_F(X86PrivilegedIntrinTest, SmxBoundedLeavesUseNativeRegisterTransport) {
   for (unsigned Leaf : {0, 6, 7, 8}) {
     SCOPED_TRACE(Leaf);

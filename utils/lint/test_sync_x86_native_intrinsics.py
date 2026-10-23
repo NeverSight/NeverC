@@ -42,6 +42,24 @@ class NativeSignaturesTest(unittest.TestCase):
     def test_checked_in_native_schema_is_synchronized(self):
         NATIVE.synchronize(False)
 
+    def test_address_controls_have_distinct_immediate_positions(self):
+        first, initial = NATIVE.immediate_arguments_attribute(self.impl, (1, 2))
+        second, updated = NATIVE.immediate_arguments_attribute(initial, (2, 3))
+        self.assertNotEqual(first, second)
+        self.assertEqual(updated, self.impl)
+        for indices, recipe in (((1, 2), first), ((2, 3), second)):
+            body = updated.split(f"    case {recipe}: {{\n", 1)[1].split("    }", 1)[0]
+            for position, argument in enumerate(indices):
+                self.assertIn(f"AS[{position}] = {{{argument + 1}, getIntrinsicArgAttributeSet(C, 0)}}", body)
+            self.assertIn("getIntrinsicFnAttributeSet(C, 7)", body)
+
+    def test_new_immediate_recipes_do_not_reuse_an_existing_recipe_id(self):
+        first, initial = NATIVE.immediate_arguments_attribute(self.impl, (4, 5))
+        second, updated = NATIVE.immediate_arguments_attribute(initial, (5, 6))
+        self.assertNotEqual(first, second)
+        self.assertEqual(NATIVE.immediate_arguments_attribute(updated, (4, 5)),
+                         (first, updated))
+
 
 if __name__ == "__main__":
     unittest.main()

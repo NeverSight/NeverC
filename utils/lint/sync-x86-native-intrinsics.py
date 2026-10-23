@@ -75,6 +75,13 @@ FIRST_IMMEDIATE_SIGNATURES = {
     "enclu_bounded": ("STRUCT5", "I64", "I64", "I64", "I64", "I8",
                        "I64", "I64", "I64", "I64"),
 }
+ADDRESS_SIGNATURES = {
+    **{name + "_address": (("I8", "I64", "I64", "I32", "I32"), (2, 3))
+       for name in ("vmread", "vmwrite_mem", "invept", "invvpid")},
+    **{name + "_address": (("I8", "I64", "I32", "I32"), (1, 2))
+       for name in ("vmclear", "vmptrld", "vmxon")},
+    "vmptrst_address": (("Done", "I64", "I32", "I32"), (1, 2)),
+}
 AMX_SIGNATURES = {
     **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")
        for name in ("tdpbf8ps", "tdpbhf8ps", "tdphbf8ps", "tdphf8ps", "tmmultf32ps")},
@@ -95,17 +102,21 @@ for suffix, result in (("tcvtrowd2ps", ("V16", "F32")),
             ROW_IMMEDIATES.add(name)
 
 
-def immediate_pair_attribute(impl, attributes):
-    # The existing tile-load recipe owns arg0's ImmArg and conservative
-    # function effects. Row-immediate APIs additionally require arg1 constant.
-    body = ("      AS[0] = {1, getIntrinsicArgAttributeSet(C, 0)};\n"
-            "      AS[1] = {2, getIntrinsicArgAttributeSet(C, 0)};\n"
-            "      AS[2] = {AttributeList::FunctionIndex, getIntrinsicFnAttributeSet(C, 7)};\n"
-            "      NumAttrs = 3;\n      break;\n    }\n")
-    existing = re.search(r"    case (\d+): \{\n" + re.escape(body), impl)
+def immediate_arguments_attribute(impl, indices):
+    # Preserve conservative instruction effects and add only these ImmArg
+    # positions. AttributeList uses one-based parameter indices.
+    body = "".join(f"      AS[{i}] = {{{arg + 1}, getIntrinsicArgAttributeSet(C, 0)}};\n"
+                   for i, arg in enumerate(indices))
+    body += (f"      AS[{len(indices)}] = {{AttributeList::FunctionIndex, "
+             "getIntrinsicFnAttributeSet(C, 7)};\n"
+             f"      NumAttrs = {len(indices) + 1};\n      break;\n    }}\n")
+    start = impl.index("switch(IntrinsicsToAttributesMap[id - 1])")
+    end = impl.index("return AttributeList::get", start)
+    recipes = impl[start:end]
+    existing = re.search(r"    case (\d+): \{\n" + re.escape(body), recipes)
     if existing:
         return existing.group(1), impl
-    index = max(int(value) for value, _ in attributes) + 1
+    index = max(int(value) for value in re.findall(r"    case (\d+): \{", recipes)) + 1
     anchor = "    case 108: {\n"
     if impl.count(anchor) != 1:
         raise ValueError("expected one conservative immediate-argument recipe")
@@ -160,15 +171,23 @@ def synchronize(write):
         raise ValueError("the VMREAD signature must not be overloaded")
     additions = []
     cpp_names = dict(enum_entries)
-    immediate_pair, updated_impl = immediate_pair_attribute(impl, attributes)
+    immediate_pair, updated_impl = immediate_arguments_attribute(impl, (0, 1))
+    address_attributes = {}
+    for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
+        attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
+        address_attributes[indices] = attribute
     declarations = {suffix: (signature, PROTOTYPE)
                     for suffix, signature in DECLARATIONS.items()}
     declarations.update(AMX_SIGNATURES)
+    declarations.update({suffix: (signature, PROTOTYPE)
+                         for suffix, (signature, _) in ADDRESS_SIGNATURES.items()})
     declarations.update({suffix: (signature, "llvm.x86.int")
                          for suffix, signature in FIRST_IMMEDIATE_SIGNATURES.items()})
     for suffix, (signature, prototype) in declarations.items():
         source = names.index(prototype)
         attribute = immediate_pair if suffix in ROW_IMMEDIATES else attributes[source][0]
+        if suffix in ADDRESS_SIGNATURES:
+            attribute = address_attributes[ADDRESS_SIGNATURES[suffix][1]]
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

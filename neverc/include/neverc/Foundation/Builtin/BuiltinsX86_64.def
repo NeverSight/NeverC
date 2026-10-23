@@ -253,6 +253,17 @@ BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 // VMWRITE owns the source memory access, including privilege/fault ordering.
 BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
 
+// Integer offsets, explicit address width and architectural segment-prefix bytes.
+BUILTIN(__builtin_ia32_vmread_address, "UcULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmwrite_mem_address, "UcULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_invept_address, "UcULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_invvpid_address, "UcULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmclear_address, "UcULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmptrld_address, "UcULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmptrst_address, "vULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmxon_address, "UcULLiIUiIUi", "n")
+
+
 // Native REP operations; counts are element counts, not byte lengths.
 BUILTIN(__builtin_ia32_movsb, "vv*vC*ULLi", "n")
 BUILTIN(__builtin_ia32_movsw, "vv*vC*ULLi", "n")
