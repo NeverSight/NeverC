@@ -1,30 +1,30 @@
 {
-  "producer_commit": "9aaad66c266936875c5cdc86d33ed5dcc08cb829",
-  "producer_run_id": 39837774188,
-  "producer_job_id": 120030507169,
+  "producer_commit": "2135deecd394261dba4ec47b741a3f2f46bad8a2",
+  "producer_run_id": 39886327020,
+  "producer_job_id": 120195244240,
   "producer_attempt": 1,
-  "producer_report_sha256": "247d26a470b0703eb17c349b8cf1a98f348de8321dc29fd6a3045dbc02f36b3d",
-  "producer_validation_receipt_sha256": "a9b8a932bffd7f9598bf233e081838ab0994f042267929722d0f67fe514e0bb6",
+  "producer_report_sha256": "532bbb1143b93f1fb518542eb74b4c7b531aad2057064b78f4890fd5c4e89002",
+  "producer_validation_receipt_sha256": "e11c16c8706475d6b115576cab320024c8797cb1de34a6c23e3bb1f0ae83cd50",
   "producer_small_artifact": {
-    "id": 12452308468,
-    "name": "cpp-not-fn-pointer-default-clean216-9aaad66c266936875c5cdc86d33ed5dcc08cb829",
-    "digest": "sha256:93ef173dd4cfe02603cf2c29b995a94e0358d6d1ed7253bc7f111987cda23e04"
+    "id": 12472394457,
+    "name": "cpp-not-fn-custom-negation-clean240-2135deecd394261dba4ec47b741a3f2f46bad8a2",
+    "digest": "sha256:a207c04367614f42cef09079fe8866f928c928cec228585d1013d2be501923d2"
   },
   "producer_binary_artifact": {
-    "id": 12452906222,
-    "name": "cpp-not-fn-pointer-default-clean216-binary-remote-only-9aaad66c266936875c5cdc86d33ed5dcc08cb829",
-    "digest": "sha256:1da7b2a9723d5c53aa05fceaa9c53dfd52bcfad0a6ee937fda50498c533b53dc"
+    "id": 12473625487,
+    "name": "cpp-not-fn-custom-negation-clean240-binary-remote-only-2135deecd394261dba4ec47b741a3f2f46bad8a2",
+    "digest": "sha256:db2e19b9b63781813d475ac3bfb1dd98918e8936d3a58bf56326fbec77fbce9d"
   },
-  "executable_sha256": "1da93aef79a5984c395bd604cbb395774b650d6cd705e10cc73d87e8adcf2253",
-  "executable_bytes": 79983936,
-  "frontend_build_id": "cpp-frontend-1-11417c1ca15810853eaa47e48277951e37a81618b9edd3a2381ad2ece536ba5a",
+  "executable_sha256": "b3a79658d79962b271a9eb75fd08490eedf7abbff67ee2cc575f4f2fe8019448",
+  "executable_bytes": 79998912,
+  "frontend_build_id": "cpp-frontend-1-fcbc6085b0d2bb7af24c83541c8f269b7bec898a1bec9615248aafe3a4a6c261",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "89bf7cb9d96089060a395fdf6dc6c5811abbc4875c629aec9b7738921a448bb7",
-    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Frontend.cpp": "c3b3602d29dd605d577e1c1d343d771f4b4079b01fadea47427646a69de40698",
+    "Lowering.cpp": "e5a63275c895f98201b9b2a062b6439c83e3619498020122ac8e2196c6c9dfed",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "d13f5498211e9844d2dba23e61e60b0310b7534cb585d71dd4f08259cbfa0464",
+    "MathSDK.cpp": "f9a84e15dc33926501fd82b25e419383ebf2618654626b1198b14956007237f8",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "ab65f87dc78ecc8950ae982c270e9a0ec6c57c2664483a412023028b6309ee5f",
+    "Frontend.h": "b45ab3e8ed32d3d82b79cc42aab95eea638f3b95bb3e85d22808f3850850c418",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -39,7 +39,7 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "clean_source_basis": "da5e310067660bfe1cc643e62c01b9fb7ce4da2c",
+  "clean_source_basis": "4be381c48b812fb72be5aea7595ef103a7ac4a70",
   "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
   "original_combined_revision": "831f0a6a5b201ca85daf9a6e499197dccaa14991",
   "original_combined_plan": "utils/ci/cpp-ordinary-selected-call-plan.json",
@@ -643,7 +643,7 @@
       "category": "runtime",
       "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
       "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
-      "expected": "reject",
+      "expected": "accept",
       "original_name": "not-fn-custom-negation-result"
     },
     {
@@ -800,9 +800,9 @@
     }
   ],
   "required_requests": 808,
-  "required_acceptances": 584,
+  "required_acceptances": 592,
   "required_sdk_guards": 160,
-  "required_unsupported_refusals": 56,
+  "required_unsupported_refusals": 48,
   "required_failed_substitutions": 8,
   "required_pair_subset_requests": 600,
   "required_pair_subset_acceptances": 520,
@@ -819,15 +819,19 @@
     ".github/workflows/diagnose-cpp-template-source.yml"
   ],
   "changed_expectations_only_for_already_verified_source_positives": [
+    "ordinary-source-not-fn-custom-negation-result",
     "ordinary-source-not-fn-function-pointer",
     "ordinary-source-not-fn-reference-arguments",
     "ordinary-source-not-fn-signature-queries"
   ],
-  "actual_formal129_commit": "c7380d1eb2816137d96f997f14b8de8be32f9749",
-  "actual_formal129_run_id": 39840122764,
-  "actual_formal129_job_id": 120038634795,
-  "actual_formal129_run_attempt": 1,
-  "actual_formal129_artifact_id": 12453793064,
-  "actual_formal129_proof_sha256": "dbe4eab845cfa25e444ebd7c367b01db56ee7e0b4d945a99b69d1448d1efd5b9",
-  "actual_formal129_report_sha256": "71bd82edadc9c5b9f304cfd1ffefb833a77c230587e7023ab1dfa9b4e2c996cd"
+  "required_actual_producer_requests": 240,
+  "original_tested_runner_sha256": "53d58e7b01b1a920cdde657642022c1f9ad52c1692f5b25f767e1f755aca2f1b",
+  "actual240_runner_sha256": "26d764cac94c7f3165748fc7351d7077e6e6e2b39b92547ba82bc399034fd95f",
+  "actual_formal130_commit": "d1de92bfd1bec6dbcaa88a593640bc671bf64181",
+  "actual_formal130_run_id": 39889472750,
+  "actual_formal130_job_id": 120205499167,
+  "actual_formal130_run_attempt": 1,
+  "actual_formal130_artifact_id": 12475195437,
+  "actual_formal130_proof_sha256": "a7d371fb912217f38de432e3712bc39ac51f3d93649c3f59faf2717d67aa1e88",
+  "actual_formal130_report_sha256": "1a4088e793369b8fd720dcd467ba5f9c536997a63739b38bc56a464dbf27a5fc"
 }

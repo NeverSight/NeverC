@@ -21,7 +21,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
-        cls.additions = (ROOT / 'utils/ci/not-fn-pointer-five-formal-additions.cpp').read_bytes()
+        cls.additions = (ROOT / 'utils/ci/not-fn-pointer-six-formal-additions.cpp').read_bytes()
         cls.original = cls.adapter.restore_original_gtests(cls.registered, cls.additions)
 
     def test_restores_the_exact_original_7493_source(self):
@@ -40,7 +40,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         self.assertEqual(actual_proof, proof)
         self.assertEqual(proof['original_test_names'], 7493)
         self.assertEqual(proof['selected_count'], 124)
-        self.assertEqual((actual + self.additions).count(b'TEST_F('), 129)
+        self.assertEqual((actual + self.additions).count(b'TEST_F('), 130)
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.registered, selected)
 
@@ -52,12 +52,27 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                          self.adapter.FOUR_REGISTERED_SOURCE_SHA256)
         self.assertEqual(self.adapter.restore_original_gtests(registered_four, four), self.original)
 
-    def test_rejects_mismatched_four_and_five_registration(self):
-        four = (ROOT / 'utils/ci/not-fn-pointer-four-formal-additions.cpp').read_bytes()
-        with self.assertRaises(AssertionError):
-            self.adapter.restore_original_gtests(self.registered, four)
-        with self.assertRaises(AssertionError):
-            self.adapter.restore_original_gtests(self.original + four, self.additions)
+    def test_preserves_archived_five_test_replay(self):
+        five = (ROOT / 'utils/ci/not-fn-pointer-five-formal-additions.cpp').read_bytes()
+        self.assertTrue(self.additions.startswith(five + b'\n'))
+        registered_five = self.original + five
+        self.assertEqual(hashlib.sha256(registered_five).hexdigest(),
+                         self.adapter.FIVE_REGISTERED_SOURCE_SHA256)
+        self.assertEqual(self.adapter.restore_original_gtests(registered_five, five), self.original)
+
+    def test_rejects_mismatched_registered_suffix_versions(self):
+        suffixes = [(ROOT / ('utils/ci/not-fn-pointer-' + version + '-formal-additions.cpp')).read_bytes()
+                    for version in ['four', 'five', 'six']]
+        for source_suffix in suffixes:
+            for supplied_suffix in suffixes:
+                with self.subTest(source=hashlib.sha256(source_suffix).hexdigest(),
+                                  supplied=hashlib.sha256(supplied_suffix).hexdigest()):
+                    source = self.original + source_suffix
+                    if source_suffix == supplied_suffix:
+                        self.assertEqual(self.adapter.restore_original_gtests(source, supplied_suffix), self.original)
+                    else:
+                        with self.assertRaises(AssertionError):
+                            self.adapter.restore_original_gtests(source, supplied_suffix)
 
     def test_rejects_changed_original_source(self):
         with self.assertRaises(AssertionError):

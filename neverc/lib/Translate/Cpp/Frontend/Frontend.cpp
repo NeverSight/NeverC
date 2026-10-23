@@ -6221,7 +6221,9 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
   if (!Function || !Primary || !Primary->getTemplatedDecl()->hasBody() || Function->isVariadic() ||
       !Reference || Reference->getDecl() != Function || !Site || Site->Root != "libcxx" ||
       Site->Path != "__functional/not_fn.h" || !Target || !ordinaryCallbackPrototype(Target) ||
-      !Target->getReturnType()->isArithmeticType() || !NotFn.Method ||
+      (!Target->getReturnType()->isArithmeticType() &&
+       !approvedFunctionalNotFnPointerResultRecord(A.S, A.Sources, Target->getReturnType(), A.Context)) ||
+      !NotFn.Method ||
       NotFn.Method->getNumParams() != Target->getNumParams() ||
       Function->getNumParams() != Target->getNumParams() + 1 ||
       Call->getNumArgs() != Function->getNumParams() || Dispatch != NotFn.DispatchCall ||
@@ -25782,6 +25784,25 @@ public:
     }
     return true;
   }
+  bool finishNotFnNegationSources() {
+    for (const auto &[Call, Source] : A.VerifiedNotFnCalls) {
+      if (!isa<CXXOperatorCallExpr>(Source.Negation)) continue;
+      const auto *Method = approvedFunctionalNotFnPointerNegation(A.S, A.Sources, Source, A.Context);
+      const auto *Definition = Method ? Method->getDefinition() : nullptr;
+      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+          &CompletedOperationDefaults);
+      if (!Definition || !SourceCheck.defined(Method) || !SourceCheck.finish(Call->getExprLoc()) ||
+          std::find(A.Functions.begin(), A.Functions.end(), Definition) == A.Functions.end()) {
+        A.reject(Call->getExprLoc(), "not_fn negation source",
+                 "The selected owned negation requires its checked original signature and completed body.",
+                 "TR0203");
+        return false;
+      }
+    }
+    return true;
+  }
   bool finishTypeQueries() {
     // Close only consumed source dependencies. Signature checks can discover
     // more roots, so finish the whole worklist before exposing query results.
@@ -25995,10 +26016,19 @@ public:
         A.Context, FunctionalNotFnSourceMode::Exception);
     const auto *Target = Runtime->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
     const auto *Negation = dyn_cast<UnaryOperator>(Runtime->Negation);
+    const auto *NegationMethod = approvedFunctionalNotFnPointerNegation(A.S, A.Sources, *Runtime, A.Context);
     const auto *Prototype = Runtime->Method->getType()->getAs<FunctionProtoType>();
-    bool Source = Signature && Exception && Negation && Negation->getOpcode() == UO_LNot &&
-        Target && ordinaryCallbackPrototype(Target) && Target->getReturnType()->isArithmeticType() &&
-        Prototype && Prototype->isNothrow() == Target->isNothrow() &&
+    const bool NegationSource = Signature && Exception &&
+        (Negation ? Negation->getOpcode() == UO_LNot && Negation->getType()->isBooleanType()
+                  : NegationMethod &&
+                    approvedFunctionalNotFnPointerNegation(A.S, A.Sources, *Signature, A.Context) == NegationMethod &&
+                    approvedFunctionalNotFnPointerNegation(A.S, A.Sources, *Exception, A.Context) == NegationMethod);
+    const auto *NegationPrototype = NegationMethod
+        ? NegationMethod->getType()->getAs<FunctionProtoType>() : nullptr;
+    bool Source = NegationSource && Target && ordinaryCallbackPrototype(Target) &&
+        (Target->getReturnType()->isArithmeticType() || NegationMethod) &&
+        Prototype && Prototype->isNothrow() ==
+            (Target->isNothrow() && (!NegationMethod || NegationPrototype->isNothrow())) &&
         Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
         A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
         functionalFunctionInvokeSource(A, Runtime->InvokeCall, &*Runtime);
@@ -26028,13 +26058,21 @@ public:
           A.SpecialMembers, A.OperationTraits);
       if (!SelectedDefault) { Source = false; break; }
     }
-    if (!Source || !SelectedDefault || !Call->getType()->isBooleanType()) {
+    if (!Source || !SelectedDefault ||
+        !A.Context.hasSameType(Call->getType(), Runtime->Negation->getType())) {
       A.reject(Call->getExprLoc(), "not_fn function-pointer call source",
                "The selected invocation, exception and enabling source graph must be complete.");
       return true;
     }
     A.VerifiedNotFnCalls.emplace(Call, *Runtime);
     A.type(Runtime->Storage.CallableType, Call->getExprLoc());
+    if (NegationMethod) {
+      operationTypeDependency(NegationMethod->getTypeSourceInfo());
+      operationTypeDependency(NegationMethod->getDefinition()->getTypeSourceInfo());
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Definitions.insert(NegationMethod).second)
+          A.chargeExpansion(1, NegationMethod->getLocation());
+    }
     // The SDK receiver cast is exactly bound by the descriptor. Traverse its
     // original object and every original argument once, with normal lifetimes.
     if (!TraverseStmt(const_cast<Expr *>(Runtime->Object))) return false;
@@ -29091,7 +29129,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   CheckingSource = false;
   if (!Check.finishTypeQueries() || !Check.finishPairConstructorSources() ||
       !Check.finishPairPiecewiseConstructions() || !Check.finishTupleFactories() ||
-      !Check.finishAlgorithmPredicates())
+      !Check.finishAlgorithmPredicates() || !Check.finishNotFnNegationSources())
     return;
   SynchronizeTemplateSourceEvents();
   if (!S.Diagnostics.empty())

@@ -371837,3 +371837,33 @@ int main() {
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
+
+TEST_F(TranslateTest, CoreV2NotFnCustomNegationResultAndEffectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-custom-negation-result.cpp");
+  const auto Output = tmpFile("not-fn-custom-negation-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+int negations;
+struct R {
+  int value;
+  int operator!() const { ++negations; return value + 7; }
+};
+R value(int x) { return R{x}; }
+int main() {
+  auto f = std::not_fn(&value);
+  static_assert(std::is_same<decltype(f(1)), int>::value, "exact negation result");
+  if (f(0) != 7 || f(3) != 10) return 1;
+  return negations != 2;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-custom-negation-result" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
