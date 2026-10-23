@@ -207,6 +207,9 @@ checks that an unmapped operand is not accessed before the VMX instruction.
 VMLAUNCH/VMRESUME are tested only on their falling-through VMfail paths; guest
 entry or late entry failure transfers control through the VMCS and is not a
 normal intrinsic return.
+Add `--backend-llc /path/to/fork/llc` to the frontend run to compile NeverC's
+actual emitted LLVM IR with the full fork and test the resulting machine code.
+This checks the shared intrinsic names and signatures across both compilers.
 
 ### TSX (xbegin, xabort, xend, xtest)
 

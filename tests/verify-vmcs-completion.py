@@ -34,7 +34,7 @@ MEMORY_MANAGEMENT = {"vmclear", "vmptrld", "vmptrst", "vmxon"}
 VOID_MANAGEMENT = {"vmptrst", "vmxoff"}
 
 
-def compile_case(compiler, directory, operation, dead, opt):
+def compile_case(compiler, directory, operation, dead, opt, backend=None):
     name = operation + ("_dead" if dead else "") + "_" + opt
     source = directory / (name + ".c")
     output = directory / (name + ".obj")
@@ -56,7 +56,10 @@ def compile_case(compiler, directory, operation, dead, opt):
         f'  {prefix}__vmx_{builtin}({arguments});\n}}\n')
     command = [str(compiler), "-target", "x86_64-pc-windows-msvc", "-" + opt,
                "-ffreestanding", "-fno-lto", "-fno-stack-protector", str(source)]
-    for flags, path in [(["-c"], output), (["-S", "-emit-llvm"], ir)]:
+    outputs = [(["-S", "-emit-llvm"], ir)]
+    if not backend:
+        outputs.append((["-c"], output))
+    for flags, path in outputs:
         compiled = subprocess.run(command + flags + ["-o", str(path)],
                                   capture_output=True, text=True)
         if compiled.returncode:
@@ -64,6 +67,12 @@ def compile_case(compiler, directory, operation, dead, opt):
     text = ir.read_text()
     if not re.search(r"\bcall\b[^@\n]*@llvm\.x86\." + operation + r"\(", text) or " asm " in text:
         raise AssertionError(f"{name}: expected a native LLVM intrinsic call")
+    if backend:
+        compiled = subprocess.run(
+            [str(backend), "-" + opt, "-verify-machineinstrs", "-filetype=obj",
+             str(ir), "-o", str(output)], capture_output=True, text=True)
+        if compiled.returncode:
+            raise AssertionError(f"{name}: fork could not compile NeverC IR:\n{compiled.stderr}")
     image = lief.parse(str(output))
     if image is None:
         raise AssertionError(f"{name}: compiler did not produce a COFF object")
@@ -260,8 +269,12 @@ def main():
     mode.add_argument("--compiler", type=Path,
                       default=Path(__file__).resolve().parents[1] / "build-neverc/bin/neverc")
     mode.add_argument("--llc", type=Path, help="test the LLVM fork directly in both word sizes")
+    parser.add_argument("--backend-llc", type=Path,
+                        help="compile NeverC's emitted IR using this LLVM fork")
     parser.add_argument("--family", choices=("access", "management", "all"), default="all")
     args = parser.parse_args()
+    if args.llc and args.backend_llc:
+        parser.error("--backend-llc tests frontend IR and cannot be combined with --llc")
     count = 0
     operations = (() if args.family == "management" else ("vmread", "vmwrite"))
     if args.family != "access":
@@ -274,7 +287,8 @@ def main():
                         if args.llc:
                             name, code = compile_ir(args.llc, Path(temp), operation, dead, opt, bits)
                         else:
-                            name, code = compile_case(args.compiler, Path(temp), operation, dead, opt)
+                            name, code = compile_case(args.compiler, Path(temp), operation, dead, opt,
+                                                      args.backend_llc)
                         if operation in MANAGEMENT:
                             statuses = (1, 2) if operation in ("vmlaunch", "vmresume") else (0, 1, 2)
                             if operation in VOID_MANAGEMENT:
