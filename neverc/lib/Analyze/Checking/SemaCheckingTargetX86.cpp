@@ -539,6 +539,8 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_int:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
   case X86::BI__builtin_ia32_enclu_bounded: {
     llvm::APSInt Control;
     if (SemaBuiltinConstantArg(TheCall, 0, Control))

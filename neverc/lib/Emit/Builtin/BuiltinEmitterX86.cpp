@@ -3212,11 +3212,16 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__ud2:
     // llvm.trap makes a ud2a instruction on x86.
     return genTrapCall(Intrinsic::trap);
+  case X86::BI__builtin_ia32_int:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_int,
+                                   {Builder.CreateTrunc(Ops[0], Int8Ty)});
   case X86::BI__int2c: {
-    llvm::CallInst *CI =
-        Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_int2c, {});
-    CI->addFnAttr(llvm::Attribute::NoReturn);
-    return CI;
+    // Keep the Microsoft assertion interface's non-returning contract while
+    // using the same native INT API understood by the full LLVM fork.
+    auto *Call = Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_int,
+                                         {Builder.getInt8(0x2c)});
+    Call->addFnAttr(llvm::Attribute::NoReturn);
+    return Call;
   }
   case X86::BI__readfsbyte:
   case X86::BI__readfsword:

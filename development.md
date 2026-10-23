@@ -304,6 +304,27 @@ places a second VMCB in guest RAM below 64 KiB, so i386's AX address refers to
 valid physical storage. Exact-byte and live-input checks separately verify
 prefix retention and narrowing without losing callers' original values.
 
+### Software interrupt contracts
+
+`__builtin_ia32_int(vector)` emits the shared `llvm.x86.int` intrinsic. The
+vector must be a constant in 0..255. This raw interface is resumable and retains
+ordered memory effects; it does not mark the call `noreturn` or `willreturn`.
+The Microsoft `__int2c()` assertion interface retains its existing `noreturn`
+contract, matching Clang's Windows compatibility behavior, while now emitting
+`llvm.x86.int(i8 44)` instead of the private `llvm.x86.int2c` API. This lets its
+bitcode pass through the full LLVM fork without an unresolved private call.
+Previously produced NeverC intrinsic IDs remain available.
+
+`tests/verify-interrupt-completion.py` checks live inputs, repeated interrupts,
+ordered stores/loads and the continuation in i386 and x64 ELF/COFF/Mach-O.
+The native Linux x64 fixture compares independently encoded INT 2C bytes
+with the raw builtin through each compiler route, both with an unhandled fault
+and with a handler that advances the fault PC and returns through sigreturn.
+Controlled memory updates independently check optimizer ordering. The contract
+assumes the handler preserves the compiler's register ABI; it does not transport
+arbitrary handler machine state or qualify privileged interrupt gates. Tests
+separately retain the Microsoft assertion's non-returning behavior.
+
 ### SGX supervisor, VMM and bounded user completion
 
 `__builtin_ia32_encls(a, b, c, d, registers_out, flags_out)` and `enclv` take

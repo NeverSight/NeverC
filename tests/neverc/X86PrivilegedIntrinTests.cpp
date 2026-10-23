@@ -1031,6 +1031,101 @@ TEST_F(X86PrivilegedIntrinTest, Int2cLowersCorrectly) {
   EXPECT_NE(s.find("int\t44"), std::string::npos) << "expected int 44 (0x2c)\n" << s;
 }
 
+TEST_F(X86PrivilegedIntrinTest, Int2cRetainsMicrosoftAssertionContract) {
+  const auto Source = tmpFile("int2c_assert.c");
+  const auto IR = tmpFile("int2c_assert.ll");
+  writeFile(Source, "#include <intrin.h>\n"
+                    "int assertion(void) { __int2c(); return 7; }\n");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto Result = ncc({"--target=x86_64-pc-windows-msvc", "-ffreestanding",
+                       "-fno-builtin-mimalloc", "-fno-lto", Opt, "-S",
+                       "-emit-llvm", Source.string(), "-o", IR.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto Text = readFile(IR);
+    EXPECT_NE(Text.find("@llvm.x86.int(i8 44)"), std::string::npos) << Text;
+    EXPECT_NE(Text.find("noreturn"), std::string::npos) << Text;
+    if (std::string(Opt) == "-O2")
+      EXPECT_NE(Text.find("unreachable"), std::string::npos) << Text;
+    EXPECT_EQ(Text.find("llvm.x86.int2c"), std::string::npos) << Text;
+    EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, RawInterruptRequiresAnImmediateByte) {
+  for (unsigned Vector : {0, 1, 3, 4, 44, 128, 255}) {
+    SCOPED_TRACE(Vector);
+    const auto Source = "void interrupt(void) { __builtin_ia32_int(" +
+                        std::to_string(Vector) + "); }";
+    auto [RC, Assembly] = compileToAsm(Source.c_str(), "int_vector");
+    ASSERT_EQ(RC, 0) << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+  for (const char *Vector : {"v", "-1", "256", "0xffffffffU"}) {
+    SCOPED_TRACE(Vector);
+    const auto Source = "void interrupt(unsigned v) { __builtin_ia32_int(" +
+                        std::string(Vector) + "); }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "int_invalid");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find(std::string(Vector) == "v" ? "constant" : "range"),
+              std::string::npos)
+        << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest,
+       RawInterruptRetainsContinuationAndMemoryEffects) {
+  const auto Source = tmpFile("int2c_resume.c");
+  const auto IR = tmpFile("int2c_resume.ll");
+  const auto Object = tmpFile("int2c_resume.o");
+  writeFile(Source, R"(
+    unsigned resume(unsigned *memory, unsigned input) {
+      *memory = input;
+      __builtin_ia32_int(44);
+      unsigned first = *memory;
+      __builtin_ia32_int(44);
+      return first ^ *memory ^ input;
+    }
+  )");
+  for (const char *Triple :
+       {"x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu",
+        "x86_64-apple-darwin"}) {
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Triple);
+      SCOPED_TRACE(Opt);
+      std::vector<std::string> Args = {std::string("--target=") + Triple,
+                                       "-std=c23",
+                                       "-fms-extensions",
+                                       "-ffreestanding",
+                                       "-fno-builtin-mimalloc",
+                                       "-fno-lto",
+                                       "-Werror",
+                                       "-mllvm",
+                                       "-verify-machineinstrs",
+                                       Opt,
+                                       Source.string()};
+      auto EmitIR = Args;
+      EmitIR.insert(EmitIR.end(), {"-S", "-emit-llvm", "-o", IR.string()});
+      auto Result = ncc(EmitIR);
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      const auto Text = readFile(IR);
+      const std::regex NativeCall("@llvm\\.x86\\.int\\(i8 44\\)");
+      EXPECT_EQ(std::distance(
+                    std::sregex_iterator(Text.begin(), Text.end(), NativeCall),
+                    std::sregex_iterator()),
+                2)
+          << Text;
+      for (const char *LostContinuation :
+           {"noreturn", "unreachable", "llvm.x86.int2c", " asm "})
+        EXPECT_EQ(Text.find(LostContinuation), std::string::npos) << Text;
+      EXPECT_NE(Text.find("ret i32"), std::string::npos) << Text;
+      Args.insert(Args.end(), {"-c", "-o", Object.string()});
+      Result = ncc(Args);
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // EFLAGS read/write
 // ---------------------------------------------------------------------------
