@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include <cstdio>
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
@@ -26166,6 +26167,11 @@ public:
                 A.NotFnOwnedQuerySources, AliasSource)
             : approvedFunctionalNotFnPointerFactorySource(A.S, A.Sources, A.Context, *Source,
                 Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource));
+        std::fprintf(stderr, "OWNED_NOT_FN_FACTORY line=%u shape=%u owned=%u source=%u approved=%u dependencies=%zu selections=%zu\n",
+            A.Sources.getPresumedLineNumber(Call->getExprLoc()),
+            static_cast<unsigned>(bool(Shape)), static_cast<unsigned>(bool(Owned)),
+            static_cast<unsigned>(bool(Source)), static_cast<unsigned>(Approved),
+            Dependencies.size(), Selections.size());
         if (!Approved) {
           A.reject(Call->getExprLoc(), "not_fn function-pointer factory source",
                    "The selected default, alias, trait and constructor source graph must be complete.");
@@ -26234,6 +26240,10 @@ public:
           Runtime->TargetCall && !Runtime->TargetCall->getDirectCallee() &&
           A.Context.hasSameType(operationCalleePrototype(Runtime->TargetCall), Target) &&
           functionalFunctionInvokeSource(A, Runtime->InvokeCall, &*Runtime);
+    std::fprintf(stderr, "OWNED_NOT_FN_CALL line=%u owned=%u signature=%u exception=%u negation=%u source=%u\n",
+        A.Sources.getPresumedLineNumber(Call->getExprLoc()), static_cast<unsigned>(bool(Owned)),
+        static_cast<unsigned>(bool(Signature)), static_cast<unsigned>(bool(Exception)),
+        static_cast<unsigned>(NegationSource), static_cast<unsigned>(Source));
     // Consume the selected operator's real enable_if/default packet, including
     // its original primary spelling, rather than assuming that void means valid.
     bool SelectedDefault = false;
@@ -26260,6 +26270,9 @@ public:
               NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits, A.NotFnOwnedQuerySources)
           : approvedFunctionalNotFnPointerCallDefaults(A.S, A.Sources, A.Context, *Runtime, *Use,
               NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits);
+      std::fprintf(stderr, "OWNED_NOT_FN_DEFAULT line=%u selected=%u source=%u\n",
+          A.Sources.getPresumedLineNumber(Call->getExprLoc()),
+          static_cast<unsigned>(SelectedDefault), static_cast<unsigned>(Source));
       if (!SelectedDefault) { Source = false; break; }
     }
     if (!Source || !SelectedDefault ||
