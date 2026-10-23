@@ -286,6 +286,13 @@ operand forms, native verification, m16 output boundaries and LMSW's inability
 to clear PE. INVD's successful guest fallthrough does not qualify physical
 cache discard. Both scripts accept the usual `--compiler`, `--llc` and
 `--backend-llc` routes; QEMU additionally needs clang, ld.lld and GNU objcopy.
+The CPL0 bridge uses NeverC's native bitcode output (`-c -emit-llvm`), letting
+the newer LLVM reader upgrade legacy constant expressions without changing
+the optimized module. The retained `.ll` file is diagnostic output; newer
+LLVM text parsers reject some older constexpr syntax, such as a shift of a
+global address used in descriptor construction. Prefer bitcode for this
+cross-version boundary. Other differences between LLVM versions still need
+their own qualification.
 
 ### Descriptor queries (LAR / LSL)
 

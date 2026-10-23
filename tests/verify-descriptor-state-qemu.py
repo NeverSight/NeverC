@@ -4,7 +4,8 @@
 Tests real generated instructions against guest GDT/LDT/TSS and CR0 state in
 32/64-bit modes. INVD is checked for encoding and successful fallthrough only:
 TCG does not qualify physical cache discard behavior. No host privileged state
-is accessed. Requires QEMU, clang, ld.lld and GNU objcopy.
+is accessed. The NeverC-to-fork route uses bitcode so LLVM's reader can upgrade
+legacy constant expressions. Requires QEMU, clang, ld.lld and GNU objcopy.
 """
 
 import argparse
@@ -36,10 +37,7 @@ def source(mode, llvm_route):
             "extern unsigned long long guest_gdt[10];",
             "static unsigned long long ldt[2] = {0, 0x00cf93000000ffffULL};",
             "static unsigned char tss[2][104];",
-            # Keep address packing at a runtime C boundary. Older NeverC IR
-            # permits ptrtoint/shift constant expressions removed by new LLVM;
-            # that unrelated text-format migration is not this instruction test.
-            "__attribute__((noinline)) void descriptor(unsigned index, const void *base, unsigned limit, unsigned access) {",
+            "static void descriptor(unsigned index, const void *base, unsigned limit, unsigned access) {",
             "  unsigned long long address = (word)base;",
             "  guest_gdt[index] = (limit & 65535) | ((address & 65535) << 16) | (((address >> 16) & 255) << 32) |",
             "      ((unsigned long long)access << 40) | ((unsigned long long)(limit >> 16) << 48) | ((address >> 24 & 255) << 56);",
@@ -178,7 +176,14 @@ def check_guest(args, directory, mode, opt):
     run(compiler + ["-S", "-emit-llvm", "-o", ir])
     backend = args.llc or args.backend_llc
     if backend:
-        run([backend, "-" + opt, "-verify-machineinstrs", "-relocation-model=static", "-filetype=obj", ir, "-o", obj])
+        backend_input = ir
+        if args.backend_llc:
+            # Keep the producer's optimized module intact. The new LLVM reader
+            # expands legacy constexpr records that its text parser no longer
+            # accepts, including shifts used to pack global descriptor bases.
+            backend_input = prefix.with_suffix(".bc")
+            run(compiler + ["-c", "-emit-llvm", "-o", backend_input])
+        run([backend, "-" + opt, "-verify-machineinstrs", "-relocation-model=static", "-filetype=obj", backend_input, "-o", obj])
     else:
         run(compiler + ["-c", "-o", obj, "-mllvm", "-verify-machineinstrs"])
     run([args.clang, "--target=" + triple, "-c", asm, "-o", boot_obj])
