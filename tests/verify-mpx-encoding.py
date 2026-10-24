@@ -45,12 +45,13 @@ def run(command, directory):
     return result.stdout
 
 
-def functions(disassembly):
+def functions(disassembly, branch_probes=False):
     result, current = {}, None
+    names = r"initialize_probe|preserve_probe" if branch_probes else r"case_\d+"
     for line in disassembly.splitlines():
-        label = re.fullmatch(r"[0-9a-f]+ <_?(case_\d+)>:", line.strip())
+        label = re.fullmatch(r"[0-9a-f]+ <_?(" + names + r")>:", line.strip())
         if label:
-            current = result.setdefault(int(label[1][5:]), [])
+            current = result.setdefault(label[1] if branch_probes else int(label[1][5:]), [])
         elif re.fullmatch(r"[0-9a-f]+ <.*>:", line.strip()):
             current = None
         elif current is not None:
@@ -66,6 +67,11 @@ def functions(disassembly):
                 # These wrappers have one native return and no trailing code.
                 if raw in (b"\xc3", b"\xf2\xc3"):
                     current = None
+    if branch_probes:
+        # Earlier probe functions can change alignment between assembly
+        # routes. Compare each branch probe's offsets and bytes, not its VA.
+        result = {name: [(address - body[0][0], raw) for address, raw in body]
+                  for name, body in result.items()}
     return result
 
 
@@ -184,6 +190,8 @@ def verify(args, directory):
                 run([*command, "-S", "-emit-llvm", "cases.c", "-o", input_ir], directory)
                 text = (directory / input_ir).read_text()
                 assert " asm " not in text and "@llvm.x86.bndmk(" in text
+                for kind in (0, 1):
+                    assert f"@llvm.x86.bnd.branch(i32 {kind})" in text
             elif opt == "-O2":
                 input_ir = stem + ".ll"
                 run([Path(backend).with_name("opt"), "-S", "-passes=default<O2>", "cases.ll", "-o", input_ir], directory)
@@ -192,7 +200,15 @@ def verify(args, directory):
                 run([*command, "-filetype=obj", "-o", output], directory)
             else:
                 run([*command, "-c", "cases.c", "-o", output], directory)
-            decoded = functions(run([args.objdump, "-d", output], directory))
+            disassembly = run([args.objdump, "-d", output], directory)
+            decoded = functions(disassembly)
+            probes = functions(disassembly, branch_probes=True)
+            assert set(probes) == {"initialize_probe", "preserve_probe"}
+            for name, instructions in probes.items():
+                raw = [data for _, data in instructions]
+                assert raw.count(b"\xe9\x00\x00\x00\x00") == (name == "initialize_probe"), "original BNDINIT effect changed"
+                assert raw[-1] == b"\xf2\xc3", "branch-only function lost bounds-preserving return"
+                assert all(native(data) is None for data in raw), "branch effect replaced bounds registers"
             assert len(decoded) == count
             for index, enum, bank, width, segment in cases:
                 try:
@@ -207,8 +223,10 @@ def verify(args, directory):
                 else:
                     run([*command, "-S", "-masm=" + dialect, "cases.c", "-o", assembly], directory)
                     run([args.compiler, "--target=" + triple, "-c", assembly, "-o", roundtrip], directory)
-                assert functions(run([args.objdump, "-d", roundtrip], directory)) == decoded, "assembly round trip changed bytes"
-            print(f"{stem}: {count} native MPX encodings, operand transport and ABI; both assembly dialects", flush=True)
+                disassembly = run([args.objdump, "-d", roundtrip], directory)
+                assert functions(disassembly) == decoded, "assembly round trip changed bytes"
+                assert functions(disassembly, branch_probes=True) == probes, "assembly round trip changed BNDINIT"
+            print(f"{stem}: {count} native MPX encodings, operand transport and ABI; branch effects and both assembly dialects", flush=True)
 
 
 def main():

@@ -3624,6 +3624,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_reg64);
   case X86::BI__builtin_ia32_lsl_mem64:
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem64);
+  case X86::BI__builtin_ia32_bnd_branch:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bnd_branch), Ops);
   case X86::BI__builtin_ia32_bndmov_reg:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_reg), Ops);
   case X86::BI__builtin_ia32_bndcl_reg:

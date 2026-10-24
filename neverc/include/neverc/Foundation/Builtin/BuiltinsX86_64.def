@@ -265,6 +265,7 @@ BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
 
 // Native MPX uses the physical bounds bank. All controls are constants.
+BUILTIN(__builtin_ia32_bnd_branch, "vIUi", "n")
 BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
 BUILTIN(__builtin_ia32_bndcl_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcu_reg, "vIUiULLi", "n")

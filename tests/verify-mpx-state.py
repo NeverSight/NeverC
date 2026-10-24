@@ -35,7 +35,7 @@ def generate(mode=64):
     def call(name, args):
         types = [kind for kind, _ in args]
         native = "llvm.x86." + name.replace("_", ".")
-        if mode == 32 and name != "bndmov_reg":
+        if mode == 32 and name not in ("bndmov_reg", "bnd_branch"):
             native += "32"
         declaration = "declare void @" + native + "(" + ", ".join(types) + ")"
         if native in declarations:
@@ -95,6 +95,10 @@ def generate(mode=64):
     for _ in range(2):
         add_call("bndcl_address", [("i32", 3), ("i64", "a"), ("i32", mode), ("i32", 0)])
     end()
+    for kind, name in enumerate(("initialize_probe", "preserve_probe")):
+        begin(name)
+        add_call("bnd_branch", [("i32", kind)])
+        end()
     header += ["static const struct Case cases[] = {\n", *cases, "};\n"]
     llvm_ir = "\n".join(declarations.values()) + "\n" + "".join(ir)
     if mode == 32:
@@ -156,11 +160,13 @@ def verify(args, directory):
         (directory / (stem + ".log")).write_text(result.stdout + result.stderr)
         # Four addr32 memory forms, both LOCK widths, and three register checks.
         skipped = 4 * (len(PREFIXES) * 6 + 3) if args.qemu_mpx_limitations else 0
-        expected = f"PASS{count - skipped:08x}:{skipped:08x}\n"
+        branch_skipped = int(args.qemu_mpx_limitations)
+        expected = f"PASS{count - skipped:08x}:{skipped:08x}:{6 - branch_skipped:08x}:{branch_skipped:08x}\n"
         if result.returncode != 1 or result.stdout != expected:
             raise RuntimeError(f"MPX guest {opt}: exit {result.returncode}\n{result.stdout}\n{result.stderr}")
         print(f"{opt}: {count - skipped} native MPX cases passed, {skipped} skipped; "
-              "enabled/disabled, faults, tables and CFG", flush=True)
+              f"enabled/disabled, faults, tables and CFG; {6 - branch_skipped} original "
+              f"branch-state cases passed, {branch_skipped} skipped", flush=True)
 
 
 def main():
@@ -173,7 +179,7 @@ def main():
     parser.add_argument("--clang", default="clang")
     parser.add_argument("--keep", type=lambda s: Path(s).resolve())
     parser.add_argument("--qemu-mpx-limitations", action="store_true",
-                        help="explicitly skip QEMU 10.2's addr32 memory, LOCK BNDMOV, and register-check limitations")
+                        help="explicitly skip QEMU 10.2's addr32 memory, LOCK BNDMOV, register-check and E9 BNDINIT limitations")
     args = parser.parse_args()
     if args.backend_llc and not args.compiler:
         parser.error("--backend-llc requires --compiler")

@@ -20079,6 +20079,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     672169383U,	// BNDCN64rm
     0U,	// MPX_STATE64
     0U,	// MPX_MOVE_BOUNDS
+    0U,	// MPX_BRANCH
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38606,6 +38607,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// BNDCN64rm
     0U,	// MPX_STATE64
     0U,	// MPX_MOVE_BOUNDS
+    0U,	// MPX_BRANCH
 };
 
   // Emit the opcode for the instruction.

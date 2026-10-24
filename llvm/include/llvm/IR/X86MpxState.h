@@ -11,6 +11,12 @@
 
 namespace llvm::X86 {
 
+// Model an original control transfer independently of compiler-created CFG.
+// Initialize has the native conditional effect: MPX must be enabled and
+// BNDPRESERVE must be clear. Preserve keeps the bank live through generated
+// branches even when a function contains no explicit bounds instruction.
+enum class MpxBranchKind : unsigned { Initialize, Preserve, Count };
+
 // Private machine-pseudo control, never an SSA representation of a bound.
 // The actual instruction owns BND0..3, BNDCFG, BNDSTATUS, enable checks and
 // partial completion when bounds-table accesses fault.

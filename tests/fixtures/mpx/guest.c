@@ -176,7 +176,46 @@ void guest_main(void) {
   expected_vector = 5; fault_count = 0;
   repeated_probe(0, 0, (U64)bounds, (U64)output);
   check(fault_count == 2, 15);
+  config(3);
+  expected_vector = 0;
+  fault_count = 0;
+  U64 branch_input[8], branch_output[8];
+  for (unsigned bank = 0; bank < 4; ++bank) {
+    branch_input[2 * bank] = 0x100 + 0x111 * bank;
+    branch_input[2 * bank + 1] = ~(0x1000ULL + 0x111 * bank);
+  }
+  extern void branch_control_call(void (*)(U64, U64, U64, U64), U64 *, U64 *,
+                                  U64);
+  unsigned branch_executed = 0, branch_skipped = 0;
+  for (unsigned kind = 0; kind < 2; ++kind)
+    for (unsigned control = 0; control < 4; ++control) {
+      if (control == 2)
+        continue;
+#ifdef QEMU_MPX_LIMITATIONS
+      // QEMU 10.2.2 gen_JMP omits gen_bnd_jmp for E9 (and direct CALL).
+      // Strict mode still checks the actual effect; byte tests require E9.
+      if (kind == 0 && control == 1) {
+        ++branch_skipped;
+        continue;
+      }
+#endif
+      ++branch_executed;
+      branch_control_call(kind ? preserve_probe : initialize_probe,
+                          branch_input, branch_output, control);
+      for (unsigned word = 0; word < 8; ++word) {
+        current_case =
+            sizeof(cases) / sizeof(cases[0]) + kind * 32 + control * 8 + word;
+        output[0] = branch_output[word];
+        output[1] = kind || control != 1 ? branch_input[word] : 0;
+        check(output[0] == output[1], 16);
+      }
+    }
+  check(fault_count == 0, 17);
   out8(0xe9, 'P'); out8(0xe9, 'A'); out8(0xe9, 'S'); out8(0xe9, 'S');
   print_hex(executed); out8(0xe9, ':'); print_hex(skipped);
+  out8(0xe9, ':');
+  print_hex(branch_executed);
+  out8(0xe9, ':');
+  print_hex(branch_skipped);
   out8(0xe9, '\n'); finish(0);
 }

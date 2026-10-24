@@ -1861,6 +1861,24 @@ static void addConstantComments(const MachineInstr *MI,
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (MI->getOpcode() == X86::MPX_BRANCH) {
+    const uint64_t Kind = MI->getOperand(0).getImm();
+    if (Kind >= unsigned(X86::MpxBranchKind::Count))
+      report_fatal_error("invalid MPX branch machine-state control");
+    if (Kind == unsigned(X86::MpxBranchKind::Preserve))
+      return;
+    // E9 to the next instruction performs native conditional BNDINIT without
+    // touching flags or GPRs. EB would not initialize, so retain disp32 even
+    // through textual assembly. Deliberately bypass preserveMPXBounds here.
+    MCSymbol *Next = OutContext.createTempSymbol();
+    MCInst Jump = MCInstBuilder(X86::JMP_4)
+                      .addExpr(MCSymbolRefExpr::create(Next, OutContext));
+    Jump.setFlags(X86::IP_USE_DISP32);
+    OutStreamer->emitInstruction(Jump, getSubtargetInfo());
+    SMShadowTracker.count(Jump, getSubtargetInfo(), CodeEmitter.get());
+    OutStreamer->emitLabel(Next);
+    return;
+  }
   // XRay patches fixed byte sequences at runtime. Adding BND prefixes would
   // invalidate that contract; leaving them out silently resets live bounds.
   if (MF->getInfo<X86MachineFunctionInfo>()->hasMPXState()) {

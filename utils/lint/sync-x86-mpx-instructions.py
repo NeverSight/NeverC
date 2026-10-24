@@ -35,7 +35,8 @@ for name, opcode, prefix in (("BNDCL", 0x1a, 2), ("BNDCU", 0x1a, 3), ("BNDCN", 0
     SCHEMA += [(name + "64rr", "MOV64rr", (opcode, prefix, 41), ("BNDR", "GR64"), 0, ()),
                (name + "64rm", "LEA64r", (opcode, prefix, 25), ("BNDR", "anymem"), 0, ())]
 SCHEMA += [("MPX_STATE64", "WRITE_SYSREG64", None, ("i32imm", "GR64", "GR64"), 0, ("MayLoad", "MayStore")),
-           ("MPX_MOVE_BOUNDS", "WRITE_SYSREG64", None, ("i32imm",), 0, ("MayLoad", "MayStore"))]
+           ("MPX_MOVE_BOUNDS", "WRITE_SYSREG64", None, ("i32imm",), 0, ("MayLoad", "MayStore")),
+           ("MPX_BRANCH", "WRITE_SYSREG64", None, ("i32imm",), 0, ("MayLoad", "MayStore"))]
 INSTRUCTIONS = tuple((name, prototype, None, re.match(r"[A-Z]+", name).group(0).lower() if encoding else None)
                      for name, prototype, encoding, _, _, _ in SCHEMA)
 

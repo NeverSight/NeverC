@@ -993,6 +993,7 @@ enum X86Intrinsics : unsigned {
     x86_bmi_pdep_64,                                 // llvm.x86.bmi.pdep.64
     x86_bmi_pext_32,                                 // llvm.x86.bmi.pext.32
     x86_bmi_pext_64,                                 // llvm.x86.bmi.pext.64
+    x86_bnd_branch,                                  // llvm.x86.bnd.branch
     x86_bndcl_address,                               // llvm.x86.bndcl.address
     x86_bndcl_reg,                                   // llvm.x86.bndcl.reg
     x86_bndcn_address,                               // llvm.x86.bndcn.address

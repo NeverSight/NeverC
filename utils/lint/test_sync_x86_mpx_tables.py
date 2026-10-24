@@ -62,7 +62,7 @@ class MpxTablesTest(unittest.TestCase):
 
     def test_pseudos_keep_the_entire_bank_and_unknown_memory(self):
         text = (TABLES.TARGET / "X86GenInstrInfo.inc").read_text()
-        for name in ("MPX_STATE64", "MPX_MOVE_BOUNDS"):
+        for name in ("MPX_STATE64", "MPX_MOVE_BOUNDS", "MPX_BRANCH"):
             fields = TABLES.descriptor(text, name)
             self.assertEqual(fields[5:7], ["4", "4"])
             for effect in ("Pseudo", "MayLoad", "MayStore", "UnmodeledSideEffects"):

@@ -18536,7 +18536,8 @@ namespace X86 {
     BNDCN64rm	= 18521,
     MPX_STATE64	= 18522,
     MPX_MOVE_BOUNDS	= 18523,
-    INSTRUCTION_LIST_END = 18524
+    MPX_BRANCH	= 18524,
+    INSTRUCTION_LIST_END = 18525
   };
 
 } // end namespace X86
@@ -20927,7 +20928,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18524];
+  MCInstrDesc Insts[18525];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5451];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -20946,6 +20947,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18524,	1,	0,	0,	1447,	4,	4,	X86ImpOpBase + 617,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18524 = MPX_BRANCH
     { 18523,	1,	0,	0,	1447,	4,	4,	X86ImpOpBase + 617,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18523 = MPX_MOVE_BOUNDS
     { 18522,	3,	0,	0,	1447,	4,	4,	X86ImpOpBase + 617,	5448,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18522 = MPX_STATE64
     { 18521,	6,	0,	0,	1447,	0,	0,	X86ImpOpBase + 0,	5432,	0|(1ULL<<MCID::UnmodeledSideEffects), 0xd80003819ULL },  // Inst #18521 = BNDCN64rm
@@ -58351,6 +58353,7 @@ extern const char X86InstrNameData[] = {
   /* 259389 */ "BNDCN64rm\0"
   /* 259399 */ "MPX_STATE64\0"
   /* 259411 */ "MPX_MOVE_BOUNDS\0"
+  /* 259427 */ "MPX_BRANCH\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60739,10 +60742,11 @@ extern const unsigned X86InstrNameIndices[] = {
     259389U,
     259399U,
     259411U,
+    259427U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18524);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18525);
 }
 
 } // end namespace llvm
@@ -60802,7 +60806,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18524);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18525);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98075,6 +98079,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     /* MPX_STATE64 */
     64476,
     /* MPX_MOVE_BOUNDS */
+    1,
+    /* MPX_BRANCH */
     1,
   };
 
@@ -153456,9 +153462,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // BNDCN64rm = 18521
     CEFBS_In64BitMode, // MPX_STATE64 = 18522
     CEFBS_In64BitMode, // MPX_MOVE_BOUNDS = 18523
+    CEFBS_In64BitMode, // MPX_BRANCH = 18524
   };
 
-  assert(Opcode < 18524);
+  assert(Opcode < 18525);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

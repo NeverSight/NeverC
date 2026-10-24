@@ -557,6 +557,9 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   switch (BuiltinID) {
   case X86::BI__builtin_ia32_int:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
+  case X86::BI__builtin_ia32_bnd_branch:
+    return SemaBuiltinConstantArgRange(
+        TheCall, 0, 0, unsigned(llvm::X86::MpxBranchKind::Count) - 1);
   case X86::BI__builtin_ia32_bndmov_reg:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1) ||

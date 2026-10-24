@@ -89,7 +89,8 @@ TEST_F(X86PrivilegedIntrinTest, MpxUsesNativeBoundsBankAndPreservesBranches) {
 
 TEST_F(X86PrivilegedIntrinTest, MpxRejectsInvalidBankAndAddressControls) {
   for (const char *Call :
-       {"bndmk(4, base, base, 64, 0)", "bndmov_reg(0, 4)",
+       {"bnd_branch(2)", "bnd_branch(-1)", "bnd_branch(index)",
+        "bndmk(4, base, base, 64, 0)", "bndmov_reg(0, 4)",
         "bndmov_reg(index, 0)", "bndcl_reg(256, base)", "bndcu_reg(-1, base)",
         "bndcn_reg(index, base)", "bndmov_load(0, base, 16, 0)",
         "bndmov_store(0, base, 0, 0)", "bndmov_store_lock(0, base, 64, 0xf0)",
@@ -106,6 +107,36 @@ TEST_F(X86PrivilegedIntrinTest, MpxRejectsInvalidBankAndAddressControls) {
                 Error.find("constant integer") != std::string::npos ||
                 Error.find("native memory addressing") != std::string::npos)
         << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, MpxOriginalBranchEffectsSurviveOptimization) {
+  constexpr const char *Source = R"(
+    void preserve(void) { __builtin_ia32_bnd_branch(1); }
+    void initialize(volatile unsigned *memory) {
+      *memory = 1;
+      __builtin_ia32_bnd_branch(0);
+      __builtin_ia32_bnd_branch(0);
+      *memory = 2;
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    const auto [RC, Assembly] = compileToAsm(Source, "mpx_branch", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    const auto First = Assembly.find("{disp32}");
+    const auto Last = Assembly.rfind("{disp32}");
+    ASSERT_NE(First, std::string::npos) << Assembly;
+    EXPECT_NE(First, Last) << Assembly;
+    EXPECT_LT(Assembly.find("], 1"), First) << Assembly;
+    EXPECT_GT(Assembly.find("], 2"), Last) << Assembly;
+    EXPECT_TRUE(
+        std::regex_search(Assembly.substr(Assembly.find("preserve:"),
+                                          Assembly.find("initialize:") -
+                                              Assembly.find("preserve:")),
+                          std::regex("repne[ \\t]+ret")))
+        << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
   }
 }
 

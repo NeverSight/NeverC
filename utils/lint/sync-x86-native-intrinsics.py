@@ -93,6 +93,7 @@ ADDRESS_SIGNATURES = {
 # address encoding controls. Effects remain conservative for disabled/faulting
 # native operations as well as successful bounds accesses.
 ADDRESS_SIGNATURES.update({
+    "bnd_branch": (("Done", "I32"), (0,)),
     "bndmov_reg": (("Done", "I32", "I32"), (0, 1)),
     **{name: (("Done", "I32", "I64"), (0,))
        for name in ("bndcl_reg", "bndcu_reg", "bndcn_reg")},

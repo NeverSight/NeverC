@@ -36,13 +36,14 @@ Frontend (BuiltinEmitterX86.cpp)
 
 ## Native MPX bounds state
 
-NeverC exposes 13 C23 builtins for the architectural BND0--BND3 bank. Each
+NeverC exposes 14 C23 builtins for the architectural BND0--BND3 bank. Each
 returns `void` and emits a native LLVM intrinsic, without platform headers or
 inline assembly. Bank indices and address controls are constant `unsigned`;
 addresses and values are `unsigned long long`.
 
 | Builtin suffix after `__builtin_ia32_` | Arguments |
 | --- | --- |
+| `bnd_branch` | `kind` (0: conditional initialization, 1: preservation) |
 | `bndmov_reg` | `bank, source_bank` |
 | `bndcl_reg`, `bndcu_reg`, `bndcn_reg` | `bank, value` |
 | `bndmov_load`, `bndmov_store`, `bndmov_store_lock` | `bank, offset, address_bits, segment_prefix` |
@@ -65,8 +66,13 @@ checks and unknown memory effects. Compiler-created near transfers receive
 BND/F2 so they preserve bounds even with BNDPRESERVE=0. Callees and inline
 assembly retain their native side effects; arbitrary callees do not gain a
 bounds-preserving ABI. XRay sleds fail explicitly because their runtime patch
-format cannot accept added prefixes. A binary lifter still needs to represent
-the BNDINIT effects of the original binary's control transfers separately.
+format cannot accept added prefixes. A binary lifter represents the original
+transfer's bank effect with `bnd_branch`: kind 0 emits a forced-width unprefixed
+E9 to the next instruction, which initializes all bounds only if MPX is enabled
+and BNDPRESERVE is clear. Kind 1 establishes preservation even in a function
+with no explicit bounds instruction. Both survive optimization as ordered
+effects; the original encoding and fault-order placement remain the lifter's
+responsibility. Assembly roundtrips cannot shorten the E9 into a short JMP.
 
 `sync-x86-mpx-registers.py` appends four reserved, nonallocatable physical
 registers and a bounds class. `sync-x86-mpx-instructions.py` appends native
@@ -95,10 +101,17 @@ executes 340 per optimization level on QEMU 10.2.2. The model incorrectly
 truncates 67H memory/table addresses, rejects LOCK BNDMOV memory stores, and
 uses decoded memory operands for register checks. Its nonzero BNDCFG directory
 base extraction also differs from the SDM; the fixture uses a zero directory
-base and does not qualify nonzero bases. See QEMU's
+base and does not qualify nonzero bases. Six additional branch-state cases
+observe all four banks after original conditional initialization or preservation,
+with MPX disabled, enabled/preserving, and enabled/initializing. The limitation
+option runs five and skips one: QEMU's E9/direct-CALL translation omits BNDINIT.
+Strict branch-state checking rejects the stale bounds. Byte and assembly tests
+still require the exact unprefixed E9, not an emulator-specific replacement.
+See QEMU's
 [`translate.c`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/translate.c),
 [`decode-new.c.inc`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/decode-new.c.inc),
-and [`mpx_helper.c`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/mpx_helper.c).
+[`mpx_helper.c`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/mpx_helper.c),
+and [`emit.c.inc`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/emit.c.inc).
 Skipped cases retain byte/transport coverage, not successful execution coverage.
 Physical MPX hardware qualification remains outstanding.
 
