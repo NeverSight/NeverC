@@ -26739,6 +26739,92 @@ static SDValue lowerMPXState(SDValue Op, const X86Subtarget &Subtarget,
                  0);
 }
 
+static SDValue lowerDescriptorStateAddress(SDValue Op,
+                                           const X86Subtarget &Subtarget,
+                                           SelectionDAG &DAG) {
+  unsigned Opcode, NarrowOpcode;
+  bool Wide = true, Verify = false;
+  switch (Op.getConstantOperandVal(1)) {
+  default:
+    llvm_unreachable("unexpected descriptor-state address intrinsic");
+  case Intrinsic::x86_verr_mem_address:
+    Opcode = X86::VERRm;
+    NarrowOpcode = X86::VERRm_ADDR32;
+    Verify = true;
+    break;
+  case Intrinsic::x86_verw_mem_address:
+    Opcode = X86::VERWm;
+    NarrowOpcode = X86::VERWm_ADDR32;
+    Verify = true;
+    break;
+  case Intrinsic::x86_sldt_mem_address:
+    Opcode = X86::SLDT16m;
+    NarrowOpcode = X86::SLDT16m_ADDR32;
+    break;
+  case Intrinsic::x86_str_mem_address:
+    Opcode = X86::STRm;
+    NarrowOpcode = X86::STRm_ADDR32;
+    break;
+  case Intrinsic::x86_smsw_mem_address:
+    Opcode = X86::SMSW16m;
+    NarrowOpcode = X86::SMSW16m_ADDR32;
+    break;
+  case Intrinsic::x86_lldt_mem_address:
+    Opcode = X86::LLDT16m;
+    NarrowOpcode = X86::LLDT16m_ADDR32;
+    break;
+  case Intrinsic::x86_ltr_mem_address:
+    Opcode = X86::LTRm;
+    NarrowOpcode = X86::LTRm_ADDR32;
+    break;
+  case Intrinsic::x86_lmsw_mem_address:
+    Opcode = X86::LMSW16m;
+    NarrowOpcode = X86::LMSW16m_ADDR32;
+    break;
+  case Intrinsic::x86_sgdt_address:
+    Opcode = X86::SGDT64m;
+    NarrowOpcode = X86::SGDT64m_ADDR32;
+    break;
+  case Intrinsic::x86_sidt_address:
+    Opcode = X86::SIDT64m;
+    NarrowOpcode = X86::SIDT64m_ADDR32;
+    break;
+  case Intrinsic::x86_lgdt_address:
+    Opcode = X86::LGDT64m;
+    NarrowOpcode = X86::LGDT64m_ADDR32;
+    break;
+  case Intrinsic::x86_lidt_address:
+    Opcode = X86::LIDT64m;
+    NarrowOpcode = X86::LIDT64m_ADDR32;
+    break;
+  case Intrinsic::x86_invlpg_address:
+    Opcode = X86::INVLPG;
+    NarrowOpcode = X86::INVLPG_ADDR32;
+    break;
+  }
+  if (Wide != Subtarget.is64Bit())
+    report_fatal_error("descriptor-state address intrinsic does not match the "
+                       "target code mode");
+  SDValue Chain, Glue;
+  auto Operands =
+      lowerNativeAddressOperands(Op, Subtarget, 2, DAG, Chain, Glue);
+  if (Op.getConstantOperandVal(3) != (Wide ? 64 : 32))
+    Opcode = NarrowOpcode;
+  Operands.push_back(Chain);
+  Operands.push_back(Glue);
+  const SDLoc DL(Op);
+  auto *Access = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue), Operands);
+  if (!Verify)
+    return SDValue(Access, 0);
+  SDValue ZF(
+      DAG.getMachineNode(X86::SETCCr, DL, MVT::i8,
+                         {DAG.getTargetConstant(X86::COND_E, DL, MVT::i8),
+                          SDValue(Access, 1)}),
+      0);
+  return DAG.getMergeValues({ZF, SDValue(Access, 0)}, DL);
+}
+
 static SDValue lowerDescriptorAddress(SDValue Op, const X86Subtarget &Subtarget,
                                       SelectionDAG &DAG) {
   const unsigned ID = Op.getConstantOperandVal(1);
@@ -27345,6 +27431,21 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_bndldx:
     case Intrinsic::x86_bndstx:
       return lowerMPXState(Op, Subtarget, DAG);
+
+    case Intrinsic::x86_verr_mem_address:
+    case Intrinsic::x86_verw_mem_address:
+    case Intrinsic::x86_sldt_mem_address:
+    case Intrinsic::x86_str_mem_address:
+    case Intrinsic::x86_smsw_mem_address:
+    case Intrinsic::x86_lldt_mem_address:
+    case Intrinsic::x86_ltr_mem_address:
+    case Intrinsic::x86_lmsw_mem_address:
+    case Intrinsic::x86_sgdt_address:
+    case Intrinsic::x86_sidt_address:
+    case Intrinsic::x86_lgdt_address:
+    case Intrinsic::x86_lidt_address:
+    case Intrinsic::x86_invlpg_address:
+      return lowerDescriptorStateAddress(Op, Subtarget, DAG);
 
     case Intrinsic::x86_lkgs_address:
     case Intrinsic::x86_lar_mem16_address:

@@ -677,6 +677,87 @@ TEST_F(X86PrivilegedIntrinTest, CliStiLowerCorrectly) {
 // ---------------------------------------------------------------------------
 // Descriptor table ops: sidt/lidt/sgdt/lgdt
 // ---------------------------------------------------------------------------
+TEST_F(X86PrivilegedIntrinTest,
+       DescriptorAddressesKeepNativeEffectsAndControls) {
+  std::string Source = "void probe(unsigned long long offset) {\n";
+  const std::vector<std::string> Names = {
+      "verr_mem_address", "verw_mem_address", "sldt_mem_address",
+      "str_mem_address",  "smsw_mem_address", "lldt_mem_address",
+      "ltr_mem_address",  "lmsw_mem_address", "sgdt_address",
+      "sidt_address",     "lgdt_address",     "lidt_address",
+      "invlpg_address"};
+  for (const auto &Name : Names)
+    for (const auto &Controls : {"64, 0", "32, 100", "32, 101"})
+      Source +=
+          "  (void)__builtin_ia32_" + Name + "(offset, " + Controls + ");\n";
+  Source += "}\n";
+  const auto File = tmpFile("descriptor_addresses.c");
+  writeFile(File, Source);
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      for (bool EmitIR : {true, false}) {
+        const auto Output = tmpFile(EmitIR ? "descriptor_addresses.ll"
+                                           : "descriptor_addresses.s");
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         "-std=c23",
+                                         "-ffreestanding",
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         Opt,
+                                         "-S",
+                                         File.string(),
+                                         "-o",
+                                         Output.string()};
+        if (EmitIR)
+          Args.push_back("-emit-llvm");
+        const auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        for (auto Name : Names) {
+          if (EmitIR) {
+            std::replace(Name.begin(), Name.end(), '_', '.');
+            EXPECT_NE(Text.find("@llvm.x86." + Name + "("), std::string::npos)
+                << Text;
+          } else {
+            Name = Name.substr(0, Name.find('_'));
+            const std::regex Pattern("\\t" + Name + "[a-z]*[\\t ]+");
+            EXPECT_EQ(std::distance(std::sregex_iterator(Text.begin(),
+                                                         Text.end(), Pattern),
+                                    std::sregex_iterator()),
+                      3)
+                << Text;
+          }
+        }
+        EXPECT_EQ(Text.find(EmitIR ? " asm " : "#APP"), std::string::npos)
+            << Text;
+        if (!EmitIR) {
+          const bool Intel = Text.find(".intel_syntax") != std::string::npos;
+          EXPECT_NE(Text.find(Intel ? "fs:[ebx]" : "%fs:(%ebx)"),
+                    std::string::npos)
+              << Text;
+          EXPECT_NE(Text.find(Intel ? "gs:[ebx]" : "%gs:(%ebx)"),
+                    std::string::npos)
+              << Text;
+        }
+      }
+    }
+  for (const auto &Name : Names)
+    for (const auto &Controls : {"16, 0", "64, 1", "offset, 0", "64, offset"}) {
+      writeFile(File,
+                "void invalid(unsigned long long offset) { __builtin_ia32_" +
+                    Name + "(offset, " + Controls + "); }");
+      const auto Result =
+          ncc({"--target=x86_64-unknown-linux-gnu", "-ffreestanding",
+               "-fno-builtin-mimalloc", "-fsyntax-only", File.string()});
+      EXPECT_NE(Result.exitCode, 0) << Name << " " << Controls;
+    }
+}
+
 TEST_F(X86PrivilegedIntrinTest, DescriptorTableOpsLowerCorrectly) {
   auto [rc, s] = compileToAsm(R"(
     void do_sidt(void *p) { __sidt(p); }

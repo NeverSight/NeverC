@@ -39,7 +39,7 @@ class SVMAddressTablesTest(unittest.TestCase):
 
     def test_explicit_memory_preserves_operand_classes_memory_and_flags(self):
         text = (SVM.TABLES.TARGET / "X86GenInstrInfo.inc").read_text()
-        for prototype in (*SVM.VMX, *SVM.DESCRIPTOR):
+        for prototype in (*SVM.VMX, *SVM.DESCRIPTOR, *SVM.STATE):
             original = SVM.TABLES.descriptor(text, prototype)
             pseudo = SVM.TABLES.descriptor(text, prototype + "_ADDR32")
             self.assertEqual(pseudo[1:9], original[1:9], prototype)

@@ -582,6 +582,19 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1) ||
            CheckMemoryAddress(TheCall->getNumArgs() - 2);
+  case X86::BI__builtin_ia32_verr_mem_address:
+  case X86::BI__builtin_ia32_verw_mem_address:
+  case X86::BI__builtin_ia32_sldt_mem_address:
+  case X86::BI__builtin_ia32_str_mem_address:
+  case X86::BI__builtin_ia32_smsw_mem_address:
+  case X86::BI__builtin_ia32_lldt_mem_address:
+  case X86::BI__builtin_ia32_ltr_mem_address:
+  case X86::BI__builtin_ia32_lmsw_mem_address:
+  case X86::BI__builtin_ia32_sgdt_address:
+  case X86::BI__builtin_ia32_sidt_address:
+  case X86::BI__builtin_ia32_lgdt_address:
+  case X86::BI__builtin_ia32_lidt_address:
+  case X86::BI__builtin_ia32_invlpg_address:
   case X86::BI__builtin_ia32_lkgs_address:
   case X86::BI__builtin_ia32_lar_mem16_address:
   case X86::BI__builtin_ia32_lar_mem32_address:

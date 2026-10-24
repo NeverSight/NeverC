@@ -616,6 +616,45 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
            "Unexpected number of operands!");
     OutMI.setOpcode(convertTailJumpOpcode(OutMI.getOpcode()));
     break;
+  case X86::VERRm_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::VERRm, 0, 32);
+    break;
+  case X86::VERWm_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::VERWm, 0, 32);
+    break;
+  case X86::SLDT16m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::SLDT16m, 0, 32);
+    break;
+  case X86::STRm_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::STRm, 0, 32);
+    break;
+  case X86::SMSW16m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::SMSW16m, 0, 32);
+    break;
+  case X86::LLDT16m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::LLDT16m, 0, 32);
+    break;
+  case X86::LTRm_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::LTRm, 0, 32);
+    break;
+  case X86::LMSW16m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::LMSW16m, 0, 32);
+    break;
+  case X86::SGDT64m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::SGDT64m, 0, 32);
+    break;
+  case X86::SIDT64m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::SIDT64m, 0, 32);
+    break;
+  case X86::LGDT64m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::LGDT64m, 0, 32);
+    break;
+  case X86::LIDT64m_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::LIDT64m, 0, 32);
+    break;
+  case X86::INVLPG_ADDR32:
+    lowerNativeAddressOverride(OutMI, X86::INVLPG, 0, 32);
+    break;
   case X86::LKGS16m_ADDR32:
     lowerNativeAddressOverride(OutMI, X86::LKGS16m, 0, 32);
     break;

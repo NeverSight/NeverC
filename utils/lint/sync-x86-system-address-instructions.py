@@ -26,8 +26,9 @@ VMX = ("VMREAD64mr", "VMWRITE64rm", "INVEPT64", "INVVPID64",
        "VMCLEARm", "VMPTRLDm", "VMPTRSTm", "VMXON")
 DESCRIPTOR = ("LKGS16m", *(f"{op}{bits}rm" for op in ("LAR", "LSL")
                            for bits in (16, 32, 64)))
+STATE = ("VERRm", "VERWm", "SLDT16m", "STRm", "SMSW16m", "LLDT16m", "LTRm", "LMSW16m", "SGDT64m", "SIDT64m", "LGDT64m", "LIDT64m", "INVLPG")
 INSTRUCTIONS = tuple((op + "_ADDR32", op, None, None)
-                     for op in (*IMPLICIT, *VMX, *DESCRIPTOR))
+                     for op in (*IMPLICIT, *VMX, *DESCRIPTOR, *STATE))
 
 
 def synchronize_table(text):

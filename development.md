@@ -555,6 +555,43 @@ global address used in descriptor construction. Prefer bitcode for this
 cross-version boundary. Other differences between LLVM versions still need
 their own qualification.
 
+### Explicit descriptor-state addresses
+
+Thirteen header-free builtins add `offset, address_bits, segment_prefix`
+operands to descriptor-state memory instructions:
+`__builtin_ia32_{verr,verw,sldt,str,smsw,lldt,ltr,lmsw}_mem_address` and
+`__builtin_ia32_{sgdt,sidt,lgdt,lidt,invlpg}_address`. Offsets are
+`unsigned long long`; the two unsigned controls are constants. VERR/VERW
+return `unsigned char` ZF and the other interfaces return `void`. All retain
+instruction-owned accesses and unknown memory effects, including dead checks.
+The same width/prefix validation as the descriptor-query APIs applies.
+
+Full LLVM supplies the corresponding `.address` and i386 `.address32` APIs,
+plus `llvm.x86.{sgdt16,sidt16,lgdt16,lidt16}.address32` for the legacy 16-bit
+descriptor-table operand size. These are distinct from a 16-bit address.
+NeverC remains x64-only. Existing pointer and register builtins are unchanged.
+The instruction generator appends thirteen address-size pseudos while
+preserving every existing opcode identity.
+
+`tests/verify-descriptor-state-address-completion.py` checks complete native
+bytes, all seven segment controls and both address widths, O0/O2, three object
+formats, ATT/Intel assembly round trips, wrapping high offsets, ZF, live inputs,
+repeated/dead calls, memory ordering and saved registers. Its controlled
+instruction boundaries do not model descriptor permissions or native faults.
+`tests/verify-descriptor-state-qemu.py --address-bits 32` additionally runs
+CPL0 selector, CR0 and descriptor-table transfers on TCG; full LLVM includes
+i386 16-bit table loads/stores against independent original bytes. The
+`--address-bits 64` run covers natural long-mode addressing. Physical hardware
+qualification is separate.
+
+The full fork passes 3,144 object/encoding checks; NeverC and its bitcode-to-fork
+route each pass 1,404. Explicit-address CPL0 runs pass 210 checks for full LLVM
+with `--address-bits 32`, 102 for its 64-bit-only run, and 102 for each NeverC
+route at either width. The compiler suite passes 65 tests, the independent
+binary suite 89, generator/sort regressions 36, and target/MC plugin tests 221.
+Both schemas regenerate successfully: x86 adds thirteen instructions to 18,538,
+while all prior instructions, registers and features remain unchanged.
+
 ### Descriptor queries (LAR / LSL)
 
 `__builtin_ia32_lar_{reg,mem}{16,32,64}` and the corresponding `lsl` builtins

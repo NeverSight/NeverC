@@ -23,7 +23,7 @@ SPEC.loader.exec_module(STATE)
 run = STATE.run
 
 
-def source(mode, llvm_route):
+def source(mode, llvm_route, address_bits=None):
     declarations = []
     if llvm_route:
         # Clang supplies only ordinary C lowering here. Assembly labels name
@@ -33,7 +33,23 @@ def source(mode, llvm_route):
             api = STATE.api_name(*case)
             argument = "void *" if form == "mem" else ("unsigned short" if form and operation not in STATE.READS else "void")
             declarations.append(f'extern {STATE.CTYPE[bits] if bits else "void"} __builtin_ia32_{api.replace(".", "_")}({argument}) __asm__("llvm.x86.{api}");')
-    body = [*declarations, "typedef __UINTPTR_TYPE__ word;",
+    if address_bits and llvm_route:
+        for operation in (*STATE.READS, *STATE.VERIFY, "lldt", "ltr", "lmsw",
+                          "sgdt", "sidt", "lgdt", "lidt", "invlpg"):
+            memory = operation not in ("sgdt", "sidt", "lgdt", "lidt", "invlpg")
+            api = operation + (".mem" if memory else "") + ".address"
+            c_name = "__builtin_ia32_" + api.replace(".", "_")
+            result = "unsigned char" if operation in STATE.VERIFY else "void"
+            suffix = "32" if mode == 32 else ""
+            declarations.append(f'extern {result} {c_name}(__UINTPTR_TYPE__, unsigned, unsigned) __asm__("llvm.x86.{api}{suffix}");')
+    if address_bits and llvm_route and mode == 32:
+        for operation in ("sgdt", "sidt", "lgdt", "lidt"):
+            declarations.append(f'extern void __builtin_ia32_{operation}16_address(unsigned, unsigned, unsigned) __asm__("llvm.x86.{operation}16.address32");')
+    wrappers = []
+    if address_bits:
+        for operation in (*STATE.READS, *STATE.VERIFY, "lldt", "ltr", "lmsw"):
+            wrappers.append(f"#define __builtin_ia32_{operation}_mem(p) __builtin_ia32_{operation}_mem_address((word)(p), {address_bits}, 0)")
+    body = [*declarations, "typedef __UINTPTR_TYPE__ word;", *wrappers,
             "extern unsigned long long guest_gdt[10];",
             "static unsigned long long ldt[2] = {0, 0x00cf93000000ffffULL};",
             "static unsigned char tss[2][104];",
@@ -89,6 +105,33 @@ def source(mode, llvm_route):
     body += ["  selector = (unsigned short)(before & ~1U);", "  __builtin_ia32_lmsw_mem(&selector);",
              '  __asm__ volatile("mov %%cr0, %0" : "=r"(after) : : "memory");']
     check("after == before")  # LMSW cannot clear PE in protected mode.
+    if address_bits:
+        body += ["  struct table { unsigned short limit; word base; } __attribute__((packed));",
+                 "  struct { unsigned char before; struct table value; unsigned char after; } __attribute__((packed)) table = {0xa5, {0, 0}, 0x5a};"]
+        for store, load in (("sgdt", "lgdt"), ("sidt", "lidt")):
+            body.append(f"  __builtin_ia32_{store}_address((word)&table.value, {address_bits}, 0);")
+            check("table.before == 0xa5 && table.after == 0x5a")
+            if store == "sgdt":
+                check("table.value.base == (word)guest_gdt && table.value.limit == sizeof(guest_gdt) - 1")
+            body += ["  struct table " + store + "_prior = table.value;",
+                     f"  __builtin_ia32_{load}_address((word)&table.value, {address_bits}, 0);",
+                     "  table.value.limit = 0; table.value.base = 0;",
+                     f"  __builtin_ia32_{store}_address((word)&table.value, {address_bits}, 0);"]
+            check(f"table.value.limit == {store}_prior.limit && table.value.base == {store}_prior.base")
+        if mode == 32:
+            for store, load in (("sgdt", "lgdt"), ("sidt", "lidt")):
+                check(f"({store}_prior.base >> 24) == 0")
+                body += [f"  table.value = {store}_prior;",
+                         "  table.value.base |= 0xff000000U;",
+                         f"  __builtin_ia32_{load}16_address((word)&table.value, 32, 0);",
+                         f"  __builtin_ia32_{store}_address((word)&table.value, 32, 0);"]
+                check(f"table.value.base == {store}_prior.base && table.value.limit == {store}_prior.limit")
+                body += [f"  struct table {store}_expected;",
+                         f'  __asm__ volatile(".byte 0x66,0x0f,0x01,{0 if store == "sgdt" else 8}" : : "a"(&{store}_expected) : "memory");',
+                         f"  __builtin_ia32_{store}16_address((word)&table.value, 32, 0);"]
+                check(f"table.value.base == {store}_expected.base && table.value.limit == {store}_expected.limit")
+                check("table.before == 0xa5 && table.after == 0x5a")
+        body.append(f"  __builtin_ia32_invlpg_address((word)tss, {address_bits}, 0);")
     body += ["  __builtin_ia32_invd();", "  return 16;", "}"]
     return "\n".join(body) + "\n", checks + 1
 
@@ -208,6 +251,8 @@ def main():
     backend.add_argument("--backend-llc", type=Path)
     for option, tool in (("clang", "clang"), ("linker", "ld.lld"), ("objcopy", "objcopy"), ("qemu", "qemu-system-x86_64")):
         parser.add_argument("--" + option, default=shutil.which(tool))
+    parser.add_argument("--address-bits", type=int, choices=(32, 64),
+                        help="use explicit-address APIs (i386 requires 32)")
     parser.add_argument("--keep", type=Path)
     args = parser.parse_args()
     if not all((args.clang, args.linker, args.objcopy, args.qemu)):
@@ -218,8 +263,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix="descriptor-cpl0-") as temporary:
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        count = sum(check_guest(args, directory, mode, opt)
-                    for mode in ((32, 64) if args.llc else (64,)) for opt in ("O0", "O2"))
+        modes = (32, 64) if args.llc and args.address_bits != 64 else (64,)
+        builder = lambda mode, llvm_route: source(mode, llvm_route, args.address_bits)
+        count = sum(check_guest(args, directory, mode, opt, source_builder=builder)
+                    for mode in modes for opt in ("O0", "O2"))
     print(f"PASS: {count} CPL0 descriptor/machine-state checks in QEMU TCG")
 
 

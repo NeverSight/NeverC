@@ -89,6 +89,12 @@ ADDRESS_SIGNATURES = {
        for name in ("vmclear", "vmptrld", "vmxon")},
     "vmptrst_address": (("Done", "I64", "I32", "I32"), (1, 2)),
 }
+for operation in ("verr_mem", "verw_mem", "sldt_mem", "str_mem", "smsw_mem",
+                  "lldt_mem", "ltr_mem", "lmsw_mem", "sgdt", "sidt", "lgdt",
+                  "lidt", "invlpg"):
+    result = "I8" if operation in ("verr_mem", "verw_mem") else "Done"
+    ADDRESS_SIGNATURES[operation + "_address"] = ((result, "I64", "I32", "I32"), (1, 2))
+
 # MPX uses the same constant-argument machinery for bounds-bank indices and
 # address encoding controls. Effects remain conservative for disabled/faulting
 # native operations as well as successful bounds accesses.

@@ -20398,6 +20398,19 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// MPX_STATE64
     0U,	// MPX_MOVE_BOUNDS
     0U,	// MPX_BRANCH
+    0U,	// VERRm_ADDR32
+    0U,	// VERWm_ADDR32
+    0U,	// SLDT16m_ADDR32
+    0U,	// STRm_ADDR32
+    0U,	// SMSW16m_ADDR32
+    0U,	// LLDT16m_ADDR32
+    0U,	// LTRm_ADDR32
+    0U,	// LMSW16m_ADDR32
+    0U,	// SGDT64m_ADDR32
+    0U,	// SIDT64m_ADDR32
+    0U,	// LGDT64m_ADDR32
+    0U,	// LIDT64m_ADDR32
+    0U,	// INVLPG_ADDR32
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38926,6 +38939,19 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// MPX_STATE64
     0U,	// MPX_MOVE_BOUNDS
     0U,	// MPX_BRANCH
+    0U,	// VERRm_ADDR32
+    0U,	// VERWm_ADDR32
+    0U,	// SLDT16m_ADDR32
+    0U,	// STRm_ADDR32
+    0U,	// SMSW16m_ADDR32
+    0U,	// LLDT16m_ADDR32
+    0U,	// LTRm_ADDR32
+    0U,	// LMSW16m_ADDR32
+    0U,	// SGDT64m_ADDR32
+    0U,	// SIDT64m_ADDR32
+    0U,	// LGDT64m_ADDR32
+    0U,	// LIDT64m_ADDR32
+    0U,	// INVLPG_ADDR32
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57454,6 +57480,19 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// MPX_STATE64
     0U,	// MPX_MOVE_BOUNDS
     0U,	// MPX_BRANCH
+    0U,	// VERRm_ADDR32
+    0U,	// VERWm_ADDR32
+    0U,	// SLDT16m_ADDR32
+    0U,	// STRm_ADDR32
+    0U,	// SMSW16m_ADDR32
+    0U,	// LLDT16m_ADDR32
+    0U,	// LTRm_ADDR32
+    0U,	// LMSW16m_ADDR32
+    0U,	// SGDT64m_ADDR32
+    0U,	// SIDT64m_ADDR32
+    0U,	// LGDT64m_ADDR32
+    0U,	// LIDT64m_ADDR32
+    0U,	// INVLPG_ADDR32
 };
 
   // Emit the opcode for the instruction.

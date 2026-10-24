@@ -3664,6 +3664,51 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndldx), Ops);
   case X86::BI__builtin_ia32_bndstx:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndstx), Ops);
+  case X86::BI__builtin_ia32_verr_mem_address:
+    return Builder.CreateIntrinsic(Int8Ty,
+                                   llvm::Intrinsic::x86_verr_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_verw_mem_address:
+    return Builder.CreateIntrinsic(Int8Ty,
+                                   llvm::Intrinsic::x86_verw_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_sldt_mem_address:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_sldt_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_str_mem_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_str_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_smsw_mem_address:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_smsw_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_lldt_mem_address:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_lldt_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_ltr_mem_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_ltr_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_lmsw_mem_address:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_lmsw_mem_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_sgdt_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_sgdt_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_sidt_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_sidt_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_lgdt_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lgdt_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_lidt_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lidt_address,
+                                   {Ops[0], Ops[1], Ops[2]});
+  case X86::BI__builtin_ia32_invlpg_address:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpg_address,
+                                   {Ops[0], Ops[1], Ops[2]});
   case X86::BI__builtin_ia32_lkgs_address:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_lkgs_address),
                               Ops);

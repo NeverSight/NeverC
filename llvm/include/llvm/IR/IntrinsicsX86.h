@@ -1056,6 +1056,7 @@ enum X86Intrinsics : unsigned {
     x86_invept,                                      // llvm.x86.invept
     x86_invept_address,                              // llvm.x86.invept.address
     x86_invlpg,                                      // llvm.x86.invlpg
+    x86_invlpg_address,                              // llvm.x86.invlpg.address
     x86_invlpga,                                     // llvm.x86.invlpga
     x86_invlpga_addr32,                              // llvm.x86.invlpga.addr32
     x86_invlpgb,                                     // llvm.x86.invlpgb
@@ -1077,14 +1078,18 @@ enum X86Intrinsics : unsigned {
     x86_ldtilecfg,                                   // llvm.x86.ldtilecfg
     x86_ldtilecfg_internal,                          // llvm.x86.ldtilecfg.internal
     x86_lgdt,                                        // llvm.x86.lgdt
+    x86_lgdt_address,                                // llvm.x86.lgdt.address
     x86_lidt,                                        // llvm.x86.lidt
+    x86_lidt_address,                                // llvm.x86.lidt.address
     x86_lkgs_address,                                // llvm.x86.lkgs.address
     x86_lkgs_mem,                                    // llvm.x86.lkgs.mem
     x86_lkgs_reg,                                    // llvm.x86.lkgs.reg
     x86_lldt_mem,                                    // llvm.x86.lldt.mem
+    x86_lldt_mem_address,                            // llvm.x86.lldt.mem.address
     x86_lldt_reg,                                    // llvm.x86.lldt.reg
     x86_llwpcb,                                      // llvm.x86.llwpcb
     x86_lmsw_mem,                                    // llvm.x86.lmsw.mem
+    x86_lmsw_mem_address,                            // llvm.x86.lmsw.mem.address
     x86_lmsw_reg,                                    // llvm.x86.lmsw.reg
     x86_loadiwkey,                                   // llvm.x86.loadiwkey
     x86_lsl,                                         // llvm.x86.lsl
@@ -1098,6 +1103,7 @@ enum X86Intrinsics : unsigned {
     x86_lsl_reg32,                                   // llvm.x86.lsl.reg32
     x86_lsl_reg64,                                   // llvm.x86.lsl.reg64
     x86_ltr_mem,                                     // llvm.x86.ltr.mem
+    x86_ltr_mem_address,                             // llvm.x86.ltr.mem.address
     x86_ltr_reg,                                     // llvm.x86.ltr.reg
     x86_lwpins32,                                    // llvm.x86.lwpins32
     x86_lwpins64,                                    // llvm.x86.lwpins64
@@ -1221,6 +1227,7 @@ enum X86Intrinsics : unsigned {
     x86_serialize,                                   // llvm.x86.serialize
     x86_setssbsy,                                    // llvm.x86.setssbsy
     x86_sgdt,                                        // llvm.x86.sgdt
+    x86_sgdt_address,                                // llvm.x86.sgdt.address
     x86_sha1msg1,                                    // llvm.x86.sha1msg1
     x86_sha1msg2,                                    // llvm.x86.sha1msg2
     x86_sha1nexte,                                   // llvm.x86.sha1nexte
@@ -1229,12 +1236,15 @@ enum X86Intrinsics : unsigned {
     x86_sha256msg2,                                  // llvm.x86.sha256msg2
     x86_sha256rnds2,                                 // llvm.x86.sha256rnds2
     x86_sidt,                                        // llvm.x86.sidt
+    x86_sidt_address,                                // llvm.x86.sidt.address
     x86_sldt_mem,                                    // llvm.x86.sldt.mem
+    x86_sldt_mem_address,                            // llvm.x86.sldt.mem.address
     x86_sldt_reg16,                                  // llvm.x86.sldt.reg16
     x86_sldt_reg32,                                  // llvm.x86.sldt.reg32
     x86_sldt_reg64,                                  // llvm.x86.sldt.reg64
     x86_slwpcb,                                      // llvm.x86.slwpcb
     x86_smsw_mem,                                    // llvm.x86.smsw.mem
+    x86_smsw_mem_address,                            // llvm.x86.smsw.mem.address
     x86_smsw_reg16,                                  // llvm.x86.smsw.reg16
     x86_smsw_reg32,                                  // llvm.x86.smsw.reg32
     x86_smsw_reg64,                                  // llvm.x86.smsw.reg64
@@ -1417,6 +1427,7 @@ enum X86Intrinsics : unsigned {
     x86_stosq,                                       // llvm.x86.stosq
     x86_stosw,                                       // llvm.x86.stosw
     x86_str_mem,                                     // llvm.x86.str.mem
+    x86_str_mem_address,                             // llvm.x86.str.mem.address
     x86_str_reg16,                                   // llvm.x86.str.reg16
     x86_str_reg32,                                   // llvm.x86.str.reg32
     x86_str_reg64,                                   // llvm.x86.str.reg64
@@ -1495,8 +1506,10 @@ enum X86Intrinsics : unsigned {
     x86_vcvtps2ph_128,                               // llvm.x86.vcvtps2ph.128
     x86_vcvtps2ph_256,                               // llvm.x86.vcvtps2ph.256
     x86_verr_mem,                                    // llvm.x86.verr.mem
+    x86_verr_mem_address,                            // llvm.x86.verr.mem.address
     x86_verr_reg,                                    // llvm.x86.verr.reg
     x86_verw_mem,                                    // llvm.x86.verw.mem
+    x86_verw_mem_address,                            // llvm.x86.verw.mem.address
     x86_verw_reg,                                    // llvm.x86.verw.reg
     x86_vgf2p8affineinvqb_128,                       // llvm.x86.vgf2p8affineinvqb.128
     x86_vgf2p8affineinvqb_256,                       // llvm.x86.vgf2p8affineinvqb.256
