@@ -108,20 +108,24 @@ jobs:
           jq -e '.schema == 1' "$catalog_path" >/dev/null || die "unsupported profile catalog schema"
           release_profiles=$(jq -c '.profiles | keys | sort' "$lock_path")
           catalog_profiles=$(jq -c '[.profiles[].legacy_id | tostring] | sort' "$catalog_path")
+          preview_profiles=$(jq -c '[.profiles[] | select((.linux_extraversion // "") | test("^-rc[0-9]+$")) | .legacy_id | tostring] | sort' "$catalog_path")
           missing=$(jq -n --argjson release "$release_profiles" --argjson catalog "$catalog_profiles" \
             '$release - $catalog | length')
           extra=$(jq -n --argjson release "$release_profiles" --argjson catalog "$catalog_profiles" \
-            '$catalog - $release | length')
+            --argjson preview "$preview_profiles" '$catalog - $release - $preview | length')
           [ "$missing" = "0" ] || \
             die "release lock has profiles missing from the catalog"
           [ "$extra" = "0" ] || \
-            die "profile catalog has profiles missing from the release lock"
+            die "stable profile catalog has profiles missing from the release lock"
+          unpublished=$(jq -cn --argjson release "$release_profiles" --argjson catalog "$catalog_profiles" \
+            '$catalog - $release')
+          echo "Unpublished previews excluded from the release boot matrix: $unpublished"
 
           selected=${INPUT_PROFILE:-all}
           if [ "$selected" = "all" ]; then
             matrix=$(jq -c '.profiles | keys' "$lock_path")
           else
-            jq -e --arg profile "$selected" '.profiles[$profile] != null' "$lock_path" >/dev/null || die "unknown profile: $selected"
+            jq -e --arg profile "$selected" '.profiles[$profile] != null' "$lock_path" >/dev/null || die "profile has no pinned release artifact: $selected"
             matrix=$(jq -cn --arg profile "$selected" '[$profile]')
           fi
           release_repository=$(jq -r .repository.name "$lock_path")

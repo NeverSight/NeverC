@@ -12,7 +12,7 @@ from host_test_compiler import host_compiler_command
 
 TOOLS_ROOT = Path(__file__).resolve().parent
 RUNTIME_ROOT = TOOLS_ROOT.parent
-PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618)
+PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618, 703)
 
 
 def certificate_dir_context(certificate):
@@ -44,6 +44,7 @@ def check_profile_evidence():
         606: "returns_bool",
         612: "returns_bool",
         618: "returns_bool",
+        703: "returns_bool",
     }
     catalog = json.loads(
         (RUNTIME_ROOT / "arm64/gki-profiles.json").read_text(encoding="utf-8")
@@ -67,7 +68,7 @@ def check_profile_evidence():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         actual = manifest["layouts"].get("dir_context")
         expected_profile_layout = expected_layout
-        if profile == 618:
+        if profile in (618, 703):
             expected_profile_layout = {
                 "member_sizes": {
                     "actor": 8,

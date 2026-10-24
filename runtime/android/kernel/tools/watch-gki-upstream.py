@@ -36,6 +36,9 @@ KMI_NEXT_RE = re.compile(r"^android(\d+)-(\d+)\.(\d+)-kminext$")
 MAKEFILE_FIELD_RE = re.compile(
     r"^(VERSION|PATCHLEVEL|SUBLEVEL)\s*=\s*(\d+)\s*$", re.MULTILINE
 )
+MAKEFILE_EXTRAVERSION_RE = re.compile(
+    r"^EXTRAVERSION[ \t]*=[ \t]*([^\s#]*)[ \t]*(?:#.*)?$", re.MULTILINE
+)
 KMI_GENERATION_RE = re.compile(
     r"""^KMI_GENERATION\s*=\s*["']?(\d+)["']?\s*$""", re.MULTILINE
 )
@@ -82,6 +85,7 @@ def load_catalog(path):
                 "linux_major": int(profile["linux_major"]),
                 "linux_minor": int(profile["linux_minor"]),
                 "linux_patch": int(profile["linux_patch"]),
+                "linux_extraversion": profile.get("linux_extraversion", ""),
                 "kmi_generation": int(profile["kmi_generation"]),
             }
         )
@@ -130,6 +134,12 @@ def parse_makefile_version(text):
     return found["VERSION"], found["PATCHLEVEL"], found["SUBLEVEL"]
 
 
+def parse_makefile_release(text):
+    major, minor, patch = parse_makefile_version(text)
+    extra = MAKEFILE_EXTRAVERSION_RE.findall(text)
+    return f"{major}.{minor}.{patch}" + (extra[-1] if extra else "")
+
+
 def parse_kmi_generation(text):
     match = KMI_GENERATION_RE.search(text)
     if match is None:
@@ -144,7 +154,7 @@ def is_pointer_file(text):
 
 def read_kmi_generation(branch, opener=None):
     seen = []
-    pending = ["build.config.constants", "build.config.common"]
+    pending = ["build.config.constants", "build.config.common", "bazel/constants.scl"]
     while pending:
         path = pending.pop(0)
         if path in seen:
@@ -161,7 +171,7 @@ def read_kmi_generation(branch, opener=None):
             return generation, path
         if is_pointer_file(text):
             pending.insert(0, text.strip())
-    raise WatchError(f"{branch} has no KMI_GENERATION in constants/common")
+    raise WatchError(f"{branch} has no KMI_GENERATION in build or Bazel constants")
 
 
 def probe_branch(branch, opener=None):
@@ -181,7 +191,7 @@ def probe_branch(branch, opener=None):
         "linux_patch": patch,
         "kmi_generation": generation,
         "kmi_source": source,
-        "linux_release": f"{major}.{minor}.{patch}",
+        "linux_release": parse_makefile_release(makefile),
         "kmi_version": kmi_version,
     }
 
@@ -272,13 +282,14 @@ def family_identity(family):
         "kmi_generation": family["kmi_generation"],
         "linux_release": (
             f"{family['linux_major']}.{family['linux_minor']}."
-            f"{family['linux_patch']}"
+            f"{family['linux_patch']}{family.get('linux_extraversion', '')}"
         ),
     }
 
 
-def probe_family(family, opener=None, header_cache=None):
-    live = probe_branch(family["kernel_name"], opener=opener)
+def probe_family(family, opener=None, header_cache=None, live=None):
+    if live is None:
+        live = probe_branch(family["kernel_name"], opener=opener)
     kminext = probe_optional_branch(f"{family['kernel_name']}-kminext", opener=opener)
     cache = {} if header_cache is None else header_cache
     live_layout = probe_layouts(family["kernel_name"], opener=opener, cache=cache)
@@ -319,6 +330,7 @@ def snapshot_family(record):
         "linux_major": live["linux_major"],
         "linux_minor": live["linux_minor"],
         "linux_patch": live["linux_patch"],
+        "linux_release": live["linux_release"],
         "kmi_generation": live["kmi_generation"],
         "kminext_kmi_generation": None
         if kminext is None
@@ -349,6 +361,7 @@ def baseline_from_catalog(families):
                 "linux_major": family["linux_major"],
                 "linux_minor": family["linux_minor"],
                 "linux_patch": family["linux_patch"],
+                "linux_release": family_identity(family)["linux_release"],
                 "kmi_generation": family["kmi_generation"],
                 "kminext_kmi_generation": None,
             }
@@ -363,6 +376,7 @@ def _catalog_identity(record):
         "linux_major": record["linux_major"],
         "linux_minor": record["linux_minor"],
         "linux_patch": record["linux_patch"],
+        "linux_release": record["linux_release"],
         "kmi_generation": record["kmi_generation"],
         "kminext_kmi_generation": None,
     }
@@ -383,6 +397,7 @@ def _previous_family_state(previous, record):
     except (KeyError, TypeError, ValueError):
         state = fallback
     state["kminext_kmi_generation"] = previous.get("kminext_kmi_generation")
+    state["linux_release"] = previous.get("linux_release")
     state["layout"] = previous.get("layout")
     state["kminext_layout"] = previous.get("kminext_layout")
     return state
@@ -398,19 +413,12 @@ def collect_changes(records, snapshot, known_branches):
         name = record["kernel_name"]
         live = record["live"]
         previous = _previous_family_state(previous_families.get(name), record)
-        catalog_release = (
-            f"{record['linux_major']}.{record['linux_minor']}."
-            f"{record['linux_patch']}"
-        )
-        prev_release = (
+        catalog_release = record["linux_release"]
+        prev_release = previous.get("linux_release") or (
             f"{previous['linux_major']}.{previous['linux_minor']}."
             f"{previous['linux_patch']}"
         )
-        if linux_tuple(live) != (
-            int(previous["linux_major"]),
-            int(previous["linux_minor"]),
-            int(previous["linux_patch"]),
-        ):
+        if live["linux_release"] != prev_release:
             changes.append(
                 {
                     "kind": "gki_version",
@@ -491,16 +499,12 @@ def collect_changes(records, snapshot, known_branches):
 def catalog_drift(records):
     drift = []
     for record in records:
+        if record.get("development"):
+            continue
         live = record["live"]
-        catalog_release = (
-            f"{record['linux_major']}.{record['linux_minor']}."
-            f"{record['linux_patch']}"
-        )
-        if linux_tuple(live) != (
-            record["linux_major"],
-            record["linux_minor"],
-            record["linux_patch"],
-        ) or int(live["kmi_generation"]) != int(record["kmi_generation"]):
+        catalog_release = record["linux_release"]
+        if (live["linux_release"] != catalog_release or
+                int(live["kmi_generation"]) != int(record["kmi_generation"])):
             drift.append(
                 {
                     "kernel_name": record["kernel_name"],
@@ -675,6 +679,8 @@ def format_markdown_report(report):
         extra = ""
         if record.get("kminext") is not None:
             extra = f", kminext KMI {record['kminext']['kmi_generation']}"
+        if record.get("development"):
+            extra += ", ABI discovery; runtime profile unavailable"
         lines.append(
             f"- `{record['kernel_name']}` ({record['legacy_id']}) "
             f"{live['linux_release']} KMI {live['kmi_generation']}{extra}"
@@ -784,6 +790,16 @@ def build_discord_payload(report):
                 for error in report["errors"]
             )
         )
+    development = [record for record in report["families"] if record.get("development")]
+    if development:
+        sections.append(
+            "**ABI discovery (runtime profile unavailable)**\n"
+            + "\n".join(
+                f"`{record['kernel_name']}` {record['live']['linux_release']} "
+                f"KMI {record['live']['kmi_generation']}"
+                for record in development
+            )
+        )
     if not sections:
         live_lines = [
             f"`{record['kernel_name']}` {record['live']['linux_release']} "
@@ -849,16 +865,31 @@ def is_transient_probe_error(error):
     return isinstance(cause, (urllib.error.URLError, TimeoutError, OSError))
 
 
-def probe_all(families, opener=None, ls_remote=None):
+def probe_all(families, opener=None, ls_remote=None, development_profiles=()):
     records = []
     errors = []
     header_cache = {}
-    for family in families:
+    for family in [*families, *development_profiles]:
         for attempt in range(2):
             try:
-                records.append(
-                    probe_family(family, opener=opener, header_cache=header_cache)
+                live = None
+                if family.get("development"):
+                    live = probe_branch(family["kernel_name"], opener=opener)
+                    parsed = GKI_BRANCH_RE.fullmatch(family["kernel_name"])
+                    family = {
+                        **family,
+                        "android_release": int(parsed.group(1)),
+                        **{key: live[key] for key in (
+                            "linux_major", "linux_minor", "linux_patch", "kmi_generation"
+                        )},
+                    }
+                record = probe_family(
+                    family, opener=opener, header_cache=header_cache, live=live
                 )
+                if family.get("development"):
+                    record["development"] = True
+                    record["linux_release"] = live["linux_release"]
+                records.append(record)
                 break
             except Exception as error:  # noqa: BLE001 — keep other families
                 if attempt == 0 and is_transient_probe_error(error):
@@ -879,9 +910,24 @@ def probe_all(families, opener=None, ls_remote=None):
     return records, errors, known_branches
 
 
+def parse_development_profile(value):
+    profile_id, separator, name = value.partition(":")
+    if (
+        not separator or not profile_id.isdecimal()
+        or not 0 < int(profile_id) <= 0xFFFFFFFF
+        or not GKI_BRANCH_RE.fullmatch(name)
+    ):
+        raise argparse.ArgumentTypeError("expected a profile ID and GKI branch, e.g. 703:android18-7.3")
+    return {"legacy_id": int(profile_id), "kernel_name": name, "development": True}
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
+    parser.add_argument(
+        "--development-profile", action="append", type=parse_development_profile,
+        default=[], help="watch ID:branch during ABI discovery without a runtime profile",
+    )
     parser.add_argument("--snapshot-in", type=Path)
     parser.add_argument("--snapshot-out", type=Path)
     parser.add_argument("--report-out", type=Path)
@@ -913,12 +959,20 @@ def main(argv=None, opener=None, environ=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     env = os.environ if environ is None else environ
     families = load_catalog(args.catalog)
+    ids = {family["legacy_id"] for family in families}
+    names = catalog_kernel_names(families)
+    for profile in args.development_profile:
+        if profile["legacy_id"] in ids or profile["kernel_name"] in names:
+            raise WatchError("development profiles must have distinct, uncatalogued IDs and branches")
+        ids.add(profile["legacy_id"])
+        names.add(profile["kernel_name"])
     snapshot = load_snapshot(args.snapshot_in)
     ls_remote = None
     if args.ls_remote_file is not None:
         ls_remote = Path(args.ls_remote_file).read_text(encoding="utf-8")
     records, errors, known_branches = probe_all(
-        families, opener=opener, ls_remote=ls_remote
+        families, opener=opener, ls_remote=ls_remote,
+        development_profiles=args.development_profile,
     )
     if not records and errors:
         raise WatchError("every GKI family failed to probe")

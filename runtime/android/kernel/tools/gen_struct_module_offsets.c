@@ -14,7 +14,7 @@
  * constants for the target ABI, emitted into the assembly via the same
  * "asm-offsets" trick the kernel itself uses, so nothing has to run on-target:
  *
- *   neverc --target=aarch64-linux-android -fno-lto -nostdlibinc -std=gnu11 \
+ *   neverc --target=aarch64-linux-android -fno-lto -nostdlibinc -std=gnu11 -fms-extensions \
  *     -D__KERNEL__ -DNVK_GEN_KSRC=1 \
  *     -U__GNUC__ -D__GNUC__=12 -U__GNUC_MINOR__ -D__GNUC_MINOR__=0 \
  *     -U__GNUC_PATCHLEVEL__ -D__GNUC_PATCHLEVEL__=0 -Wno-unknown-attributes \

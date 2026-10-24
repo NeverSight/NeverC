@@ -2,8 +2,10 @@
 """Host-side tests for the GKI QEMU load/unload harness."""
 
 import gzip
+import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -84,6 +86,52 @@ class InitramfsTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def release_matrix(self, catalog, lock, selected="all"):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        block = workflow.split('          release_profiles=$(jq', 1)[1]
+        block = '          release_profiles=$(jq' + block.split(
+            '          release_repository=$(jq', 1
+        )[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog_path, lock_path = root / "catalog.json", root / "lock.json"
+            catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            return subprocess.run(
+                ["bash", "-eu", "-c",
+                 'die() { echo "$*" >&2; exit 1; }\n' +
+                 textwrap.dedent(block) + '\nprintf "MATRIX=%s\\n" "$matrix"\n'],
+                env={**os.environ, "catalog_path": str(catalog_path),
+                     "lock_path": str(lock_path), "INPUT_PROFILE": selected},
+                text=True, capture_output=True, check=False,
+            )
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_unpublished_rc_preview_does_not_enter_the_release_matrix(self):
+        runtime = TOOLS.parent
+        catalog = json.loads((runtime / "arm64/gki-profiles.json").read_text())
+        lock = json.loads((runtime / "arm64/gki-release.json").read_text())
+        result = self.release_matrix(catalog, lock)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        matrix = json.loads(result.stdout.split("MATRIX=", 1)[1])
+        self.assertEqual(set(matrix), set(lock["profiles"]))
+        self.assertNotIn("703", matrix)
+        result = self.release_matrix(catalog, lock, "703")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no pinned release artifact: 703", result.stderr)
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_missing_stable_release_and_unknown_locked_profiles_still_fail(self):
+        catalog = {"profiles": [{"legacy_id": 612}, {"legacy_id": 703}]}
+        lock = {"profiles": {"612": {}}}
+        result = self.release_matrix(catalog, lock)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stable profile catalog", result.stderr)
+        result = self.release_matrix({"profiles": [{"legacy_id": 612}]},
+                                     {"profiles": {"612": {}, "999": {}}})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing from the catalog", result.stderr)
+
     def test_kernel_matrix_does_not_run_functional_modules(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("gki-runtime-functional-modules", workflow)

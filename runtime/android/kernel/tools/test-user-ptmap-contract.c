@@ -1434,7 +1434,7 @@ static void check_mm_count_grab_failure_preserves_input_lease(void)
 static void check_profile_policy_is_exact(void)
 {
 	static const unsigned int profiles[] = {
-		510, 51013, 515, 51514, 601, 606, 612, 618,
+		510, 51013, 515, 51514, 601, 606, 612, 618, 703,
 	};
 	struct neverc_krt_user_ptmap_test_profile_policy policy;
 	size_t i;

@@ -42,8 +42,10 @@ struct delayed_work {
 	struct workqueue_struct *wq;
 	int cpu;
 	u32 __pad;
+#if NEVERC_KRT_LINUX_BEFORE(7, 2, 0)
 	u64 __kabi_reserved1;
 	u64 __kabi_reserved2;
+#endif
 };
 
 #if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
@@ -58,8 +60,13 @@ _Static_assert(sizeof(struct work_struct) == 32,
 	       "unexpected GKI 6.12+ work_struct layout");
 _Static_assert(__builtin_offsetof(struct delayed_work, timer) == 32,
 	       "unexpected GKI 6.12+ delayed_work timer offset");
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+_Static_assert(sizeof(struct delayed_work) == 88,
+	       "unexpected GKI 7.2 delayed_work layout");
+#else
 _Static_assert(sizeof(struct delayed_work) == 104,
 	       "unexpected GKI 6.12+ delayed_work layout");
+#endif
 #endif
 
 /*

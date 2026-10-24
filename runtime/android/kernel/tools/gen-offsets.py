@@ -113,7 +113,7 @@ def compile_probe(neverc, kt, gen):
 
     cmd = [
         neverc, "--target=aarch64-linux-android",
-        "-fno-lto", "-nostdlibinc", "-std=gnu11",
+        "-fno-lto", "-nostdlibinc", "-std=gnu11", "-fms-extensions",
         "-D__KERNEL__", "-DNVK_GEN_KSRC=1",
         "-U__GNUC__", "-D__GNUC__=12",
         "-U__GNUC_MINOR__", "-D__GNUC_MINOR__=0",
@@ -139,7 +139,8 @@ def compile_probe(neverc, kt, gen):
         print(f"Probe compile failed (rc={result.returncode}):",
               file=sys.stderr)
         print(result.stderr, file=sys.stderr)
-        os.unlink(out_path)
+        if os.path.exists(out_path):
+            os.unlink(out_path)
         return None
 
     with open(out_path) as f:
@@ -167,14 +168,14 @@ def main():
         print("neverc/clang not found; set NEVERC env var", file=sys.stderr)
         sys.exit(1)
 
-    autoconf = os.path.join(kt, "include", "generated", "autoconf.h")
-    if os.path.isfile(autoconf):
-        if gen is None:
+    if gen is None:
+        if os.path.isfile(os.path.join(kt, "include", "generated", "autoconf.h")):
             gen = kt
-    else:
-        if gen is None:
+        else:
             gen = os.path.join(tempfile.gettempdir(),
                                f"nvk-kbuild-{os.path.basename(kt)}")
+    autoconf = os.path.join(gen, "include", "generated", "autoconf.h")
+    if not os.path.isfile(autoconf):
         print(f"[*] preparing config in {gen} ...")
         prepare_tree(kt, gen)
 
