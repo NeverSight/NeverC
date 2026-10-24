@@ -78,8 +78,18 @@ CAPABILITY_ABIS = {
             "NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS",
             2,
         ),
+        "with_vma_flags": (
+            "NEVERC_KRT_PROFILE_DO_MMAP_WITH_VMA_FLAGS",
+            "NEVERC_KRT_DO_MMAP_ABI_WITH_VMA_FLAGS",
+            3,
+        ),
     },
     "binder_filter_backend": {
+        "unsupported": (
+            "NEVERC_KRT_PROFILE_BINDER_FILTER_UNSUPPORTED",
+            "NEVERC_KRT_BINDER_FILTER_BACKEND_UNSUPPORTED",
+            0,
+        ),
         "transaction": (
             "NEVERC_KRT_PROFILE_BINDER_FILTER_TRANSACTION",
             "NEVERC_KRT_BINDER_FILTER_BACKEND_TRANSACTION",
@@ -140,6 +150,11 @@ CAPABILITY_ABIS = {
             "NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_618",
             "NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_618",
             2,
+        ),
+        "gki_703": (
+            "NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_703",
+            "NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_703",
+            3,
         ),
     },
 }
@@ -226,7 +241,7 @@ PROFILE_KEYS = frozenset({
     "shadow_call_stack_mode",
     "symbol",
 })
-OPTIONAL_PROFILE_KEYS = frozenset({"aliases", "vermagic"})
+OPTIONAL_PROFILE_KEYS = frozenset({"aliases", "vermagic", "linux_extraversion"})
 EXPECTED_KCFI_TYPEIDS = {
     "disabled": None,
     "classic": {
@@ -239,11 +254,13 @@ EXPECTED_KCFI_TYPEIDS = {
     },
 }
 VERMAGIC_IDENTITY = re.compile(
-    r"^(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)-"
+    r"^(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)"
+    r"(?P<extra>-rc[0-9]+)?-"
     r"android(?P<android>[0-9]+)-(?P<kmi>[0-9]+)(?:[- ]|$)"
 )
 RELEASE_TOKEN_IDENTITY = re.compile(
-    r"^(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)-"
+    r"^(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)"
+    r"(?P<extra>-rc[0-9]+)?-"
     r"android(?P<android>[0-9]+)-(?P<kmi>[0-9]+)(?:-[^\s]+)*$"
 )
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -1231,7 +1248,7 @@ def validate_user_ptmap_layout(layout, context, expected_geometry=None):
             USER_PTMAP_MM_MEMBER_KEYS,
             {
                 "mm_count": 4,
-                "mmap_lock": 64,
+                "mmap_lock": (32, 64),
                 "page_table_lock": 4,
                 "pgd": 8,
             },
@@ -1294,12 +1311,15 @@ def validate_user_ptmap_layout(layout, context, expected_geometry=None):
         for member_name in sorted(actual_members):
             offset = object_layout["members"].get(member_name)
             width = object_layout["member_sizes"].get(member_name)
+            expected_width = expected_widths[member_name]
+            allowed_widths = (expected_width if isinstance(expected_width, tuple)
+                              else (expected_width,))
             if (
                 not isinstance(offset, int)
                 or isinstance(offset, bool)
                 or offset < 0
                 or offset > UINT64_MAX
-                or width != expected_widths[member_name]
+                or width not in allowed_widths
             ):
                 raise ValueError(
                     f"{context}: invalid user_ptmap.{object_name}."
@@ -1325,7 +1345,7 @@ def normalize_user_ptmap_layout(manifest, context):
     profile_id = manifest.get("profile")
     descriptor_address_mask = (
         0x0003FFFFFFFFF000
-        if profile_id in (612, 618)
+        if profile_id in (612, 618, 703)
         else 0x0000FFFFFFFFF000
     )
     try:
@@ -1556,6 +1576,9 @@ def load_catalog(path):
             profile["aliases"] = parsed_aliases
         else:
             profile["aliases"] = []
+        extra = profile.get("linux_extraversion", "")
+        if not isinstance(extra, str) or (extra and not re.fullmatch(r"-rc[0-9]+", extra)):
+            raise ValueError(f"{context}: invalid linux_extraversion")
         vermagic = profile.get("vermagic")
         if vermagic is not None:
             if not isinstance(vermagic, str) or not vermagic:
@@ -1571,7 +1594,7 @@ def load_catalog(path):
             if match is None or tuple(
                 int(match.group(name))
                 for name in ("major", "minor", "patch", "android", "kmi")
-            ) != identity:
+            ) != identity or (match.group("extra") or "") != extra:
                 raise ValueError(f"{context}: vermagic identity mismatch")
 
         for key in (
@@ -1602,7 +1625,12 @@ def load_catalog(path):
             f"android{profile['android_release']}-"
             f"{profile['linux_major']}.{profile['linux_minor']}"
         )
-        if kernel_name != expected_kernel_name:
+        # A development branch can temporarily report an earlier release.
+        # Its explicitly recorded rc version still binds the exact vermagic.
+        preview_branch = extra and isinstance(kernel_name, str) and re.fullmatch(
+            rf"android{profile['android_release']}-[0-9]+\.[0-9]+", kernel_name
+        )
+        if kernel_name != expected_kernel_name and not preview_branch:
             raise ValueError(
                 f"{context}: kernel_name must be {expected_kernel_name}"
             )
@@ -1660,6 +1688,10 @@ def validate_evidence(profiles, manifest_root, release_lock_path):
         legacy_id = profile["legacy_id"]
         manifest_path = manifest_paths[legacy_id]
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("discovery"):
+            raise ValueError(
+                f"{manifest_path}: discovery evidence is not a certified profile"
+            )
         if str(legacy_id) in release_profiles:
             release = dict(release_profiles[str(legacy_id)])
         else:
@@ -1707,7 +1739,7 @@ def validate_evidence(profiles, manifest_root, release_lock_path):
         if match is None or tuple(
             int(match.group(name))
             for name in ("major", "minor", "patch", "android", "kmi")
-        ) != identity:
+        ) != identity or (match.group("extra") or "") != profile.get("linux_extraversion", ""):
             raise ValueError(
                 f"{release_lock_path}: profile {legacy_id} vermagic identity mismatch"
             )
@@ -2317,6 +2349,7 @@ def render_profile_table(profile_evidence):
             f"\t\t.android_release = {profile['android_release']},",
             f"\t\t.kmi_generation = {profile['kmi_generation']},",
             f"\t\t.page_shift = {profile['page_shift']},",
+            f"\t\t.require_release_token = {int(bool(profile.get('linux_extraversion')))},",
             f"\t\t.release_token = {json.dumps(release['release_token'])},",
             f"\t\t.kimage_vaddr = "
             f"0x{profile['kimage_vaddr_value']:016X}UL,",

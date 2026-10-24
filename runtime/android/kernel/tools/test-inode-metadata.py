@@ -67,6 +67,7 @@ def check_profile_evidence():
         606: (704, 88, 8, 96, 8, 104, 8, 112, 8),
         612: (704, 88, 8, 112, 4, 96, 8, 116, 4),
         618: (688, 88, 8, 112, 4, 96, 8, 116, 4),
+        703: (560, 88, 8, 112, 4, 96, 8, 116, 4),
     }
     for profile, expected_scalars in expected.items():
         manifest = json.loads(
@@ -103,6 +104,10 @@ def check_profile_evidence():
                     "81d95cea163c171d42b50904e10069bb380c3545eeb426154b1beb7eee874557",
                     "04b7e217e5601b15989535cbdad96f6c62b777a7",
                 ),
+                703: (
+                    "91dd99ca444b58e723ca5b5172c410fa176b4ce86b624c2db16f4e1819f9702a",
+                    "33cd5f0660192947e636c53550317d4be4c57506",
+                ),
             }
             if profile not in local_evidence:
                 raise RuntimeError(f"GKI {profile} lacks local layout evidence")
@@ -116,7 +121,7 @@ def check_profile_evidence():
                     f"GKI {profile} filename build-id mismatch"
                 )
         if layouts.get("filename") != {
-            "size": 32,
+            "size": 192 if profile == 703 else 32,
             "members": {"name": 0},
             "member_sizes": {"name": 8},
         }:
@@ -158,7 +163,7 @@ def check_profile_evidence():
             layouts["dentry"]["size"],
             layouts["dentry"]["members"]["d_inode"],
             layouts["dentry"]["member_sizes"]["d_inode"],
-        ) != (16, 8, 8, 208, 48, 8):
+        ) != (16, 8, 8, 192 if profile == 703 else 208, 48, 8):
             raise RuntimeError(f"GKI {profile} path_inode evidence mismatch")
 
     certificates = json.loads(

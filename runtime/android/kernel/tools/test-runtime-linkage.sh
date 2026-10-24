@@ -32,10 +32,10 @@ fi
 
 case "$SCOPE" in
 --smoke)
-	KERNELS=(612)
+	KERNELS=(612 703)
 	;;
 --full)
-	KERNELS=(510 51013 515 51514 601 606 612 618)
+	KERNELS=(510 51013 515 51514 601 606 612 618 703)
 	;;
 *)
 	echo "usage: $0 [neverc] [--smoke|--full]" >&2

@@ -95,6 +95,17 @@
         "GKI-android16-6.12-kit/common"
       ]
     },
+    "703": {
+      "manifest_bound_artifacts": ["config", "symvers", "vmlinux"],
+      "artifacts": {
+        "config": "GKI-android18-7.3-kit/evidence-d05bec5-production/config",
+        "image": "GKI-android18-7.3-kit/evidence-d05bec5-production/Image",
+        "symvers": "GKI-android18-7.3-kit/evidence-d05bec5-production/vmlinux.symvers",
+        "system_map": "GKI-android18-7.3-kit/evidence-d05bec5-production/System.map",
+        "vmlinux": "GKI-android18-7.3-kit/evidence-d05bec5-production/vmlinux"
+      },
+      "source_roots": ["GKI-android18-7.3-kit/common"]
+    },
     "618": {
       "manifest_bound_artifacts": [
         "vmlinux"

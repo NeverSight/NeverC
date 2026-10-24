@@ -34,6 +34,8 @@ enum neverc_krt_do_mmap_abi {
       NEVERC_KRT_PROFILE_DO_MMAP_WITHOUT_VM_FLAGS,
   NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS =
       NEVERC_KRT_PROFILE_DO_MMAP_WITH_VM_FLAGS,
+  NEVERC_KRT_DO_MMAP_ABI_WITH_VMA_FLAGS =
+      NEVERC_KRT_PROFILE_DO_MMAP_WITH_VMA_FLAGS,
 };
 
 enum neverc_krt_binder_filter_backend {
@@ -71,6 +73,8 @@ enum neverc_krt_procmap_ioctl_layout {
       NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_612,
   NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_618 =
       NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_618,
+  NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_703 =
+      NEVERC_KRT_PROFILE_PROCMAP_IOCTL_GKI_703,
 };
 
 struct neverc_krt_maps_ioctl_layout {
@@ -105,6 +109,7 @@ struct neverc_krt_profile {
   unsigned int android_release;
   unsigned int kmi_generation;
   unsigned int page_shift;
+  unsigned char require_release_token;
   const char *release_token;
   unsigned long kimage_vaddr;
   unsigned char kcfi_mode;
@@ -140,6 +145,8 @@ struct neverc_krt_observed_identity {
  * token-exact certificate may overlay that layout but is never an enable gate.
  * A dedicated compile family is not a leftover overlay.  Callers without
  * an explicit profile must continue to require a token-exact identity.
+ * Prerelease profiles set require_release_token and require the measured
+ * token for either activation path until their ABI is frozen.
  */
 enum neverc_krt_profile_match {
   NEVERC_KRT_PROFILE_MATCH_NONE = 0,

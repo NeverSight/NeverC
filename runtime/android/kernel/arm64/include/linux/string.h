@@ -15,7 +15,18 @@ size_t strnlen(const char *s, size_t maxlen);
 int strcmp(const char *a, const char *b);
 int strncmp(const char *a, const char *b, size_t n);
 char *strcpy(char *dest, const char *src);
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+/* Linux 7.2 removed this export; preserve the SDK's source API. */
+static __always_inline char *strncpy(char *dest, const char *src, size_t n)
+{
+	size_t copied = strnlen(src, n);
+	memcpy(dest, src, copied);
+	memset(dest + copied, 0, n - copied);
+	return dest;
+}
+#else
 char *strncpy(char *dest, const char *src, size_t n);
+#endif
 /*
  * strcat was removed from GKI ksymtab in 6.18.
  * Provide inline fallback; prefer strncat in new code.

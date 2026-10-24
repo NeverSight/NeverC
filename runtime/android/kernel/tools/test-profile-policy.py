@@ -31,28 +31,22 @@ def main():
     rendered_profiles = (SOURCE_ROOT / "nvk_profile_table.inc").read_text(
         encoding="utf-8"
     )
-    for field, value in (
-        ("filename_size", 32),
-        ("filename_name", 0),
-        ("filename_name_size", 8),
+    for field, value, expected_count in (
+        ("filename_size", 32, 8),
+        ("filename_size", 192, 1),
+        ("filename_name", 0, 9),
+        ("filename_name_size", 8, 9),
     ):
-        catalog_count = len(
-            json.loads(
-                (RUNTIME_ROOT / "arm64/gki-profiles.json").read_text(
-                    encoding="utf-8"
-                )
-            )["profiles"]
-        )
-        if rendered_profile_layouts.count(f".{field} = {value},") != catalog_count:
+        if rendered_profile_layouts.count(f".{field} = {value},") != expected_count:
             raise RuntimeError(
-                f"generated profile layouts lack {catalog_count} {field} facts"
+                f"generated profile layouts lack {expected_count} {field}={value} facts"
             )
     expected_module_memory_facts = (
         ("module_memory_count", 1, 5),
-        ("module_memory_count", 7, 3),
-        ("module_memory_base", 0, 8),
+        ("module_memory_count", 7, 4),
+        ("module_memory_base", 0, 9),
         ("module_memory_size", 8, 7),
-        ("module_memory_size", 12, 1),
+        ("module_memory_size", 12, 2),
     )
     for field, value, expected_count in expected_module_memory_facts:
         actual_count = rendered_profiles.count(f".{field} = {value},")

@@ -1,6 +1,7 @@
 # Watch official AOSP GKI branch tips and KMI generation changes.
 #
-# Each run fetches kernel/common HEAD for the eight catalog families
+# Each run fetches kernel/common HEAD for the nine catalog families,
+# including the android18-7.3 production preview.
 # (Makefile VERSION/PATCHLEVEL/SUBLEVEL + KMI_GENERATION) and the matching
 # `-kminext` branch when it exists. It also fingerprints NeverC-read struct
 # fields from official headers. Discord is notified when the live tip moves,

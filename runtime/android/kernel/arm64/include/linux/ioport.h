@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/compiler.h>
+#include <nvkmod_version.h>
 
 struct resource {
 	unsigned long start;
@@ -12,11 +13,18 @@ struct resource {
 	unsigned long flags;
 	unsigned long desc;
 	struct resource *parent, *sibling, *child;
+#if NEVERC_KRT_LINUX_BEFORE(7, 2, 0)
 	u64 __kabi_reserved[4];
+#endif
 };
 
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+_Static_assert(sizeof(struct resource) == 64,
+	       "unexpected GKI 7.2 resource layout");
+#else
 _Static_assert(sizeof(struct resource) == 96,
 	       "unexpected GKI resource layout");
+#endif
 _Static_assert(__builtin_offsetof(struct resource, parent) == 40,
 	       "unexpected GKI resource parent offset");
 

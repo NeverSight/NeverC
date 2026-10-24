@@ -31,6 +31,10 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 #include <linux/netfilter.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+#include <linux/seq_file.h>
+#include "../fs/proc/internal.h"
+#endif
 
 #define NVK_EMIT(name, val)                                                    \
 	__asm__ __volatile__("\n.ascii \"==NVK== " #name " %0 ==\"\n"           \
@@ -81,6 +85,17 @@ void nvk_gen_layout_offsets(void)
 	NVK_EMIT(VMA_FILE, offsetof(struct vm_area_struct, vm_file));
 
 	NVK_EMIT(FILE_SIZE, sizeof(struct file));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+	NVK_EMIT(FILE_PRIVATE_DATA, offsetof(struct file, private_data));
+	NVK_EMIT(SEQ_FILE_SIZE, sizeof(struct seq_file));
+	NVK_EMIT(SEQ_FILE_FILE, offsetof(struct seq_file, file));
+	NVK_EMIT(SEQ_FILE_OPERATIONS, offsetof(struct seq_file, op));
+	NVK_EMIT(SEQ_FILE_PRIVATE, offsetof(struct seq_file, private));
+	NVK_EMIT(PROC_MAPS_PRIVATE_SIZE, sizeof(struct proc_maps_private));
+	NVK_EMIT(PROC_MAPS_PRIVATE_MM,
+		 offsetof(struct proc_maps_private, lock_ctx) +
+		 offsetof(struct proc_maps_locking_ctx, mm));
+#endif
 	NVK_EMIT(FILE_PATH_DENTRY,
 		  offsetof(struct file, f_path) + offsetof(struct path, dentry));
 	NVK_EMIT(DENTRY_DNAME_NAME,
@@ -141,7 +156,18 @@ void nvk_gen_layout_offsets(void)
 	NVK_EMIT(SEMAPHORE_SIZE, sizeof(struct semaphore));
 	NVK_EMIT(SEMAPHORE_LOCK, offsetof(struct semaphore, lock));
 	NVK_EMIT(SEMAPHORE_COUNT, offsetof(struct semaphore, count));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+	NVK_EMIT(SEMAPHORE_FIRST_WAITER, offsetof(struct semaphore, first_waiter));
+	NVK_EMIT(SEMAPHORE_LAST_HOLDER, offsetof(struct semaphore, last_holder));
+	NVK_EMIT(MUTEX_SIZE, sizeof(struct mutex));
+	NVK_EMIT(MUTEX_OWNER, offsetof(struct mutex, owner));
+	NVK_EMIT(MUTEX_WAIT_LOCK, offsetof(struct mutex, wait_lock));
+	NVK_EMIT(MUTEX_OSQ, offsetof(struct mutex, osq));
+	NVK_EMIT(MUTEX_FIRST_WAITER, offsetof(struct mutex, first_waiter));
+	NVK_EMIT(RWSEM_SIZE, sizeof(struct rw_semaphore));
+#else
 	NVK_EMIT(SEMAPHORE_WAIT_LIST, offsetof(struct semaphore, wait_list));
+#endif
 
 	NVK_EMIT(PROC_OPS_LSEEK, offsetof(struct proc_ops, proc_lseek));
 	NVK_EMIT(PROC_OPS_SIZE, sizeof(struct proc_ops));

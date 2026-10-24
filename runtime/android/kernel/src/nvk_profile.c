@@ -30,9 +30,16 @@ neverc_krt_match_profile(const struct neverc_krt_profile *profile,
       profile->page_shift != identity->page_shift)
     return NEVERC_KRT_PROFILE_MATCH_NONE;
 
+  /* An unfrozen development ABI requires its measured release token. */
+  if (profile->require_release_token &&
+      !neverc_krt_release_token_equal(profile->release_token,
+                                     identity->release_token,
+                                     identity->release_token_length))
+    return NEVERC_KRT_PROFILE_MATCH_NONE;
+
   /*
-   * COMPAT is series + Android generation + page.  Patch, KMI, and
-   * release token are ignored.  Both COMPAT and EXACT use the family's
+   * Stable-profile COMPAT is series + Android generation + page. Patch, KMI,
+   * and release token are ignored. Both COMPAT and EXACT use the family's
    * default runtime layout; a certificate may overlay offsets later.
    *
    * EXACT is the numeric KMI identity: same patch + Android + KMI + page.
@@ -156,6 +163,14 @@ int neverc_krt_parse_banner_identity(
     unsigned int kmi_generation;
     int status;
 
+    if (!neverc_krt_consume_literal(&android, "-rc")) {
+      unsigned int release_candidate;
+      status = neverc_krt_parse_uint(&android, &release_candidate);
+      if (status)
+        return -1;
+    } else {
+      android = p;
+    }
     if (!neverc_krt_consume_literal(&android, "-android")) {
       status = neverc_krt_parse_uint(&android, &android_release);
       if (status == -2)

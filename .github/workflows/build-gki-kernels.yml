@@ -23,6 +23,7 @@ on:
           - "606"
           - "612"
           - "618"
+          - "703"
         default: all
 
 permissions:
@@ -51,7 +52,8 @@ jobs:
             {"key":"601","android":"android14","kernel":"6.1","branch":"common-android14-6.1","build_system":"bazel","verify_mode":"compare"},
             {"key":"606","android":"android15","kernel":"6.6","branch":"common-android15-6.6","build_system":"bazel","verify_mode":"compare"},
             {"key":"612","android":"android16","kernel":"6.12","branch":"common-android16-6.12","build_system":"bazel","verify_mode":"compare"},
-            {"key":"618","android":"android17","kernel":"6.18","branch":"common-android17-6.18","build_system":"bazel","verify_mode":"compare"}
+            {"key":"618","android":"android17","kernel":"6.18","branch":"common-android17-6.18","build_system":"bazel","verify_mode":"compare"},
+            {"key":"703","android":"android18","kernel":"7.3","branch":"common-android18-7.3","build_system":"bazel","verify_mode":"compare"}
           ]'
           sel='${{ inputs.kernel_version }}'
           if [ -z "$sel" ] || [ "$sel" = all ]; then
@@ -75,6 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 runtime/android/kernel/tools/generate-compat-table.py --check
+          python3 runtime/android/kernel/tools/test-gen-offsets.py
           python3 - <<'PY'
           import json
           import os
@@ -82,10 +85,14 @@ jobs:
           import sys
 
           matrix = json.loads(os.environ["MATRIX"])
-          keys = [item["key"] for item in matrix["include"]]
-          if not keys:
+          entries = matrix["include"]
+          if not entries:
               raise SystemExit("preflight: empty build matrix")
-          for key in keys:
+          for entry in entries:
+              key = entry["key"]
+              if entry["verify_mode"] == "print":
+                  print(f"{key}: discover ABI evidence; runtime profile is not certified")
+                  continue
               query = subprocess.run(
                   [
                       sys.executable,
@@ -171,8 +178,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             git curl ca-certificates python3 python-is-python3 \
-            bc bison flex cpio libelf-dev libssl-dev \
-            binutils llvm jq rsync zip xz-utils dwarves
+            bc bison flex cpio libelf-dev libssl-dev libdw-dev pkg-config \
+            binutils llvm jq rsync zip xz-utils dwarves python3-pyelftools
           mkdir -p "$HOME/.bin"
           curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
             -o "$HOME/.bin/repo"
@@ -210,6 +217,29 @@ jobs:
           done
           df -h /
 
+      - name: Configure Android 18 production preview
+        if: matrix.key == '703'
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -euo pipefail
+          # This RC family is measured at one source/configuration snapshot.
+          commit=d05bec5ef839dbeca434de1f27e79dd62eee39e9
+          git -C common fetch --depth=1 origin "$commit"
+          git -C common checkout --detach "$commit"
+          cp "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/arm64/android18-7.3-production.fragment" \
+            common/arch/arm64/configs/neverc-production.fragment
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("common/BUILD.bazel")
+          text = path.read_text()
+          target = '    name = "kernel_aarch64",\n'
+          if text.count(target) != 1:
+              raise SystemExit("missing unique kernel_aarch64 target")
+          text = text.replace(target, target +
+              '    post_defconfig_fragments = ["arch/arm64/configs/neverc-production.fragment"],\n')
+          path.write_text(text)
+          PY
+
       - name: Build kernel
         working-directory: ${{ github.workspace }}/kernel
         run: |
@@ -232,6 +262,9 @@ jobs:
               # 5.15 GKI jobs. CONFIG_CFI_CLANG and struct layouts are unchanged.
               printf '\nKBUILD_LDFLAGS += --thinlto-jobs=1 --threads=1\n' >> common/Makefile
               tools/bazel run --lto=thin //common:kernel_aarch64_dist -- --destdir="$PWD/dist"
+            elif [ "$KEY" = "703" ]; then
+              # A deterministic RC token, including the production marker.
+              tools/bazel run --nostamp --lto=none //common:kernel_aarch64_dist -- --destdir="$PWD/dist"
             else
               # android14-6.1+ gki_defconfig is already LTO=none (KCFI).
               tools/bazel run --lto=none //common:kernel_aarch64_dist -- --destdir="$PWD/dist"
@@ -294,8 +327,8 @@ jobs:
           args=()
           [ -n "$re" ] && args+=(--readelf "$re")
           if [ "$VERIFY_MODE" = print ]; then
-            # Offsets for this kernel are not pinned in nvkmod_version.h yet:
-            # discover + print them (to be pasted in), do NOT hard-fail the build.
+            # A new family needs measured evidence before it can be registered
+            # as a runtime profile. Keep discovery separate from verification.
             args+=(--print "${dirs[@]}")
           else
             args+=("$KEY" "${dirs[@]}")
@@ -321,6 +354,32 @@ jobs:
             "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/tools/gen-offsets.py" \
             common "$gendir" || echo "cross-check probe failed (informational only)"
 
+      - name: Verify Android 18 production preview evidence
+        if: matrix.key == '703'
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -euo pipefail
+          common/scripts/extract-ikconfig dist/Image > "$GITHUB_WORKSPACE/config-703"
+          clang=prebuilts/clang/host/linux-x86/clang-r596125/bin/clang
+          test -x "$clang"
+          symvers=dist/vmlinux.symvers
+          [ -f "$symvers" ] || symvers=dist/Module.symvers
+          python3 "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/tools/generate-gki-manifest.py" \
+            --profile 703 --kernel-name android18-7.3 --compiler "$clang" \
+            --config "$GITHUB_WORKSPACE/config-703" --vmlinux dist/vmlinux \
+            --symvers "$symvers" --output "$GITHUB_WORKSPACE/703.measured.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          measured = json.loads((root / "703.measured.json").read_text())
+          checked = json.loads((root / "neverc/runtime/android/kernel/arm64/gki-manifests/703.json").read_text())
+          for field in ("config", "layouts", "module_memory_layout", "sdk_exports"):
+              if measured[field] != checked[field]:
+                  raise SystemExit(f"703 production preview {field} changed; recertify before publishing")
+          PY
+
       - name: Collect artifacts
         if: ${{ always() }}
         working-directory: ${{ github.workspace }}/kernel
@@ -328,6 +387,12 @@ jobs:
           set -euo pipefail
           stage="$GITHUB_WORKSPACE/stage-$KEY"
           mkdir -p "$stage"
+          if [ "$KEY" = "703" ]; then
+            cp "$GITHUB_WORKSPACE/703.measured.json" "$stage/" 2>/dev/null || true
+            cp "$GITHUB_WORKSPACE/config-703" "$stage/" 2>/dev/null || true
+            cp "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/arm64/android18-7.3-production.fragment" "$stage/"
+            git -C common rev-parse HEAD > "$stage/source-commit.txt"
+          fi
 
           # Locate the dist directory (make: out/<branch>/dist, bazel: dist/).
           dist_dir=$(find out dist -maxdepth 4 -name 'Image' -type f \
@@ -336,7 +401,7 @@ jobs:
             echo "dist dir: $dist_dir"
             mkdir -p "$stage/dist"
             for f in Image Image.lz4 Image.gz System.map vmlinux \
-                     Module.symvers modules.builtin modules.builtin.modinfo; do
+                     Module.symvers vmlinux.symvers modules.builtin modules.builtin.modinfo; do
               [ -f "$dist_dir/$f" ] && cp "$dist_dir/$f" "$stage/dist/" || true
             done
             # All .ko modules from dist.
@@ -407,6 +472,35 @@ jobs:
           [ -f "$probe_ko" ] && cp "$probe_ko" "$stage/" || true
           cp "$GITHUB_WORKSPACE/verify-$KEY.txt" "$stage/" 2>/dev/null || true
 
+          discovery_status=0
+          if [ "$VERIFY_MODE" = print ] && [ -f "$stage/dist/vmlinux" ]; then
+            # This output is deliberately not a checked gki-manifests entry.
+            # The SDK and runtime still need to be ported and verified against it.
+            config="$stage/config-$KEY"
+            if [ ! -f "$config" ]; then
+              # Kleaf's dist may contain only vmlinux.symvers, without the
+              # build tree. GKI embeds the exact configured file in Image.
+              if common/scripts/extract-ikconfig "$stage/dist/Image" > "$config.tmp"; then
+                mv "$config.tmp" "$config"
+              else
+                rm -f "$config.tmp"
+              fi
+            fi
+            symvers="$stage/sdk/Module.symvers"
+            if [ ! -f "$symvers" ]; then
+              symvers="$stage/dist/Module.symvers"
+            fi
+            if [ ! -f "$symvers" ]; then
+              symvers="$stage/dist/vmlinux.symvers"
+            fi
+            python3 "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/tools/generate-gki-manifest.py" \
+              --profile "$KEY" --kernel-name "${{ matrix.android }}-${{ matrix.kernel }}" \
+              --config "$config" --vmlinux "$stage/dist/vmlinux" \
+              --symvers "$symvers" --discovery \
+              --output "$stage/$KEY.discovery.json" || discovery_status=$?
+            git -C common rev-parse HEAD > "$stage/source-commit.txt"
+          fi
+
           if [ -z "$(ls -A "$stage" 2>/dev/null)" ]; then
             echo "(build failed before producing artifacts)" > "$stage/EMPTY.txt"
           fi
@@ -414,6 +508,7 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/$TAG-build.tar.gz"
           echo "Contents:"
           tar -tzf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" | head -50 || true
+          exit "$discovery_status"
 
       - name: Upload artifact
         if: ${{ always() }}
@@ -450,7 +545,7 @@ jobs:
           fi
           tag="gki-build-$(date -u +%Y%m%d)"
           title="GKI prebuilt kernels $(date -u +%Y-%m-%d)"
-          notes="Automated GKI builds (android12-5.10, android13-5.10, android13-5.15, android14-5.15, 6.1, 6.6, 6.12, 6.18) with struct module offset verification against the checked profile catalog for every family."
+          notes="Automated GKI builds with struct module offset verification for catalog profiles. Android18-7.3 (703) uses the pinned NeverC production preview fragment with lock debugging disabled; it is an RC configuration, not the stock debug defconfig."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
           else

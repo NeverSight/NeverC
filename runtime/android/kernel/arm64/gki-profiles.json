@@ -283,6 +283,43 @@
       "linux_patch": 24,
       "page_shift": 12,
       "symbol": "ANDROID17_6_18_KMI5"
+    },
+    {
+      "android_release": 18,
+      "capabilities": {
+        "binder_filter_backend": "unsupported",
+        "do_mmap_abi": "with_vma_flags",
+        "filldir_abi": "returns_bool",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": false,
+        "kallsyms_iter_abi": "address_only",
+        "procmap_ioctl": {
+          "file_private_data": 24,
+          "file_size": 176,
+          "proc_maps_private_mm": 112,
+          "proc_maps_private_size": 136,
+          "seq_file_file": 96,
+          "seq_file_operations": 80,
+          "seq_file_private": 104,
+          "seq_file_size": 112
+        },
+        "procmap_ioctl_layout": "gki_703",
+        "user_ptmap_backend": "normalized_612_plus",
+        "vmalloc_visibility_backend": "named_show"
+      },
+      "kcfi_mode": "normalized",
+      "shadow_call_stack_mode": "dynamic",
+      "kernel_name": "android18-7.3",
+      "kimage_vaddr": "0xFFFFFFC080000000",
+      "kmi_generation": 0,
+      "legacy_id": 703,
+      "linux_major": 7,
+      "linux_minor": 2,
+      "linux_patch": 0,
+      "linux_extraversion": "-rc9",
+      "page_shift": 12,
+      "symbol": "ANDROID18_7_3_KMI0",
+      "vermagic": "7.2.0-rc9-android18-0-maybe-dirty-neverc-preview-4k SMP preempt mod_unload modversions aarch64"
     }
   ],
   "schema": 1

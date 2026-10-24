@@ -12,7 +12,7 @@ from host_test_compiler import host_compiler_command
 
 TOOLS_ROOT = Path(__file__).resolve().parent
 RUNTIME_ROOT = TOOLS_ROOT.parent
-PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618)
+PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618, 703)
 
 
 def certificate_task_threads(certificate):
@@ -55,6 +55,7 @@ def check_profile_evidence():
         606: (4800, 1560, 1664, 2168, 1752, 1136, 16),
         612: (5184, 1800, 1904, 2392, 1976, 1120, 16),
         618: (4736, 1816, 1920, 2400, 1992, 1176, 16),
+        703: (4672, 1920, 2024, 2504, 2096, 1072, 16),
     }
     evidence = {
         510: (
@@ -88,6 +89,10 @@ def check_profile_evidence():
         618: (
             "baa888b6d1024b6025b6119fe9e0128c61dda167ee57d21bc3add857cb33ae57",
             "e36c2ac50c3578e730c54bab1ae6fd6da4645c85",
+        ),
+        703: (
+            "91dd99ca444b58e723ca5b5172c410fa176b4ce86b624c2db16f4e1819f9702a",
+            "33cd5f0660192947e636c53550317d4be4c57506",
         ),
     }
     for profile in PROFILES:

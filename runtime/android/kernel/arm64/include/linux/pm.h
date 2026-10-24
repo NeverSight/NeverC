@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_PM_H
 
 #include <linux/types.h>
+#include <nvkmod_version.h>
 
 struct device;
 
@@ -11,6 +12,7 @@ struct device;
  * Android 12 / 5.10 through Android 17 / 6.18.  Keep every callback: omitting
  * the late and noirq slots shifts runtime_* and makes the kernel call the
  * wrong function.
+ * Linux 7.2 removes the trailing KABI reserve, retaining callback offsets.
  */
 struct dev_pm_ops {
 	int (*prepare)(struct device *dev);
@@ -36,11 +38,18 @@ struct dev_pm_ops {
 	int (*runtime_suspend)(struct device *dev);
 	int (*runtime_resume)(struct device *dev);
 	int (*runtime_idle)(struct device *dev);
+#if NEVERC_KRT_LINUX_BEFORE(7, 2, 0)
 	u64 __kabi_reserved1;
+#endif
 };
 
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+_Static_assert(sizeof(struct dev_pm_ops) == 184,
+	       "unexpected GKI 7.2 dev_pm_ops layout");
+#else
 _Static_assert(sizeof(struct dev_pm_ops) == 192,
 	       "unexpected GKI dev_pm_ops layout");
+#endif
 
 #define SYSTEM_SLEEP_PM_OPS(suspend_fn, resume_fn)                            \
 	.suspend = (suspend_fn),                                               \

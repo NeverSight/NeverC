@@ -15,7 +15,7 @@ REPO_ROOT = TOOLS_ROOT.parents[3]
 DEFAULT_MANIFEST_ROOT = (
     REPO_ROOT / "runtime/android/kernel/arm64/gki-manifests"
 )
-PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618)
+PROFILES = (510, 51013, 515, 51514, 601, 606, 612, 618, 703)
 ARM64_INCLUDE_ROOT = RUNTIME_ROOT / "arm64" / "include"
 PUBLIC_INCLUDE_ROOT = RUNTIME_ROOT / "include"
 SDK_INCLUDES = tuple(
@@ -104,6 +104,7 @@ CONTRACTS = {
             "wait_lock": "wait_lock",
             "osq": "osq",
             "wait_list": "wait_list",
+            "first_waiter": "first_waiter",
         },
     ),
     "netlink_kernel_cfg": (
@@ -216,7 +217,10 @@ CONTRACTS = {
     ),
     "semaphore": (
         "struct semaphore",
-        {"lock": "lock", "count": "count", "wait_list": "wait_list"},
+        {
+            "lock": "lock", "count": "count", "wait_list": "wait_list",
+            "first_waiter": "first_waiter", "last_holder": "last_holder",
+        },
     ),
     "seq_operations": (
         "struct seq_operations",

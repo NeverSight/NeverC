@@ -75,7 +75,11 @@ struct regmap_config {
 	u8 __before_reg_defaults[52];
 	const void *reg_defaults;
 	unsigned int num_reg_defaults;
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+	u8 __tail[92];
+#else
 	u8 __tail[84];
+#endif
 #endif
 };
 
@@ -103,7 +107,11 @@ struct regmap_config {
 #define __NVK_REGMAP_DEFAULTS_OFF     224
 #define __NVK_REGMAP_NUM_DEFAULTS_OFF 232
 #else
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+#define __NVK_REGMAP_SIZE             328
+#else
 #define __NVK_REGMAP_SIZE             320
+#endif
 #define __NVK_REGMAP_VAL_BITS_OFF     28
 #define __NVK_REGMAP_FAST_IO_OFF      137
 #define __NVK_REGMAP_MAX_REGISTER_OFF 168

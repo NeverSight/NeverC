@@ -966,7 +966,10 @@ static int _neverc_krt_ptmap_production_layout_valid(
 	    layout->mm_count_size != sizeof(u32) ||
 	    layout->mm_pgd_size != sizeof(void *) ||
 	    layout->mm_page_table_lock_size != sizeof(spinlock_t) ||
-	    layout->mm_mmap_lock_size != sizeof(struct rw_semaphore) ||
+	    /* The embedded runtime passes this kernel-owned lock by pointer.
+	     * Linux 7.2 shrinks it to 32 bytes; older GKI uses 64. */
+	    (layout->mm_mmap_lock_size != 32 &&
+	     layout->mm_mmap_lock_size != 64) ||
 	    layout->vma_start_size != sizeof(unsigned long) ||
 	    layout->vma_end_size != sizeof(unsigned long) ||
 	    layout->user_page_shift != 12 || layout->user_va_bits != 39 ||
