@@ -7600,6 +7600,11 @@ class UtilityTupleQueryGraph
   unsigned Depth = 0, Nodes = 0;
   bool Failed = false;
   const UtilityTupleQueryMode Mode;
+  UtilityTupleQueryGraph *ParentBudget = nullptr;
+  std::optional<FunctionalNotFnReferenceStorage> NotFnReferenceStorage;
+  std::optional<FunctionalNotFnReferenceCallSource> NotFnReferenceCall;
+  std::set<const CXXMethodDecl *> *NotFnReferenceQuerySources = nullptr;
+  bool NotFnReferenceDependency = false;
   const FunctionalNotFnFactoryTemplateSource *NotFnFactoryDefaults = nullptr;
   TypeLoc NotFnConstructorReturn;
   const TemplateTypeParmDecl *NotFnConstructorDefaultParameter = nullptr;
@@ -7708,7 +7713,8 @@ class UtilityTupleQueryGraph
   std::map<const NonTypeTemplateParmDecl *, const ClassTemplateDecl *> DefinitionParameters;
 
   bool step() {
-    if (Failed || ++Nodes > 200000 || Depth > 64) {
+    if (Failed || ++Nodes > 200000 || Depth > 64 ||
+        (ParentBudget && (ParentBudget->Depth + Depth > 64 || !ParentBudget->step()))) {
       Failed = true;
       return false;
     }
@@ -7756,32 +7762,58 @@ class UtilityTupleQueryGraph
     for (const auto *Actual : Owner->parameters()) Found |= Actual == Parameter;
     return Found && family(Parameter) && TraverseType(Parameter->getType());
   }
+  const CXXMethodDecl *notFnQueryMethod() const {
+    return NotFnReferenceDependency && NotFnReferenceCall
+        ? dyn_cast_or_null<CXXMethodDecl>(NotFnReferenceCall->Selected.TargetCall->getDirectCallee())
+        : NotFnInvocation ? NotFnInvocation->Method : nullptr;
+  }
+  const CXXMethodDecl *notFnQueryTargetMethod() const {
+    if (NotFnReferenceCall)
+      return NotFnReferenceDependency ? NotFnReferenceCall->Reference.Method
+          : dyn_cast_or_null<CXXMethodDecl>(NotFnReferenceCall->Selected.TargetCall->getDirectCallee());
+    return NotFnOwnedInvokeMethod;
+  }
+  QualType notFnQueryBound() const {
+    if (NotFnReferenceDependency && NotFnReferenceCall)
+      return Context.getLValueReferenceType(NotFnReferenceCall->Reference.Wrapper.ReferentType);
+    const auto *Method = notFnQueryMethod();
+    if (!Method) return {};
+    auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
+    if (Method->getRefQualifier() == RQ_LValue) return Context.getLValueReferenceType(Bound);
+    return Method->getRefQualifier() == RQ_RValue ? Bound : QualType();
+  }
   bool notFnOwnedInvokeQuery(const CallExpr *Expression, bool Forwarded) {
     const auto *Call = NotFnInvocation;
-    const auto *Wrapper = Call ? Call->Method : nullptr;
-    const auto *Method = NotFnOwnedInvokeMethod;
+    const auto *Wrapper = notFnQueryMethod();
+    const auto *Method = notFnQueryTargetMethod();
+    const bool ReferenceWrapper = NotFnReferenceCall && !NotFnReferenceDependency;
+    const auto *OrdinaryRecord = NotFnReferenceDependency && NotFnReferenceCall
+        ? NotFnReferenceCall->Reference.Wrapper.ReferentType->getAsCXXRecordDecl()->getCanonicalDecl()
+        : NotFnOwnedCallableRecord;
+    auto *OrdinarySources = NotFnReferenceDependency ? NotFnReferenceQuerySources : NotFnOwnedQuerySources;
     const auto *Target = dyn_cast_or_null<CXXOperatorCallExpr>(Expression);
     const auto *Reference = Target
         ? dyn_cast<DeclRefExpr>(Target->getCallee()->IgnoreParenImpCasts()) : nullptr;
     const auto *Arguments = Wrapper ? Wrapper->getTemplateSpecializationArgs() : nullptr;
-    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnOwnedCallableRecord ||
-        !NotFnOwnedQuerySources || !Call || !Wrapper || !Method || !Target ||
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || (!ReferenceWrapper && (!OrdinaryRecord || !OrdinarySources)) || !Call || !Wrapper || !Method || !Target ||
         !Reference || Target->getDirectCallee() != Method || Reference->getDecl() != Method ||
         Target->getOperator() != OO_Call || Target->isTypeDependent() || Target->isValueDependent() ||
         Target->isInstantiationDependent() || !Target->isPRValue() ||
         !Target->getType()->isBooleanType() || !Method->getReturnType()->isBooleanType() ||
-        Method->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord ||
-        !S.owns(SM, Method->getLocation()) || Method->hasAttrs() ||
+        (ReferenceWrapper
+            ? Method->getParent()->getCanonicalDecl() != NotFnReferenceCall->Reference.Wrapper.Record->getCanonicalDecl() ||
+              !family(Method)
+            : Method->getParent()->getCanonicalDecl() != OrdinaryRecord ||
+              !S.owns(SM, Method->getLocation()) || Method->hasAttrs()) ||
         !Context.hasSameType(Reference->getType(), Method->getType()) ||
         !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h") ||
         !cstddefOrigin(S, SM, Target->getExprLoc(), "libcxx", "__type_traits/invoke.h") ||
-        !Arguments || Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
+        !Arguments || Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != Wrapper->getNumParams() ||
         Target->getNumArgs() != Wrapper->getNumParams() + 1 ||
         Method->getNumParams() != Wrapper->getNumParams()) return false;
-    auto Bound = Wrapper->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
-    if (Wrapper->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Wrapper->getRefQualifier() != RQ_RValue) return false;
+    const auto Bound = notFnQueryBound();
+    if (Bound.isNull()) return false;
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Actual) {
       if (!Actual || Actual->size() != 2 || Actual->get(0).getKind() != TemplateArgument::Type ||
@@ -7832,12 +7864,25 @@ class UtilityTupleQueryGraph
     // The retained template argument is P for an rvalue invocation, while
     // declval<P>() and the actual forwarded receiver both have category P&&.
     const auto ReceiverType = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
-    if (!Context.hasSameType(Target->getArg(0)->getType(), Bound.getNonReferenceType()) ||
-        Target->getArg(0)->getValueKind() != Expr::getValueKindForType(ReceiverType) ||
-        !Operand(Target->getArg(0), Bound, 0)) return false;
+    const Expr *Receiver = Target->getArg(0);
+    if (ReferenceWrapper) {
+      // operator() is const even when the stored wrapper is mutable. Consume
+      // only the actual no-op qualification cast before checking its origin.
+      if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Receiver->IgnoreParens());
+          Cast && Cast->getCastKind() == CK_NoOp) {
+        if (!Context.hasSameType(Cast->getType(), Context.getConstType(Bound.getNonReferenceType())) ||
+            !Context.hasSameType(Cast->getSubExpr()->getType(), Bound.getNonReferenceType()) ||
+            Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return false;
+        Receiver = Cast->getSubExpr();
+      }
+    }
+    if (!Context.hasSameType(Receiver->getType(), Bound.getNonReferenceType()) ||
+        Receiver->getValueKind() != Expr::getValueKindForType(ReceiverType) ||
+        !Operand(Receiver, Bound, 0)) return false;
     for (unsigned I = 0; I < Pack.size(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
-      if (!Parameter->isScalarType() || Parameter.isVolatileQualified() ||
+      if ((ReferenceWrapper ? !Parameter->isReferenceType() : !Parameter->isScalarType()) ||
+          Parameter.getNonReferenceType().isVolatileQualified() ||
           !Context.hasSameType(Target->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
           Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter) ||
           !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return false;
@@ -7845,11 +7890,11 @@ class UtilityTupleQueryGraph
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     const auto Inserted = NotFnOwnedInvokeQueries.emplace(Target, Method);
     if (!Inserted.second && Inserted.first->second != Method) return false;
-    NotFnOwnedQuerySources->insert(Method);
+    if (!ReferenceWrapper) OrdinarySources->insert(Method);
     return true;
   }
   bool notFnInvokeForwardedCall(const CallExpr *Expression) {
-    if (NotFnOwnedInvokeMethod) return notFnOwnedInvokeQuery(Expression, true);
+    if (notFnQueryTargetMethod()) return notFnOwnedInvokeQuery(Expression, true);
     if (!Expression || Expression != NotFnInvokeException || !NotFnInvokeSignature ||
         Expression->getDirectCallee() || !NotFnInvocation) return false;
     const auto *Prototype = NotFnCallableType->getPointeeType()->getAs<FunctionProtoType>();
@@ -7885,7 +7930,7 @@ class UtilityTupleQueryGraph
     return true;
   }
   bool notFnIndirectSignature(const CallExpr *Expression) {
-    if (NotFnOwnedInvokeMethod) return notFnOwnedInvokeQuery(Expression, false);
+    if (notFnQueryTargetMethod()) return notFnOwnedInvokeQuery(Expression, false);
     const auto *Call = NotFnInvocation;
     const auto *Method = Call ? Call->Method : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
@@ -7986,6 +8031,10 @@ class UtilityTupleQueryGraph
     const auto Origin = S.sdkFile(SM, D->getLocation());
     return Origin && Origin->Root == "libcxx" &&
            (DefaultEqualityFamilies.count(D) ||
+            (NotFnReferenceStorage &&
+             (Mode == UtilityTupleQueryMode::NotFnSignature ||
+              (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage)) &&
+             PairInputFamilies.count(D)) ||
             Origin->Path == "tuple" || Origin->Path == "__config" ||
             (Mode == UtilityTupleQueryMode::NotFnSignature &&
              (Origin->Path == "__functional/not_fn.h" ||
@@ -8016,12 +8065,12 @@ class UtilityTupleQueryGraph
   bool family(const Decl *D) {
     bool Complete = false;
     auto Latch = llvm::make_scope_exit([&] {
-      if (!Complete && Mode == UtilityTupleQueryMode::PairConstruction) Failed = true;
+      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || NotFnReferenceStorage)) Failed = true;
     });
     if (!pinned(D)) {
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
-      if (Mode == UtilityTupleQueryMode::PairConstruction) Failed = true;
+      if ((Mode == UtilityTupleQueryMode::PairConstruction || NotFnReferenceStorage)) Failed = true;
       return false;
     }
     if (!Declarations.insert(D).second) {
@@ -8418,8 +8467,15 @@ class UtilityTupleQueryGraph
     if (!Factory) return true;
     const auto *Function = Call->getDirectCallee();
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const bool NotFnInput = Mode == UtilityTupleQueryMode::NotFnSignature &&
+        NotFnFactoryDefaults && NotFnReferenceStorage &&
+        Factory->Result.Record->getCanonicalDecl() ==
+            NotFnReferenceStorage->Reference.Record->getCanonicalDecl() &&
+        Context.hasSameType(Factory->Result.ReferentType,
+                            NotFnReferenceStorage->Reference.ReferentType);
     if (!Function || !Primary ||
-        !PairInputRecords.count(Factory->Result.Record->getCanonicalDecl())) return false;
+        (!PairInputRecords.count(Factory->Result.Record->getCanonicalDecl()) && !NotFnInput))
+      return false;
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
@@ -8704,7 +8760,8 @@ class UtilityTupleQueryGraph
                 : Prototype->getExceptionSpecType() == EST_None);
   }
   bool bindPairBorrowedMember(const CXXMethodDecl *Method, bool PairDefault) {
-    if (Mode != UtilityTupleQueryMode::PairConstruction || !Method ||
+    if ((Mode != UtilityTupleQueryMode::PairConstruction &&
+         !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage)) || !Method ||
         !PairBorrowedStorageRecords.count(Method->getParent()->getCanonicalDecl())) return true;
     const auto *Record = Method->getParent();
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
@@ -9025,9 +9082,14 @@ class UtilityTupleQueryGraph
         Record->isDynamicClass() || Record->getNumVBases() ||
         !(Record->getName() == "tuple" || Record->getName() == "__tuple_impl" ||
           Record->getName() == "__tuple_leaf" ||
-          (Mode == UtilityTupleQueryMode::PairConstruction &&
+          ((Mode == UtilityTupleQueryMode::PairConstruction ||
+            (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage)) &&
            PairBorrowedStorageRecords.count(Record->getCanonicalDecl()) &&
            Method->isImplicit() && Method->isTrivial()) ||
+          (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage &&
+           (Record->getCanonicalDecl() == NotFnReferenceStorage->Storage.Record->getCanonicalDecl() ||
+            Record->getCanonicalDecl() == NotFnReferenceStorage->Storage.Forwarder->getCanonicalDecl()) &&
+           Method->isDefaulted() && Method->isTrivial()) ||
           (Mode == UtilityTupleQueryMode::PairConstruction &&
            PairInputRecords.count(Record->getCanonicalDecl()) &&
            Method->isImplicit() && Method->isTrivial() &&
@@ -9163,6 +9225,14 @@ class UtilityTupleQueryGraph
     if (utilityScalar(Context, T) || T->isVoidType())
       return true;
     const auto *R = T->getAsCXXRecordDecl();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage && R) {
+      if (R->getCanonicalDecl() == NotFnReferenceStorage->Reference.Record->getCanonicalDecl() &&
+          Context.hasSameType(T.getUnqualifiedType(), NotFnCallableType))
+        return PairBorrowedStorageRecords.count(R->getCanonicalDecl()) && family(R);
+      const auto Referent = NotFnReferenceStorage->Reference.ReferentType;
+      if (Context.hasSameType(T.getUnqualifiedType(), Referent.getUnqualifiedType()))
+        return S.owns(SM, R->getLocation()) && R->getDefinition() && !R->isInvalidDecl();
+    }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnOwnedCallableRecord && R &&
         R->getCanonicalDecl() == NotFnOwnedCallableRecord &&
         Context.hasSameType(T.getUnqualifiedType(), NotFnCallableType))
@@ -10142,8 +10212,14 @@ class UtilityTupleQueryGraph
   }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceCall) {
+      const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(NotFnReferenceCall->Reference.Wrapper.Record);
+      const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+      if (Primary && R->getCanonicalDecl() == Primary->getTemplatedDecl()->getCanonicalDecl())
+        return R->getDescribedClassTemplate() == Primary && family(R);
+    }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
-        NotFnOwnedCallableRecord &&
+        (NotFnOwnedCallableRecord || NotFnReferenceStorage) &&
         (NotFnConstructorDefaultParameter || NotFnConstructorTypeParameter ||
          (NotFnConstructorQuery && NotFnConstructorRoot)) &&
         R->getCanonicalDecl() == NotFnFactoryDefaults->Selected.Storage.Tuple->getCanonicalDecl()) {
@@ -10157,7 +10233,9 @@ class UtilityTupleQueryGraph
            NotFnConstructorRoot->getConstructor()->getParent()->getCanonicalDecl() != R->getCanonicalDecl()))
         return false;
       const auto &Storage = NotFnFactoryDefaults->Selected.Storage;
-      const auto Owned = describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context);
+      const auto Owned = NotFnReferenceStorage
+          ? std::optional<FunctionalNotFnStorage>(NotFnReferenceStorage->Storage)
+          : describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context);
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
       const auto *Definition = R->getDefinition();
       if (!Owned || Owned->Tuple != Storage.Tuple || !Instance || !Definition ||
@@ -10199,7 +10277,8 @@ class UtilityTupleQueryGraph
       CompletedPairImplicitDefaults.insert(Key);
       return true;
     }
-    if (Mode == UtilityTupleQueryMode::PairConstruction &&
+    if ((Mode == UtilityTupleQueryMode::PairConstruction ||
+         (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage)) &&
         PairBorrowedStorageRecords.count(R->getCanonicalDecl())) {
       // The exact wrapper/base/zero-storage shape and SDK declaration family
       // were bound independently. Actual selected operations still close
@@ -10237,10 +10316,17 @@ class UtilityTupleQueryGraph
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairHelperOwner(R))
       return true;
+    if (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage && NotFnReferenceStorage) {
+      if (PairBorrowedStorageRecords.count(R->getCanonicalDecl())) return family(R);
+      const auto *Referent = NotFnReferenceStorage->Reference.ReferentType->getAsCXXRecordDecl();
+      if (Referent && R->getCanonicalDecl() == Referent->getCanonicalDecl())
+        return S.owns(SM, R->getLocation()) && !R->isInvalidDecl();
+    }
     if (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage) {
       if (const auto *Owned = NotFnTupleTagStorage->CallableType->getAsCXXRecordDecl();
           Owned && R->getCanonicalDecl() == Owned->getCanonicalDecl())
-        return describeFunctionalNotFnOwnedStorage(S, SM, NotFnTupleTagStorage->Record, Context).has_value();
+        return describeFunctionalNotFnOwnedStorage(S, SM, NotFnTupleTagStorage->Record, Context).has_value() ||
+            describeFunctionalNotFnReferenceStorage(S, SM, NotFnTupleTagStorage->Record, Context).has_value();
       const auto *Target = NotFnTupleTagStorage->CallableType->isFunctionPointerType()
           ? NotFnTupleTagStorage->CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
       const auto *Result = Target ? approvedFunctionalNotFnPointerResultRecord(
@@ -10416,14 +10502,21 @@ public:
                         const ASTContext &Context,
                         const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
                         const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
-                        UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction)
-      : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits), Mode(Mode) {}
+                        UtilityTupleQueryMode Mode = UtilityTupleQueryMode::Construction,
+                        UtilityTupleQueryGraph *ParentBudget = nullptr)
+      : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits),
+        Mode(Mode), ParentBudget(ParentBudget) {}
   bool bindNotFnTupleTagSlices(const FunctionalNotFnFactorySource &Factory,
-      llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false) {
+      llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false, bool Reference = false) {
     if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
         NotFnTupleTagStorage || Tags.size() != 4 ||
         Factory.SelectedConstructions.size() != 4) return false;
-    const auto Pointer = Owned ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Storage.Record, Context)
+    if (Owned && Reference) return false;
+    const auto Borrowed = Reference
+        ? describeFunctionalNotFnReferenceStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
+    const auto Pointer = Reference
+        ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
+        : Owned ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Factory.Storage.Record, Context);
     const auto *TupleInstance = Pointer ? dyn_cast<ClassTemplateSpecializationDecl>(Pointer->Tuple) : nullptr;
     const auto *Construction = Factory.SelectedConstructions[1];
@@ -10489,6 +10582,10 @@ public:
               std::make_pair(Use, I == 1 ? 0U : 1U)).second) return false;
     }
     NotFnTupleTagStorage = *Pointer;
+    if (Borrowed) {
+      NotFnReferenceStorage = *Borrowed;
+      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return false;
+    }
     return true;
   }
   bool bindNotFnOwnedInputAliases(
@@ -10521,7 +10618,8 @@ public:
           Alias->getLocation().isMacroID() || !S.owns(SM, Alias->getLocation()) ||
           approvedStandardSDKDeclaration(S, SM, Alias) ||
           (Named && Named->getDescribedAliasTemplate()) ||
-          (!Alias->getUnderlyingType()->isFunctionPointerType() && !NotFnOwnedCallableRecord) ||
+          (!Alias->getUnderlyingType()->isFunctionPointerType() && !NotFnOwnedCallableRecord &&
+           !NotFnReferenceStorage) ||
           !Context.hasSameType(Alias->getUnderlyingType(), NotFnCallableType) ||
           !Pending.emplace(Alias, Info).second) return false;
       // Complete the actual alias TSI, callback signature and owned spelling
@@ -10532,12 +10630,26 @@ public:
     NotFnOwnedInputAliases = std::move(Pending);
     return true;
   }
+  bool bindNotFnReferenceInputFactory(const FunctionalNotFnFactoryTemplateSource &Factory) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnReferenceStorage ||
+        NotFnFactoryDefaults != &Factory) return false;
+    const auto *Call = dyn_cast_or_null<CallExpr>(Factory.Selection.Expression);
+    if (!Call || Call->getDirectCallee() != Factory.Selected.Factory ||
+        Call->getNumArgs() != 1 || !S.owns(SM, Call->getExprLoc())) return false;
+    // Bind only the admitted ref/cref factory used by this exact outer call.
+    // Its ordinary argument and actual runtime call still close separately.
+    return bindPairReferenceFactory(Call->getArg(0));
+  }
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage,
-      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr) {
+      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
       return false;
-    const auto Pointer = OwnedQuerySources
-        ? describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context)
+    if (OwnedQuerySources && Reference) return false;
+    const auto Borrowed = Reference
+        ? describeFunctionalNotFnReferenceStorage(S, SM, Storage.Record, Context) : std::nullopt;
+    const auto Pointer = Reference
+        ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
+        : OwnedQuerySources ? describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
     if (!Pointer || Pointer->Operation != Storage.Operation ||
         !Context.hasSameType(Pointer->CallableType, Storage.CallableType) || !Pointer->TupleLeaf)
@@ -10555,7 +10667,15 @@ public:
     NotFnTupleLeafRecord = Pointer->TupleLeaf->getCanonicalDecl();
     NotFnTupleLeafValue = Pointer->Callable.Field;
     NotFnCallableType = Pointer->CallableType;
-    if (OwnedQuerySources) {
+    if (Borrowed) {
+      NotFnReferenceStorage = *Borrowed;
+      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return false;
+      PairStorageUseSource Written(*this);
+      const auto *PointerSource = Borrowed->Reference.Pointer->getTypeSourceInfo();
+      if (!PointerSource ||
+          !Context.hasSameType(PointerSource->getType(), Borrowed->Reference.PointerType) ||
+          !Written.check(PointerSource)) return false;
+    } else if (OwnedQuerySources) {
       NotFnOwnedCallableRecord = Pointer->CallableType->getAsCXXRecordDecl()->getCanonicalDecl();
       NotFnOwnedQuerySources = OwnedQuerySources;
     } else if (const auto *Result = approvedFunctionalNotFnPointerResultRecord(S, SM,
@@ -10563,8 +10683,107 @@ public:
       NotFnCallbackResultRecord = Result->getCanonicalDecl();
     return true;
   }
+  bool notFnReferenceSpecialMember(const CXXMethodDecl *Method) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnReferenceStorage || !Method)
+      return false;
+    const auto &Storage = NotFnReferenceStorage->Storage;
+    const auto *Owner = Method->getParent()->getCanonicalDecl();
+    if (Owner != Storage.Record->getCanonicalDecl() && Owner != Storage.Forwarder->getCanonicalDecl() &&
+        Owner != Storage.Tuple->getCanonicalDecl() && Owner != Storage.TupleImplementation->getCanonicalDecl() &&
+        Owner != Storage.TupleLeaf->getCanonicalDecl() &&
+        Owner != NotFnReferenceStorage->Reference.Record->getCanonicalDecl()) return false;
+    return specialMember(Method) && !Failed;
+  }
+  bool bindNotFnReferenceInvokeFamily(const CXXMethodDecl *Method) {
+    if (!NotFnReferenceStorage || !Method || !Method->getPrimaryTemplate() ||
+        Method->getParent()->getCanonicalDecl() != NotFnReferenceStorage->Reference.Record->getCanonicalDecl())
+      return false;
+    const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+    const auto *Class = Owner ? Owner->getSpecializedTemplate() : nullptr;
+    if (!Class || Class->getTemplateParameters()->size() != 1) return false;
+    const auto *TypeParameter = dyn_cast<TemplateTypeParmDecl>(Class->getTemplateParameters()->getParam(0));
+    const auto *Pattern = Class->getTemplatedDecl();
+    const TypedefNameDecl *Alias = nullptr;
+    for (const auto *D : Pattern->decls())
+      if (const auto *Candidate = dyn_cast<TypedefNameDecl>(D);
+          Candidate && Candidate->getIdentifier() && Candidate->getName() == "type") {
+        if (Alias) return false;
+        Alias = Candidate;
+      }
+    const auto *Spelling = Alias ? Alias->getTypeSourceInfo() : nullptr;
+    const auto *ParameterType = Spelling ? Spelling->getType()->getAs<TemplateTypeParmType>() : nullptr;
+    // A template redeclaration can keep another parameter declaration while
+    // retaining this same type. Keep the exact owning alias and original TSI;
+    // compare its full parameter type/slot instead of raw declaration identity.
+    if (!TypeParameter || !Alias || !Spelling || !ParameterType ||
+        !Context.hasSameType(Spelling->getType(), Context.getTypeDeclType(TypeParameter)) ||
+        ParameterType->getDepth() != TypeParameter->getDepth() ||
+        ParameterType->getIndex() != TypeParameter->getIndex() ||
+        ParameterType->isParameterPack() != TypeParameter->isParameterPack() ||
+        Alias->getDeclContext() != Pattern ||
+        !approvedStandardSDKDeclaration(S, SM, Alias) ||
+        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+    PairInputFamilies.insert(Alias);
+    PairStorageUseSource AliasSource(*this);
+    if (!AliasSource.check(Spelling)) return false;
+    std::vector<const Decl *> Pending{Method};
+    std::set<const Decl *> Bound;
+    while (!Pending.empty()) {
+      const auto *D = Pending.back(); Pending.pop_back();
+      if (!D || !step() || !approvedStandardSDKDeclaration(S, SM, D) ||
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+      if (!Bound.insert(D).second) continue;
+      if (const auto *Function = dyn_cast<CXXMethodDecl>(D)) {
+        if (Function->getOverloadedOperator() != OO_Call || !Function->isConst() ||
+            Function->isStatic() || Function->isVolatile() || Function->isVariadic() ||
+            (Function->getParent()->getCanonicalDecl() != Owner->getCanonicalDecl() &&
+             Function->getParent()->getCanonicalDecl() != Class->getTemplatedDecl()->getCanonicalDecl())) return false;
+        for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
+        for (const auto *Parameter : Function->parameters()) Pending.push_back(Parameter);
+        if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
+        if (const auto *Pattern = Function->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
+      } else if (const auto *Template = dyn_cast<FunctionTemplateDecl>(D)) {
+        for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
+        Pending.push_back(Template->getTemplatedDecl());
+        for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
+        if (const auto *Pattern = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Pattern);
+      } else if (!isa<ParmVarDecl, TemplateTypeParmDecl>(D)) return false;
+    }
+    PairInputFamilies.insert(Bound.begin(), Bound.end());
+    return family(Method);
+  }
+  bool referenceDependencyActive() const { return NotFnReferenceDependency; }
+  const CXXMethodDecl *referenceDependencyMethod() const {
+    return NotFnReferenceCall
+        ? dyn_cast_or_null<CXXMethodDecl>(NotFnReferenceCall->Selected.TargetCall->getDirectCallee()) : nullptr;
+  }
+  QualType referenceDependencyBound() const {
+    return NotFnReferenceCall
+        ? Context.getLValueReferenceType(NotFnReferenceCall->Reference.Wrapper.ReferentType) : QualType();
+  }
+  bool withNotFnReferenceDependency(std::function<bool()> Proof) {
+    if (!NotFnReferenceCall || NotFnReferenceDependency || !Proof || Depth || Failed ||
+        NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
+        !CompletedNotFnInvokeSignatures.empty() || !NotFnTryResultUses.empty()) return false;
+    NotFnReferenceDependency = true;
+    auto Restore = llvm::make_scope_exit([&] {
+      NotFnReferenceDependency = false;
+      NotFnInvokeUses.clear();
+      CompletedNotFnInvokeSignatures.clear();
+      NotFnTryResultUses.clear();
+      NotFnSignatureDeclvals.clear();
+      NotFnOwnedInvokeQueries.clear();
+      NotFnResultSentinels.clear();
+    });
+    // Types/expressions only remain cached after this whole dependency closes.
+    // Nodes and depth are never reset or moved to a new graph.
+    const bool Complete = Proof() && !Failed;
+    if (!Complete) Failed = true;
+    return Complete;
+  }
   bool withNotFnInvocation(const FunctionalNotFnCallSource &Call,
-                           std::function<bool()> Proof) {
+                           std::function<bool()> Proof,
+                           std::set<const CXXMethodDecl *> *ReferenceQuerySources = nullptr) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnInvocation ||
         !NotFnSignatureDeclvals.empty() || !NotFnTryResultUses.empty() ||
         !NotFnOperationTryResultUses.empty() ||
@@ -10588,9 +10807,21 @@ public:
         return false;
       NotFnOwnedInvokeMethod = Owned->CallableMethod;
     }
+    if (NotFnReferenceStorage) {
+      const auto Reference = describeFunctionalNotFnReferenceCallSource(S, SM, Call.SourceCall, Context);
+      if (!ReferenceQuerySources || !Reference || Reference->Selected.TargetCall != Call.TargetCall ||
+          Reference->Selected.Method != Call.Method ||
+          Reference->Reference.Wrapper.Record != NotFnReferenceStorage->Reference.Record ||
+          !bindNotFnReferenceInvokeFamily(dyn_cast<CXXMethodDecl>(Call.TargetCall->getDirectCallee()))) return false;
+      NotFnReferenceCall = *Reference;
+      NotFnReferenceQuerySources = ReferenceQuerySources;
+    } else if (ReferenceQuerySources) return false;
     NotFnInvocation = &Call;
     auto Restore = llvm::make_scope_exit([&] {
       NotFnInvocation = nullptr;
+      NotFnReferenceCall.reset();
+      NotFnReferenceQuerySources = nullptr;
+      NotFnReferenceDependency = false;
       NotFnSignatureDeclvals.clear();
       NotFnInvokeUses.clear();
       NotFnPublicInvoke = nullptr;
@@ -10701,15 +10932,14 @@ public:
   }
   bool prepareNotFnInvokeSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections) {
-    const auto *Method = NotFnInvocation ? NotFnInvocation->Method : nullptr;
+    const auto *Method = notFnQueryMethod();
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
         NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
-        !CompletedNotFnInvokeSignatures.empty() || Arguments->size() != 2 ||
+        !CompletedNotFnInvokeSignatures.empty() || Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) ||
         Arguments->get(0).getKind() != TemplateArgument::Pack) return false;
-    auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
-    if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    auto Bound = notFnQueryBound();
+    if (Bound.isNull()) return false;
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
@@ -10759,8 +10989,7 @@ public:
       // _Fp is the deduction result; the actual parameter is _Fp&&.
       // Reference collapsing preserves lvalues and forwards rvalues with the
       // original const qualification. Do not change the template argument.
-      const auto ForwardedCallable = Method->getRefQualifier() == RQ_RValue
-          ? Context.getRValueReferenceType(Bound) : Bound;
+      const auto ForwardedCallable = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
       if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return false;
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
@@ -10792,6 +11021,8 @@ public:
     }
     if (Functions.size() != 1 || Uses.empty()) return false;
     const auto *F = *Functions.begin();
+    if (NotFnReferenceCall && F != (NotFnReferenceDependency
+        ? NotFnReferenceCall->ReferentDispatcher : NotFnReferenceCall->Dispatcher)) return false;
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
     const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -10803,7 +11034,7 @@ public:
     const auto *ReturnCall = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
-        (!NotFnOwnedInvokeMethod && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return false;
+        (!notFnQueryTargetMethod() && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return false;
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -11103,10 +11334,10 @@ public:
   bool prepareNotFnTryResultSignatures(llvm::ArrayRef<const TemplateUseSource *> Sources,
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
       bool OperationDependency = false) {
-    const auto *Method = NotFnInvocation ? NotFnInvocation->Method : nullptr;
+    const auto *Method = notFnQueryMethod();
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
-        Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
+        Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
         (OperationDependency ? !NotFnOperationTryResultUses.empty()
                              : !NotFnTryResultUses.empty())) return false;
@@ -11117,9 +11348,8 @@ public:
         OperationArguments->get(0).getKind() != TemplateArgument::Pack ||
         OperationArguments->get(0).pack_size() != Operation->getNumParams() ||
         !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return false;
-    auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
-    if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    auto Bound = notFnQueryBound();
+    if (Bound.isNull()) return false;
     if (OperationDependency) Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = OperationDependency ? OperationArguments->get(0).pack_elements()
                                           : Arguments->get(0).pack_elements();
@@ -11344,7 +11574,7 @@ public:
         !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
       return false;
     const auto Input = Query->getArg(1)->getType();
-    if (!NotFnOwnedCallableRecord) {
+    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage)) {
       if (!Input->isRValueReferenceType() ||
           !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return false;
     } else {
@@ -11365,7 +11595,7 @@ public:
     if (const auto *Binding = dyn_cast_or_null<CXXBindTemporaryExpr>(QueryRoot)) {
       const auto *Temporary = Binding->getTemporary();
       const auto *Destructor = Temporary ? Temporary->getDestructor() : nullptr;
-      if (!NotFnOwnedCallableRecord || !Destructor ||
+      if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage) || !Destructor ||
           Destructor->getParent()->getCanonicalDecl() != Storage.Tuple->getCanonicalDecl() ||
           !Context.hasSameType(Binding->getType(), Context.getRecordType(Storage.Tuple)))
         return false;
@@ -11403,7 +11633,7 @@ public:
       const TemplateTypeParmDecl *Parameter, std::function<bool()> Proof) {
     if (!Constructor || !Parameter || !Parameter->hasDefaultArgument() || !Proof) return false;
     const auto Default = Parameter->getDefaultArgument().getArgument().getAsType();
-    if (!NotFnOwnedCallableRecord || !NotFnFactoryDefaults ||
+    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage) || !NotFnFactoryDefaults ||
         Constructor->getParent()->getCanonicalDecl() !=
             NotFnFactoryDefaults->Selected.Storage.Forwarder->getCanonicalDecl())
       return Proof() && !Failed;
@@ -11436,7 +11666,7 @@ public:
              TraverseTypeLoc(Type.Type->getTypeLoc()) && !Failed;
     };
     const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Source.Declaration);
-    if (!NotFnOwnedCallableRecord || !NotFnFactoryDefaults || !Constructor ||
+    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage) || !NotFnFactoryDefaults || !Constructor ||
         Constructor->getParent()->getCanonicalDecl() !=
             NotFnFactoryDefaults->Selected.Storage.Tuple->getCanonicalDecl())
       return TraverseSources();
@@ -11588,6 +11818,7 @@ public:
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseType(T);
+    if (!Complete && NotFnReferenceStorage) Failed = true;
     return Complete && !Failed;
   }
   bool TraverseStmt(Stmt *E) {
@@ -11600,6 +11831,7 @@ public:
     if (OwnDepth) ++Depth;
     auto Restore = llvm::make_scope_exit([&] { if (OwnDepth) --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseStmt(E);
+    if (!Complete && NotFnReferenceStorage) Failed = true;
     return Complete && !Failed;
   }
   bool TraverseTypeLoc(TypeLoc Location) {
@@ -11765,7 +11997,7 @@ public:
   }
   bool VisitMemberExpr(MemberExpr *E) { return value(E->getMemberDecl()); }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *E, DataRecursionQueue *Queue = nullptr) {
-    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnOwnedInvokeMethod) {
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && notFnQueryTargetMethod()) {
       auto Found = NotFnOwnedInvokeQueries.find(E);
       if (Found == NotFnOwnedInvokeQueries.end() &&
           (notFnOwnedInvokeQuery(E, false) || notFnOwnedInvokeQuery(E, true)))
@@ -11775,8 +12007,8 @@ public:
         // were checked above. Its TSI/noexcept/body close in the outer checker.
         // Charge the skipped callee nodes without traversing an owned method
         // as though it were an SDK declaration family.
-        if (Found->second != NotFnOwnedInvokeMethod || !step() || !VisitExpr(E) || !step() || !step() ||
-            E->getNumArgs() != NotFnOwnedInvokeMethod->getNumParams() + 1) return false;
+        if (Found->second != notFnQueryTargetMethod() || !step() || !VisitExpr(E) || !step() || !step() ||
+            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) return false;
         for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
         return true;
       }
@@ -13305,7 +13537,7 @@ public:
           Cached->getEndLoc() != Written->getEndLoc()) return nullptr;
       bool Owned = false;
       for (const auto Path : {"__functional/not_fn.h", "__functional/perfect_forward.h",
-                              "__functional/invoke.h"})
+                              "__functional/invoke.h", "__functional/reference_wrapper.h"})
         if (location(F->getLocation(), {Path}) &&
             location(Cached->getBeginLoc(), {Path}) && location(Cached->getEndLoc(), {Path})) {
           Owned = true;
@@ -13470,6 +13702,64 @@ describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
       LL.getFieldOffset(0) || !Check.family(Value, {"tuple"})) return std::nullopt;
   return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
       Impl, Leaf, UtilityTupleElement(Value, 0), Callable};
+}
+
+// Inert identity only: do not request a concrete definition, layout or Sema
+// completion while collecting callbacks. Runtime storage is checked below.
+static bool functionalNotFnReferenceIdentity(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+  if (!Instance || !Primary || !Instance->getIdentifier() ||
+      Instance->getName() != "reference_wrapper" || Instance->isInvalidDecl() ||
+      Instance->isUnion() || Instance->isDependentContext() ||
+      (Instance->getSpecializationKind() != TSK_Undeclared &&
+       Instance->getSpecializationKind() != TSK_ImplicitInstantiation) ||
+      !Instance->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>()) return false;
+  llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 1> Partials;
+  Primary->getPartialSpecializations(Partials);
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Partials.empty() ||
+      !Check.family(Instance, {"__functional/reference_wrapper.h", "__fwd/functional.h"}))
+    return false;
+  const auto &Arguments = Instance->getTemplateArgs();
+  if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Type)
+    return false;
+  const auto Referent = Arguments[0].getAsType();
+  const auto *Ordinary = Referent.isNull() ? nullptr : Referent->getAsCXXRecordDecl();
+  return Ordinary && !Referent->isDependentType() && !Referent->isInstantiationDependentType() &&
+      !Referent.isVolatileQualified() && !Referent.isRestrictQualified() &&
+      Referent.getAddressSpace() == LangAS::Default &&
+      !Ordinary->isInvalidDecl() && !Ordinary->isUnion() && !Ordinary->isLambda() &&
+      !isa<ClassTemplateSpecializationDecl>(Ordinary) && !Ordinary->getDescribedClassTemplate() &&
+      S.owns(SM, Ordinary->getLocation());
+}
+
+std::optional<FunctionalNotFnReferenceStorage>
+describeFunctionalNotFnReferenceStorage(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  const auto Storage = describeFunctionalNotFnStorage(S, SM, Record, Context);
+  const auto *Callable = Storage ? Storage->CallableType->getAsCXXRecordDecl() : nullptr;
+  if (!Storage || !functionalNotFnReferenceIdentity(S, SM, Callable, Context))
+    return std::nullopt;
+  const auto Reference = approvedFunctionalReferenceRecord(S, SM, Callable, Context);
+  const auto *Referent = Reference ? Reference->ReferentType->getAsCXXRecordDecl() : nullptr;
+  const auto *Definition = Referent ? Referent->getDefinition() : nullptr;
+  if (!Reference || !Definition || !S.owns(SM, Definition->getLocation()) ||
+      Definition->hasAttrs() || Definition->isInvalidDecl() || Definition->isDynamicClass() ||
+      !Context.hasSameType(Context.getRecordType(Reference->Record), Storage->CallableType) ||
+      Storage->Callable.EmptyBase || !Storage->Callable.Field) return std::nullopt;
+  for (const auto *Declaration : Referent->redecls())
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return std::nullopt;
+  for (const auto *Layer : {Storage->Record, Storage->Forwarder, Storage->Tuple,
+                           Storage->TupleImplementation, Storage->TupleLeaf, Reference->Record})
+    if (!Layer->hasTrivialCopyConstructor() || !Layer->hasTrivialDestructor()) return std::nullopt;
+  // The generic five-layer descriptor checks actual AST size/alignment and all
+  // offsets. The reference descriptor preserves its ABI-dependent padded base;
+  // no assumption that this wrapper occupies exactly one pointer is introduced.
+  return FunctionalNotFnReferenceStorage{*Storage, *Reference};
 }
 
 std::optional<FunctionalNotFnStorage>
@@ -14062,6 +14352,10 @@ bool retainFunctionalNotFnConstraintRoot(
       const auto Value = T.getNonReferenceType();
       if (Value->isFunctionPointerType()) return true;
       const auto *Record = Value->getAsCXXRecordDecl();
+      if (!Value.isVolatileQualified() && !Value.isRestrictQualified() &&
+          Value.getAddressSpace() == LangAS::Default &&
+          functionalNotFnReferenceIdentity(S, SM, Record, Template->getASTContext()))
+        return true; // Inert callback retention only; no source or runtime grant.
       return Record && !Value->isDependentType() &&
           !Value.isVolatileQualified() && !Value.isRestrictQualified() &&
           Value.getAddressSpace() == LangAS::Default &&
@@ -14135,6 +14429,13 @@ bool retainFunctionalNotFnConstraintRoot(
     const auto *Owner = Function
         ? dyn_cast<ClassTemplateSpecializationDecl>(Function->getParent()) : nullptr;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    if (Function && Owner && Primary && Template == Primary && !Type && !Underlying &&
+        Function->getOverloadedOperator() == OO_Call && Function->isConst() &&
+        !Function->isStatic() && !Function->isVariadic() &&
+        Use && Use->Root == "libcxx" && Use->Path == "__type_traits/invoke.h" &&
+        functionalNotFnReferenceIdentity(S, SM, Owner, Template->getASTContext()) &&
+        Check.family(Function, {"__functional/reference_wrapper.h"}))
+      return true;
     if (Function && Owner && Primary && Template == Primary && !Type && !Underlying &&
         isa<CXXConstructorDecl>(Function) && Owner->getIdentifier() &&
         Use && Use->Root == "libcxx" &&
@@ -14305,7 +14606,8 @@ bool matchesFunctionalNotFnSelectedSource(
       Owner->getTemplateArgs().size() != 1 ||
       Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       (!Owner->getTemplateArgs()[0].getAsType()->isFunctionPointerType() &&
-       !describeFunctionalNotFnOwnedStorage(S, SM, Owner, Context)) ||
+       (!describeFunctionalNotFnOwnedStorage(S, SM, Owner, Context) &&
+        !describeFunctionalNotFnReferenceStorage(S, SM, Owner, Context))) ||
       Source.Location != Construction->getExprLoc() ||
       !Check.location(Source.Location, {"__functional/not_fn.h"}) ||
       !Check.family(Actual, {"__functional/not_fn.h"}) ||
@@ -14381,6 +14683,7 @@ describeFunctionalNotFnTupleTagSources(
 // This callback-side filter deliberately grants no type/runtime permission.
 // It must not request a class layout, definition or source traversal while Sema
 // is still computing implicit special-member deletion and exception properties.
+
 bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
     const ASTContext &Context) {
@@ -14750,17 +15053,20 @@ class NotFnPointerSourceProof {
     for (const auto &Candidate : Owner->bases())
       ActualBase |= &Candidate == Base;
     if (!ActualBase) return false;
-    const auto *Method = Call.Method;
+    const bool ReferenceDependency = Graph.referenceDependencyActive();
+    const auto *Method = ReferenceDependency ? Graph.referenceDependencyMethod() : Call.Method;
     const auto *Selected = Method ? Method->getTemplateSpecializationArgs() : nullptr;
-    if (!Method || !Selected || Selected->size() != 2 ||
+    if (!Method || !Selected || Selected->size() != (ReferenceDependency ? 1U : 2U) ||
         Selected->get(0).getKind() != TemplateArgument::Pack ||
         Selected->get(0).pack_size() != Method->getNumParams() ||
-        !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
-    auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
-                                 : Call.Storage.CallableType;
-    if (Method->getRefQualifier() == RQ_LValue)
-      Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return false;
+        !Check.family(Method, {ReferenceDependency ? "__functional/reference_wrapper.h" : "__functional/perfect_forward.h"})) return false;
+    auto Bound = ReferenceDependency ? Graph.referenceDependencyBound()
+        : Method->isConst() ? Context.getConstType(Call.Storage.CallableType) : Call.Storage.CallableType;
+    if (!ReferenceDependency) {
+      if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
+      else if (Method->getRefQualifier() != RQ_RValue) return false;
+    }
+    if (Bound.isNull()) return false;
     const auto &Arguments = Owner->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Bound) ||
@@ -14869,7 +15175,8 @@ class NotFnPointerSourceProof {
   }
   bool publicNothrowVariableUse(const DeclRefExpr *Reference) {
     const auto *Function = PublicInvokeFunction;
-    const auto *Exception = Check.exceptionSource(Function);
+    const auto *Exception = Check.exceptionSource(Graph.referenceDependencyActive()
+        ? static_cast<const FunctionDecl *>(Graph.referenceDependencyMethod()) : Function);
     const auto *Root = Exception ? dyn_cast<DeclRefExpr>(Exception->IgnoreParenImpCasts()) : nullptr;
     const auto *Expected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     const auto *Variable = Reference ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
@@ -14892,7 +15199,8 @@ class NotFnPointerSourceProof {
         !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
         !Check.family(Rest, {"__type_traits/invoke.h"}) ||
-        !Check.location(Reference->getExprLoc(), {"__functional/invoke.h"})) return false;
+        !Check.location(Reference->getExprLoc(), {Graph.referenceDependencyActive()
+            ? "__functional/reference_wrapper.h" : "__functional/invoke.h"})) return false;
     for (const auto *Redeclaration : Variable->redecls())
       if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
     const auto *Load = dyn_cast<ImplicitCastExpr>(Variable->getInit());
@@ -14946,22 +15254,26 @@ class NotFnPointerSourceProof {
         !Check.family(Rest, {"__type_traits/invoke.h"})) return false;
     for (const auto *Redeclaration : Variable->redecls())
       if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
-    const auto *Method = Call.Method;
+    const bool ReferenceDependency = Graph.referenceDependencyActive();
+    const auto *Method = ReferenceDependency ? Graph.referenceDependencyMethod() : Call.Method;
     const auto *CallArguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
-    if (!Method || !CallArguments || CallArguments->size() != 2 ||
+    if (!Method || !CallArguments || CallArguments->size() != (ReferenceDependency ? 1U : 2U) ||
         CallArguments->get(0).getKind() != TemplateArgument::Pack ||
         CallArguments->get(0).pack_size() != Method->getNumParams() ||
         Method->getNumParams() > 64 ||
-        !Check.family(Method, {"__functional/perfect_forward.h"})) return false;
+        !Check.family(Method, {ReferenceDependency ? "__functional/reference_wrapper.h" : "__functional/perfect_forward.h"})) return false;
+    if (ReferenceDependency && !DirectCallable) return false;
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
         Arguments[1].pack_size() != Method->getNumParams() + (DirectCallable ? 0 : 1)) return false;
-    auto Bound = Method->isConst() ? Context.getConstType(Call.Storage.CallableType)
-                                 : Call.Storage.CallableType;
-    if (Method->getRefQualifier() == RQ_LValue)
-      Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    auto Bound = ReferenceDependency ? Graph.referenceDependencyBound()
+        : Method->isConst() ? Context.getConstType(Call.Storage.CallableType) : Call.Storage.CallableType;
+    if (!ReferenceDependency) {
+      if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
+      else if (Method->getRefQualifier() != RQ_RValue) return false;
+    }
+    if (Bound.isNull()) return false;
     const auto Pack = Arguments[1].pack_elements();
     const unsigned Offset = DirectCallable ? 0 : 1;
     if (!Context.hasSameType(Arguments[0].getAsType(), DirectCallable
@@ -15072,14 +15384,23 @@ public:
   NotFnPointerSourceProof &operator=(const NotFnPointerSourceProof &) = delete;
 
   bool factory(const FunctionalNotFnFactoryTemplateSource &Factory,
-      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr) {
-    const auto Pointer = OwnedQuerySources
-        ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Selected.Storage.Record, Context)
+      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false) {
+    if (OwnedQuerySources && Reference) return false;
+    const auto Borrowed = Reference
+        ? describeFunctionalNotFnReferenceStorage(S, SM, Factory.Selected.Storage.Record, Context) : std::nullopt;
+    const auto Pointer = Reference
+        ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
+        : OwnedQuerySources ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Selected.Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Factory.Selected.Storage.Record, Context);
-    if (!Pointer || (OwnedQuerySources ? !Factory.Selected.CallableConstruction
-                                     : bool(Factory.Selected.CallableConstruction)) ||
+    if (!Pointer || ((OwnedQuerySources || Reference) ? !Factory.Selected.CallableConstruction
+                                                    : bool(Factory.Selected.CallableConstruction)) ||
         !Graph.bindNotFnFactoryDefaults(Factory) ||
-        !Graph.bindNotFnOperation(Factory.Selected.Storage, OwnedQuerySources)) return false;
+        !Graph.bindNotFnOperation(Factory.Selected.Storage, OwnedQuerySources, Reference)) return false;
+    if (Reference && !Graph.bindNotFnReferenceInputFactory(Factory)) return false;
+    if (Reference &&
+        (approvedFunctionalReferenceConstruction(S, SM, Factory.Selected.CallableConstruction, Context) !=
+             FunctionalReferenceConstruction::CopyOrMove ||
+         !Graph.notFnReferenceSpecialMember(Factory.Selected.CallableConstruction->getConstructor()))) return false;
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no
@@ -15087,7 +15408,7 @@ public:
     const auto InputValue = Input.getNonReferenceType();
     const auto Decayed = InputValue->isFunctionType()
         ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
-    if ((OwnedQuerySources ? !InputValue->isRecordType()
+    if (((OwnedQuerySources || Reference) ? !InputValue->isRecordType()
                           : (!InputValue->isFunctionPointerType() && !InputValue->isFunctionType())) ||
         !Context.hasSameType(Decayed, Callable) ||
         !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) return false;
@@ -15140,8 +15461,8 @@ public:
     const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
     if (!Tags || Tags->size() != 4) return false;
     UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
-                                UtilityTupleQueryMode::CatSignature);
-    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags, OwnedQuerySources != nullptr)) return false;
+                                UtilityTupleQueryMode::CatSignature, Reference ? &Graph : nullptr);
+    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags, OwnedQuerySources != nullptr, Reference)) return false;
     for (const auto &Tag : *Tags)
       if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
     // Every selected construction keeps its actual signature. The exact
@@ -15302,14 +15623,105 @@ public:
     // forwarding, negation and lifetime proofs remain independent obligations.
     return true;
   }
+  bool referenceInvokeSources(const FunctionalNotFnReferenceCallSource &Reference) {
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Reference.Selected.TargetCall->getDirectCallee());
+    const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
+    const auto *Selected = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+    const auto *Dispatcher = Reference.ReferentDispatcher;
+    if (!Method || !Primary || !Selected || Selected->size() != 1 ||
+        Selected->get(0).getKind() != TemplateArgument::Pack ||
+        Selected->get(0).pack_size() != Method->getNumParams() ||
+        !Dispatcher || !Dispatcher->getTemplateSpecializationArgs() ||
+        !Check.family(Method, {"__functional/reference_wrapper.h"}) ||
+        !Check.family(Dispatcher, {"__type_traits/invoke.h"})) return false;
+    bool Packet = false, RuntimeSelection = false;
+    for (const auto *Source : Sources) {
+      if (!Source || Source->Declaration != Method) continue;
+      if (Source->Kind != TemplateSourceKind::Function || Source->Template != Primary ||
+          !Source->FunctionalNotFnConstraint || Source->Type || Source->Underlying || Source->Written ||
+          Source->Instantiation || Source->Origin || Source->WrittenStorageClass || Source->Selection ||
+          !arguments(*Source) || !Source->Defaults.empty() || !Source->ParameterTypes.empty() ||
+          Source->Canonical->size() != 1 ||
+          !Source->Canonical->get(0).structurallyEquals(Selected->get(0)) ||
+          !Check.location(Source->Location, {"__type_traits/invoke.h"})) return false;
+      bool SelectedOccurrence = false;
+      for (const auto *Selection : Selections) {
+        if (!Selection || Selection->Function != Method || Selection->Location != Source->Location) continue;
+        const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression);
+        if (!Selection->FunctionalNotFnConstraint || !Call || Call->getDirectCallee() != Method ||
+            !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) return false;
+        SelectedOccurrence = true;
+        RuntimeSelection |= Call == Reference.Selected.TargetCall;
+      }
+      if (!SelectedOccurrence) return false;
+      Packet = true;
+    }
+    if (!Packet || !RuntimeSelection) return false;
+    return Graph.withNotFnReferenceDependency([&] {
+      if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections) ||
+          !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) return false;
+      const auto *SavedInvoke = PublicInvokeFunction;
+      const bool SavedNothrow = PublicNothrowInitializer;
+      PublicInvokeFunction = Dispatcher;
+      PublicNothrowInitializer = false;
+      auto Restore = llvm::make_scope_exit([&] {
+        PublicInvokeFunction = SavedInvoke;
+        PublicNothrowInitializer = SavedNothrow;
+      });
+      // Every member-template ancestor retains its actual original signature.
+      // Dependent originals and the selected concrete exception close separately.
+      std::set<const FunctionTemplateDecl *> Ancestors;
+      for (const auto *Template = Primary; Template;
+           Template = Template->getInstantiatedFromMemberTemplate()) {
+        if (!Ancestors.insert(Template).second || Ancestors.size() > 64 ||
+            !Check.family(Template, {"__functional/reference_wrapper.h"})) return false;
+        const auto *Parameters = Template->getTemplateParameters();
+        const auto *Pack = Parameters->size() == 1 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+        const auto *Pattern = dyn_cast<CXXMethodDecl>(Template->getTemplatedDecl());
+        if (!Pack || !Pack->isParameterPack() || Pack->getIndex() || Pack->hasDefaultArgument() ||
+            !Pattern || Pattern->getOverloadedOperator() != OO_Call || !Pattern->isConst() ||
+            Pattern->isStatic() || Pattern->isVolatile() || Pattern->isVariadic() ||
+            !Check.family(Pattern, {"__functional/reference_wrapper.h"})) return false;
+        for (const auto *Parameter : Pattern->parameters())
+          if (!Parameter || Parameter->hasDefaultArg() || !Parameter->isParameterPack() ||
+              !Check.family(Parameter, {"__functional/reference_wrapper.h"})) return false;
+        for (const auto *Declaration : Pattern->redecls()) {
+          const auto *Info = Declaration->getTypeSourceInfo();
+          const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+          if (!Info || !Prototype || Prototype->getExceptionSpecType() != EST_DependentNoexcept ||
+              !Prototype->getNoexceptExpr() || !Check.family(Declaration, {"__functional/reference_wrapper.h"}) ||
+              !Graph.TraverseTypeLoc(Info->getTypeLoc()) ||
+              !Graph.TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return false;
+        }
+      }
+      for (const auto *Parameter : Method->parameters())
+        if (!Parameter || Parameter->hasDefaultArg() || !Parameter->getType()->isReferenceType() ||
+            !Check.family(Parameter, {"__functional/reference_wrapper.h"})) return false;
+      for (const auto *Declaration : Method->redecls()) {
+        const auto *Info = Declaration->getTypeSourceInfo();
+        const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+        if (!Info || !Prototype ||
+            (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
+             Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
+            !Prototype->getNoexceptExpr() || !Check.family(Declaration, {"__functional/reference_wrapper.h"}) ||
+            !Graph.TraverseTypeLoc(Info->getTypeLoc()) || !Graph.function(Declaration)) return false;
+      }
+      return true;
+    });
+  }
   bool callDefaults(const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
-      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr) {
-    if (PublicInvokeFunction || PublicNothrowInitializer) return false;
+      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr,
+      const FunctionalNotFnReferenceCallSource *ReferenceSource = nullptr,
+      std::set<const CXXMethodDecl *> *ReferenceQuerySources = nullptr) {
+    if (PublicInvokeFunction || PublicNothrowInitializer ||
+        bool(ReferenceSource) != bool(ReferenceQuerySources) || (ReferenceSource && OwnedQuerySources) ||
+        (ReferenceSource && (ReferenceSource->Selected.SourceCall != Call.SourceCall ||
+                             ReferenceSource->Selected.TargetCall != Call.TargetCall))) return false;
     auto RestorePublicInvoke = llvm::make_scope_exit([&] {
       PublicInvokeFunction = nullptr;
       PublicNothrowInitializer = false;
     });
-    if (!Graph.bindNotFnOperation(Call.Storage, OwnedQuerySources) ||
+    if (!Graph.bindNotFnOperation(Call.Storage, OwnedQuerySources, ReferenceSource != nullptr) ||
         !Graph.bindNotFnConstraintVariables([this, Call](const DeclRefExpr *Reference) {
           return invocationVariableUse(Reference, Call);
         })) return false;
@@ -15351,6 +15763,7 @@ public:
     for (unsigned I = 0; I < Arguments->size(); ++I)
       if (!Use.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
     return Graph.withNotFnInvocation(Call, [&] {
+    if (ReferenceSource && !referenceInvokeSources(*ReferenceSource)) return false;
     if (!Graph.prepareNotFnInvokeSignatures(Sources, Selections) ||
         !Graph.prepareNotFnTryResultSignatures(Sources, Selections)) return false;
     // Close the concrete inner invoke result before the outer operator's
@@ -15391,7 +15804,7 @@ public:
         !constraintType(Default.Converted.getTypeSourceInfo()) ||
         !parameterTypes(Use)) return false;
     return true;
-    });
+    }, ReferenceQuerySources);
   }
 };
 } // namespace
@@ -15544,6 +15957,49 @@ bool approvedFunctionalNotFnOwnedCallDefaults(const State &S,
     std::set<const CXXMethodDecl *> &OwnedQuerySources) {
   return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits)
       .callDefaults(Call, Use, &OwnedQuerySources);
+}
+
+bool approvedFunctionalNotFnReferenceFactorySource(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits, SourceAlias)
+      .factory(Factory, nullptr, true);
+}
+
+bool approvedFunctionalNotFnReferenceCallDefaults(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnReferenceCallSource &Call, const TemplateUseSource &Use,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &ReferenceQuerySources) {
+  return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits)
+      .callDefaults(Call.Selected, Use, nullptr, &Call, &ReferenceQuerySources);
+}
+
+bool approvedFunctionalNotFnReferenceCopySource(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnCopySource &Copy,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  const auto Actual = describeFunctionalNotFnCopySource(S, SM, Copy.Construction, Context);
+  if (!Actual || Actual->Storage.Record != Copy.Storage.Record ||
+      Actual->SDKConstructions != Copy.SDKConstructions ||
+      Actual->CallableConstruction != Copy.CallableConstruction ||
+      Actual->Move != Copy.Move || Actual->TrivialCallableConstruction != Copy.TrivialCallableConstruction)
+    return false;
+  UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature);
+  if (!Graph.bindNotFnOperation(Copy.Storage, nullptr, true) ||
+      !Graph.notFnReferenceSpecialMember(Copy.Construction->getConstructor())) return false;
+  if (const auto *Destructor = Copy.Storage.Record->getDestructor())
+    if (!Graph.notFnReferenceSpecialMember(Destructor)) return false;
+  return true;
 }
 
 bool approvedUtilityTupleCatSignatureQuery(
@@ -25837,6 +26293,94 @@ approvedFunctionalReferenceDirectInvoke(
       std::nullopt,
       nullptr,
       std::move(SelectedCopies)};
+}
+
+std::optional<FunctionalNotFnReferenceCallSource>
+describeFunctionalNotFnReferenceCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto Source = describeFunctionalNotFnCallSource(
+      S, SM, Call, Context, FunctionalNotFnSourceMode::Runtime);
+  const auto Storage = Source
+      ? describeFunctionalNotFnReferenceStorage(S, SM, Source->Storage.Record, Context)
+      : std::nullopt;
+  if (!Source || !Storage || !Source->InvokeCall || !Source->DispatchCall || !Source->TargetCall)
+    return std::nullopt;
+  const auto *Invoke = Source->InvokeCall->getDirectCallee();
+  const auto *Dispatcher = Source->DispatchCall->getDirectCallee();
+  const auto *Target = dyn_cast<CXXOperatorCallExpr>(Source->TargetCall);
+  const auto *WrapperMethod = Target ? dyn_cast_or_null<CXXMethodDecl>(Target->getDirectCallee()) : nullptr;
+  const auto *WrapperPrototype = Source->Method->getType()->getAs<FunctionProtoType>();
+  const auto *ReferencePrototype = WrapperMethod ? WrapperMethod->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Negation = dyn_cast<UnaryOperator>(Source->Negation);
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Invoke || !Dispatcher || !Invoke->getPrimaryTemplate() || !Dispatcher->getPrimaryTemplate() ||
+      Invoke->isVariadic() || Dispatcher->isVariadic() || !Target || !WrapperMethod ||
+      !Check.family(Invoke, {"__functional/invoke.h"}) ||
+      !Check.family(Dispatcher, {"__type_traits/invoke.h"}) ||
+      Check.core(Check.returned(Invoke)) != Source->DispatchCall ||
+      Check.core(Check.returned(Dispatcher)) != Target ||
+      WrapperMethod->getParent()->getCanonicalDecl() != Storage->Reference.Record->getCanonicalDecl() ||
+      !WrapperPrototype || !ReferencePrototype ||
+      WrapperPrototype->isNothrow() != ReferencePrototype->isNothrow() ||
+      !Target->isPRValue() || !Target->getType()->isBooleanType() ||
+      !Negation || Negation->getOpcode() != UO_LNot || !Negation->getType()->isBooleanType() ||
+      Check.core(Negation->getSubExpr()) != Source->InvokeCall ||
+      Invoke->getNumParams() != Call->getNumArgs() || Dispatcher->getNumParams() != Call->getNumArgs() ||
+      Source->DispatchCall->getNumArgs() != Call->getNumArgs() || Target->getNumArgs() != Call->getNumArgs())
+    return std::nullopt;
+  for (unsigned I = 0; I < Invoke->getNumParams(); ++I) {
+    const CallExpr *Forward = nullptr;
+    const auto Input = Invoke->getParamDecl(I)->getType();
+    if (!Input->isReferenceType() || Invoke->getParamDecl(I)->hasDefaultArg() ||
+        Dispatcher->getParamDecl(I)->hasDefaultArg() ||
+        !Context.hasSameType(Input, Dispatcher->getParamDecl(I)->getType()) ||
+        !Check.forwarding(Source->DispatchCall->getArg(I), Invoke->getParamDecl(I),
+                          "__functional/invoke.h", Forward)) return std::nullopt;
+    const auto *Cast = dyn_cast<CXXStaticCastExpr>(Target->getArg(I)->IgnoreParenImpCasts());
+    const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+    if (!Cast || Cast->getCastKind() != CK_NoOp || !Use || Use->getDecl() != Dispatcher->getParamDecl(I) ||
+        !Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"}) ||
+        !Context.hasSameType(Cast->getTypeAsWritten(), Input) ||
+        !Context.hasSameType(Cast->getType(), Input.getNonLValueExprType(Context)) ||
+        Cast->getValueKind() != Expr::getValueKindForType(Input)) return std::nullopt;
+  }
+  const auto Receiver = Dispatcher->getParamDecl(0)->getType();
+  const auto Expected = Source->Method->isConst()
+      ? Context.getConstType(Storage->Storage.CallableType) : Storage->Storage.CallableType;
+  if (!Context.hasSameType(Receiver.getNonReferenceType(), Expected) ||
+      Receiver->isRValueReferenceType() != (Source->Method->getRefQualifier() == RQ_RValue))
+    return std::nullopt;
+  // The internal SDK target is authenticated only through this exact outer
+  // source chain. The public helper still requires an owned reference site.
+  const auto Reference = approvedFunctionalReferenceDirectInvoke(S, SM, Target, Context, false, true);
+  const auto *Method = Reference ? Reference->Method : nullptr;
+  const auto *Definition = Method ? Method->getDefinition() : nullptr;
+  if (!Reference || Reference->Kind != FunctionalReferenceInvokeKind::UserFunctionObject ||
+      Reference->Wrapper.Record->getCanonicalDecl() != Storage->Reference.Record->getCanonicalDecl() ||
+      !Context.hasSameType(Reference->Wrapper.ReferentType, Storage->Reference.ReferentType) ||
+      !Method || Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Method->hasAttrs() || !Method->getReturnType()->isBooleanType() ||
+      Method->getRefQualifier() == RQ_RValue || !Definition || !Definition->getBody() ||
+      !S.owns(SM, Definition->getLocation()) || !S.owns(SM, Definition->getBody()->getBeginLoc()) ||
+      (Storage->Reference.ReferentType.isConstQualified() && !Method->isConst()) ||
+      Method->getNumParams() + 1 != Call->getNumArgs()) return std::nullopt;
+  for (const auto *Declaration : Method->redecls())
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() || !Declaration->getTypeSourceInfo())
+      return std::nullopt;
+  // First reference increment is deliberately the original bool/scalar case.
+  // Record parameters, selected copies and custom negation remain separate work.
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    if (!Parameter->isScalarType() || Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
+        !Context.hasSameUnqualifiedType(Parameter, Call->getArg(I + 1)->getType()) ||
+        (I < Reference->SelectedCopies.size() && Reference->SelectedCopies[I])) return std::nullopt;
+  }
+  const auto *ReferentCall = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(WrapperMethod)));
+  const auto *ReferentDispatcher = ReferentCall ? ReferentCall->getDirectCallee() : nullptr;
+  if (!ReferentDispatcher || !Check.family(ReferentDispatcher, {"__type_traits/invoke.h"}))
+    return std::nullopt;
+  return FunctionalNotFnReferenceCallSource{*Source, *Reference, Dispatcher, ReferentDispatcher};
 }
 
 std::optional<FunctionalReferenceInvokeCall>

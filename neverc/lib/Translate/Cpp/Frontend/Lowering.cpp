@@ -28659,6 +28659,50 @@ class FunctionLowering {
         Expression Member{{"kind", "member"}, {"type", type(Source.Storage.CallableType, L)},
             {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Object)}},
             {"loc", A.loc(L)}};
+        if (const auto Reference = A.VerifiedNotFnReferenceCalls.find(Call);
+            Reference != A.VerifiedNotFnReferenceCalls.end()) {
+          const auto &Selected = Reference->second;
+          const auto &Info = Selected.Reference;
+          const auto *Target = Info.Method;
+          const auto *Negation = dyn_cast<UnaryOperator>(Source.Negation);
+          if (Selected.Selected.SourceCall != Call || Selected.Selected.TargetCall != Source.TargetCall ||
+              Selected.Selected.Storage.Record != Source.Storage.Record || !Target ||
+              Info.Kind != FunctionalReferenceInvokeKind::UserFunctionObject ||
+              !Target->getReturnType()->isBooleanType() || Target->getNumParams() + 1 != Call->getNumArgs() ||
+              !Negation || Negation->getOpcode() != UO_LNot || !Negation->getType()->isBooleanType())
+            reject(L, "not_fn reference invocation", "The exact checked nested reference call is required.");
+          // Read the stored pointer, preserving ABI padding and T's cv type.
+          // Constness/ref-qualification of the outer adaptor never copies T or
+          // changes a reference_wrapper<T> binding into reference_wrapper<const T>.
+          auto WrapperAddress = snapshot(
+              address(std::move(Member), Source.Storage.CallableType, L), L);
+          auto Sources = captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
+          auto WrapperObject = dereference(std::move(WrapperAddress), L);
+          Expression Pointer{{"kind", "member"},
+                             {"type", type(Info.Wrapper.PointerType, L)},
+                             {"name", "nct_reference_wrapper_pointer"},
+                             {"args", json::Array{std::move(WrapperObject)}},
+                             {"loc", A.loc(L)}};
+          auto Referent = snapshot(std::move(Pointer), L);
+          beginFullExpression();
+          json::Array Arguments;
+          Arguments.push_back(snapshot(cast(std::move(Referent), type(Target->getThisType(), L), L), L));
+          for (unsigned I = 0; I < Target->getNumParams(); ++I) {
+            const auto Parameter = Target->getParamDecl(I)->getType();
+            if (!Parameter->isScalarType() ||
+                (I < Info.SelectedCopies.size() && Info.SelectedCopies[I]))
+              reject(L, "not_fn reference argument", "This increment requires the checked scalar argument path.");
+            Arguments.push_back(utilityInvocationArgument(std::move(Sources[I]),
+                Source.Method->getParamDecl(I)->getType(), Parameter, nullptr, L));
+          }
+          chargeCall(Arguments, L);
+          auto Value = temporary("bool", L);
+          Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Target)},
+              {"args", std::move(Arguments)}, {"target", json::Object(Value)}, {"loc", A.loc(L)}});
+          endFullExpression();
+          return Expression{{"kind", "unary"}, {"type", "bool"}, {"operator", "!"},
+              {"args", json::Array{std::move(Value)}}, {"loc", A.loc(L)}};
+        }
         if (Source.Storage.CallableType->isRecordType()) {
           const auto *Target = Source.TargetCall
               ? dyn_cast_or_null<CXXMethodDecl>(Source.TargetCall->getDirectCallee()) : nullptr;
@@ -32854,8 +32898,9 @@ class FunctionLowering {
     const auto *R = T->getAsCXXRecordDecl();
     if (!A.S.coreV2() || !R || !R->getDefinition())
       return false;
-    if (approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context))
-      return false; // Its source has no direct fields, but its validated base stores the pointer.
+    if (approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context) ||
+        describeFunctionalNotFnReferenceStorage(A.S, A.Sources, R, A.Context))
+      return false; // The exact validated base stores the callable, including reference ABI padding.
     if (R->getDefinition()->field_empty())
       return true;
     const auto Array =
