@@ -25,7 +25,7 @@ import struct
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 import capstone
@@ -906,6 +906,15 @@ TESTS = [
 
 
 # ---------------------------------------------------------------------------
+# The portable names must meet the same independent register-transport oracle
+# as the Microsoft names, including high MSR values and every port width.
+PORTABLE = {"rdmsr": "__readmsr", "wrmsr": "__writemsr",
+            **{name: "__" + name for name in
+               ("inbyte", "inword", "indword", "outbyte", "outword", "outdword")}}
+TESTS += [replace(test, name="portable_" + test.name,
+                  src=test.src.replace(PORTABLE[test.name], "__builtin_ia32_" + test.name))
+          for test in TESTS if test.name in PORTABLE]
+
 # Runner
 # ---------------------------------------------------------------------------
 

@@ -300,6 +300,15 @@ BUILTIN(__builtin_ia32_vmptrst_address, "vULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_vmxon_address, "UcULLiIUiIUi", "n")
 
 
+// Native scalar port I/O and MSR writes, independent of platform headers.
+BUILTIN(__builtin_ia32_inbyte, "UcUs", "n")
+BUILTIN(__builtin_ia32_inword, "UsUs", "n")
+BUILTIN(__builtin_ia32_indword, "UiUs", "n")
+BUILTIN(__builtin_ia32_outbyte, "vUsUc", "n")
+BUILTIN(__builtin_ia32_outword, "vUsUs", "n")
+BUILTIN(__builtin_ia32_outdword, "vUsUi", "n")
+BUILTIN(__builtin_ia32_wrmsr, "vUiULLi", "n")
+
 // Native REP operations; counts are element counts, not byte lengths.
 BUILTIN(__builtin_ia32_movsb, "vv*vC*ULLi", "n")
 BUILTIN(__builtin_ia32_movsw, "vv*vC*ULLi", "n")

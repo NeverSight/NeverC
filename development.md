@@ -34,6 +34,22 @@ Frontend (BuiltinEmitterX86.cpp)
 | [`llvm/lib/Target/X86/X86InstrInfo.cpp`](llvm/lib/Target/X86/X86InstrInfo.cpp) | Physical register copy support |
 | [`neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp`](neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp) | Frontend intrinsic emission |
 
+## Portable scalar MSR and port I/O
+
+`__builtin_ia32_wrmsr(unsigned, unsigned long long)` and the existing
+`__builtin_ia32_rdmsr(unsigned)` use native LLVM operations without platform
+headers. The six portable port builtins are `__builtin_ia32_inbyte`, `inword`,
+`indword`, `outbyte`, `outword`, and `outdword` (each with that same prefix).
+They take an `unsigned short` port; output operations take the value second.
+The value widths are 8, 16 and 32 bits. Ordered accesses and unused reads
+survive optimization, including constant ports above 255, which require DX.
+
+The privileged intrinsic suite checks all eight operations at O0/O2 in ELF,
+COFF and Mach-O, with no inline assembly or platform headers. The binary oracle
+also applies the Microsoft-name register/return checks to all eight portable
+names: 89 binary cases pass. These transport checks do not authorize or qualify
+successful privileged accesses on physical hardware.
+
 ## Native MPX bounds state
 
 NeverC exposes 14 C23 builtins for the architectural BND0--BND3 bank. Each

@@ -47,6 +47,70 @@ TEST_F(X86PrivilegedIntrinTest,
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, PortableScalarSystemBuiltinsKeepNativeEffects) {
+  const auto Source = tmpFile("scalar_system.c");
+  writeFile(Source, R"(
+    unsigned long long io(unsigned short port, unsigned index,
+                          unsigned long long value) {
+      __builtin_ia32_wrmsr(index, value);
+      __builtin_ia32_outbyte(port, value);
+      __builtin_ia32_outword(port, value);
+      __builtin_ia32_outdword(port, value);
+      return __builtin_ia32_rdmsr(index) ^ __builtin_ia32_inbyte(port) ^
+             __builtin_ia32_inword(port) ^ __builtin_ia32_indword(port);
+    }
+    void unused(void) {
+      __builtin_ia32_rdmsr(0xc0000080);
+      __builtin_ia32_inbyte(0x1234);
+      __builtin_ia32_inbyte(0x1234);
+    }
+  )");
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      for (bool EmitIR : {true, false}) {
+        auto Output = tmpFile(EmitIR ? "scalar_system.ll" : "scalar_system.s");
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         "-std=c23",
+                                         "-ffreestanding",
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         Opt,
+                                         "-S",
+                                         Source.string(),
+                                         "-o",
+                                         Output.string()};
+        if (EmitIR)
+          Args.push_back("-emit-llvm");
+        auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        if (EmitIR) {
+          for (const char *Name : {"rdmsr", "wrmsr", "inbyte", "inword",
+                                   "indword", "outbyte", "outword", "outdword"})
+            EXPECT_NE(Text.find(std::string("@llvm.x86.") + Name + "("),
+                      std::string::npos)
+                << Text;
+          const std::regex Read("call i8 @llvm\\.x86\\.inbyte\\(i16 4660\\)");
+          EXPECT_EQ(std::distance(
+                        std::sregex_iterator(Text.begin(), Text.end(), Read),
+                        std::sregex_iterator()),
+                    2)
+              << Text;
+          EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+        } else {
+          EXPECT_NE(Text.find("\trdmsr"), std::string::npos) << Text;
+          EXPECT_NE(Text.find("\twrmsr"), std::string::npos) << Text;
+          EXPECT_EQ(Text.find("#APP"), std::string::npos) << Text;
+        }
+      }
+    }
+}
+
 TEST_F(X86PrivilegedIntrinTest, MpxUsesNativeBoundsBankAndPreservesBranches) {
   constexpr const char *Source = R"(
     void bounds(unsigned long long base, unsigned long long value,
