@@ -33234,8 +33234,10 @@ class FunctionLowering {
           {"loc", A.loc(L)}};
       Expression Output{{"kind", "member"}, {"type", type(Callable, L)},
           {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+      const auto Referent = Selected->getConstructor()->getParamDecl(0)
+                                ->getType()->getPointeeType();
       constructMemorySource(std::move(Output), Callable, Selected->getConstructor(),
-          snapshot(address(std::move(Input), Callable, L), L), L, Selected);
+          snapshot(address(std::move(Input), Referent, L), L), L, Selected);
       return;
     }
     if (const auto Kind = approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context)) {
