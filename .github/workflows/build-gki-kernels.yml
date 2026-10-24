@@ -25,6 +25,10 @@ on:
           - "618"
           - "703"
         default: all
+      release_tag:
+        description: "Optional standalone GKI release tag (must start with gki-)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -78,6 +82,7 @@ jobs:
           set -euo pipefail
           python3 runtime/android/kernel/tools/generate-compat-table.py --check
           python3 runtime/android/kernel/tools/test-gen-offsets.py
+          python3 runtime/android/kernel/tools/test-gki-release-publish.py
           python3 - <<'PY'
           import json
           import os
@@ -521,13 +526,16 @@ jobs:
   release:
     name: Release
     needs: build
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      KERNEL_VERSION: ${{ inputs.kernel_version }}
+      SOURCE_SHA: ${{ github.sha }}
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -543,13 +551,52 @@ jobs:
             echo "No artifacts to publish."
             exit 0
           fi
-          tag="gki-build-$(date -u +%Y%m%d)"
+          tag=${RELEASE_TAG:-gki-build-$(date -u +%Y%m%d)}
+          [[ "$tag" =~ ^gki-[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+            echo "Invalid GKI release tag: $tag" >&2
+            exit 1
+          }
           title="GKI prebuilt kernels $(date -u +%Y-%m-%d)"
-          notes="Automated GKI builds with struct module offset verification for catalog profiles. Android18-7.3 (703) uses the pinned NeverC production preview fragment with lock debugging disabled; it is an RC configuration, not the stock debug defconfig."
+          flags=(--latest=false)
+          if [ "$KERNEL_VERSION" = 703 ]; then
+            title="GKI android18-7.3 production preview (KMI0)"
+            flags+=(--prerelease)
+            cat > release-notes.md <<'NOTES'
+          Standalone Android 18 / Linux 7.3 GKI production preview for NeverC `NVK_KERNEL=703`.
+
+          - AOSP common commit: `d05bec5ef839dbeca434de1f27e79dd62eee39e9`, KMI generation **0**.
+          - Actual kernel release: `7.2.0-rc9-android18-0-maybe-dirty-neverc-preview-4k` (the upstream branch temporarily reports Linux 7.2-rc9).
+          - Configuration: GKI defconfig plus `android18-7.3-production.fragment`, with lockdep/debug locks disabled and CFI/Rust retained.
+          - The archive contains Image, vmlinux, module artifacts, exact config, source commit, fragment and measured BTF/SDK export evidence. Module offsets and the measured manifest must match the checked 703 profile before publication.
+          - This is an RC production preview. The stock debug configuration needs a separate profile; the existing C Binder transaction filter is unavailable with Rust Binder.
+
+          Verify the downloaded archive against `SHA256SUMS` before use.
+          NOTES
+          else
+            cat > release-notes.md <<'NOTES'
+          Automated GKI builds with struct module offset verification against the checked profile catalog. Android18-7.3 (703), when selected, uses the pinned production preview fragment with lock debugging disabled.
+          NOTES
+          fi
+          printf '\nNeverC workflow source: %s.\n' "$SOURCE_SHA" >> release-notes.md
+          python3 - "${files[@]}" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import sys
+          with Path("SHA256SUMS").open("w", encoding="utf-8") as output:
+              for filename in sys.argv[1:]:
+                  path = Path(filename)
+                  digest = hashlib.sha256()
+                  with path.open("rb") as source:
+                      for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                          digest.update(chunk)
+                  output.write(f"{digest.hexdigest()}  {path.name}\n")
+          PY
+          files+=(SHA256SUMS)
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "${files[@]}" --clobber
+            gh release upload "$tag" "${files[@]}"
           else
             gh release create "$tag" "${files[@]}" \
-              --title "$title" --notes "$notes" --latest=false
+              --title "$title" --notes-file release-notes.md \
+              --target "$SOURCE_SHA" "${flags[@]}"
           fi
           echo "Published ${#files[@]} asset(s) to release $tag"
