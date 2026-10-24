@@ -1,5 +1,50 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-24
+
+- Cutoff: **2026-10-24T00:59:37Z**. Reviewed dev: [54737387a0b8374b6bd6649d45835925278fa738](https://github.com/NeverSight/NeverC/commit/54737387a0b8374b6bd6649d45835925278fa738).
+- [Incoming range](https://github.com/NeverSight/NeverC/compare/8ba280aec7838fde4c48cc827e2aa1a1e2d2e18d...54737387a0b8374b6bd6649d45835925278fa738): **45 commits / 132 net changed paths**, all 45 commit entries retrieved. Excluding yesterday's report-only commit f511791a and this progress path leaves 44 non-report commits / 131 paths; these include diagnostic and merged histories, not 44 independently qualified features.
+- **No new statically proven compiler/runtime bug and no source repair.** This proposal updates only the progress snapshot and daily record. It is submitted through a draft PR, not directly into dev.
+- Read root AGENTS, README contribution guidance, local-development and CI-policy documents, and the MPX section of the development guide. Complete neverc, tests, .github, llvm/include and llvm/lib subtree inventories contain no nested AGENTS/CONTRIBUTING files. The full repository recursive request failed; unrelated subtrees are not represented as checked.
+- Strict static-only scope overrides execution instructions. No project, build, test, benchmark, repository script, sample or manual CI action was executed.
+
+## Activity and review queue
+
+At the pre-publication cutoff: **9 ordinary open issues / 0 open PRs**. All-state issue and PR collections returned 19 and 9 entries, followed by empty second pages. Since **2026-10-23T01:00:58Z**, there are no new ordinary issues, closures, new PRs or merges; interval issue and PR-review comment collections are empty. Yesterday's #21 merge remains historical, not new progress.
+
+This review adds one documentation-only draft PR after that baseline. Its blockers are independent review and the exact PR-head documentation checks. No issue states, labels, assignees or existing reviews were changed. The repository contribution guide directs PRs to dev; an unprotected branch is not treated as explicit direct-write permission.
+
+## Bounded static review
+
+- **Bit-cast source representation:** read the changed parser and semantic implementation in [neverc/lib/Syntax/Expr/ExprParserLiteral.cpp](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/neverc/lib/Syntax/Expr/ExprParserLiteral.cpp) and [neverc/lib/Analyze/Expr/SemaCast.cpp](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/neverc/lib/Analyze/Expr/SemaCast.cpp), the declaration/call patch, and the existing CK_LValueToRValueBitCast scalar consumer in [neverc/lib/Emit/Expr/ScalarEmitter.cpp](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/neverc/lib/Emit/Expr/ScalarEmitter.cpp). Traced object/completeness/size gates, nonvolatile array address retention, volatile/rvalue materialization, source-address alignment and may-alias loading. Inspected both added [tests/neverc/ConformanceTests.cpp](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/tests/neverc/ConformanceTests.cpp) fixture bodies, including nested arrays, once-only evaluation, volatile bytes and invalid destination contracts. This is not execution evidence or proof of all padding/constant-evaluation/aggregate cases.
+- **Native MPX controls and transport:** reviewed the MPX builtin signatures, new semantic bank/address-control gates, selected direct intrinsic-emission cases, the complete lowerMPXState helper, descriptor masks in [llvm/include/llvm/IR/X86MpxState.h](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/llvm/include/llvm/IR/X86MpxState.h) and address validator in [llvm/include/llvm/IR/X86NativeMemoryAddress.h](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/llvm/include/llvm/IR/X86NativeMemoryAddress.h). Traced constant bank bounds, 64-bit target restriction, explicit address width/segment controls, full-register transport and instruction chain/glue.
+- **MPX machine output:** inspected changed lowerMPXState and preserveMPXBounds paths in [llvm/lib/Target/X86/X86MCInstLower.cpp](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/llvm/lib/Target/X86/X86MCInstLower.cpp), including descriptor rejection, physical bank selection, branch prefix application and XRay refusal. Inspected the added MPX positive/invalid-control/order fixture source in [tests/neverc/X86PrivilegedIntrinTests.cpp](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/tests/neverc/X86PrivilegedIntrinTests.cpp). No claim is made that generated tables, every control-transfer path, silicon behavior or ABI preservation were exhaustively verified.
+- Read [development.md](https://github.com/NeverSight/NeverC/blob/54737387a0b8374b6bd6649d45835925278fa738/development.md)'s explicit MPX QEMU exclusions and outstanding hardware qualification. Commit-message claims of controlled encoding/ABI cases, compiler tests and binary regressions remain **author-reported**, not tests performed by this review.
+- **Documentation failure:** read the exact-head failed navigation log and corroborated the relevant development-guide source. It reports **23 repository-path references without links** in that guide. This is a confirmed documentation/CI blocker, not a newly proven compiler bug. No unrelated guide or workflow was changed.
+- Remaining not_fn/custom-negation changes, other privileged instruction families, full generated-table synchronization, linker/runtime modules and the historical piecewise publication uncertainty are outside this bounded pass. No old uncertain write was retried.
+
+## Existing CI, exact head only
+
+Sampled **2026-10-24T00:57:56Z–2026-10-24T00:58:19Z** for **54737387**. Complete workflow/check collections include empty second pages.
+
+- **11 workflows:** 1 success, 1 failure, 8 in progress and 1 queued.
+- **22 checks:** 6 success, 1 failure, 11 in progress and 4 queued.
+- [lint-docs run 40045022901](https://github.com/NeverSight/NeverC/actions/runs/40045022901): check-docs-facts succeeded; [navigation job 120724664321](https://github.com/NeverSight/NeverC/actions/runs/40045022901/job/120724664321) failed. Its full log shows **16 layout tests passed**, followed by the 23 development-guide link diagnostics. These are observed existing CI results, not locally run tests.
+- [lint-generated-td run 40045022852](https://github.com/NeverSight/NeverC/actions/runs/40045022852) succeeded, including options, diagnostic-group and x86-intrinsic synchronization checks. This does not establish native MPX hardware correctness.
+- Native platform builds and VBS differential work remain in progress. [Python bindings run 40045022906](https://github.com/NeverSight/NeverC/actions/runs/40045022906) is queued overall with active/queued children and a successful artifact-policy check; it is not a bindings pass.
+- New-head results do not resolve or reproduce yesterday's failed installation/plugin-state jobs by assumption. Report-only PR checks are separate from this source-head snapshot.
+
+## Suggested priorities
+
+1. **Repair the development-guide navigation references without weakening checks.** Dependency: the 23 exact-head diagnostics and existing target files. Acceptance: preserve prose/commands, make the references navigable, and obtain exact-head documentation-check results through the normal contribution process.
+2. **Complete platform and MPX qualification evidence.** Dependency: completed exact-head automatic CI and a documented hardware/model boundary. Acceptance: separate encoding/transport from successful architectural execution and explicitly retain QEMU exclusions and unqualified physical-hardware cases.
+3. **Extend the bounded compiler review before broader release claims.** Dependency: bit-cast aggregate/constant-evaluator consumers and MPX control-transfer/generated-schema ownership. Acceptance: independently inspect the remaining boundaries and record a concrete counterexample before any repair; no guessed widening of supported behavior.
+
+<details>
+<summary>Previous snapshots and historical daily records (preserved verbatim)</summary>
+
+# NeverC Progress
+
 ## Current snapshot — 2026-10-23
 
 - Cutoff: **2026-10-23T01:00:58Z**. Reviewed dev: [8ba280aec7838fde4c48cc827e2aa1a1e2d2e18d](https://github.com/NeverSight/NeverC/commit/8ba280aec7838fde4c48cc827e2aa1a1e2d2e18d).
@@ -1583,3 +1628,9 @@ Inventoried 316 incoming commits and 209 net changed paths; reviewed the bounded
 ## Daily record — 2026-10-23
 
 Inventoried 156 commits / 60 changed paths and completed the bounded not_fn/source-proof, fixture and replay-contract review above. Yesterday's PR #21 is merged; no new source defect or repair was established. Recorded 9 open issues / 0 open PRs and the exact-head CI failures, running/queued work and diagnostic skip limits. Updated only this English progress snapshot and record while preserving all prior text and human edits verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
+
+</details>
+
+## Daily record — 2026-10-24
+
+Inventoried 45 incoming commits / 132 net changed paths, excluding prior report maintenance from product progress. Reviewed the bounded bit-cast and native MPX control/transport/output paths and fixture source above. No new compiler/runtime bug or source repair was established. Recorded 9 open ordinary issues / 0 pre-existing open PRs and created one report-only draft PR. Diagnosed the existing exact-head navigation failure as 23 unlinked development-guide references; preserved runtime/hardware qualification limits. Retained all prior progress text and human edits verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
