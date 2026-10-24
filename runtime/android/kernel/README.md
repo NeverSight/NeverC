@@ -225,12 +225,18 @@ reproduce Kleaf's prefix; the fragment supplies `-neverc-preview-4k`.
 
 The checked manifest comes from a local arm64 standalone build with Clang
 20.1.2, Rust 1.97.1, bindgen 0.71.1, and pahole 1.31. Local evidence paths and
-hashes are registered in `arm64/gki-local-evidence.json`. The release consumer
-continues to cover the eight archives in `gki-release.json`; a 703 archive
+hashes are registered in `arm64/gki-local-evidence.json`. The validated native
+arm64 standalone build is available as
+[`gki-android18-7.3-preview-20261025`](https://github.com/NeverSight/NeverC/releases/tag/gki-android18-7.3-preview-20261025),
+with 128 GKI modules, measured ABI evidence, QEMU logs, and `SHA256SUMS`.
+Use a NeverC build containing 703 support, merged into `dev` in
+[PR #23](https://github.com/NeverSight/NeverC/pull/23).
+The release consumer continues to cover the eight archives in
+`gki-release.json`; a 703 archive
 must be built, verified, and hash-pinned there before that consumer covers it.
-The consumer permits unpublished RC previews in the catalog while continuing
+The consumer permits unpinned RC previews in the catalog while continuing
 to require a release-lock entry for every stable profile. Its boot matrix
-contains only release-pinned profiles; selecting an unpublished preview fails
+contains only release-pinned profiles; selecting an unpinned preview fails
 with a missing-artifact diagnostic.
 The independent zero-import loader fixture is `gki-qemu-smoke-module.c`;
 `gki-sdk-smoke-module.c` additionally exercises locks, a timer callback,
