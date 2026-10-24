@@ -267,6 +267,19 @@ TEST_F(X86PrivilegedIntrinTest, AmxPublicHeaderExposesPhysicalTileInterfaces) {
       ((__m512i *)out)[10] = _tile_movrow(2, row);
       ((__m512i *)out)[11] = _tile_movrowi(3, 255);
       _tile_stored(0, out, stride);
+      _tile_loadconfig_address(config, 32, 100, 0);
+      _tile_storeconfig_address(out, 64, 101, 1);
+      _tile_loadd_address(0, config, stride, 32, 54, 1);
+      _tile_stream_loadd_address(1, config, stride, 64, 62, 0);
+      _tile_loaddrs_address(2, config, stride, 32, 0, 0);
+      _tile_stream_loaddrs_address(3, config, stride, 64, 0, 1);
+      _tile_stored_address(4, out, stride, 32, 100, 0);
+      ((__m512i *)out)[0] = _tile_movrow_reg(5, row, 1);
+      ((__m512 *)out)[1] = _tile_cvtrowd2ps_reg(6, row, 0);
+      ((__m512bh *)out)[2] = _tile_cvtrowps2bf16h_reg(7, row, 1);
+      ((__m512bh *)out)[3] = _tile_cvtrowps2bf16l_reg(0, row, 0);
+      ((__m512h *)out)[4] = _tile_cvtrowps2phh_reg(1, row, 1);
+      ((__m512h *)out)[5] = _tile_cvtrowps2phl_reg(2, row, 0);
       _tile_release();
     }
   )");
@@ -290,6 +303,7 @@ TEST_F(X86PrivilegedIntrinTest, AmxPublicHeaderExposesPhysicalTileInterfaces) {
                          "-mamx-fp8",
                          "-mamx-movrs",
                          "-mamx-tf32",
+                         "-mapx-features=egpr",
                          "-mllvm",
                          "-verify-machineinstrs",
                          Opt,
@@ -331,6 +345,105 @@ TEST_F(X86PrivilegedIntrinTest, AmxComputeAndMovrsUseNativeInstructions) {
                 std::string::npos)
           << Assembly;
     EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxExplicitAddressesAndRowsRemainNative) {
+  constexpr const char *Source = R"(
+    #if !defined(__NEVERC_X86_AMX_CONTROLS__) || __NEVERC_X86_AMX_CONTROLS__ != 1
+    #error missing compiler AMX control capability
+    #endif
+    #if defined(__AMX_TILE__) || defined(__AMX_AVX512__)
+    #error compiler capability must not change baseline CPU features
+    #endif
+    __attribute__((target("amx-tile,amx-movrs,amx-avx512,avx10.2,egpr")))
+    void controls(unsigned long long base, unsigned long long stride, unsigned row) {
+      __builtin_ia32_ldtilecfg_address(base, 32, 100, 0);
+      __builtin_ia32_sttilecfg_address(base, 64, 101, 1);
+      __builtin_ia32_tileloadd64_address(7, base, stride, 32, 54, 1);
+      __builtin_ia32_tileloaddt164_address(6, base, stride, 64, 62, 0);
+      __builtin_ia32_tileloaddrs64_address(5, base, stride, 32, 0, 0);
+      __builtin_ia32_tileloaddrst164_address(4, base, stride, 64, 0, 1);
+      __builtin_ia32_tilestored64_address(3, base, stride, 32, 100, 0);
+      __builtin_ia32_tilemovrow_reg(7, row, 1);
+      __builtin_ia32_tcvtrowd2ps_reg(6, row, 0);
+      __builtin_ia32_tcvtrowps2bf16h_reg(5, row, 1);
+      __builtin_ia32_tcvtrowps2bf16l_reg(4, row, 0);
+      __builtin_ia32_tcvtrowps2phh_reg(3, row, 1);
+      __builtin_ia32_tcvtrowps2phl_reg(2, row, 0);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto [RC, Assembly] = compileToAsm(Source, "amx_controls", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    EXPECT_NE(Assembly.find("{evex}"), std::string::npos) << Assembly;
+    EXPECT_NE(Assembly.find("{vex}"), std::string::npos) << Assembly;
+    EXPECT_NE(Assembly.find("r16d"), std::string::npos) << Assembly;
+    for (const char *Name :
+         {"ldtilecfg", "sttilecfg", "tileloadd", "tileloaddt1", "tileloaddrs",
+          "tileloaddrst1", "tilestored", "tilemovrow", "tcvtrowd2ps",
+          "tcvtrowps2bf16h", "tcvtrowps2bf16l", "tcvtrowps2phh",
+          "tcvtrowps2phl"})
+      EXPECT_NE(Assembly.find(Name), std::string::npos) << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxExtendedConstantRowsSurviveOptimization) {
+  const auto Source = tmpFile("amx_constant_rows.c");
+  std::string Text;
+  for (const char *Name : {"tilemovrow", "tcvtrowd2ps", "tcvtrowps2bf16h",
+                           "tcvtrowps2bf16l", "tcvtrowps2phh", "tcvtrowps2phl"})
+    for (const char *Row : {"0", "1", "0x80000000", "0xffffffff"}) {
+      Text += "__attribute__((target(\"amx-avx512,avx10.2,egpr\"))) void f_";
+      Text += std::string(Name) + "_" + Row + "(void) { __builtin_ia32_";
+      Text += std::string(Name) + "_reg(0, " + Row + ", 1); }\n";
+    }
+  writeFile(Source, Text);
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      const auto Object = tmpFile("amx_constant_rows.o");
+      const auto Result =
+          ncc({std::string("--target=") + Target, "-ffreestanding", "-fno-lto",
+               "-fno-builtin-mimalloc", "-mllvm", "-verify-machineinstrs", Opt,
+               "-c", Source.string(), "-o", Object.string()});
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      EXPECT_FALSE(readFile(Object).empty());
+    }
+}
+
+TEST_F(X86PrivilegedIntrinTest, AmxExplicitControlsRejectInvalidContracts) {
+  for (const char *Call :
+       {"__builtin_ia32_ldtilecfg_address(base, 16, 0, 0)",
+        "__builtin_ia32_ldtilecfg_address(base, 64, 1, 0)",
+        "__builtin_ia32_sttilecfg_address(base, 64, 0, 2)",
+        "__builtin_ia32_ldtilecfg_address(base, row, 0, 0)",
+        "__builtin_ia32_tileloadd64_address(8, base, base, 64, 0, 0)",
+        "__builtin_ia32_tileloadd64_address(row, base, base, 64, 0, 0)",
+        "__builtin_ia32_tilemovrow_reg(8, row, 0)",
+        "__builtin_ia32_tilemovrow_reg(0, row, 2)",
+        "__builtin_ia32_tilemovrow_reg(0, row, row)"}) {
+    SCOPED_TRACE(Call);
+    const auto Source =
+        std::string(
+            "__attribute__((target(\"amx-tile,amx-avx512,avx10.2,egpr\"))) ") +
+        "void bad(unsigned long long base, unsigned row) { " + Call + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "invalid_amx_controls");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find("error:"), std::string::npos) << Error;
+  }
+  for (const char *Call : {"__builtin_ia32_ldtilecfg_address(base, 64, 0, 1)",
+                           "__builtin_ia32_tilemovrow_reg(0, row, 1)"}) {
+    const auto Source =
+        std::string(
+            "__attribute__((target(\"amx-tile,amx-avx512,avx10.2\"))) ") +
+        "void bad(unsigned long long base, unsigned row) { " + Call + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "missing_amx_egpr");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find("requires egpr"), std::string::npos) << Error;
   }
 }
 

@@ -1111,9 +1111,60 @@ establish those contracts.
 
 ## Testing
 
+### Explicit physical AMX addresses and row registers
+
+Thirteen additional builtins expose the fork's exact native controls:
+`__builtin_ia32_{ldtilecfg,sttilecfg}_address(offset, bits, segment, encoding)`,
+`__builtin_ia32_{tileloadd64,tileloaddt164,tileloaddrs64,tileloaddrst164,tilestored64}_address(tile, offset, stride, bits, segment, encoding)`,
+and `__builtin_ia32_{tcvtrowd2ps,tcvtrowps2bf16h,tcvtrowps2bf16l,tcvtrowps2phh,tcvtrowps2phl,tilemovrow}_reg(tile, row, extended)`.
+The resource header supplies matching `_tile_*_address` and `_tile_*_reg`
+macros. The row result vector types match the existing typed row interfaces.
+
+Offsets and strides are unsigned 64-bit inputs; address bits are constant
+32 or 64 and truncate both before hardware segment semantics. Segment is zero
+or an actual override byte (`0x26/2e/36/3e/64/65`). Encoding zero forces VEX;
+one forces EVEX. Row `extended` zero forces a legacy GPR and one forces R16D.
+Tiles, address controls and register-class controls are constant and validated;
+all 32 dynamic row bits are preserved. EVEX/extended-register forms require
+`egpr`, memory needs `amx-tile` (plus `amx-movrs` for MOVRS loads), and rows
+need `amx-avx512,avx10.2`. APIs keep unknown memory and ambient-bank effects,
+including dead results and native faults/restart. They reject managed tiles
+in the same function and do not synthesize configurations or ordinary tile
+memory accesses.
+
+`__NEVERC_X86_AMX_CONTROLS__ == 1` advertises this compiler API independently
+of active CPU features. This lets source generators select native builtins
+and then attach the exact required function target attributes. It does not
+set `__AMX_TILE__` or other CPU availability macros. `__has_builtin` alone is
+insufficient at baseline because target builtins require active CPU features.
+
+`sync-x86-native-intrinsics.py` owns signatures and constant operands;
+`sync-x86-amx-native-controls.py` appends two encoding-preserving pseudos.
+MC lowering preserves forced VEX/EVEX in object bytes and both assembly
+dialects. The physical row pseudo explicitly permits extended GPRs at machine
+verification. The x86 schema grows from 18,538 to 18,540 opcodes; all prior
+opcode entries, 391 registers and 190 features remain identical, as does the
+AArch64 schema.
+
+`tests/verify-amx-explicit-controls.py` passes 11,136 checks on each of the full
+LLVM, NeverC and NeverC-to-LLVM routes: all tiles/widths/segments/encoding
+classes at O0/O2 in ELF/COFF/MachO, ATT/Intel round trips, 32-bit wrap, full
+strides, repeated effects, unknown-memory ordering, complete 512-bit row
+results and Win64 nonvolatile GPR/XMM preservation under pressure. The harness
+executes scalar code and interprets exact REX2 MOV/vector-move setup while
+injecting AMX completions. It does not qualify hardware arithmetic, native
+exceptions or restart. See the fork's `X86AMXNativeControls.rst` for the IR API.
+
+The end-to-end NeverD object check also covers constant zero selectors: its
+O2 copy folding materializes R16D through `MOV32r0`. NeverC now permits EGPRs
+for this pseudo, matching the full fork's REX2-capable XOR expansion. The
+constant-row regression covers zero, one and high-bit values for all six row
+operations in three object formats at O0/O2. This batch passes 68 privileged
+builtin tests, 33 generator regressions and 221 target/plugin tests.
+
 ### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
-37 tests cover native instruction emission, semantic regressions, builtin
+68 tests cover native instruction emission, semantic regressions, builtin
 type/selector diagnostics and the absence of inline assembly. The
 `compileToAsm()` helper enables the machine verifier for the Windows x64
 target; tests exercise O0/O2 where optimization affects the contract.

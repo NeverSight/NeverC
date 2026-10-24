@@ -73,6 +73,19 @@ void checkAMXProgrammingModel(const Function &F) {
                    return Arg->getType()->isX86_AMXTy();
                  });
       switch (Callee->getIntrinsicID()) {
+      case Intrinsic::x86_ldtilecfg_address:
+      case Intrinsic::x86_sttilecfg_address:
+      case Intrinsic::x86_tileloadd64_address:
+      case Intrinsic::x86_tileloaddt164_address:
+      case Intrinsic::x86_tileloaddrs64_address:
+      case Intrinsic::x86_tileloaddrst164_address:
+      case Intrinsic::x86_tilestored64_address:
+      case Intrinsic::x86_tcvtrowd2ps_reg:
+      case Intrinsic::x86_tcvtrowps2bf16h_reg:
+      case Intrinsic::x86_tcvtrowps2bf16l_reg:
+      case Intrinsic::x86_tcvtrowps2phh_reg:
+      case Intrinsic::x86_tcvtrowps2phl_reg:
+      case Intrinsic::x86_tilemovrow_reg:
       case Intrinsic::x86_tcvtrowd2ps:
       case Intrinsic::x86_tcvtrowd2psi:
       case Intrinsic::x86_tcvtrowps2bf16h:

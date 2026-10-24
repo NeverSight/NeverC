@@ -52,6 +52,49 @@ static __inline__ void __DEFAULT_FN_ATTRS_AMX_TILE _tile_release(void) {
 #define _tile_stored(tile, base, stride)                                       \
   __builtin_ia32_tilestored64((tile), (void *)(base), (__SIZE_TYPE__)(stride))
 
+/* NeverC explicit native offsets. Address bits are 32 or 64; segment is an
+ * override byte (0 for DS default). Encoding is 0 for VEX or 1 for EVEX.
+ * EVEX memory and extended row selectors require the egpr target feature. */
+#define _tile_loadconfig_address(offset, bits, segment, evex)                  \
+  __builtin_ia32_ldtilecfg_address((unsigned long long)(offset), (bits),       \
+                                   (segment), (evex))
+#define _tile_storeconfig_address(offset, bits, segment, evex)                 \
+  __builtin_ia32_sttilecfg_address((unsigned long long)(offset), (bits),       \
+                                   (segment), (evex))
+#define _tile_loadd_address(tile, offset, stride, bits, segment, evex)         \
+  __builtin_ia32_tileloadd64_address((tile), (unsigned long long)(offset),     \
+                                     (unsigned long long)(stride), (bits),     \
+                                     (segment), (evex))
+#define _tile_stream_loadd_address(tile, offset, stride, bits, segment, evex)  \
+  __builtin_ia32_tileloaddt164_address((tile), (unsigned long long)(offset),   \
+                                       (unsigned long long)(stride), (bits),   \
+                                       (segment), (evex))
+#define _tile_loaddrs_address(tile, offset, stride, bits, segment, evex)       \
+  __builtin_ia32_tileloaddrs64_address((tile), (unsigned long long)(offset),   \
+                                       (unsigned long long)(stride), (bits),   \
+                                       (segment), (evex))
+#define _tile_stream_loaddrs_address(tile, offset, stride, bits, segment,      \
+                                     evex)                                     \
+  __builtin_ia32_tileloaddrst164_address((tile), (unsigned long long)(offset), \
+                                         (unsigned long long)(stride), (bits), \
+                                         (segment), (evex))
+#define _tile_stored_address(tile, offset, stride, bits, segment, evex)        \
+  __builtin_ia32_tilestored64_address((tile), (unsigned long long)(offset),    \
+                                      (unsigned long long)(stride), (bits),    \
+                                      (segment), (evex))
+#define _tile_movrow_reg(tile, row, extended)                                  \
+  ((__m512i)__builtin_ia32_tilemovrow_reg((tile), (row), (extended)))
+#define _tile_cvtrowd2ps_reg(tile, row, extended)                              \
+  ((__m512)__builtin_ia32_tcvtrowd2ps_reg((tile), (row), (extended)))
+#define _tile_cvtrowps2bf16h_reg(tile, row, extended)                          \
+  ((__m512bh)__builtin_ia32_tcvtrowps2bf16h_reg((tile), (row), (extended)))
+#define _tile_cvtrowps2bf16l_reg(tile, row, extended)                          \
+  ((__m512bh)__builtin_ia32_tcvtrowps2bf16l_reg((tile), (row), (extended)))
+#define _tile_cvtrowps2phh_reg(tile, row, extended)                            \
+  ((__m512h)__builtin_ia32_tcvtrowps2phh_reg((tile), (row), (extended)))
+#define _tile_cvtrowps2phl_reg(tile, row, extended)                            \
+  ((__m512h)__builtin_ia32_tcvtrowps2phl_reg((tile), (row), (extended)))
+
 /* Compute operands name three distinct physical tiles. */
 #define _tile_dpbssd(dst, src0, src1)                                          \
   __builtin_ia32_tdpbssd((dst), (src0), (src1))

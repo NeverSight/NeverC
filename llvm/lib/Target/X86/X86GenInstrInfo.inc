@@ -18550,7 +18550,9 @@ namespace X86 {
     LGDT64m_ADDR32	= 18535,
     LIDT64m_ADDR32	= 18536,
     INVLPG_ADDR32	= 18537,
-    INSTRUCTION_LIST_END = 18538
+    AMX_MEMORY_NATIVE	= 18538,
+    AMX_ROW_NATIVE	= 18539,
+    INSTRUCTION_LIST_END = 18540
   };
 
 } // end namespace X86
@@ -20941,7 +20943,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18538];
+  MCInstrDesc Insts[18540];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5451];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -20960,6 +20962,8 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18539,	3,	1,	0,	1447,	0,	8,	X86ImpOpBase + 19,	5423,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18539 = AMX_ROW_NATIVE
+    { 18538,	6,	0,	0,	1447,	0,	8,	X86ImpOpBase + 19,	1119,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18538 = AMX_MEMORY_NATIVE
     { 18537,	5,	0,	0,	1477,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18537 = INVLPG_ADDR32
     { 18536,	5,	0,	0,	1485,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18536 = LIDT64m_ADDR32
     { 18535,	5,	0,	0,	1484,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18535 = LGDT64m_ADDR32
@@ -58393,6 +58397,8 @@ extern const char X86InstrNameData[] = {
   /* 259578 */ "LGDT64m_ADDR32\0"
   /* 259593 */ "LIDT64m_ADDR32\0"
   /* 259608 */ "INVLPG_ADDR32\0"
+  /* 259622 */ "AMX_MEMORY_NATIVE\0"
+  /* 259640 */ "AMX_ROW_NATIVE\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60795,10 +60801,12 @@ extern const unsigned X86InstrNameIndices[] = {
     259578U,
     259593U,
     259608U,
+    259622U,
+    259640U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18538);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18540);
 }
 
 } // end namespace llvm
@@ -60858,7 +60866,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18538);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18540);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98160,6 +98168,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     3675,
     /* INVLPG_ADDR32 */
     3360,
+    /* AMX_MEMORY_NATIVE */
+    64479,
+    /* AMX_ROW_NATIVE */
+    64481,
   };
 
   using namespace OpTypes;
@@ -134833,6 +134845,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     i128mem, BNDR,
     BNDR, GR64,
     i32imm, GR64, GR64,
+    i32imm, i8mem,
+    VR512, i32imm, GR32,
 };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -153554,9 +153568,11 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // LGDT64m_ADDR32 = 18535
     CEFBS_In64BitMode, // LIDT64m_ADDR32 = 18536
     CEFBS_In64BitMode, // INVLPG_ADDR32 = 18537
+    CEFBS_In64BitMode, // AMX_MEMORY_NATIVE = 18538
+    CEFBS_In64BitMode, // AMX_ROW_NATIVE = 18539
   };
 
-  assert(Opcode < 18538);
+  assert(Opcode < 18540);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

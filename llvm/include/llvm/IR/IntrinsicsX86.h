@@ -1076,6 +1076,7 @@ enum X86Intrinsics : unsigned {
     x86_lar_reg32,                                   // llvm.x86.lar.reg32
     x86_lar_reg64,                                   // llvm.x86.lar.reg64
     x86_ldtilecfg,                                   // llvm.x86.ldtilecfg
+    x86_ldtilecfg_address,                           // llvm.x86.ldtilecfg.address
     x86_ldtilecfg_internal,                          // llvm.x86.ldtilecfg.internal
     x86_lgdt,                                        // llvm.x86.lgdt
     x86_lgdt_address,                                // llvm.x86.lgdt.address
@@ -1432,6 +1433,7 @@ enum X86Intrinsics : unsigned {
     x86_str_reg32,                                   // llvm.x86.str.reg32
     x86_str_reg64,                                   // llvm.x86.str.reg64
     x86_sttilecfg,                                   // llvm.x86.sttilecfg
+    x86_sttilecfg_address,                           // llvm.x86.sttilecfg.address
     x86_stui,                                        // llvm.x86.stui
     x86_subborrow_32,                                // llvm.x86.subborrow.32
     x86_subborrow_64,                                // llvm.x86.subborrow.64
@@ -1443,14 +1445,19 @@ enum X86Intrinsics : unsigned {
     x86_tcmmrlfp16ps,                                // llvm.x86.tcmmrlfp16ps
     x86_tcmmrlfp16ps_internal,                       // llvm.x86.tcmmrlfp16ps.internal
     x86_tcvtrowd2ps,                                 // llvm.x86.tcvtrowd2ps
+    x86_tcvtrowd2ps_reg,                             // llvm.x86.tcvtrowd2ps.reg
     x86_tcvtrowd2psi,                                // llvm.x86.tcvtrowd2psi
     x86_tcvtrowps2bf16h,                             // llvm.x86.tcvtrowps2bf16h
+    x86_tcvtrowps2bf16h_reg,                         // llvm.x86.tcvtrowps2bf16h.reg
     x86_tcvtrowps2bf16hi,                            // llvm.x86.tcvtrowps2bf16hi
     x86_tcvtrowps2bf16l,                             // llvm.x86.tcvtrowps2bf16l
+    x86_tcvtrowps2bf16l_reg,                         // llvm.x86.tcvtrowps2bf16l.reg
     x86_tcvtrowps2bf16li,                            // llvm.x86.tcvtrowps2bf16li
     x86_tcvtrowps2phh,                               // llvm.x86.tcvtrowps2phh
+    x86_tcvtrowps2phh_reg,                           // llvm.x86.tcvtrowps2phh.reg
     x86_tcvtrowps2phhi,                              // llvm.x86.tcvtrowps2phhi
     x86_tcvtrowps2phl,                               // llvm.x86.tcvtrowps2phl
+    x86_tcvtrowps2phl_reg,                           // llvm.x86.tcvtrowps2phl.reg
     x86_tcvtrowps2phli,                              // llvm.x86.tcvtrowps2phli
     x86_tdpbf16ps,                                   // llvm.x86.tdpbf16ps
     x86_tdpbf16ps_internal,                          // llvm.x86.tdpbf16ps.internal
@@ -1470,15 +1477,21 @@ enum X86Intrinsics : unsigned {
     x86_tdphf8ps,                                    // llvm.x86.tdphf8ps
     x86_testui,                                      // llvm.x86.testui
     x86_tileloadd64,                                 // llvm.x86.tileloadd64
+    x86_tileloadd64_address,                         // llvm.x86.tileloadd64.address
     x86_tileloadd64_internal,                        // llvm.x86.tileloadd64.internal
     x86_tileloaddrs64,                               // llvm.x86.tileloaddrs64
+    x86_tileloaddrs64_address,                       // llvm.x86.tileloaddrs64.address
     x86_tileloaddrst164,                             // llvm.x86.tileloaddrst164
+    x86_tileloaddrst164_address,                     // llvm.x86.tileloaddrst164.address
     x86_tileloaddt164,                               // llvm.x86.tileloaddt164
+    x86_tileloaddt164_address,                       // llvm.x86.tileloaddt164.address
     x86_tileloaddt164_internal,                      // llvm.x86.tileloaddt164.internal
     x86_tilemovrow,                                  // llvm.x86.tilemovrow
+    x86_tilemovrow_reg,                              // llvm.x86.tilemovrow.reg
     x86_tilemovrowi,                                 // llvm.x86.tilemovrowi
     x86_tilerelease,                                 // llvm.x86.tilerelease
     x86_tilestored64,                                // llvm.x86.tilestored64
+    x86_tilestored64_address,                        // llvm.x86.tilestored64.address
     x86_tilestored64_internal,                       // llvm.x86.tilestored64.internal
     x86_tilezero,                                    // llvm.x86.tilezero
     x86_tilezero_internal,                           // llvm.x86.tilezero.internal

@@ -555,6 +555,26 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                 << TheCall->getArg(WidthArgument + 1)->getSourceRange());
   };
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_ldtilecfg_address:
+  case X86::BI__builtin_ia32_sttilecfg_address:
+    return CheckMemoryAddress(1) ||
+           SemaBuiltinConstantArgRange(TheCall, 3, 0, 1);
+  case X86::BI__builtin_ia32_tileloadd64_address:
+  case X86::BI__builtin_ia32_tileloaddt164_address:
+  case X86::BI__builtin_ia32_tileloaddrs64_address:
+  case X86::BI__builtin_ia32_tileloaddrst164_address:
+  case X86::BI__builtin_ia32_tilestored64_address:
+    return CheckX86BuiltinTileArgumentsRange(TheCall, 0) ||
+           CheckMemoryAddress(3) ||
+           SemaBuiltinConstantArgRange(TheCall, 5, 0, 1);
+  case X86::BI__builtin_ia32_tcvtrowd2ps_reg:
+  case X86::BI__builtin_ia32_tcvtrowps2bf16h_reg:
+  case X86::BI__builtin_ia32_tcvtrowps2bf16l_reg:
+  case X86::BI__builtin_ia32_tcvtrowps2phh_reg:
+  case X86::BI__builtin_ia32_tcvtrowps2phl_reg:
+  case X86::BI__builtin_ia32_tilemovrow_reg:
+    return CheckX86BuiltinTileArgumentsRange(TheCall, 0) ||
+           SemaBuiltinConstantArgRange(TheCall, 2, 0, 1);
   case X86::BI__builtin_ia32_int:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
   case X86::BI__builtin_ia32_bnd_branch:

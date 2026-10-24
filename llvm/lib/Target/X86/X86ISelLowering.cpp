@@ -50,6 +50,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/IR/X86AMXNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
@@ -26070,11 +26071,13 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
 static SmallVector<SDValue, 8>
 lowerNativeAddressOperands(SDValue Op, const X86Subtarget &Subtarget,
                            unsigned OffsetOperand, SelectionDAG &DAG,
-                           SDValue &Chain, SDValue &Glue) {
-  const auto *Width =
-      dyn_cast<ConstantSDNode>(Op.getOperand(OffsetOperand + 1));
+                           SDValue &Chain, SDValue &Glue,
+                           unsigned WidthOperand = 0) {
+  if (!WidthOperand)
+    WidthOperand = OffsetOperand + 1;
+  const auto *Width = dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand));
   const auto *Prefix =
-      dyn_cast<ConstantSDNode>(Op.getOperand(OffsetOperand + 2));
+      dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand + 1));
   if (!Width || !Prefix)
     report_fatal_error("native memory addressing requires constant controls");
   if (!X86::isNativeMemoryAddressWidth(Subtarget.is64Bit(),
@@ -26591,6 +26594,117 @@ static SDValue completeDescriptorQuery(SDValue Op, SDNode *Access,
   return DAG.getMergeValues({Value, ZF, SDValue(Access, 1)}, DL);
 }
 
+static SDValue lowerAMXNative(SDValue Op, const X86Subtarget &Subtarget,
+                              SelectionDAG &DAG) {
+  unsigned Kind;
+  bool Row = false;
+  switch (Op.getConstantOperandVal(1)) {
+  default:
+    llvm_unreachable("unexpected explicit AMX intrinsic");
+  case Intrinsic::x86_ldtilecfg_address:
+    Kind = 0;
+    break;
+  case Intrinsic::x86_sttilecfg_address:
+    Kind = 1;
+    break;
+  case Intrinsic::x86_tileloadd64_address:
+    Kind = 2;
+    break;
+  case Intrinsic::x86_tileloaddt164_address:
+    Kind = 3;
+    break;
+  case Intrinsic::x86_tileloaddrs64_address:
+    Kind = 4;
+    break;
+  case Intrinsic::x86_tileloaddrst164_address:
+    Kind = 5;
+    break;
+  case Intrinsic::x86_tilestored64_address:
+    Kind = 6;
+    break;
+  case Intrinsic::x86_tcvtrowd2ps_reg:
+    Kind = 0;
+    Row = true;
+    break;
+  case Intrinsic::x86_tcvtrowps2bf16h_reg:
+    Kind = 1;
+    Row = true;
+    break;
+  case Intrinsic::x86_tcvtrowps2bf16l_reg:
+    Kind = 2;
+    Row = true;
+    break;
+  case Intrinsic::x86_tcvtrowps2phh_reg:
+    Kind = 3;
+    Row = true;
+    break;
+  case Intrinsic::x86_tcvtrowps2phl_reg:
+    Kind = 4;
+    Row = true;
+    break;
+  case Intrinsic::x86_tilemovrow_reg:
+    Kind = 5;
+    Row = true;
+    break;
+  }
+  if (!Subtarget.is64Bit() || !Subtarget.hasAMXTILE())
+    report_fatal_error(
+        "explicit AMX intrinsic requires 64-bit mode and amx-tile");
+  const auto Constant = [&](unsigned Index, unsigned Limit) -> unsigned {
+    const auto *C = dyn_cast<ConstantSDNode>(Op.getOperand(Index));
+    if (!C || C->getZExtValue() >= Limit)
+      report_fatal_error("invalid explicit AMX constant control");
+    return C->getZExtValue();
+  };
+  const bool TileMemory = !Row && Kind >= 2;
+  const unsigned Tile =
+      Row || TileMemory ? Constant(2, X86::AMXNativeTileCount) : 0;
+  const unsigned Encoding = Constant(Row ? 4 : TileMemory ? 7 : 5, 2);
+  if (Encoding && !Subtarget.hasEGPR())
+    report_fatal_error("explicit AMX extended encoding requires egpr");
+  if (!Row && (Kind == 4 || Kind == 5) && !Subtarget.hasAMXMOVRS())
+    report_fatal_error("explicit AMX MOVRS intrinsic requires amx-movrs");
+  if (Row && (!Subtarget.hasAMXAVX512() || !Subtarget.hasAVX10_2() ||
+              !Subtarget.hasEVEX512()))
+    report_fatal_error("explicit AMX row requires amx-avx512 and avx10.2 with "
+                       "512-bit vectors");
+  // The selector preflight rejects mixed physical and managed tile APIs.
+  const SDLoc DL(Op);
+  SDValue Chain = Op.getOperand(0), Glue;
+  unsigned Descriptor = Kind | (Tile << X86::AMXNativeTileShift);
+  if (Row) {
+    const unsigned Register = Encoding ? X86::R16D : X86::ECX;
+    Chain = DAG.getCopyToReg(Chain, DL, Register, Op.getOperand(3), Glue);
+    auto *Read = DAG.getMachineNode(
+        X86::AMX_ROW_NATIVE, DL, DAG.getVTList(Op.getValueType(), MVT::Other),
+        {DAG.getTargetConstant(Descriptor, DL, MVT::i32),
+         DAG.getRegister(Register, MVT::i32), Chain, Chain.getValue(1)});
+    return DAG.getMergeValues({SDValue(Read, 0), SDValue(Read, 1)}, DL);
+  }
+  const unsigned WidthOperand = TileMemory ? 5 : 3;
+  auto Operands = lowerNativeAddressOperands(Op, Subtarget, TileMemory ? 3 : 2,
+                                             DAG, Chain, Glue, WidthOperand);
+  const unsigned Bits = Op.getConstantOperandVal(WidthOperand);
+  if (Bits == 32)
+    Descriptor |= X86::AMXNativeAddress32;
+  if (Encoding)
+    Descriptor |= X86::AMXNativeEVEX;
+  if (TileMemory) {
+    auto Stride = DAG.getZExtOrTrunc(Op.getOperand(4), DL,
+                                     Bits == 32 ? MVT::i32 : MVT::i64);
+    Stride = DAG.getZExtOrTrunc(Stride, DL, MVT::i64);
+    Chain = DAG.getCopyToReg(Chain, DL, X86::RCX, Stride, Glue);
+    Glue = Chain.getValue(1);
+    Operands[2] = DAG.getRegister(X86::RCX, MVT::i64);
+  }
+  Operands.insert(Operands.begin(),
+                  DAG.getTargetConstant(Descriptor, DL, MVT::i32));
+  Operands.push_back(Chain);
+  Operands.push_back(Glue);
+  return SDValue(
+      DAG.getMachineNode(X86::AMX_MEMORY_NATIVE, DL, MVT::Other, Operands), 0);
+}
+
 static SDValue lowerMPXState(SDValue Op, const X86Subtarget &Subtarget,
                              SelectionDAG &DAG) {
   if (Op.getConstantOperandVal(1) == Intrinsic::x86_bnd_branch) {
@@ -27030,6 +27144,20 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_ldtilecfg_address:
+    case Intrinsic::x86_sttilecfg_address:
+    case Intrinsic::x86_tileloadd64_address:
+    case Intrinsic::x86_tileloaddt164_address:
+    case Intrinsic::x86_tileloaddrs64_address:
+    case Intrinsic::x86_tileloaddrst164_address:
+    case Intrinsic::x86_tilestored64_address:
+    case Intrinsic::x86_tcvtrowd2ps_reg:
+    case Intrinsic::x86_tcvtrowps2bf16h_reg:
+    case Intrinsic::x86_tcvtrowps2bf16l_reg:
+    case Intrinsic::x86_tcvtrowps2phh_reg:
+    case Intrinsic::x86_tcvtrowps2phl_reg:
+    case Intrinsic::x86_tilemovrow_reg:
+      return lowerAMXNative(Op, Subtarget, DAG);
     case Intrinsic::x86_tcvtrowd2ps:
     case Intrinsic::x86_tcvtrowd2psi:
     case Intrinsic::x86_tcvtrowps2bf16h:

@@ -3753,6 +3753,45 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmwrite_mem:
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite_mem,
                                    {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_ldtilecfg_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_ldtilecfg_address),
+                              Ops);
+  case X86::BI__builtin_ia32_sttilecfg_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_sttilecfg_address),
+                              Ops);
+  case X86::BI__builtin_ia32_tileloadd64_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tileloadd64_address), Ops);
+  case X86::BI__builtin_ia32_tileloaddt164_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tileloaddt164_address), Ops);
+  case X86::BI__builtin_ia32_tileloaddrs64_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tileloaddrs64_address), Ops);
+  case X86::BI__builtin_ia32_tileloaddrst164_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tileloaddrst164_address), Ops);
+  case X86::BI__builtin_ia32_tilestored64_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tilestored64_address), Ops);
+  case X86::BI__builtin_ia32_tcvtrowd2ps_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tcvtrowd2ps_reg),
+                              Ops);
+  case X86::BI__builtin_ia32_tcvtrowps2bf16h_reg:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tcvtrowps2bf16h_reg), Ops);
+  case X86::BI__builtin_ia32_tcvtrowps2bf16l_reg:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_tcvtrowps2bf16l_reg), Ops);
+  case X86::BI__builtin_ia32_tcvtrowps2phh_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tcvtrowps2phh_reg),
+                              Ops);
+  case X86::BI__builtin_ia32_tcvtrowps2phl_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tcvtrowps2phl_reg),
+                              Ops);
+  case X86::BI__builtin_ia32_tilemovrow_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tilemovrow_reg),
+                              Ops);
   case X86::BI__builtin_ia32_tcvtrowd2ps:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_tcvtrowd2ps), Ops);
   case X86::BI__builtin_ia32_tcvtrowd2psi:

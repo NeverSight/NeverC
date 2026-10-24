@@ -849,6 +849,10 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__ENQCMD__");
   if (HasHRESET)
     Builder.defineMacro("__HRESET__");
+  // Compiler API availability is independent of the current CPU feature set.
+  // Consumers can select the builtins first and attach per-function features.
+  if (getTriple().getArch() == llvm::Triple::x86_64)
+    Builder.defineMacro("__NEVERC_X86_AMX_CONTROLS__", "1");
   if (HasAMXTILE)
     Builder.defineMacro("__AMX_TILE__");
   if (HasAMXINT8)

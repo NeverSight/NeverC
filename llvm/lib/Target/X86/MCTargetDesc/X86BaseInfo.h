@@ -1206,6 +1206,15 @@ inline bool canUseApxExtendedReg(const MCInstrDesc &Desc) {
   if (Encoding == X86II::EVEX)
     return true;
 
+  // The explicit row interface always expands to an EVEX instruction.
+  // Its fixed R16D selector must survive register-class verification.
+  if (Desc.Opcode == X86::AMX_ROW_NATIVE)
+    return true;
+  // Immediate folding can replace a fixed R16D copy with this zero pseudo.
+  // Like the full fork, permit EGPRs: expansion always uses REX2-capable XOR.
+  if (Desc.Opcode == X86::MOV32r0)
+    return true;
+
   // To be conservative, egpr is not used for all pseudo instructions
   // because we are not sure what instruction it will become.
   // FIXME: Could we improve it in X86ExpandPseudo?

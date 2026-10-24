@@ -110,6 +110,19 @@ ADDRESS_SIGNATURES.update({
        for name in ("bndmk", "bndldx", "bndstx")},
 })
 
+# Explicit AMX addressing and row-register class controls.
+for operation in ("ldtilecfg", "sttilecfg"):
+    ADDRESS_SIGNATURES[operation + "_address"] = (("Done", "I64", "I32", "I32", "I32"), (1, 2, 3))
+for operation in ("tileloadd64", "tileloaddt164", "tileloaddrs64", "tileloaddrst164", "tilestored64"):
+    ADDRESS_SIGNATURES[operation + "_address"] = (("Done", "I8", "I64", "I64", "I32", "I32", "I32"), (0, 3, 4, 5))
+for operation, result in (("tcvtrowd2ps", ("V16", "F32")),
+                          ("tcvtrowps2bf16h", ("V32", "BF16")),
+                          ("tcvtrowps2bf16l", ("V32", "BF16")),
+                          ("tcvtrowps2phh", ("V32", "F16")),
+                          ("tcvtrowps2phl", ("V32", "F16")),
+                          ("tilemovrow", ("V16", "I32"))):
+    ADDRESS_SIGNATURES[operation + "_reg"] = (result + ("I8", "I32", "I32"), (0, 2))
+
 AMX_SIGNATURES = {
     **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")
        for name in ("tdpbf8ps", "tdpbhf8ps", "tdphbf8ps", "tdphf8ps", "tmmultf32ps")},

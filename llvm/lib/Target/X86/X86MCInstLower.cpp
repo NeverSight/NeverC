@@ -32,6 +32,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Mangler.h"
+#include "llvm/IR/X86AMXNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -396,6 +397,56 @@ static void lowerNativeAddressOverride(MCInst &Inst, unsigned Opcode,
   }
 }
 
+static void lowerAMXNative(MCInst &Inst) {
+  const bool Row = Inst.getOpcode() == X86::AMX_ROW_NATIVE;
+  const unsigned DescriptorIndex = Row ? 1 : 0;
+  const uint64_t D = Inst.getOperand(DescriptorIndex).getImm();
+  const unsigned Kind = D & 7;
+  if ((D & ~(Row ? X86::AMXNativeRowMask : X86::AMXNativeMemoryMask)) ||
+      Kind >= (Row ? X86::AMXNativeRowCount : X86::AMXNativeMemoryCount) ||
+      (!Row && Kind < 2 && ((D >> X86::AMXNativeTileShift) & 7)))
+    report_fatal_error("invalid explicit AMX machine descriptor");
+  constexpr unsigned Tiles[] = {X86::TMM0, X86::TMM1, X86::TMM2, X86::TMM3,
+                                X86::TMM4, X86::TMM5, X86::TMM6, X86::TMM7};
+  const auto Tile =
+      MCOperand::createReg(Tiles[(D >> X86::AMXNativeTileShift) & 7]);
+  MCInst Native;
+  Native.setFlags(Inst.getFlags());
+  if (Row) {
+    constexpr unsigned Opcodes[] = {
+        X86::TCVTROWD2PSrte,   X86::TCVTROWPS2BF16Hrte, X86::TCVTROWPS2BF16Lrte,
+        X86::TCVTROWPS2PHHrte, X86::TCVTROWPS2PHLrte,   X86::TILEMOVROWrte};
+    Native.setOpcode(Opcodes[Kind]);
+    Native.addOperand(Inst.getOperand(0));
+    Native.addOperand(Tile);
+    Native.addOperand(Inst.getOperand(2));
+  } else {
+    constexpr unsigned Opcodes[][2] = {
+        {X86::LDTILECFG, X86::LDTILECFG_EVEX},
+        {X86::STTILECFG, X86::STTILECFG_EVEX},
+        {X86::TILELOADD, X86::TILELOADD_EVEX},
+        {X86::TILELOADDT1, X86::TILELOADDT1_EVEX},
+        {X86::TILELOADDRS, X86::TILELOADDRS_EVEX},
+        {X86::TILELOADDRST1, X86::TILELOADDRST1_EVEX},
+        {X86::TILESTORED, X86::TILESTORED_EVEX}};
+    const auto Opcode = Opcodes[Kind][bool(D & X86::AMXNativeEVEX)];
+    Native.setFlags(
+        Native.getFlags() |
+        (D & X86::AMXNativeEVEX ? X86::IP_USE_EVEX : X86::IP_USE_VEX));
+    Native.setOpcode(Opcode);
+    if (Kind >= 2 && Kind != 6)
+      Native.addOperand(Tile);
+    const unsigned BaseIndex = Native.getNumOperands();
+    for (unsigned I = 1; I != 6; ++I)
+      Native.addOperand(Inst.getOperand(I));
+    if (Kind == 6)
+      Native.addOperand(Tile);
+    if (D & X86::AMXNativeAddress32)
+      lowerNativeAddressOverride(Native, Opcode, BaseIndex, 32);
+  }
+  Inst = Native;
+}
+
 static void lowerMPXState(MCInst &Inst, bool Is64Bit) {
   using X86::MpxOperation;
   const uint64_t Descriptor = Inst.getOperand(0).getImm();
@@ -529,6 +580,10 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
 
   // Handle a few special cases to eliminate operand modifiers.
   switch (OutMI.getOpcode()) {
+  case X86::AMX_MEMORY_NATIVE:
+  case X86::AMX_ROW_NATIVE:
+    lowerAMXNative(OutMI);
+    break;
   case X86::MPX_MOVE_BOUNDS:
   case X86::MPX_STATE64:
     lowerMPXState(OutMI, MF.getSubtarget<X86Subtarget>().is64Bit());

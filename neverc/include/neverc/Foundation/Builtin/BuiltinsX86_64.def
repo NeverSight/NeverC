@@ -349,6 +349,21 @@ BUILTIN(__builtin_ia32_wrmsrns, "vUiULLi", "n")
 BUILTIN(__builtin_ia32_rdmsrlist, "ULLivC*v*ULLi", "n")
 BUILTIN(__builtin_ia32_wrmsrlist, "ULLivC*vC*ULLi", "n")
 
+// Physical AMX offsets and exact encoding controls.
+TARGET_BUILTIN(__builtin_ia32_ldtilecfg_address, "vULLiIUiIUiIUi", "n", "amx-tile")
+TARGET_BUILTIN(__builtin_ia32_sttilecfg_address, "vULLiIUiIUiIUi", "n", "amx-tile")
+TARGET_BUILTIN(__builtin_ia32_tileloadd64_address, "vIUcULLiULLiIUiIUiIUi", "n", "amx-tile")
+TARGET_BUILTIN(__builtin_ia32_tileloaddt164_address, "vIUcULLiULLiIUiIUiIUi", "n", "amx-tile")
+TARGET_BUILTIN(__builtin_ia32_tileloaddrs64_address, "vIUcULLiULLiIUiIUiIUi", "n", "amx-movrs")
+TARGET_BUILTIN(__builtin_ia32_tileloaddrst164_address, "vIUcULLiULLiIUiIUiIUi", "n", "amx-movrs")
+TARGET_BUILTIN(__builtin_ia32_tilestored64_address, "vIUcULLiULLiIUiIUiIUi", "n", "amx-tile")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowd2ps_reg, "V16fIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16h_reg, "V32yIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16l_reg, "V32yIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phh_reg, "V32xIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phl_reg, "V32xIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+TARGET_BUILTIN(__builtin_ia32_tilemovrow_reg, "V16iIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+
 #undef BUILTIN
 #undef TARGET_BUILTIN
 #undef TARGET_HEADER_BUILTIN
