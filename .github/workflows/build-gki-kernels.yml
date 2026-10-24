@@ -374,8 +374,11 @@ jobs:
             --config "$GITHUB_WORKSPACE/config-703" --vmlinux dist/vmlinux \
             --symvers "$symvers" --output "$GITHUB_WORKSPACE/703.measured.json"
           python3 - <<'PY'
+          import importlib.util
           import json
           import os
+          import subprocess
+          import sys
           from pathlib import Path
           root = Path(os.environ["GITHUB_WORKSPACE"])
           measured = json.loads((root / "703.measured.json").read_text())
@@ -383,6 +386,31 @@ jobs:
           for field in ("config", "layouts", "module_memory_layout", "sdk_exports"):
               if measured[field] != checked[field]:
                   raise SystemExit(f"703 production preview {field} changed; recertify before publishing")
+          tools = root / "neverc/runtime/android/kernel/tools"
+          def load_tool(name):
+              spec = importlib.util.spec_from_file_location(name, tools / (name + ".py"))
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+          compat = load_tool("generate-compat-table")
+          verifier = load_tool("verify-gki-release")
+          contract = json.loads(subprocess.check_output([
+              sys.executable, str(tools / "generate-compat-table.py"), "--query-profile", "703"
+          ], text=True))
+          dist = root / "kernel/dist"
+          for image in ("Image", "vmlinux"):
+              verifier.verify_linux_banner_path(dist / image, contract["vermagic"])
+          # zsmalloc is part of this pinned GKI's distributed module set.
+          abi = verifier.inspect_offset_module(
+              dist / "zsmalloc.ko", contract["vermagic"],
+              compat.EXPECTED_KCFI_TYPEIDS[contract["kcfi_mode"]],
+          )
+          for field, expected in (("size", "module_size"), ("init", "module_init_offset"),
+                                  ("exit", "module_exit_offset")):
+              if abi[field] != contract[expected]:
+                  raise SystemExit(f"703 module {field} changed; recertify before publishing")
+          abi["offset_module"] = "dist/zsmalloc.ko"
+          (root / "703.module-abi.json").write_text(json.dumps(abi, indent=2) + "\n")
           PY
 
       - name: Collect artifacts
@@ -394,6 +422,7 @@ jobs:
           mkdir -p "$stage"
           if [ "$KEY" = "703" ]; then
             cp "$GITHUB_WORKSPACE/703.measured.json" "$stage/" 2>/dev/null || true
+            cp "$GITHUB_WORKSPACE/703.module-abi.json" "$stage/" 2>/dev/null || true
             cp "$GITHUB_WORKSPACE/config-703" "$stage/" 2>/dev/null || true
             cp "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/arm64/android18-7.3-production.fragment" "$stage/"
             git -C common rev-parse HEAD > "$stage/source-commit.txt"
