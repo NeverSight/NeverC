@@ -1062,6 +1062,12 @@ TEST_F(X86PrivilegedIntrinTest, DescriptorStateEffectsRemainNativeWhenUnused) {
 
 TEST_F(X86PrivilegedIntrinTest, SgxSupervisorBuiltinsAndHeadersAreNative) {
   constexpr const char *Source = R"(
+    #if !defined(__NEVERC_X86_SGX_COMPLETION__) || __NEVERC_X86_SGX_COMPLETION__ != 1
+    #error missing compiler SGX completion capability
+    #endif
+    #ifdef __SGX__
+    #error compiler capability must not change baseline CPU features
+    #endif
     #include <immintrin.h>
     __attribute__((target("sgx")))
     unsigned long long query(unsigned long long a, unsigned long long b,

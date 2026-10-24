@@ -453,6 +453,11 @@ chapter 7, including the unchanged-register cases in PARAMETERS.
 
 ### SGX supervisor, VMM and bounded user completion
 
+`__NEVERC_X86_SGX_COMPLETION__ == 1` advertises the x64 compiler API even
+when the translation unit has no SGX CPU feature enabled. Source generators
+can select the native spellings and attach a per-function `target("sgx")`
+attribute. This marker does not define `__SGX__` or certify CPU/OS availability.
+
 `__builtin_ia32_encls(a, b, c, d, registers_out, flags_out)` and `enclv` take
 four `unsigned long long` inputs for RAX/RBX/RCX/RDX, return the full native
 RAX value, and store RBX/RCX/RDX to three `unsigned long long` output cells.
