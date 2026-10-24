@@ -89,6 +89,20 @@ ADDRESS_SIGNATURES = {
        for name in ("vmclear", "vmptrld", "vmxon")},
     "vmptrst_address": (("Done", "I64", "I32", "I32"), (1, 2)),
 }
+# MPX uses the same constant-argument machinery for bounds-bank indices and
+# address encoding controls. Effects remain conservative for disabled/faulting
+# native operations as well as successful bounds accesses.
+ADDRESS_SIGNATURES.update({
+    "bndmov_reg": (("Done", "I32", "I32"), (0, 1)),
+    **{name: (("Done", "I32", "I64"), (0,))
+       for name in ("bndcl_reg", "bndcu_reg", "bndcn_reg")},
+    **{name: (("Done", "I32", "I64", "I32", "I32"), (0, 2, 3))
+       for name in ("bndmov_load", "bndmov_store", "bndmov_store_lock",
+                    "bndcl_address", "bndcu_address", "bndcn_address")},
+    **{name: (("Done", "I32", "I64", "I64", "I32", "I32"), (0, 3, 4))
+       for name in ("bndmk", "bndldx", "bndstx")},
+})
+
 AMX_SIGNATURES = {
     **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")
        for name in ("tdpbf8ps", "tdpbhf8ps", "tdphbf8ps", "tdphf8ps", "tmmultf32ps")},

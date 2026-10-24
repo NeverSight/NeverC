@@ -103,7 +103,7 @@ def row_operands(text, pseudo, immediate):
 
 
 def synchronize_instructions(text, instructions=INSTRUCTIONS, rows=ROWS,
-                             descriptor_overrides=None):
+                             descriptor_overrides=None, operand_type_offsets=None):
     for name, prototype, encoding, _ in instructions:
         ids = enums(text)
         total = int(re.search(r"INSTRUCTION_LIST_END = (\d+)", text).group(1))
@@ -112,7 +112,7 @@ def synchronize_instructions(text, instructions=INSTRUCTIONS, rows=ROWS,
                   if descriptor_overrides and name in descriptor_overrides
                   else descriptor(text, prototype))
         fields[0] = str(opcode)
-        row_type_offset = None
+        row_type_offset = (operand_type_offsets or {}).get(name)
         if name in rows:
             pseudo, immediate = rows[name]
             text, operand_offset, row_type_offset = row_operands(text, pseudo, immediate)

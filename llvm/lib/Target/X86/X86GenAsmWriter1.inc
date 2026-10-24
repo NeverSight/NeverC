@@ -1542,6 +1542,13 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
   /* 15704 */ "tcvtrowps2phl\t\0"
   /* 15719 */ "tilemovrow\t\0"
   /* 15731 */ "lkgs\t\0"
+  /* 15737 */ "bndmk\t\0"
+  /* 15744 */ "bndmov\t\0"
+  /* 15752 */ "bndldx\t\0"
+  /* 15760 */ "bndstx\t\0"
+  /* 15768 */ "bndcl\t\0"
+  /* 15775 */ "bndcu\t\0"
+  /* 15782 */ "bndcn\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20058,6 +20065,20 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// LSL16rm_ADDR32
     0U,	// LSL32rm_ADDR32
     0U,	// LSL64rm_ADDR32
+    672169338U,	// BNDMK64rm
+    1080705U,	// BNDMOVrr
+    437288321U,	// BNDMOV64rm
+    34897281U,	// BNDMOV64mr
+    672169353U,	// BNDLDXrm
+    34749841U,	// BNDSTXmr
+    1080729U,	// BNDCL64rr
+    672169369U,	// BNDCL64rm
+    1080736U,	// BNDCU64rr
+    672169376U,	// BNDCU64rm
+    1080743U,	// BNDCN64rr
+    672169383U,	// BNDCN64rm
+    0U,	// MPX_STATE64
+    0U,	// MPX_MOVE_BOUNDS
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38571,6 +38592,20 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// LSL16rm_ADDR32
     0U,	// LSL32rm_ADDR32
     0U,	// LSL64rm_ADDR32
+    0U,	// BNDMK64rm
+    0U,	// BNDMOVrr
+    0U,	// BNDMOV64rm
+    0U,	// BNDMOV64mr
+    0U,	// BNDLDXrm
+    0U,	// BNDSTXmr
+    0U,	// BNDCL64rr
+    0U,	// BNDCL64rm
+    0U,	// BNDCU64rr
+    0U,	// BNDCU64rm
+    0U,	// BNDCN64rr
+    0U,	// BNDCN64rm
+    0U,	// MPX_STATE64
+    0U,	// MPX_MOVE_BOUNDS
 };
 
   // Emit the opcode for the instruction.
@@ -39641,7 +39676,7 @@ void X86IntelInstPrinter::printInstruction(const MCInst *MI, uint64_t Address, r
 /// for the specified register.
 const char *X86IntelInstPrinter::getRegisterName(MCRegister Reg) {
   unsigned RegNo = Reg.id();
-  assert(RegNo && RegNo < 388 && "Invalid register number!");
+  assert(RegNo && RegNo < 392 && "Invalid register number!");
 
 
 #ifdef __GNUC__
@@ -40009,6 +40044,18 @@ const char *X86IntelInstPrinter::getRegisterName(MCRegister Reg) {
   /* 1793 */ "rdx\0"
   /* 1797 */ "eiz\0"
   /* 1801 */ "riz\0"
+// MPX bank begin
+  /* 1805 */ "bnd0\0"
+// MPX bank end
+// MPX bank begin
+  /* 1810 */ "bnd1\0"
+// MPX bank end
+// MPX bank begin
+  /* 1815 */ "bnd2\0"
+// MPX bank end
+// MPX bank begin
+  /* 1820 */ "bnd3\0"
+// MPX bank end
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -40043,7 +40090,10 @@ const char *X86IntelInstPrinter::getRegisterName(MCRegister Reg) {
     1451, 1461, 1475, 1376, 1391, 1717, 1727, 1737, 1751, 1652, 1667, 1682, 1692, 1702, 
     1712, 1722, 1732, 1742, 1756, 1657, 1672, 1154, 1166, 1178, 1195, 1076, 1094, 1112, 
     1124, 1136, 1148, 1160, 1172, 1184, 1201, 1082, 1100, 
-  };
+  // MPX bank begin
+    1805, 1810, 1815, 1820,
+// MPX bank end
+};
 
   assert (*(AsmStrs+RegAsmOffset[RegNo-1]) &&
           "Invalid alt name index for register!");

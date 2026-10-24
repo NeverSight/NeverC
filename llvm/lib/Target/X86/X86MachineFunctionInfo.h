@@ -95,6 +95,9 @@ class X86MachineFunctionInfo : public MachineFunctionInfo {
   /// used to address arguments in a function using a base pointer.
   int SEHFramePtrSaveIndex = 0;
 
+  /// Compiler-created control transfers must preserve the ambient MPX bank.
+  bool HasMPXState = false;
+
   /// True if this function uses the red zone.
   bool UsesRedZone = false;
 
@@ -220,6 +223,9 @@ public:
   SmallVectorImpl<ForwardedRegister> &getForwardedMustTailRegParms() {
     return ForwardedMustTailRegParms;
   }
+
+  bool hasMPXState() const { return HasMPXState; }
+  void setHasMPXState(bool V) { HasMPXState = V; }
 
   bool getUsesRedZone() const { return UsesRedZone; }
   void setUsesRedZone(bool V) { UsesRedZone = V; }

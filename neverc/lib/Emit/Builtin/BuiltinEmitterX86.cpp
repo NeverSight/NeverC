@@ -3624,6 +3624,37 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_reg64);
   case X86::BI__builtin_ia32_lsl_mem64:
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem64);
+  case X86::BI__builtin_ia32_bndmov_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_reg), Ops);
+  case X86::BI__builtin_ia32_bndcl_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcl_reg), Ops);
+  case X86::BI__builtin_ia32_bndcu_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcu_reg), Ops);
+  case X86::BI__builtin_ia32_bndcn_reg:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcn_reg), Ops);
+  case X86::BI__builtin_ia32_bndmov_load:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_load), Ops);
+  case X86::BI__builtin_ia32_bndmov_store:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_store),
+                              Ops);
+  case X86::BI__builtin_ia32_bndmov_store_lock:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_store_lock),
+                              Ops);
+  case X86::BI__builtin_ia32_bndcl_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcl_address),
+                              Ops);
+  case X86::BI__builtin_ia32_bndcu_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcu_address),
+                              Ops);
+  case X86::BI__builtin_ia32_bndcn_address:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcn_address),
+                              Ops);
+  case X86::BI__builtin_ia32_bndmk:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmk), Ops);
+  case X86::BI__builtin_ia32_bndldx:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndldx), Ops);
+  case X86::BI__builtin_ia32_bndstx:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndstx), Ops);
   case X86::BI__builtin_ia32_lkgs_address:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_lkgs_address),
                               Ops);

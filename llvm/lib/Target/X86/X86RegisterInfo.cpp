@@ -384,6 +384,10 @@ BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   for (MCPhysReg Reg : X86::DEBUG_REGRegClass)
     Reserved.set(Reg);
 
+  // MPX is an ambient architectural bank, not an allocatable vector class.
+  for (MCPhysReg Reg : X86::BNDRRegClass)
+    Reserved.set(Reg);
+
   // Set the stack-pointer register and its aliases as reserved.
   for (const MCPhysReg &SubReg : subregs_inclusive(X86::RSP))
     Reserved.set(SubReg);
@@ -445,32 +449,11 @@ BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 }
 
 unsigned X86RegisterInfo::getNumSupportedRegs(const MachineFunction &MF) const {
-  // All existing Intel CPUs that support AMX support AVX512 and all existing
-  // Intel CPUs that support APX support AMX. AVX512 implies AVX.
-  //
-  // We enumerate the registers in X86GenRegisterInfo.inc in this order:
-  //
-  // Registers before AVX512,
-  // AVX512 registers (X/YMM16-31, ZMM0-31, K registers)
-  // AMX registers (TMM)
-  // APX registers (R16-R31)
-  //
-  // and try to return the minimum number of registers supported by the target.
-  assert((X86::R15WH + 1 == X86 ::YMM0) && (X86::YMM15 + 1 == X86::K0) &&
-         (X86::K6_K7 + 1 == X86::TMMCFG) && (X86::TMM7 + 1 == X86::R16) &&
-         (X86::R31WH + 1 == X86::NUM_TARGET_REGS) &&
-         "Register number may be incorrect");
-
-  const X86Subtarget &ST = MF.getSubtarget<X86Subtarget>();
-  if (ST.hasEGPR())
-    return X86::NUM_TARGET_REGS;
-  if (ST.hasAMXTILE())
-    return X86::TMM7 + 1;
-  if (ST.hasAVX512())
-    return X86::K6_K7 + 1;
-  if (ST.hasAVX())
-    return X86::YMM15 + 1;
-  return X86::R15WH + 1;
+  // The stable pruned schema appends the reserved MPX bank after APX. Its
+  // native effects exist independently of SIMD feature selection, so a prefix
+  // of the register table no longer describes all supported physical operands.
+  // getReservedRegs still excludes every unavailable allocatable register.
+  return X86::NUM_TARGET_REGS;
 }
 
 bool X86RegisterInfo::isArgumentRegister(const MachineFunction &MF,

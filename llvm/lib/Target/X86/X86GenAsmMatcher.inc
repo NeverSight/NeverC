@@ -53,6 +53,11 @@ enum SubtargetFeatureBits : uint8_t {
 };
 
 static unsigned MatchRegisterName(StringRef Name) {
+// MPX bank begin
+  if (Name.size() == 4 && Name.starts_with("bnd") &&
+      Name[3] >= '0' && Name[3] <= '3')
+    return X86::BND0 + Name[3] - '0';
+// MPX bank end
   switch (Name.size()) {
   default: break;
   case 2:	 // 34 strings to match.
@@ -5800,7 +5805,10 @@ enum MatchClassKind {
   MCK_LOW32_ADDR_ACCESS, // register class 'LOW32_ADDR_ACCESS'
   MCK_LOW32_ADDR_ACCESS_RBP, // register class 'LOW32_ADDR_ACCESS_RBP'
   MCK_GR8, // register class 'GR8'
-  MCK_LAST_REGISTER = MCK_GR8,
+// MPX bank begin
+  MCK_BNDR, // reserved bounds bank
+// MPX bank end
+  MCK_LAST_REGISTER = MCK_BNDR,
   MCK_AVX512RC, // user defined class 'AVX512RCOperand'
   MCK_ImmSExti64i8, // user defined class 'ImmSExti64i8AsmOperand'
   MCK_ImmSExti16i8, // user defined class 'ImmSExti16i8AsmOperand'
@@ -7736,6 +7744,12 @@ static unsigned validateOperandClass(MCParsedAsmOperand &GOp, MatchClassKind Kin
     case X86::K5: OpKind = MCK_VK16WM; break;
     case X86::K6: OpKind = MCK_VK16WM; break;
     case X86::K7: OpKind = MCK_VK16WM; break;
+// MPX bank begin
+    case X86::BND0: OpKind = MCK_BNDR; break;
+    case X86::BND1: OpKind = MCK_BNDR; break;
+    case X86::BND2: OpKind = MCK_BNDR; break;
+    case X86::BND3: OpKind = MCK_BNDR; break;
+// MPX bank end
     case X86::TMM0: OpKind = MCK_TILE; break;
     case X86::TMM1: OpKind = MCK_TILE; break;
     case X86::TMM2: OpKind = MCK_TILE; break;
@@ -7879,6 +7893,9 @@ const char *getMatchClassName(MatchClassKind Kind) {
   case MCK_GR32_NOREX: return "MCK_GR32_NOREX";
   case MCK_GR8_NOREX: return "MCK_GR8_NOREX";
   case MCK_RST: return "MCK_RST";
+// MPX bank begin
+  case MCK_BNDR: return "MCK_BNDR";
+// MPX bank end
   case MCK_TILE: return "MCK_TILE";
   case MCK_VK1: return "MCK_VK1";
   case MCK_VR64: return "MCK_VR64";
@@ -8383,7 +8400,14 @@ static const char MnemonicTable[] =
     "\015tcvtrowps2phh"
     "\015tcvtrowps2phl"
     "\012tilemovrow"
-    "\004lkgs";
+    "\004lkgs"
+    "\005bndmk"
+    "\006bndmov"
+    "\006bndldx"
+    "\006bndstx"
+    "\005bndcl"
+    "\005bndcu"
+    "\005bndcn";
 
 // Feature bitsets.
 enum : uint8_t {
@@ -8924,6 +8948,18 @@ static const MatchEntry MatchTable0[] = {
   { 688 /* blsrq */, X86::BLSR64rr_EVEX, Convert__Reg1_1__Reg1_0, AMFBS_None, { MCK_GR64, MCK_GR64 }, },
   { 688 /* blsrq */, X86::BLSR64rm, Convert__Reg1_1__Mem645_0, AMFBS_None, { MCK_Mem64, MCK_GR64 }, },
   { 688 /* blsrq */, X86::BLSR64rm_EVEX, Convert__Reg1_1__Mem645_0, AMFBS_None, { MCK_Mem64, MCK_GR64 }, },
+  { 18904 /* bndcl */, X86::BNDCL64rr, Convert__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR64, MCK_BNDR }, },
+  { 18904 /* bndcl */, X86::BNDCL64rm, Convert__Reg1_1__Mem5_0, AMFBS_In64BitMode, { MCK_Mem, MCK_BNDR }, },
+  { 18916 /* bndcn */, X86::BNDCN64rr, Convert__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR64, MCK_BNDR }, },
+  { 18916 /* bndcn */, X86::BNDCN64rm, Convert__Reg1_1__Mem5_0, AMFBS_In64BitMode, { MCK_Mem, MCK_BNDR }, },
+  { 18910 /* bndcu */, X86::BNDCU64rr, Convert__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_GR64, MCK_BNDR }, },
+  { 18910 /* bndcu */, X86::BNDCU64rm, Convert__Reg1_1__Mem5_0, AMFBS_In64BitMode, { MCK_Mem, MCK_BNDR }, },
+  { 18890 /* bndldx */, X86::BNDLDXrm, Convert__Reg1_1__Mem5_0, AMFBS_In64BitMode, { MCK_Mem, MCK_BNDR }, },
+  { 18877 /* bndmk */, X86::BNDMK64rm, Convert__Reg1_1__Mem5_0, AMFBS_In64BitMode, { MCK_Mem, MCK_BNDR }, },
+  { 18883 /* bndmov */, X86::BNDMOVrr, Convert__Reg1_1__Reg1_0, AMFBS_In64BitMode, { MCK_BNDR, MCK_BNDR }, },
+  { 18883 /* bndmov */, X86::BNDMOV64rm, Convert__Reg1_1__Mem1285_0, AMFBS_In64BitMode, { MCK_Mem128, MCK_BNDR }, },
+  { 18883 /* bndmov */, X86::BNDMOV64mr, Convert__Mem1285_1__Reg1_0, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem128 }, },
+  { 18897 /* bndstx */, X86::BNDSTXmr, Convert__SibMem5_1__Reg1_0, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem }, },
   { 698 /* bsfl */, X86::BSF32rr, Convert__Reg1_1__Reg1_0, AMFBS_None, { MCK_GR32, MCK_GR32 }, },
   { 698 /* bsfl */, X86::BSF32rm, Convert__Reg1_1__Mem325_0, AMFBS_None, { MCK_Mem32, MCK_GR32 }, },
   { 703 /* bsfq */, X86::BSF64rr, Convert__Reg1_1__Reg1_0, AMFBS_None, { MCK_GR64, MCK_GR64 }, },
@@ -26725,6 +26761,18 @@ static const MatchEntry MatchTable1[] = {
   { 677 /* blsr */, X86::BLSR64rr_EVEX, Convert__Reg1_0__Reg1_1, AMFBS_None, { MCK_GR64, MCK_GR64 }, },
   { 677 /* blsr */, X86::BLSR64rm, Convert__Reg1_0__Mem645_1, AMFBS_None, { MCK_GR64, MCK_Mem64 }, },
   { 677 /* blsr */, X86::BLSR64rm_EVEX, Convert__Reg1_0__Mem645_1, AMFBS_None, { MCK_GR64, MCK_Mem64 }, },
+  { 18904 /* bndcl */, X86::BNDCL64rr, Convert__Reg1_0__Reg1_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_GR64 }, },
+  { 18904 /* bndcl */, X86::BNDCL64rm, Convert__Reg1_0__Mem5_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem }, },
+  { 18916 /* bndcn */, X86::BNDCN64rr, Convert__Reg1_0__Reg1_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_GR64 }, },
+  { 18916 /* bndcn */, X86::BNDCN64rm, Convert__Reg1_0__Mem5_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem }, },
+  { 18910 /* bndcu */, X86::BNDCU64rr, Convert__Reg1_0__Reg1_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_GR64 }, },
+  { 18910 /* bndcu */, X86::BNDCU64rm, Convert__Reg1_0__Mem5_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem }, },
+  { 18890 /* bndldx */, X86::BNDLDXrm, Convert__Reg1_0__Mem5_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem }, },
+  { 18877 /* bndmk */, X86::BNDMK64rm, Convert__Reg1_0__Mem5_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem }, },
+  { 18883 /* bndmov */, X86::BNDMOVrr, Convert__Reg1_0__Reg1_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_BNDR }, },
+  { 18883 /* bndmov */, X86::BNDMOV64rm, Convert__Reg1_0__Mem1285_1, AMFBS_In64BitMode, { MCK_BNDR, MCK_Mem128 }, },
+  { 18883 /* bndmov */, X86::BNDMOV64mr, Convert__Mem1285_0__Reg1_1, AMFBS_In64BitMode, { MCK_Mem128, MCK_BNDR }, },
+  { 18897 /* bndstx */, X86::BNDSTXmr, Convert__SibMem5_0__Reg1_1, AMFBS_In64BitMode, { MCK_Mem, MCK_BNDR }, },
   { 694 /* bsf */, X86::BSF16rr, Convert__Reg1_0__Reg1_1, AMFBS_None, { MCK_GR16, MCK_GR16 }, },
   { 694 /* bsf */, X86::BSF16rm, Convert__Reg1_0__Mem165_1, AMFBS_None, { MCK_GR16, MCK_Mem16 }, },
   { 694 /* bsf */, X86::BSF32rr, Convert__Reg1_0__Reg1_1, AMFBS_None, { MCK_GR32, MCK_GR32 }, },

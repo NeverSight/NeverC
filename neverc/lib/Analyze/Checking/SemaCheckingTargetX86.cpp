@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/IR/X86SmxIntrinsics.h"
@@ -556,6 +557,28 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   switch (BuiltinID) {
   case X86::BI__builtin_ia32_int:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
+  case X86::BI__builtin_ia32_bndmov_reg:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0,
+                                       llvm::X86::MpxRegisterCount - 1) ||
+           SemaBuiltinConstantArgRange(TheCall, 1, 0,
+                                       llvm::X86::MpxRegisterCount - 1);
+  case X86::BI__builtin_ia32_bndcl_reg:
+  case X86::BI__builtin_ia32_bndcu_reg:
+  case X86::BI__builtin_ia32_bndcn_reg:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0,
+                                       llvm::X86::MpxRegisterCount - 1);
+  case X86::BI__builtin_ia32_bndmov_load:
+  case X86::BI__builtin_ia32_bndmov_store:
+  case X86::BI__builtin_ia32_bndmov_store_lock:
+  case X86::BI__builtin_ia32_bndcl_address:
+  case X86::BI__builtin_ia32_bndcu_address:
+  case X86::BI__builtin_ia32_bndcn_address:
+  case X86::BI__builtin_ia32_bndmk:
+  case X86::BI__builtin_ia32_bndldx:
+  case X86::BI__builtin_ia32_bndstx:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0,
+                                       llvm::X86::MpxRegisterCount - 1) ||
+           CheckMemoryAddress(TheCall->getNumArgs() - 2);
   case X86::BI__builtin_ia32_lkgs_address:
   case X86::BI__builtin_ia32_lar_mem16_address:
   case X86::BI__builtin_ia32_lar_mem32_address:

@@ -264,6 +264,21 @@ BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 // VMWRITE owns the source memory access, including privilege/fault ordering.
 BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
 
+// Native MPX uses the physical bounds bank. All controls are constants.
+BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcl_reg, "vIUiULLi", "n")
+BUILTIN(__builtin_ia32_bndcu_reg, "vIUiULLi", "n")
+BUILTIN(__builtin_ia32_bndcn_reg, "vIUiULLi", "n")
+BUILTIN(__builtin_ia32_bndmov_load, "vIUiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndmov_store, "vIUiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndmov_store_lock, "vIUiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcl_address, "vIUiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcu_address, "vIUiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcn_address, "vIUiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndmk, "vIUiULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndldx, "vIUiULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndstx, "vIUiULLiULLiIUiIUi", "n")
+
 // Integer offsets, explicit address width and architectural segment-prefix bytes.
 // Descriptor selectors stay inside the instruction after offset wrapping.
 BUILTIN(__builtin_ia32_lkgs_address, "vULLiIUiIUi", "n")

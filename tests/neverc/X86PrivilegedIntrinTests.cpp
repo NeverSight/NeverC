@@ -47,6 +47,91 @@ TEST_F(X86PrivilegedIntrinTest,
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, MpxUsesNativeBoundsBankAndPreservesBranches) {
+  constexpr const char *Source = R"(
+    void bounds(unsigned long long base, unsigned long long value,
+                volatile unsigned *predicate) {
+      __builtin_ia32_bndmk(0, base, value, 32, 0x64);
+      __builtin_ia32_bndmov_load(1, base, 64, 0x65);
+      __builtin_ia32_bndmov_reg(2, 1);
+      __builtin_ia32_bndcl_reg(2, value);
+      __builtin_ia32_bndcu_reg(2, value);
+      __builtin_ia32_bndcn_reg(2, value);
+      __builtin_ia32_bndcl_address(2, base, 32, 0x26);
+      __builtin_ia32_bndcu_address(2, base, 64, 0x36);
+      __builtin_ia32_bndcn_address(2, base, 64, 0x3e);
+      __builtin_ia32_bndldx(3, base, value, 64, 0);
+      __builtin_ia32_bndstx(3, base, value, 64, 0);
+      if (*predicate) __builtin_ia32_bndmov_reg(2, 0);
+      __builtin_ia32_bndmov_store(2, base, 64, 0);
+      __builtin_ia32_bndmov_store_lock(2, base, 64, 0);
+    }
+  )";
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    auto [RC, Assembly] = compileToAsm(Source, "mpx_native", Opt);
+    ASSERT_EQ(RC, 0) << Assembly;
+    for (const char *Name :
+         {"bndmk", "bndmov", "bndcl", "bndcu", "bndcn", "bndldx", "bndstx"})
+      EXPECT_NE(Assembly.find(std::string("\t") + Name + "\t"),
+                std::string::npos)
+          << Assembly;
+    EXPECT_NE(Assembly.find("lock"), std::string::npos) << Assembly;
+    EXPECT_TRUE(std::regex_search(Assembly, std::regex("repne[ \\t]+j")))
+        << Assembly;
+    EXPECT_TRUE(std::regex_search(Assembly, std::regex("repne[ \\t]+ret")))
+        << Assembly;
+    EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
+    EXPECT_FALSE(std::regex_search(Assembly, std::regex("\\bxmm[0-9]+\\b")))
+        << Assembly;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, MpxRejectsInvalidBankAndAddressControls) {
+  for (const char *Call :
+       {"bndmk(4, base, base, 64, 0)", "bndmov_reg(0, 4)",
+        "bndmov_reg(index, 0)", "bndcl_reg(256, base)", "bndcu_reg(-1, base)",
+        "bndcn_reg(index, base)", "bndmov_load(0, base, 16, 0)",
+        "bndmov_store(0, base, 0, 0)", "bndmov_store_lock(0, base, 64, 0xf0)",
+        "bndcl_address(0, base, 64, 0x67)", "bndcu_address(0, base, 64, index)",
+        "bndcn_address(0, base, index, 0)", "bndldx(0, base, base, 128, 0)",
+        "bndstx(0, base, base, 64, -1)"}) {
+    SCOPED_TRACE(Call);
+    const std::string Source =
+        "void bad(unsigned index, unsigned long long base) { __builtin_ia32_" +
+        std::string(Call) + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "mpx_invalid");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_TRUE(Error.find("outside the valid range") != std::string::npos ||
+                Error.find("constant integer") != std::string::npos ||
+                Error.find("native memory addressing") != std::string::npos)
+        << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, MpxChecksCannotBeEliminatedOrReordered) {
+  constexpr const char *Source = R"(
+    void checks(unsigned long long value, unsigned *memory) {
+      *memory = 1;
+      __builtin_ia32_bndcl_reg(3, value);
+      __builtin_ia32_bndcl_reg(3, value);
+      *memory = 2;
+    }
+  )";
+  auto [RC, Assembly] = compileToAsm(Source, "mpx_order");
+  ASSERT_EQ(RC, 0) << Assembly;
+  const std::regex Instruction("\\tbndcl\\t");
+  EXPECT_EQ(std::distance(std::sregex_iterator(Assembly.begin(), Assembly.end(),
+                                               Instruction),
+                          std::sregex_iterator()),
+            2)
+      << Assembly;
+  const auto First = Assembly.find("\tbndcl\t");
+  const auto Last = Assembly.rfind("\tbndcl\t");
+  EXPECT_LT(Assembly.find("], 1"), First) << Assembly;
+  EXPECT_GT(Assembly.find("], 2"), Last) << Assembly;
+}
+
 TEST_F(X86PrivilegedIntrinTest, AmxPublicHeaderExposesPhysicalTileInterfaces) {
   auto Source = tmpFile("amx_header.c");
   auto Assembly = tmpFile("amx_header.s");

@@ -993,6 +993,19 @@ enum X86Intrinsics : unsigned {
     x86_bmi_pdep_64,                                 // llvm.x86.bmi.pdep.64
     x86_bmi_pext_32,                                 // llvm.x86.bmi.pext.32
     x86_bmi_pext_64,                                 // llvm.x86.bmi.pext.64
+    x86_bndcl_address,                               // llvm.x86.bndcl.address
+    x86_bndcl_reg,                                   // llvm.x86.bndcl.reg
+    x86_bndcn_address,                               // llvm.x86.bndcn.address
+    x86_bndcn_reg,                                   // llvm.x86.bndcn.reg
+    x86_bndcu_address,                               // llvm.x86.bndcu.address
+    x86_bndcu_reg,                                   // llvm.x86.bndcu.reg
+    x86_bndldx,                                      // llvm.x86.bndldx
+    x86_bndmk,                                       // llvm.x86.bndmk
+    x86_bndmov_load,                                 // llvm.x86.bndmov.load
+    x86_bndmov_reg,                                  // llvm.x86.bndmov.reg
+    x86_bndmov_store,                                // llvm.x86.bndmov.store
+    x86_bndmov_store_lock,                           // llvm.x86.bndmov.store.lock
+    x86_bndstx,                                      // llvm.x86.bndstx
     x86_cast_tile_to_vector,                         // llvm.x86.cast.tile.to.vector
     x86_cast_vector_to_tile,                         // llvm.x86.cast.vector.to.tile
     x86_clac,                                        // llvm.x86.clac

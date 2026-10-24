@@ -405,7 +405,13 @@ enum {
   R29WH = 385,
   R30WH = 386,
   R31WH = 387,
-  NUM_TARGET_REGS // 388
+// MPX bank begin
+  BND0 = 388,
+  BND1 = 389,
+  BND2 = 390,
+  BND3 = 391,
+// MPX bank end
+  NUM_TARGET_REGS // 392
 };
 } // end namespace X86
 
@@ -516,6 +522,9 @@ enum {
   VR512RegClassID = 100,
   VR512_0_15RegClassID = 101,
   TILERegClassID = 102,
+// MPX bank begin
+  BNDRRegClassID = 103,
+// MPX bank end
 
 };
 } // end namespace X86
@@ -1054,6 +1063,18 @@ extern const char X86RegStrings[] = {
   /* 1761 */ "RDX\0"
   /* 1765 */ "EIZ\0"
   /* 1769 */ "RIZ\0"
+// MPX bank begin
+  /* 1773 */ "BND0\0"
+// MPX bank end
+// MPX bank begin
+  /* 1778 */ "BND1\0"
+// MPX bank end
+// MPX bank begin
+  /* 1783 */ "BND2\0"
+// MPX bank end
+// MPX bank begin
+  /* 1788 */ "BND3\0"
+// MPX bank end
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -1448,6 +1469,12 @@ extern const MCRegisterDesc X86RegDesc[] = { // Descriptors
   { 1450, 2, 3, 2, 8406, 22 },
   { 1331, 2, 3, 2, 8409, 22 },
   { 1349, 2, 3, 2, 8412, 22 },
+// MPX bank begin
+  { 1773, 2, 2, 2, 8413, 22 },
+  { 1778, 2, 2, 2, 8414, 22 },
+  { 1783, 2, 2, 2, 8415, 22 },
+  { 1788, 2, 2, 2, 8416, 22 },
+// MPX bank end
 };
 
 extern const MCPhysReg X86RegUnitRoots[][2] = {
@@ -1672,6 +1699,12 @@ extern const MCPhysReg X86RegUnitRoots[][2] = {
   { X86::R31B },
   { X86::R31BH },
   { X86::R31WH },
+// MPX bank begin
+  { X86::BND0 },
+  { X86::BND1 },
+  { X86::BND2 },
+  { X86::BND3 },
+// MPX bank end
 };
 
 namespace {     // Register classes...
@@ -2804,11 +2837,18 @@ extern const char X86RegClassStrings[] = {
   /* 1287 */ "GR64_TCW64_with_sub_8bit\0"
   /* 1312 */ "GR64_TCW64_and_GR64_TC_with_sub_8bit\0"
   /* 1349 */ "LOW32_ADDR_ACCESS_RBP_with_sub_8bit\0"
+// MPX bank begin
+  /* 1385 */ "BNDR\0"
+// MPX bank end
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
 
+// MPX bank begin
+const MCPhysReg BNDR[] = { X86::BND0, X86::BND1, X86::BND2, X86::BND3 };
+const uint8_t BNDRBits[] = { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0 };
+// MPX bank end
 extern const MCRegisterClass X86MCRegisterClasses[] = {
   { GR8, GR8Bits, 362, 36, sizeof(GR8Bits), X86::GR8RegClassID, 8, 1, true },
   { GRH8, GRH8Bits, 353, 28, sizeof(GRH8Bits), X86::GRH8RegClassID, 8, 1, false },
@@ -2913,6 +2953,9 @@ extern const MCRegisterClass X86MCRegisterClasses[] = {
   { VR512, VR512Bits, 10, 32, sizeof(VR512Bits), X86::VR512RegClassID, 512, 1, true },
   { VR512_0_15, VR512_0_15Bits, 301, 16, sizeof(VR512_0_15Bits), X86::VR512_0_15RegClassID, 512, 1, true },
   { TILE, TILEBits, 541, 8, sizeof(TILEBits), X86::TILERegClassID, 8192, -1, true },
+// MPX bank begin
+  { BNDR, BNDRBits, 1385, 4, sizeof(BNDRBits), X86::BNDRRegClassID, 128, 1, false },
+// MPX bank end
 };
 
 // X86 Dwarf<->LLVM register mappings.
@@ -3863,9 +3906,12 @@ extern const uint16_t X86RegEncodingTable[] = {
   65535,
   65535,
   65535,
+// MPX bank begin
+  0, 1, 2, 3,
+// MPX bank end
 };
 static inline void InitX86MCRegisterInfo(MCRegisterInfo *RI, unsigned RA, unsigned DwarfFlavour = 0, unsigned EHFlavour = 0, unsigned PC = 0) {
-  RI->InitMCRegisterInfo(X86RegDesc, 388, RA, PC, X86MCRegisterClasses, 103, X86RegUnitRoots, 221, X86RegDiffLists, X86LaneMaskLists, X86RegStrings, X86RegClassStrings, X86SubRegIdxLists, 11,
+  RI->InitMCRegisterInfo(X86RegDesc, 392, RA, PC, X86MCRegisterClasses, 104, X86RegUnitRoots, 225, X86RegDiffLists, X86LaneMaskLists, X86RegStrings, X86RegClassStrings, X86SubRegIdxLists, 11,
 X86SubRegIdxRanges, X86RegEncodingTable);
 
   switch (DwarfFlavour) {
@@ -4050,6 +4096,9 @@ namespace X86 { // Register classes
   extern const TargetRegisterClass VR512RegClass;
   extern const TargetRegisterClass VR512_0_15RegClass;
   extern const TargetRegisterClass TILERegClass;
+// MPX bank begin
+  extern const TargetRegisterClass BNDRRegClass;
+// MPX bank end
 } // end namespace X86
 
 } // end namespace llvm
@@ -4095,6 +4144,9 @@ static const MVT::SimpleValueType VTLists[] = {
   /* 67 */ MVT::x86mmx, MVT::Other,
   /* 69 */ MVT::Untyped, MVT::Other,
   /* 71 */ MVT::x86amx, MVT::Other,
+// MPX bank begin
+  /* 73 */ MVT::v2i64, MVT::Other,
+// MPX bank end
 };
 
 static const char *SubRegIndexNameTable[] = { "sub_8bit", "sub_8bit_hi", "sub_8bit_hi_phony", "sub_16bit", "sub_16bit_hi", "sub_32bit", "sub_mask_0", "sub_mask_1", "sub_xmm", "sub_ymm", "" };
@@ -4221,10 +4273,16 @@ static const TargetRegisterInfo::RegClassInfo RegClassInfos[] = {
   { 512, 512, 512, /*VTLists+*/51 },    // VR512
   { 512, 512, 512, /*VTLists+*/60 },    // VR512_0_15
   { 8192, 8192, 8192, /*VTLists+*/71 },    // TILE
+// MPX bank begin
+  { 128, 128, 128, /*VTLists+*/73 }, // BNDR
+// MPX bank end
 };
 
 static const TargetRegisterClass *const NullRegClasses[] = { nullptr };
 
+// MPX bank begin
+static const uint32_t BNDRSubClassMask[] = { 0, 0, 0, 0x80 };
+// MPX bank end
 static const uint32_t GR8SubClassMask[] = {
   0x0000003d, 0x00000000, 0x00000000, 0x00000000, 
   0x00200380, 0x7188af3a, 0x0df7ae5c, 0x00000000, // sub_8bit
@@ -7034,6 +7092,13 @@ namespace X86 {   // Register class instances
     nullptr
   };
 
+// MPX bank begin
+  extern const TargetRegisterClass BNDRRegClass = {
+    &X86MCRegisterClasses[BNDRRegClassID], BNDRSubClassMask,
+    SuperRegIdxSeqs + 1, LaneBitmask(1), 0, false, 0, false, false,
+    NullRegClasses, nullptr
+  };
+// MPX bank end
   extern const TargetRegisterClass TILERegClass = {
     &X86MCRegisterClasses[TILERegClassID],
     TILESubClassMask,
@@ -7155,15 +7220,24 @@ namespace {
     &X86::VR512RegClass,
     &X86::VR512_0_15RegClass,
     &X86::TILERegClass,
-  };
+  // MPX bank begin
+    &X86::BNDRRegClass,
+// MPX bank end
+};
 } // end anonymous namespace
 
 static const uint8_t CostPerUseTable[] = { 
-0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // MPX bank begin
+0, 0, 0, 0,
+// MPX bank end
+};
 
 
 static const bool InAllocatableClassTable[] = { 
-false, true, true, true, true, true, true, false, true, true, true, true, true, true, false, true, true, false, true, true, true, true, true, true, true, true, true, true, false, false, false, true, true, true, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, true, false, true, true, true, false, true, true, false, true, true, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, };
+false, true, true, true, true, true, true, false, true, true, true, true, true, true, false, true, true, false, true, true, true, true, true, true, true, true, true, true, false, false, false, true, true, true, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, true, false, true, true, true, false, true, true, false, true, true, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, // MPX bank begin
+false, false, false, false,
+// MPX bank end
+};
 
 
 static const TargetRegisterInfoDesc X86RegInfoDesc = { // Extra Descriptors
@@ -9837,14 +9911,17 @@ getRegClassWeight(const TargetRegisterClass *RC) const {
     {1, 32},  	// VR512
     {1, 16},  	// VR512_0_15
     {1, 8},  	// TILE
-  };
+  // MPX bank begin
+    {0, 0}, // BNDR
+// MPX bank end
+};
   return RCWeightTable[RC->getID()];
 }
 
 /// Get the weight in units of pressure for this register unit.
 unsigned X86GenRegisterInfo::
 getRegUnitWeight(unsigned RegUnit) const {
-  assert(RegUnit < 221 && "invalid register unit");
+  assert(RegUnit < 225 && "invalid register unit");
   // All register units have unit weight.
   return 1;
 }
@@ -9975,7 +10052,10 @@ static const int RCSetsTable[] = {
 const int *X86GenRegisterInfo::
 getRegClassPressureSets(const TargetRegisterClass *RC) const {
   static const uint16_t RCSetStartTable[] = {
-    216,1,215,210,209,225,1,18,95,99,4,4,4,4,4,4,4,4,4,4,0,210,1,15,14,4,4,4,4,4,4,18,18,18,15,18,18,95,10,14,95,95,99,99,4,160,4,210,26,1,1,168,80,18,15,18,18,17,12,14,95,95,155,44,20,36,115,115,106,58,99,4,6,180,106,160,50,131,4,131,122,198,188,67,210,141,270,270,106,26,168,131,80,1,2,1,15,14,15,14,15,14,8,};
+    216,1,215,210,209,225,1,18,95,99,4,4,4,4,4,4,4,4,4,4,0,210,1,15,14,4,4,4,4,4,4,18,18,18,15,18,18,95,10,14,95,95,99,99,4,160,4,210,26,1,1,168,80,18,15,18,18,17,12,14,95,95,155,44,20,36,115,115,106,58,99,4,6,180,106,160,50,131,4,131,122,198,188,67,210,141,270,270,106,26,168,131,80,1,2,1,15,14,15,14,15,14,8,// MPX bank begin
+1,
+// MPX bank end
+};
   return &RCSetsTable[RCSetStartTable[RC->getID()]];
 }
 
@@ -9983,9 +10063,12 @@ getRegClassPressureSets(const TargetRegisterClass *RC) const {
 /// Returns a -1 terminated array of pressure set IDs
 const int *X86GenRegisterInfo::
 getRegUnitPressureSets(unsigned RegUnit) const {
-  assert(RegUnit < 221 && "invalid register unit");
+  assert(RegUnit < 225 && "invalid register unit");
   static const uint16_t RUSetStartTable[] = {
-    269,288,209,225,241,1,269,288,0,1,269,256,1,288,0,1,1,1,1,1,1,1,80,1,1,0,256,1,1,271,1,1,1,1,0,1,0,1,1,1,1,0,1,1,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,2,2,2,2,2,2,2,1,6,6,6,6,6,6,6,6,274,1,1,274,1,1,274,1,1,274,1,1,215,1,1,215,1,1,215,1,1,215,1,1,1,1,1,1,1,1,1,1,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,4,4,4,4,4,4,4,4,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,1,8,8,8,8,8,8,8,8,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,};
+    269,288,209,225,241,1,269,288,0,1,269,256,1,288,0,1,1,1,1,1,1,1,80,1,1,0,256,1,1,271,1,1,1,1,0,1,0,1,1,1,1,0,1,1,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,2,2,2,2,2,2,2,1,6,6,6,6,6,6,6,6,274,1,1,274,1,1,274,1,1,274,1,1,215,1,1,215,1,1,215,1,1,215,1,1,1,1,1,1,1,1,1,1,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,4,4,4,4,4,4,4,4,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,1,8,8,8,8,8,8,8,8,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,216,1,1,// MPX bank begin
+1, 1, 1, 1,
+// MPX bank end
+};
   return &RCSetsTable[RUSetStartTable[RegUnit]];
 }
 
@@ -10014,13 +10097,13 @@ extern const unsigned X86EHFlavour0L2DwarfSize;
 X86GenRegisterInfo::
 X86GenRegisterInfo(unsigned RA, unsigned DwarfFlavour, unsigned EHFlavour,
       unsigned PC, unsigned HwMode)
-  : TargetRegisterInfo(&X86RegInfoDesc, RegisterClasses, RegisterClasses+103,
+  : TargetRegisterInfo(&X86RegInfoDesc, RegisterClasses, RegisterClasses+104,
              SubRegIndexNameTable, SubRegIndexLaneMaskTable,
              LaneBitmask(0xFFFFFFFFFFFFFFB0), RegClassInfos, VTLists, HwMode) {
-  InitMCRegisterInfo(X86RegDesc, 388, RA, PC,
-                     X86MCRegisterClasses, 103,
+  InitMCRegisterInfo(X86RegDesc, 392, RA, PC,
+                     X86MCRegisterClasses, 104,
                      X86RegUnitRoots,
-                     221,
+                     225,
                      X86RegDiffLists,
                      X86LaneMaskLists,
                      X86RegStrings,

@@ -20,6 +20,10 @@ on:
       - 'utils/lint/sync-x86-system-effects.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
       - 'utils/lint/test_sync_x86_amx_instructions.py'
+      - 'utils/lint/sync-x86-mpx-registers.py'
+      - 'utils/lint/sync-x86-mpx-instructions.py'
+      - 'utils/lint/test_sync_x86_mpx_tables.py'
+      - 'llvm/lib/Target/X86/X86GenRegisterInfo.inc'
       - 'llvm/lib/Target/X86/X86GenAsmWriter.inc'
       - 'llvm/lib/Target/X86/X86GenAsmWriter1.inc'
       - 'llvm/lib/Target/X86/X86GenAsmMatcher.inc'
@@ -45,6 +49,10 @@ on:
       - 'utils/lint/sync-x86-system-effects.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
       - 'utils/lint/test_sync_x86_amx_instructions.py'
+      - 'utils/lint/sync-x86-mpx-registers.py'
+      - 'utils/lint/sync-x86-mpx-instructions.py'
+      - 'utils/lint/test_sync_x86_mpx_tables.py'
+      - 'llvm/lib/Target/X86/X86GenRegisterInfo.inc'
       - 'llvm/lib/Target/X86/X86GenAsmWriter.inc'
       - 'llvm/lib/Target/X86/X86GenAsmWriter1.inc'
       - 'llvm/lib/Target/X86/X86GenAsmMatcher.inc'
@@ -125,6 +133,12 @@ jobs:
         run: |
           python3 utils/lint/sync-x86-amx-instructions.py
           python3 utils/lint/test_sync_x86_amx_instructions.py
+
+      - name: Verify native MPX bank and instructions
+        run: |
+          python3 utils/lint/sync-x86-mpx-registers.py
+          python3 utils/lint/sync-x86-mpx-instructions.py
+          python3 utils/lint/test_sync_x86_mpx_tables.py
 
       - name: Verify native intrinsic signatures
         run: python3 utils/lint/sync-x86-native-intrinsics.py

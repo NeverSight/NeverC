@@ -34,6 +34,74 @@ Frontend (BuiltinEmitterX86.cpp)
 | [`llvm/lib/Target/X86/X86InstrInfo.cpp`](llvm/lib/Target/X86/X86InstrInfo.cpp) | Physical register copy support |
 | [`neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp`](neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp) | Frontend intrinsic emission |
 
+## Native MPX bounds state
+
+NeverC exposes 13 C23 builtins for the architectural BND0--BND3 bank. Each
+returns `void` and emits a native LLVM intrinsic, without platform headers or
+inline assembly. Bank indices and address controls are constant `unsigned`;
+addresses and values are `unsigned long long`.
+
+| Builtin suffix after `__builtin_ia32_` | Arguments |
+| --- | --- |
+| `bndmov_reg` | `bank, source_bank` |
+| `bndcl_reg`, `bndcu_reg`, `bndcn_reg` | `bank, value` |
+| `bndmov_load`, `bndmov_store`, `bndmov_store_lock` | `bank, offset, address_bits, segment_prefix` |
+| `bndcl_address`, `bndcu_address`, `bndcn_address` | `bank, effective_address, address_bits, segment_prefix` |
+| `bndmk` | `bank, lower, inclusive_upper, address_bits, segment_prefix` |
+| `bndldx`, `bndstx` | `bank, translation_base, pointer_value, address_bits, segment_prefix` |
+
+Bank indices are 0..3. Address bits select a 32- or 64-bit encoding. Segment
+prefixes are 0, 0x26, 0x2e, 0x36, 0x3e, 0x64 or 0x65. MPX ignores 67H in long
+mode, so a 32-bit encoding still uses the entire 64-bit base and index. BNDMK
+uses an inclusive upper address; BNDCN compares against the raw complemented
+upper-bound field. Effective-address checks do not read memory or add segment
+bases. BNDLDX/STX use base+displacement for table translation and a separate,
+unscaled pointer-comparison value. With no encoded base, supply zero, ignoring
+the displacement as required by the instruction.
+
+Bounds stay in the ambient CPU bank. Native instructions own enable checks,
+table accesses, #BR and partial fault completion; the compiler retains repeated
+checks and unknown memory effects. Compiler-created near transfers receive
+BND/F2 so they preserve bounds even with BNDPRESERVE=0. Callees and inline
+assembly retain their native side effects; arbitrary callees do not gain a
+bounds-preserving ABI. XRay sleds fail explicitly because their runtime patch
+format cannot accept added prefixes. A binary lifter still needs to represent
+the BNDINIT effects of the original binary's control transfers separately.
+
+`sync-x86-mpx-registers.py` appends four reserved, nonallocatable physical
+registers and a bounds class. `sync-x86-mpx-instructions.py` appends native
+instructions and bank-owning pseudos. Existing register/opcode identities remain
+stable. The standard native-intrinsic synchronizer owns signatures and immargs;
+the generated-table CI job checks all three authorities and drift regressions.
+
+`tests/verify-mpx-encoding.py` validates independent bytes, full input values,
+callee-saved registers and both assembly dialects for 520 combinations at
+O0/O2 across ELF, COFF and Mach-O. It accepts NeverC, full LLVM, or NeverC IR
+with the full LLVM backend. `--mode=32 --llc=...` checks 268 i386 combinations
+against the full LLVM fork; NeverC's x86 backend remains 64-bit only.
+These controlled boundaries do not simulate successful MPX operations.
+
+`tests/verify-mpx-state.py` supplies a freestanding CPL0 QEMU guest with its own
+page tables, XCR0, BNDCFG and exception gates. It executes native enable/disable,
+bounds-check, bounds-table hit/miss/fault, repeated-fault and CFG tests. Example:
+
+```sh
+python3 tests/verify-mpx-state.py --compiler build-neverc/bin/neverc \
+  --qemu qemu-system-x86_64 --clang clang --qemu-mpx-limitations
+```
+
+Strict mode is the default. The explicit limitation option skips 180 cases and
+executes 340 per optimization level on QEMU 10.2.2. The model incorrectly
+truncates 67H memory/table addresses, rejects LOCK BNDMOV memory stores, and
+uses decoded memory operands for register checks. Its nonzero BNDCFG directory
+base extraction also differs from the SDM; the fixture uses a zero directory
+base and does not qualify nonzero bases. See QEMU's
+[`translate.c`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/translate.c),
+[`decode-new.c.inc`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/decode-new.c.inc),
+and [`mpx_helper.c`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/mpx_helper.c).
+Skipped cases retain byte/transport coverage, not successful execution coverage.
+Physical MPX hardware qualification remains outstanding.
+
 ## Critical Invariant: Enum ID ↔ ISel Table Synchronization
 
 **This is the single most important thing to understand when modifying x86

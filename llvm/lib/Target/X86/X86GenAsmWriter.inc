@@ -1860,6 +1860,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 19171 */ "tcvtrowps2phl\t\0"
   /* 19186 */ "tilemovrow\t\0"
   /* 19198 */ "lkgs\t\0"
+  /* 19204 */ "bndmk\t\0"
+  /* 19211 */ "bndmov\t\0"
+  /* 19219 */ "bndldx\t\0"
+  /* 19227 */ "bndstx\t\0"
+  /* 19235 */ "bndcl\t\0"
+  /* 19242 */ "bndcu\t\0"
+  /* 19249 */ "bndcn\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20376,6 +20383,20 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LSL16rm_ADDR32
     0U,	// LSL32rm_ADDR32
     0U,	// LSL64rm_ADDR32
+    1428229U,	// BNDMK64rm
+    1614891788U,	// BNDMOVrr
+    576268U,	// BNDMOV64rm
+    650234636U,	// BNDMOV64mr
+    1428244U,	// BNDLDXrm
+    130140956U,	// BNDSTXmr
+    1614891812U,	// BNDCL64rr
+    1428260U,	// BNDCL64rm
+    1614891819U,	// BNDCU64rr
+    1428267U,	// BNDCU64rm
+    1614891826U,	// BNDCN64rr
+    1428274U,	// BNDCN64rm
+    0U,	// MPX_STATE64
+    0U,	// MPX_MOVE_BOUNDS
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38889,6 +38910,20 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LSL16rm_ADDR32
     0U,	// LSL32rm_ADDR32
     0U,	// LSL64rm_ADDR32
+    0U,	// BNDMK64rm
+    0U,	// BNDMOVrr
+    0U,	// BNDMOV64rm
+    0U,	// BNDMOV64mr
+    0U,	// BNDLDXrm
+    0U,	// BNDSTXmr
+    0U,	// BNDCL64rr
+    0U,	// BNDCL64rm
+    0U,	// BNDCU64rr
+    0U,	// BNDCU64rm
+    0U,	// BNDCN64rr
+    0U,	// BNDCN64rm
+    0U,	// MPX_STATE64
+    0U,	// MPX_MOVE_BOUNDS
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57402,6 +57437,20 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LSL16rm_ADDR32
     0U,	// LSL32rm_ADDR32
     0U,	// LSL64rm_ADDR32
+    0U,	// BNDMK64rm
+    0U,	// BNDMOVrr
+    0U,	// BNDMOV64rm
+    0U,	// BNDMOV64mr
+    0U,	// BNDLDXrm
+    0U,	// BNDSTXmr
+    0U,	// BNDCL64rr
+    0U,	// BNDCL64rm
+    0U,	// BNDCU64rr
+    0U,	// BNDCU64rm
+    0U,	// BNDCN64rr
+    0U,	// BNDCN64rm
+    0U,	// MPX_STATE64
+    0U,	// MPX_MOVE_BOUNDS
 };
 
   // Emit the opcode for the instruction.
@@ -58584,7 +58633,7 @@ void X86ATTInstPrinter::printInstruction(const MCInst *MI, uint64_t Address, raw
 /// for the specified register.
 const char *X86ATTInstPrinter::getRegisterName(MCRegister Reg) {
   unsigned RegNo = Reg.id();
-  assert(RegNo && RegNo < 388 && "Invalid register number!");
+  assert(RegNo && RegNo < 392 && "Invalid register number!");
 
 
 #ifdef __GNUC__
@@ -58952,6 +59001,18 @@ const char *X86ATTInstPrinter::getRegisterName(MCRegister Reg) {
   /* 1793 */ "rdx\0"
   /* 1797 */ "eiz\0"
   /* 1801 */ "riz\0"
+// MPX bank begin
+  /* 1805 */ "bnd0\0"
+// MPX bank end
+// MPX bank begin
+  /* 1810 */ "bnd1\0"
+// MPX bank end
+// MPX bank begin
+  /* 1815 */ "bnd2\0"
+// MPX bank end
+// MPX bank begin
+  /* 1820 */ "bnd3\0"
+// MPX bank end
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -58986,7 +59047,10 @@ const char *X86ATTInstPrinter::getRegisterName(MCRegister Reg) {
     1451, 1461, 1475, 1376, 1391, 1717, 1727, 1737, 1751, 1652, 1667, 1682, 1692, 1702, 
     1712, 1722, 1732, 1742, 1756, 1657, 1672, 1154, 1166, 1178, 1195, 1076, 1094, 1112, 
     1124, 1136, 1148, 1160, 1172, 1184, 1201, 1082, 1100, 
-  };
+  // MPX bank begin
+    1805, 1810, 1815, 1820,
+// MPX bank end
+};
 
   assert (*(AsmStrs+RegAsmOffset[RegNo-1]) &&
           "Invalid alt name index for register!");

@@ -32,6 +32,8 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Mangler.h"
+#include "llvm/IR/X86MpxState.h"
+#include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -124,7 +126,42 @@ void X86AsmPrinter::StackMapShadowTracker::emitShadowPadding(
   }
 }
 
+// Ordinary compiler-generated branches must not initialize the ambient bounds
+// bank when BNDPRESERVE=0. Prefix JMP_1 as well because relaxation may choose
+// E9. Callees and inline assembly still own their native architectural side
+// effects.
+static void preserveMPXBounds(MCInst &Inst, const MachineFunction &MF) {
+  if (!MF.getInfo<X86MachineFunctionInfo>()->hasMPXState())
+    return;
+  switch (Inst.getOpcode()) {
+  case X86::JMP_1:
+  case X86::JMP_2:
+  case X86::JMP_4:
+  case X86::JCC_1:
+  case X86::JCC_2:
+  case X86::JCC_4:
+  case X86::CALL64pcrel32:
+  case X86::JMP64r:
+  case X86::JMP64r_NT:
+  case X86::JMP64m:
+  case X86::JMP64m_NT:
+  case X86::CALL64r:
+  case X86::CALL64r_NT:
+  case X86::CALL64m:
+  case X86::CALL64m_NT:
+  case X86::RET16:
+  case X86::RET64:
+  case X86::RETI16:
+  case X86::RETI64:
+    Inst.setFlags(Inst.getFlags() | X86::IP_HAS_REPEAT_NE);
+    break;
+  default:
+    break;
+  }
+}
+
 void X86AsmPrinter::EmitAndCountInstruction(MCInst &Inst) {
+  preserveMPXBounds(Inst, *MF);
   OutStreamer->emitInstruction(Inst, getSubtargetInfo());
   SMShadowTracker.count(Inst, getSubtargetInfo(), CodeEmitter.get());
 }
@@ -359,6 +396,123 @@ static void lowerNativeAddressOverride(MCInst &Inst, unsigned Opcode,
   }
 }
 
+static void lowerMPXState(MCInst &Inst, bool Is64Bit) {
+  using X86::MpxOperation;
+  const uint64_t Descriptor = Inst.getOperand(0).getImm();
+  const auto Kind = static_cast<MpxOperation>(Descriptor & 15);
+  const bool Move = Kind == MpxOperation::Move;
+  const bool Register = X86::mpxIsCheckRegister(Kind);
+  const bool Address32 = Descriptor & X86::MpxAddress32;
+  const unsigned Prefix = (Descriptor >> 16) & 255;
+  if ((Descriptor & ~uint64_t(X86::MpxDescriptorMask)) ||
+      (!Move && (Descriptor & X86::MpxSourceMask)) ||
+      Kind >= MpxOperation::Count ||
+      !X86::isNativeMemorySegmentPrefix(Prefix) || (Address32 && !Is64Bit) ||
+      ((Move || Register) && (Address32 || Prefix)) ||
+      (Move != (Inst.getOpcode() == X86::MPX_MOVE_BOUNDS)) ||
+      (!Move && Is64Bit != (Inst.getOpcode() == X86::MPX_STATE64)))
+    report_fatal_error("invalid MPX machine-state descriptor");
+  unsigned Opcode;
+  switch (Kind) {
+  case MpxOperation::Make:
+    Opcode = X86::BNDMK64rm;
+    break;
+  case MpxOperation::Move:
+    Opcode = X86::BNDMOVrr;
+    break;
+  case MpxOperation::Load:
+    Opcode = X86::BNDMOV64rm;
+    break;
+  case MpxOperation::Store:
+  case MpxOperation::StoreLocked:
+    Opcode = X86::BNDMOV64mr;
+    break;
+  case MpxOperation::CheckLowerRegister:
+    Opcode = X86::BNDCL64rr;
+    break;
+  case MpxOperation::CheckUpperRegister:
+    Opcode = X86::BNDCU64rr;
+    break;
+  case MpxOperation::CheckUpperRawRegister:
+    Opcode = X86::BNDCN64rr;
+    break;
+  case MpxOperation::CheckLowerAddress:
+    Opcode = X86::BNDCL64rm;
+    break;
+  case MpxOperation::CheckUpperAddress:
+    Opcode = X86::BNDCU64rm;
+    break;
+  case MpxOperation::CheckUpperRawAddress:
+    Opcode = X86::BNDCN64rm;
+    break;
+  case MpxOperation::LoadTable:
+    Opcode = X86::BNDLDXrm;
+    break;
+  case MpxOperation::StoreTable:
+    Opcode = X86::BNDSTXmr;
+    break;
+  case MpxOperation::Count:
+    llvm_unreachable("invalid MPX operation");
+  }
+  constexpr MCPhysReg Bounds[] = {X86::BND0, X86::BND1, X86::BND2, X86::BND3};
+  const auto Bound = MCOperand::createReg(Bounds[(Descriptor >> 4) & 3]);
+  MCInst Native;
+  Native.setOpcode(Opcode);
+  Native.setFlags(Inst.getFlags());
+  if (Move) {
+    Native.addOperand(Bound);
+    Native.addOperand(MCOperand::createReg(Bounds[(Descriptor >> 6) & 3]));
+  } else if (Register) {
+    Native.addOperand(Bound);
+    Native.addOperand(Inst.getOperand(1));
+  } else {
+    unsigned Segment = 0;
+    switch (Prefix) {
+    case 0x26:
+      Segment = X86::ES;
+      break;
+    case 0x2e:
+      Segment = X86::CS;
+      break;
+    case 0x36:
+      Segment = X86::SS;
+      break;
+    case 0x3e:
+      Segment = X86::DS;
+      break;
+    case 0x64:
+      Segment = X86::FS;
+      break;
+    case 0x65:
+      Segment = X86::GS;
+      break;
+    }
+    const bool Store = Kind == MpxOperation::Store ||
+                       Kind == MpxOperation::StoreLocked ||
+                       Kind == MpxOperation::StoreTable;
+    if (!Store)
+      Native.addOperand(Bound);
+    unsigned Base = Inst.getOperand(1).getReg();
+    unsigned Index = X86::mpxHasIndex(Kind) ? Inst.getOperand(2).getReg() : 0;
+    if (Address32) {
+      // Narrow the MC encoding only. MPX still reads the full 64-bit registers.
+      Base = getX86SubSuperRegister(Base, 32);
+      if (Index)
+        Index = getX86SubSuperRegister(Index, 32);
+    }
+    Native.addOperand(MCOperand::createReg(Base));
+    Native.addOperand(MCOperand::createImm(1));
+    Native.addOperand(MCOperand::createReg(Index));
+    Native.addOperand(MCOperand::createImm(0));
+    Native.addOperand(MCOperand::createReg(Segment));
+    if (Store)
+      Native.addOperand(Bound);
+    if (Kind == MpxOperation::StoreLocked)
+      Native.setFlags(Native.getFlags() | X86::IP_HAS_LOCK);
+  }
+  Inst = Native;
+}
+
 void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   OutMI.setOpcode(MI->getOpcode());
 
@@ -375,6 +529,10 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
 
   // Handle a few special cases to eliminate operand modifiers.
   switch (OutMI.getOpcode()) {
+  case X86::MPX_MOVE_BOUNDS:
+  case X86::MPX_STATE64:
+    lowerMPXState(OutMI, MF.getSubtarget<X86Subtarget>().is64Bit());
+    break;
   case X86::LEA64_32r:
   case X86::LEA64r:
   case X86::LEA16r:
@@ -541,6 +699,7 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   default:
     break;
   }
+  preserveMPXBounds(OutMI, MF);
 }
 
 void X86AsmPrinter::LowerTlsAddr(X86MCInstLower &MCInstLowering,
@@ -776,6 +935,7 @@ void X86AsmPrinter::LowerSTATEPOINT(const MachineInstr &MI,
     MCInst CallInst;
     CallInst.setOpcode(CallOpcode);
     CallInst.addOperand(CallTargetMCOp);
+    preserveMPXBounds(CallInst, *MF);
     OutStreamer->emitInstruction(CallInst, getSubtargetInfo());
   }
 
@@ -905,6 +1065,8 @@ void X86AsmPrinter::LowerPATCHPOINT(const MachineInstr &MI,
       report_fatal_error(
           "Lowering patchpoint with thunks not yet implemented.");
     EmitAndCountInstruction(MCInstBuilder(X86::CALL64r).addReg(ScratchReg));
+    if (MF->getInfo<X86MachineFunctionInfo>()->hasMPXState())
+      ++EncodedBytes;
   }
 
   // Emit padding.
@@ -1699,6 +1861,20 @@ static void addConstantComments(const MachineInstr *MI,
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  // XRay patches fixed byte sequences at runtime. Adding BND prefixes would
+  // invalidate that contract; leaving them out silently resets live bounds.
+  if (MF->getInfo<X86MachineFunctionInfo>()->hasMPXState()) {
+    switch (MI->getOpcode()) {
+    case TargetOpcode::PATCHABLE_FUNCTION_ENTER:
+    case TargetOpcode::PATCHABLE_RET:
+    case TargetOpcode::PATCHABLE_TAIL_CALL:
+    case TargetOpcode::PATCHABLE_EVENT_CALL:
+    case TargetOpcode::PATCHABLE_TYPED_EVENT_CALL:
+      report_fatal_error("MPX bounds state cannot be combined with XRay sleds");
+    default:
+      break;
+    }
+  }
   // FIXME: Enable feature predicate checks once all the test pass.
   // X86_MC::verifyInstructionPredicates(MI->getOpcode(),
   //                                     Subtarget->getFeatureBits());
