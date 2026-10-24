@@ -24,6 +24,9 @@ on:
       - 'utils/lint/test_sync_x86_amx_native_controls.py'
       - 'utils/lint/sync-x86-rep-state.py'
       - 'utils/lint/test_sync_x86_rep_state.py'
+      - 'utils/lint/sync-x86-bounded-leaf-state.py'
+      - 'utils/lint/test_sync_x86_bounded_leaf_state.py'
+      - 'llvm/include/llvm/IR/X86NativeArithmeticFlags.h'
       - 'llvm/include/llvm/IR/X86RepStringState.h'
       - 'utils/lint/sync-x86-mpx-registers.py'
       - 'utils/lint/sync-x86-mpx-instructions.py'
@@ -58,6 +61,9 @@ on:
       - 'utils/lint/test_sync_x86_amx_native_controls.py'
       - 'utils/lint/sync-x86-rep-state.py'
       - 'utils/lint/test_sync_x86_rep_state.py'
+      - 'utils/lint/sync-x86-bounded-leaf-state.py'
+      - 'utils/lint/test_sync_x86_bounded_leaf_state.py'
+      - 'llvm/include/llvm/IR/X86NativeArithmeticFlags.h'
       - 'llvm/include/llvm/IR/X86RepStringState.h'
       - 'utils/lint/sync-x86-mpx-registers.py'
       - 'utils/lint/sync-x86-mpx-instructions.py'
@@ -150,6 +156,8 @@ jobs:
           python3 utils/lint/test_sync_x86_amx_native_controls.py
           python3 utils/lint/sync-x86-rep-state.py
           python3 utils/lint/test_sync_x86_rep_state.py
+          python3 utils/lint/sync-x86-bounded-leaf-state.py
+          python3 utils/lint/test_sync_x86_bounded_leaf_state.py
 
       - name: Verify native MPX bank and instructions
         run: |

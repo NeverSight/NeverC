@@ -1584,6 +1584,120 @@ TEST_F(X86PrivilegedIntrinTest, FsSegmentReadsLowerCorrectly) {
 }
 
 // ---------------------------------------------------------------------------
+// Bounded SGX/SMX completion with explicit arithmetic flags.
+// ---------------------------------------------------------------------------
+TEST_F(X86PrivilegedIntrinTest, BoundedLeafStateRemainsNativeAcrossFormats) {
+  const auto Source = tmpFile("bounded_leaf_state.c");
+  std::string Program =
+      "#if !defined(__NEVERC_X86_BOUNDED_LEAF_STATE__) || "
+      "__NEVERC_X86_BOUNDED_LEAF_STATE__ != 1\n"
+      "#error missing bounded leaf state capability\n#endif\n";
+  for (const std::string Operation : {"enclu", "getsec"})
+    for (unsigned Leaf : {0, 1, 5, 6, 7, 8, 9, 10, 11}) {
+      if (Operation == "getsec" && Leaf != 0 && Leaf != 6 && Leaf != 7 &&
+          Leaf != 8)
+        continue;
+      Program += "__attribute__((target(\"sgx,sahf\"))) void " + Operation +
+                 std::to_string(Leaf) +
+                 "(unsigned long long b, unsigned long long c, unsigned long "
+                 "long d, unsigned short flags, unsigned long long *out, "
+                 "unsigned short *cc) { __builtin_ia32_" +
+                 Operation + "_bounded_state((0xabcdefffULL << 32) | " +
+                 std::to_string(Leaf) + ", b, c, d, flags, out, cc); }\n";
+    }
+  Program += R"(
+    __attribute__((target("sahf"))) void unused(void) {
+      unsigned long long out[4];
+      unsigned short flags;
+      __builtin_ia32_getsec_bounded_state(8, 0, 0, 0, 0, out, &flags);
+      __builtin_ia32_getsec_bounded_state(8, 0, 0, 0, 0, out, &flags);
+    }
+  )";
+  writeFile(Source, Program);
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"})
+      for (const char *Mode : {"ir", "asm", "object"}) {
+        SCOPED_TRACE(Target);
+        SCOPED_TRACE(Opt);
+        SCOPED_TRACE(Mode);
+        const auto Output = tmpFile(std::string("bounded_leaf_state.") + Mode);
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         "-std=c23",
+                                         "-ffreestanding",
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         Opt,
+                                         Source.string(),
+                                         "-o",
+                                         Output.string()};
+        Args.push_back(std::string(Mode) == "object" ? "-c" : "-S");
+        if (std::string(Mode) == "ir")
+          Args.push_back("-emit-llvm");
+        const auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        if (std::string(Mode) == "ir") {
+          EXPECT_NE(Text.find("{ i64, i64, i64, i64, i16 }"), std::string::npos)
+              << Text;
+          EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+          const std::regex Calls(
+              "call[^@\\n]*@llvm\\.x86\\.(enclu|getsec)\\.bounded\\.state\\(");
+          EXPECT_EQ(std::distance(
+                        std::sregex_iterator(Text.begin(), Text.end(), Calls),
+                        std::sregex_iterator()),
+                    15)
+              << Text;
+        } else if (std::string(Mode) == "asm") {
+          for (const char *Name : {"enclu", "getsec", "sahf", "lahf", "seto"})
+            EXPECT_NE(Text.find(Name), std::string::npos) << Text;
+          EXPECT_EQ(Text.find("#APP"), std::string::npos) << Text;
+        } else
+          EXPECT_FALSE(Text.empty());
+      }
+}
+
+TEST_F(X86PrivilegedIntrinTest,
+       BoundedLeafStateRejectsTransitionsAndUnknownLeaves) {
+  for (const std::string Operation : {"enclu", "getsec"})
+    for (const std::string Leaf : {"2", "3", "4", "12", "0xffffffff", "leaf"}) {
+      const auto Source =
+          "__attribute__((target(\"sgx,sahf\"))) void bad(unsigned long long "
+          "leaf, unsigned long long *out, unsigned short *flags) { "
+          "__builtin_ia32_" +
+          Operation + "_bounded_state(" + Leaf + ",0,0,0,0,out,flags); }";
+      auto [RC, Error] = compileToAsm(Source.c_str(), "invalid_leaf_state");
+      EXPECT_NE(RC, 0) << Operation << ' ' << Leaf << '\n' << Error;
+      EXPECT_NE(Error.find("error:"), std::string::npos) << Error;
+    }
+}
+
+TEST_F(X86PrivilegedIntrinTest, BoundedLeafStateRequiresItsOwnFeatures) {
+  for (const std::string Operation : {"enclu", "getsec"}) {
+    const auto Source = tmpFile("leaf_state_feature.c");
+    writeFile(Source,
+              "void state(unsigned long long *out, unsigned short *flags) { "
+              "__builtin_ia32_" +
+                  Operation + "_bounded_state(0,0,0,0,0,out,flags); }");
+    auto Result = ncc({"-std=c23", "-ffreestanding", "-fno-builtin-mimalloc",
+                       "-msgx", "-mno-sahf", "-S", Source.string(), "-o",
+                       tmpFile("missing_flags.s").string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+    EXPECT_NE(Result.err.find("sahf"), std::string::npos) << Result.err;
+    Result = ncc({"-std=c23", "-ffreestanding", "-fno-builtin-mimalloc",
+                  "-mno-sgx", "-msahf", "-S", Source.string(), "-o",
+                  tmpFile("missing_sgx.s").string()});
+    if (Operation == "enclu") {
+      EXPECT_NE(Result.exitCode, 0) << Result.err;
+      EXPECT_NE(Result.err.find("sgx"), std::string::npos) << Result.err;
+    } else
+      EXPECT_EQ(Result.exitCode, 0) << Result.err;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Rep string ops: movsb/w/d/q, stosb/w/d/q
 // ---------------------------------------------------------------------------
 TEST_F(X86PrivilegedIntrinTest, ExplicitRepStateRemainsNativeAcrossFormats) {

@@ -209,6 +209,8 @@ TARGET_BUILTIN(__builtin_ia32_encls, "ULLiULLiULLiULLiULLiULLi*Uc*", "n", "sgx")
 TARGET_BUILTIN(__builtin_ia32_enclv, "ULLiULLiULLiULLiULLiULLi*Uc*", "n", "sgx")
 // Constant fallthrough leaf only; enclave entry/exit/resume needs another ABI.
 TARGET_BUILTIN(__builtin_ia32_enclu_bounded, "ULLiIULLiULLiULLiULLiULLi*Uc*", "n", "sgx")
+TARGET_BUILTIN(__builtin_ia32_enclu_bounded_state, "vIULLiULLiULLiULLiUsULLi*Us*", "n", "sgx,sahf")
+TARGET_BUILTIN(__builtin_ia32_getsec_bounded_state, "vIULLiULLiULLiULLiUsULLi*Us*", "n", "sahf")
 
 // Native descriptor/machine state. Memory forms own exactly one m16 operand.
 BUILTIN(__builtin_ia32_verr_reg, "UcUs", "n")

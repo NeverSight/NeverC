@@ -1026,6 +1026,7 @@ enum X86Intrinsics : unsigned {
     x86_directstore64,                               // llvm.x86.directstore64
     x86_encls,                                       // llvm.x86.encls
     x86_enclu_bounded,                               // llvm.x86.enclu.bounded
+    x86_enclu_bounded_state,                         // llvm.x86.enclu.bounded.state
     x86_enclv,                                       // llvm.x86.enclv
     x86_encodekey128,                                // llvm.x86.encodekey128
     x86_encodekey256,                                // llvm.x86.encodekey256
@@ -1042,6 +1043,7 @@ enum X86Intrinsics : unsigned {
     x86_fxsave,                                      // llvm.x86.fxsave
     x86_fxsave64,                                    // llvm.x86.fxsave64
     x86_getsec_bounded,                              // llvm.x86.getsec.bounded
+    x86_getsec_bounded_state,                        // llvm.x86.getsec.bounded.state
     x86_hlt,                                         // llvm.x86.hlt
     x86_hreset,                                      // llvm.x86.hreset
     x86_inbyte,                                      // llvm.x86.inbyte

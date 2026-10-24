@@ -18566,7 +18566,9 @@ namespace X86 {
     REP_SCAS_STATE32	= 18551,
     REP_INS_STATE32	= 18552,
     REP_OUTS_STATE32	= 18553,
-    INSTRUCTION_LIST_END = 18554
+    ENCLU_STATE64	= 18554,
+    GETSEC_STATE64	= 18555,
+    INSTRUCTION_LIST_END = 18556
   };
 
 } // end namespace X86
@@ -20957,11 +20959,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18554];
+  MCInstrDesc Insts[18556];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5453];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[739];
+  MCPhysReg ImplicitOps[751];
 };
 
 } // end namespace llvm
@@ -20976,6 +20978,8 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18555,	0,	0,	0,	78,	5,	7,	X86ImpOpBase + 739,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18555 = GETSEC_STATE64
+    { 18554,	0,	0,	0,	78,	5,	7,	X86ImpOpBase + 739,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18554 = ENCLU_STATE64
     { 18553,	2,	0,	0,	78,	3,	4,	X86ImpOpBase + 732,	5451,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18553 = REP_OUTS_STATE32
     { 18552,	2,	0,	0,	78,	3,	4,	X86ImpOpBase + 725,	5451,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18552 = REP_INS_STATE32
     { 18551,	2,	0,	0,	78,	4,	6,	X86ImpOpBase + 715,	5451,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18551 = REP_SCAS_STATE32
@@ -40810,6 +40814,7 @@ extern const X86InstrTable X86Descs = {
     /* 715 */ X86::EDI, X86::ECX, X86::EAX, X86::EDX, X86::EDI, X86::ECX, X86::EAX, X86::EDX, X86::EFLAGS, X86::DF,
     /* 725 */ X86::EDI, X86::ECX, X86::EDX, X86::EDI, X86::ECX, X86::EFLAGS, X86::DF,
     /* 732 */ X86::ESI, X86::ECX, X86::EDX, X86::ESI, X86::ECX, X86::EFLAGS, X86::DF,
+    /* 739 */ X86::RAX, X86::RBX, X86::RCX, X86::RDX, X86::RDI, X86::RAX, X86::RBX, X86::RCX, X86::RDX, X86::RDI, X86::RSI, X86::EFLAGS,
   }
 };
 
@@ -58456,6 +58461,8 @@ extern const char X86InstrNameData[] = {
   /* 259841 */ "REP_SCAS_STATE32\0"
   /* 259858 */ "REP_INS_STATE32\0"
   /* 259874 */ "REP_OUTS_STATE32\0"
+  /* 259891 */ "ENCLU_STATE64\0"
+  /* 259905 */ "GETSEC_STATE64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60874,10 +60881,12 @@ extern const unsigned X86InstrNameIndices[] = {
     259841U,
     259858U,
     259874U,
+    259891U,
+    259905U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18554);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18556);
 }
 
 } // end namespace llvm
@@ -60937,7 +60946,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18554);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18556);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98271,6 +98280,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     669,
     /* REP_OUTS_STATE32 */
     669,
+    /* ENCLU_STATE64 */
+    3125,
+    /* GETSEC_STATE64 */
+    3125,
   };
 
   using namespace OpTypes;
@@ -153683,9 +153696,11 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // REP_SCAS_STATE32 = 18551
     CEFBS_In64BitMode, // REP_INS_STATE32 = 18552
     CEFBS_In64BitMode, // REP_OUTS_STATE32 = 18553
+    CEFBS_In64BitMode, // ENCLU_STATE64 = 18554
+    CEFBS_In64BitMode, // GETSEC_STATE64 = 18555
   };
 
-  assert(Opcode < 18554);
+  assert(Opcode < 18556);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

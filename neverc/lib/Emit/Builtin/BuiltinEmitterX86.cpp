@@ -3492,6 +3492,20 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
           Builder.CreateExtractValue(Call, Words), Ops[Inputs + 1]);
     return Result;
   }
+  case X86::BI__builtin_ia32_enclu_bounded_state:
+  case X86::BI__builtin_ia32_getsec_bounded_state: {
+    const auto ID = BuiltinID == X86::BI__builtin_ia32_enclu_bounded_state
+                        ? Intrinsic::x86_enclu_bounded_state
+                        : Intrinsic::x86_getsec_bounded_state;
+    auto *Call = Builder.CreateCall(ME.getIntrinsic(ID),
+                                    {Ops[0], Ops[1], Ops[2], Ops[3], Ops[4]});
+    for (unsigned I = 0; I != 4; ++I)
+      Builder.CreateDefaultAlignedStore(
+          Builder.CreateExtractValue(Call, I),
+          Builder.CreateConstGEP1_32(Int64Ty, Ops[5], I));
+    return Builder.CreateDefaultAlignedStore(
+        Builder.CreateExtractValue(Call, 4), Ops[6]);
+  }
   case X86::BI__builtin_ia32_encls:
   case X86::BI__builtin_ia32_enclv:
   case X86::BI__builtin_ia32_enclu_bounded:

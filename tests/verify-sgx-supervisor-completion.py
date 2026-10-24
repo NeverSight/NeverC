@@ -9,6 +9,8 @@ operations require a suitable execution environment.
 --bounded-enclu checks constant fallthrough leaves, including rejected
 continuations in the compiler regressions; it does not implement an enclave.
 --bounded-getsec checks the four SMX fallthrough leaves without requiring SGX.
+--explicit-state checks the bounded register and six-arithmetic-flag APIs.
+Controlled flag completions qualify transport, not enclave or SMX semantics.
 Requires capstone, lief and unicorn. --llc tests both LLVM code modes;
 --backend-llc tests NeverC IR through the full LLVM fork.
 """
@@ -16,7 +18,9 @@ Requires capstone, lief and unicorn. --llc tests both LLVM code modes;
 import argparse
 import importlib.util
 import itertools
+import json
 import platform
+import re
 import signal
 import struct
 import subprocess
@@ -72,12 +76,19 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     ir, obj = directory / (name + ".ll"), directory / (name + ".o")
     word, count = f"i{mode}", 2 if variant == "twice" else 1
     smx = operation == "getsec"
+    state = args.explicit_state
+    has_flags = state or not smx
+    flag_type = "i16" if state else "i8"
     feature = [] if smx else ["-mattr=+sgx"]
-    ty = "{ " + ", ".join([word] * 4 + ([] if smx else ["i8"])) + " }"
-    api = "llvm.x86." + operation + (".bounded" if bounded_leaf is not None else "") + ("32" if mode == 32 else "")
+    if state:
+        feature = ["-mattr=" + ("" if smx else "+sgx,") + "+sahf"]
+    ty = "{ " + ", ".join([word] * 4 + ([flag_type] if has_flags else [])) + " }"
+    api = "llvm.x86." + operation + (".bounded" if bounded_leaf is not None else "") + (".state" if state else "") + ("32" if mode == 32 else "")
     triple = ("x86_64" if mode == 64 else "i686") + "-" + target
     if args.llc:
         body = [f"store {word} %a, ptr %memory"] if variant == "memory" else []
+        if state:
+            body.append(f"%input_flags = trunc {word} %a to i16")
         terms = ["%a", "%b", "%c", "%d"]
         if variant == "condition":
             body += [f"%cmp = icmp ult {word} %a, %d", f"%condition = zext i1 %cmp to {word}"]
@@ -92,12 +103,14 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                 if parameter == "a" and bounded_leaf is not None:
                     value = str(bounded_control(bounded_leaf, mode, index))
                 parameters.append(f"{word} {value}")
+            if state:
+                parameters.append("i16 %input_flags")
             body.append(f"%call{index} = call {ty} @{api}({', '.join(parameters)})")
-            for field in observed(variant, operation != "getsec"):
+            for field in observed(variant, has_flags):
                 value = f"%v{index}_{field}"
                 body.append(f"{value} = extractvalue {ty} %call{index}, {field}")
                 if field == 4:
-                    body.append(f"%flags{index} = zext i8 {value} to {word}")
+                    body.append(f"%flags{index} = zext {flag_type} {value} to {word}")
                     value = f"%flags{index}"
                 terms.append(value)
         if variant == "memory":
@@ -108,7 +121,7 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             body.append(f"%xor{index} = xor {word} {value}, {term}")
             value = f"%xor{index}"
         body.append(f"ret {word} {value}")
-        ir.write_text(f"declare {ty} @{api}({', '.join([word] * 4)})\n"
+        ir.write_text(f"declare {ty} @{api}({', '.join([word] * 4 + (['i16'] if state else []))})\n"
                       f"define {word} @probe({word} %a, {word} %b, {word} %c, {word} %d, ptr %memory) {{\n" +
                       "\n".join(body) + "\n}\n")
     else:
@@ -127,7 +140,11 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             suffix = operation + ("_bounded" if bounded_leaf is not None else "")
             if bounded_leaf is not None:
                 arguments[0] = str(bounded_control(bounded_leaf, mode, index)) + "ULL"
-            if variant in ("standard", "dead_standard"):
+            if state:
+                body += [f"unsigned long long out{index}[4];",
+                         f"unsigned short flags{index};",
+                         f"__builtin_ia32_{suffix}_state({', '.join(arguments)}, (unsigned short)a, out{index}, &flags{index});"]
+            elif variant in ("standard", "dead_standard"):
                 leaf = str(bounded_leaf) if bounded_leaf is not None else "(unsigned)a"
                 data = f"(evaluations++, out{index})" if check_evaluation else f"out{index}"
                 body += [f"__SIZE_TYPE__ out{index}[3] = {{b, c, d}};",
@@ -139,12 +156,15 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                     body.append(f"unsigned char flags{index};")
                     flag_argument = f", &flags{index}"
                 body.append(f"unsigned long long result{index} = __builtin_ia32_{suffix}({', '.join(arguments)}, out{index}{flag_argument});")
-            for field in observed(variant, operation != "getsec"):
-                terms.append(f"flags{index}" if field == 4 else (f"result{index}" if field == 0 else f"out{index}[{field - 1}]"))
+            for field in observed(variant, has_flags):
+                terms.append(f"flags{index}" if field == 4 else
+                             f"out{index}[{field}]" if state else
+                             (f"result{index}" if field == 0 else f"out{index}[{field - 1}]"))
         if variant == "memory":
             terms.append("*memory")
         body.append("return " + " ^ ".join(terms) + ";")
-        attribute = "" if smx else '__attribute__((target("sgx")))\n'
+        features = ([] if smx else ["sgx"]) + (["sahf"] if state else [])
+        attribute = '__attribute__((target("' + ",".join(features) + '")))\n' if features else ""
         src.write_text('#include <immintrin.h>\n' + attribute +
                        "unsigned long long probe(unsigned long long a, unsigned long long b, unsigned long long c, unsigned long long d, unsigned long long *memory) {\n" +
                        "\n".join(body) + "\n}\n")
@@ -176,7 +196,7 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     return text_section(obj)
 
 
-def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=False, bounded_leaf=None):
+def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=False, bounded_leaf=None, explicit_state=False):
     mask = (1 << mode) - 1
     inputs = tuple(value & mask for value in values)
     machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64 if mode == 64 else unicorn.UC_MODE_32)
@@ -216,6 +236,10 @@ def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=F
             if variant in ("standard", "dead_standard") and field == 0:
                 expected &= 0xffffffff
             assert machine.reg_read(reg(register)) == expected, f"incorrect {operation} {register} input"
+        if explicit_state:
+            flags = machine.reg_read(regs.UC_X86_REG_EFLAGS)
+            packed = ((flags & 0xd5) << 8) | ((flags >> 11) & 1)
+            assert packed == (inputs[0] & 0xd501), "incoming arithmetic flags changed"
         if stop_at_boundary:
             return  # No implicit enclave-address preload occurred before the native boundary.
         outputs = [((0x9182736455aa0123 + field * 0x17659843) ^ (inputs[field] >> 2) ^ (0xfedcba98 if index else 0)) & mask
@@ -224,12 +248,16 @@ def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=F
             machine.reg_write(reg(register), value)
         # Defined-status leaves clear the remaining arithmetic flags. The
         # four CF/ZF combinations are diagnostic transport injections.
-        if operation != "getsec":
+        if explicit_state:
+            flags = machine.reg_read(regs.UC_X86_REG_EFLAGS)
+            machine.reg_write(regs.UC_X86_REG_EFLAGS,
+                              (flags & ~0x8d5) | ((status >> 8) & 0xd5) | ((status & 1) << 11))
+        elif operation != "getsec":
             flags = machine.reg_read(regs.UC_X86_REG_EFLAGS)
             machine.reg_write(regs.UC_X86_REG_EFLAGS, (flags & ~0x8d5) | (status & 1) | ((status >> 1) << 6))
         if variant == "standard":
             outputs[0] &= 0xffffffff
-        for field in observed(variant, operation != "getsec"):
+        for field in observed(variant, explicit_state or operation != "getsec"):
             result ^= status if field == 4 else outputs[field]
         if variant == "memory":
             assert bytes(machine.mem_read(ORDINARY, mode // 8)) == pack(inputs[0])
@@ -241,7 +269,85 @@ def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=F
     assert all(machine.reg_read(r) == value for r, value in saved.items()), "callee-saved register corrupted"
 
 
+def native_state_oracle(args, directory):
+    if platform.system() != "Linux" or platform.machine() != "x86_64":
+        return 0
+    fixtures = Path(__file__).with_name("fixtures") / "bounded-leaf-state"
+    driver = directory / "bounded-state-host"
+    run([args.host_cc, "-O2", "-Wall", "-Wextra", "-Werror",
+         fixtures / "host.c", "-ldl", "-o", driver])
+    count = 0
+    observations = []
+    for operation, leaf in leaf_cases(args):
+        smx = operation == "getsec"
+        features = ("" if smx else "+sgx,") + "+sahf"
+        reference = directory / f"reference-{operation}.o"
+        run([args.host_cc, "-fPIC", "-c", fixtures / "reference.S",
+             *([] if smx else ["-DNEVERC_TEST_ENCLU"]), "-o", reference])
+        control = bounded_control(leaf, 64, 0)
+        for opt in ("O0", "O2"):
+            base = directory / f"native-state-{operation}-{leaf}-{opt}"
+            src, ir, obj, library = (base.with_suffix(suffix)
+                                     for suffix in (".c", ".ll", ".o", ".so"))
+            if args.llc:
+                result_type = "{ i64, i64, i64, i64, i16 }"
+                api = f"llvm.x86.{operation}.bounded.state"
+                body = []
+                for field in range(1, 5):
+                    body += [f"%in{field} = getelementptr i64, ptr %input, i64 {field}",
+                             f"%v{field} = load i64, ptr %in{field}"]
+                body += ["%flags = trunc i64 %v4 to i16",
+                         f"%call = call {result_type} @{api}(i64 {control}, i64 %v1, i64 %v2, i64 %v3, i16 %flags)"]
+                for field in range(5):
+                    body.append(f"%r{field} = extractvalue {result_type} %call, {field}")
+                    value = f"%r{field}"
+                    if field == 4:
+                        body.append("%outflags = zext i16 %r4 to i64")
+                        value = "%outflags"
+                    body += [f"%out{field} = getelementptr i64, ptr %output, i64 {field}",
+                             f"store i64 {value}, ptr %out{field}"]
+                ir.write_text(f"declare {result_type} @{api}(i64, i64, i64, i64, i16)\n"
+                              "define void @probe(ptr %input, ptr %output) {\n" +
+                              "\n".join(body) + "\nret void\n}\n")
+            else:
+                attributes = ("" if smx else "sgx,") + "sahf"
+                src.write_text(f'''__attribute__((target("{attributes}")))
+void probe(const unsigned long long *input, unsigned long long *output) {{
+  unsigned short flags;
+  __builtin_ia32_{operation}_bounded_state({control}ULL, input[1], input[2],
+                                          input[3], (unsigned short)input[4],
+                                          output, &flags);
+  output[4] = flags;
+}}
+''')
+                compiler = [args.compiler, "--target=x86_64-unknown-linux-gnu", "-" + opt,
+                            "-Werror", "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
+                            "-fPIC", "-mllvm", "-verify-machineinstrs", src]
+                run(compiler + (["-S", "-emit-llvm", "-o", ir] if args.backend_llc
+                                else ["-c", "-o", obj]))
+            backend = args.llc or args.backend_llc
+            if backend:
+                run([backend, "-mtriple=x86_64-unknown-linux-gnu", "-mattr=" + features,
+                     "-" + opt, "-verify-machineinstrs", "-relocation-model=pic",
+                     "-filetype=obj", ir, "-o", obj])
+            run([args.host_cc, "-shared", "-nostdlib", obj, reference, "-o", library])
+            result = run([driver, library.resolve(), operation, str(control)])
+            match = re.fullmatch(
+                r"384 native boundaries: (\d+) faults, (\d+) normal completions\s*",
+                result)
+            assert match and int(match[1]) + int(match[2]) == 384, result
+            observations.append({"operation": operation, "leaf": leaf,
+                                 "optimization": opt, "faults": int(match[1]),
+                                 "normal_completions": int(match[2])})
+            count += 384
+    (directory / "native-observations.json").write_text(
+        json.dumps(observations, indent=2) + "\n")
+    return count
+
+
 def native_fault_oracle(args, directory):
+    if args.explicit_state:
+        return native_state_oracle(args, directory)
     if args.llc or platform.system() != "Linux" or platform.machine() != "x86_64":
         return 0
     count = 0
@@ -255,9 +361,17 @@ def native_fault_oracle(args, directory):
         attribute = "" if smx else '__attribute__((target("sgx"))) '
         flags = "" if smx else ", &flags"
         flag_declaration = "" if smx else "unsigned char flags;"
+        if args.explicit_state:
+            attribute = '__attribute__((target("' + ("sgx," if not smx else "") + 'sahf"))) '
+            probe = f'''unsigned long long registers[4]; unsigned short flags;
+  __builtin_ia32_{suffix}_state({leaf}, 0, 0, 0, 0xd501, registers, &flags);
+  outputs[0]=registers[1]; outputs[1]=registers[2]; outputs[2]=registers[3];
+  return registers[0];'''
+        else:
+            probe = f'''{flag_declaration}
+  return __builtin_ia32_{suffix}({leaf}, 0, 0, 0, outputs{flags});'''
         src.write_text(f'''{attribute}unsigned long long probe(unsigned long long *outputs) {{
-  {flag_declaration}
-  return __builtin_ia32_{suffix}({leaf}, 0, 0, 0, outputs{flags});
+  {probe}
 }}
 unsigned long long original(unsigned long long *outputs) {{
   unsigned long long a={leaf},b=0,c=0,d=0;
@@ -299,10 +413,14 @@ def main():
     backend.add_argument("--llc", type=Path)
     backend.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
+    parser.add_argument("--host-cc", default="cc")
     bounded = parser.add_mutually_exclusive_group()
     bounded.add_argument("--bounded-enclu", action="store_true")
     bounded.add_argument("--bounded-getsec", action="store_true")
+    parser.add_argument("--explicit-state", action="store_true")
     args = parser.parse_args()
+    if args.explicit_state and not (args.bounded_enclu or args.bounded_getsec):
+        parser.error("--explicit-state requires a bounded leaf family")
     for key in ("compiler", "llc", "backend_llc"):
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
@@ -310,20 +428,34 @@ def main():
     with tempfile.TemporaryDirectory(prefix="sgx-supervisor-") as temporary:
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        variants = tuple(v for v in VARIANTS if not args.bounded_getsec or v != "flags")
-        if not args.llc and not args.bounded_getsec:
+        variants = tuple(v for v in VARIANTS if args.explicit_state or not args.bounded_getsec or v != "flags")
+        if not args.llc and not args.bounded_getsec and not args.explicit_state:
             variants += ("standard", "dead_standard")
         cases = leaf_cases(args)
         for mode in ((32, 64) if args.llc else (64,)):
             for (operation, leaf), opt, variant in itertools.product(cases, ("O0", "O2"), variants):
                 code = compile_case(args, directory, operation, variant, mode, opt, bounded_leaf=leaf)
-                for values, statuses in itertools.product(VALUES, itertools.product((0,) if args.bounded_getsec else range(4), repeat=2 if variant == "twice" else 1)):
+                samples = itertools.product(VALUES, itertools.product((0,) if args.bounded_getsec else range(4), repeat=2 if variant == "twice" else 1))
+                if args.explicit_state:
+                    pack_flags = lambda value: sum(((value >> i) & 1) << bit
+                                                   for i, bit in enumerate((8, 10, 12, 14, 15, 0)))
+                    samples = []
+                    for flag in range(64):
+                        values = list(VALUES[flag % len(VALUES)])
+                        # Reserved status bits must be discarded on entry.
+                        values[0] = (values[0] & ~0xffff) | pack_flags(flag) | (0x2afe if flag & 1 else 0)
+                        for delta in (0, 1, 0x15, 0x3f):
+                            statuses = (pack_flags(flag ^ delta),)
+                            if variant == "twice":
+                                statuses += (pack_flags((flag + delta + 7) & 63),)
+                            samples.append((values, statuses))
+                for values, statuses in samples:
                     try:
-                        execute(code, operation, variant, mode, values, statuses, bounded_leaf=leaf)
+                        execute(code, operation, variant, mode, values, statuses, bounded_leaf=leaf, explicit_state=args.explicit_state)
                     except Exception as error:
                         raise AssertionError(f"{operation}/{leaf}, {variant}, {mode}, {opt}, {values}, {statuses}: {error}") from error
                     count += 1
-                execute(code, operation, variant, mode, (4, 0xdead0001, 0xdead0003, 0xdead0005), (0,) * (2 if variant == "twice" else 1), True, leaf)
+                execute(code, operation, variant, mode, (4, 0xdead0001, 0xdead0003, 0xdead0005), (0,) * (2 if variant == "twice" else 1), True, leaf, args.explicit_state)
                 count += 1
                 if variant in ("all", "standard"):
                     for target in COMMON.TRIPLES[1:]:
@@ -331,6 +463,8 @@ def main():
                         count += 1
         native = native_fault_oracle(args, directory)
     family = "bounded GETSEC" if args.bounded_getsec else ("bounded ENCLU" if args.bounded_enclu else "SGX supervisor")
+    if args.explicit_state:
+        family += " explicit state"
     print(f"PASS: {count} {family} encoding/completion checks; {native} real CPL3 boundaries")
 
 

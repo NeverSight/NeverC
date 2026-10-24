@@ -9,6 +9,7 @@
 #ifndef LLVM_IR_X86REPSTRINGSTATE_H
 #define LLVM_IR_X86REPSTRINGSTATE_H
 
+#include "llvm/IR/X86NativeArithmeticFlags.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 
 namespace llvm::X86 {
@@ -28,7 +29,7 @@ inline constexpr unsigned RepStringAddressOverride = 1 << 6;
 inline constexpr unsigned RepStringSegmentShift = 8;
 inline constexpr unsigned RepStringDescriptorMask = 0xff7f;
 // LAHF's five arithmetic bits in AH, OF in bit zero. Reserved bits are zero.
-inline constexpr unsigned RepStringFlagsMask = 0xd501;
+inline constexpr unsigned RepStringFlagsMask = NativeArithmeticFlagsMask;
 inline constexpr bool repStringCompares(RepStringKind Kind) {
   return Kind == RepStringKind::Compare || Kind == RepStringKind::Scan;
 }

@@ -1955,6 +1955,43 @@ static void addConstantComments(const MachineInstr *MI,
   }
 }
 
+bool X86AsmPrinter::emitBoundedLeafState(const MachineInstr *MI) {
+  bool User;
+  switch (MI->getOpcode()) {
+  case X86::ENCLU_STATE64:
+    User = true;
+    break;
+  case X86::GETSEC_STATE64:
+    User = false;
+    break;
+  default:
+    return false;
+  }
+  if (MI->getNumExplicitOperands() || !Subtarget->is64Bit() ||
+      !Subtarget->hasLAHFSAHF64() || (User && !Subtarget->hasSGX()))
+    report_fatal_error("invalid bounded leaf state operands or target");
+  SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+  NoAutoPaddingScope NoPadScope(*OutStreamer);
+  const unsigned AX = X86::RAX;
+  const unsigned SI = X86::RSI;
+  const unsigned Move = X86::MOV64rr;
+  EmitAndCountInstruction(MCInstBuilder(Move).addReg(SI).addReg(AX));
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::MOV32rr).addReg(X86::EAX).addReg(X86::EDI));
+  EmitAndCountInstruction(MCInstBuilder(X86::ADD8i8).addImm(127));
+  EmitAndCountInstruction(MCInstBuilder(X86::SAHF));
+  EmitAndCountInstruction(MCInstBuilder(Move).addReg(AX).addReg(SI));
+  EmitAndCountInstruction(MCInstBuilder(User ? X86::ENCLU : X86::GETSEC));
+  EmitAndCountInstruction(MCInstBuilder(Move).addReg(SI).addReg(AX));
+  EmitAndCountInstruction(MCInstBuilder(X86::LAHF));
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::SETCCr).addReg(X86::AL).addImm(X86::COND_O));
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::MOV16rr).addReg(X86::DI).addReg(X86::AX));
+  EmitAndCountInstruction(MCInstBuilder(Move).addReg(AX).addReg(SI));
+  return true;
+}
+
 bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
   using X86::RepStringKind;
   RepStringKind Kind;
@@ -2093,6 +2130,8 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (emitBoundedLeafState(MI))
+    return;
   if (emitRepStringState(MI))
     return;
   if (MI->getOpcode() == X86::MPX_BRANCH) {

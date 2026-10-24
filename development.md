@@ -516,6 +516,53 @@ dialects. Isolated Linux x64 children additionally compare real CPL3 #UD faults
 with independently encoded bytes. Controlled output injection qualifies
 compiler transport, not successful privileged enclave operations.
 
+### Bounded leaf state with incoming arithmetic flags
+
+`__NEVERC_X86_BOUNDED_LEAF_STATE__ == 1` advertises two additional x64 APIs:
+`__builtin_ia32_enclu_bounded_state` and
+`__builtin_ia32_getsec_bounded_state`. Both return void and take constant
+`unsigned long long ax`, three `unsigned long long` register inputs,
+`unsigned short flags`, `unsigned long long *registers` and
+`unsigned short *result_flags`. They write all four full register results to
+the four-element array. Leaf admission matches the existing bounded APIs.
+The capability macro does not enable CPU features: ENCLU requires `sgx,sahf`
+and GETSEC requires `sahf`, independently of SGX.
+
+`llvm/IR/X86NativeArithmeticFlags.h` owns the packed status shared with REP:
+CF/PF/AF/ZF/SF in bits 8/10/12/14/15 and OF in bit zero, with mask `0xd501`.
+Other input bits are ignored and other result bits are zero. One machine
+pseudo restores these six flags, executes the native leaf, and captures its
+actual flags before compiler arithmetic. SI preserves the complete AX while
+LAHF/SAHF use AH; DI transports the flag word. Both scratch registers,
+EFLAGS and unknown memory effects are declared. The MC window excludes
+compiler spills, stackmap shadow padding and automatic assembler padding.
+The full LLVM fork provides matching `.state` and `.state32` interfaces;
+NeverC's frontend continues to target x64.
+
+`sync-x86-bounded-leaf-state.py` owns the two appended pseudo descriptors;
+all previous opcode identities remain unchanged. Run
+`tests/verify-sgx-supervisor-completion.py --bounded-enclu --explicit-state`
+or `--bounded-getsec --explicit-state` for register and six-flag transport.
+The controlled boundary checks all 64 arithmetic-flag combinations, reserved
+input bits, independent results, dead/repeated calls and the callee-saved ABI.
+Its separate Linux x64 CPL3 checks compare complete four-register/six-flag
+fault contexts or normal query results with independent instruction bytes and
+POPFQ/PUSHFQ flag transport. They cover all 64 input flag combinations, reserved
+status bits and three full-width register patterns on both optimization levels,
+including NeverC IR compiled through the full LLVM fork. Faults before the
+original instruction boundary fail the check. Controlled completions do not
+qualify successful enclave/SMX operation,
+AEX, VM exits or nonlocal continuations. NeverD still needs an incoming CFG
+proof of a bounded leaf before consuming these interfaces.
+
+The recorded matrix passes 66,872 encoding/controlled-completion checks on
+each NeverC route and 133,744 on the full LLVM fork's two code modes. Each
+route compares 9,984 physical CPL3 boundaries. All physical observations on
+this host were faults; successful enclave/SMX completion was not observed.
+With `--keep`, `native-observations.json` records the fault and normal counts
+for each leaf and optimization level. A deliberately corrupted incoming OF
+bit is rejected by the independent POPFQ/PUSHFQ reference comparison.
+
 ### Descriptor and machine-state access
 
 The following builtins emit native instructions through matching fixed LLVM

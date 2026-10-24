@@ -689,7 +689,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmptrst_address:
   case X86::BI__builtin_ia32_vmxon_address:
     return CheckMemoryAddress(TheCall->getNumArgs() - 2);
-  case X86::BI__builtin_ia32_getsec_bounded: {
+  case X86::BI__builtin_ia32_getsec_bounded:
+  case X86::BI__builtin_ia32_getsec_bounded_state: {
     llvm::APSInt Control;
     if (SemaBuiltinConstantArg(TheCall, 0, Control))
       return true;
@@ -699,7 +700,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                 diag::err_x86_builtin_invalid_getsec_leaf)
            << TheCall->getArg(0)->getSourceRange();
   }
-  case X86::BI__builtin_ia32_enclu_bounded: {
+  case X86::BI__builtin_ia32_enclu_bounded:
+  case X86::BI__builtin_ia32_enclu_bounded_state: {
     llvm::APSInt Control;
     if (SemaBuiltinConstantArg(TheCall, 0, Control))
       return true;
