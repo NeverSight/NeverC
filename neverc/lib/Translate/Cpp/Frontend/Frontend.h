@@ -1746,6 +1746,12 @@ std::optional<FunctionalNotFnStorage>
 describeFunctionalNotFnStorage(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record,
                               const clang::ASTContext &Context);
+// Source-owned arithmetic-field callables keep independent ordinary lifecycle
+// and body obligations. This description alone admits no SDK runtime operation.
+std::optional<FunctionalNotFnStorage>
+describeFunctionalNotFnOwnedStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 struct FunctionalNotFnFactorySource {
   FunctionalNotFnStorage Storage;
   const clang::FunctionDecl *Factory;
@@ -1760,6 +1766,33 @@ struct FunctionalNotFnFactorySource {
 std::optional<FunctionalNotFnFactorySource>
 describeFunctionalNotFnFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+// Descriptions of the actual defaulted SDK lifecycle path. They supply no
+// runtime permission, completed ordinary body, trait or default-source proof.
+struct FunctionalNotFnCopySource {
+  FunctionalNotFnStorage Storage;
+  const clang::CXXConstructExpr *Construction;
+  std::vector<const clang::CXXConstructExpr *> SDKConstructions;
+  const clang::CXXConstructExpr *CallableConstruction = nullptr;
+  bool Move = false;
+  bool TrivialCallableConstruction = false;
+};
+std::optional<FunctionalNotFnCopySource>
+describeFunctionalNotFnCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+struct FunctionalNotFnDestructionSource {
+  FunctionalNotFnStorage Storage;
+  const clang::CXXDestructorDecl *Destructor;
+  std::vector<const clang::CXXDestructorDecl *> SDKDestructors;
+  const clang::CXXDestructorDecl *CallableDestructor = nullptr;
+  bool TrivialCallableDestruction = false;
+};
+std::optional<FunctionalNotFnDestructionSource>
+describeFunctionalNotFnDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor,
     const clang::ASTContext &Context);
 enum class FunctionalNotFnSourceMode { Runtime, Signature, Exception };
 struct FunctionalNotFnCallSource {
@@ -1784,6 +1817,16 @@ std::optional<FunctionalNotFnCallSource>
 describeFunctionalNotFnCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context, FunctionalNotFnSourceMode Mode);
+
+struct FunctionalNotFnOwnedCallSource {
+  FunctionalNotFnCallSource Selected;
+  const clang::CXXMethodDecl *CallableMethod;
+  const clang::FunctionDecl *Dispatcher;
+};
+std::optional<FunctionalNotFnOwnedCallSource>
+describeFunctionalNotFnOwnedCallSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 
 // This binds the original retained Sema event to one selected factory. The
 // primary default, substituted spelling and converted spelling are distinct
@@ -1850,6 +1893,16 @@ bool approvedFunctionalNotFnPointerFactorySource(const State &S,
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
     const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias);
+bool approvedFunctionalNotFnOwnedFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQuerySources,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias);
+
 bool approvedFunctionalNotFnPointerCallDefaults(const State &S,
     const clang::SourceManager &SM, const clang::ASTContext &Context,
     const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
@@ -1870,6 +1923,15 @@ describeFunctionalNotFnTupleTagSources(
     const State &S, const clang::SourceManager &SM,
     const FunctionalNotFnFactorySource &Factory, const clang::ASTContext &Context);
 
+
+bool approvedFunctionalNotFnOwnedCallDefaults(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQuerySources);
 
 bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const State &S, const clang::SourceManager &SM,
@@ -2747,6 +2809,9 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
   std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
   std::map<const clang::CallExpr *, FunctionalNotFnCallSource> VerifiedNotFnCalls;
+  std::set<const clang::CXXMethodDecl *> NotFnOwnedQuerySources;
+  std::map<const clang::CXXConstructExpr *, FunctionalNotFnCopySource> VerifiedNotFnCopies;
+  std::map<const clang::CXXRecordDecl *, FunctionalNotFnDestructionSource> VerifiedNotFnDestructions;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::map<const clang::VarDecl *, LocalDecomposition> Decompositions;

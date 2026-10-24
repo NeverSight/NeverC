@@ -371867,3 +371867,136 @@ int main() {
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
+
+TEST_F(TranslateTest, CoreV2NotFnOwnedCallableCopiedStateRunAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-copied-state.cpp");
+  const auto Output = tmpFile("not-fn-copied-state.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int copies, moves, calls;
+struct P {
+  int state;
+  P(int x) : state(x) {}
+  P(const P &p) : state(p.state) { ++copies; }
+  P(P &&p) : state(p.state) { ++moves; p.state = -1; }
+  bool operator()(int x) { ++calls; state += x; return state > 5; }
+};
+int main() {
+  P original(1);
+  auto f = std::not_fn(original);
+  if (copies != 1 || moves != 0 || original.state != 1) return 1;
+  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;
+  auto g = f;
+  if (copies != 2 || g(0) || calls != 3) return 3;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-copied-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NotFnOwnedCallableFourCvrefCallsRunAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-four-cvref-calls.cpp");
+  const auto Output = tmpFile("not-fn-four-cvref-calls.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int path;
+struct P {
+  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }
+  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }
+  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }
+  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }
+};
+int main() {
+  auto a = std::not_fn(P{});
+  const auto b = std::not_fn(P{});
+  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;
+  return path != 1234;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-four-cvref-calls" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NotFnOwnedCallableMoveOnlyCleanupRunAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-move-only-cleanup.cpp");
+  const auto Output = tmpFile("not-fn-move-only-cleanup.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int moves, live, destroyed;
+struct P {
+  int value;
+  P(int x) : value(x) { ++live; }
+  P(const P &) = delete;
+  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }
+  ~P() { --live; ++destroyed; }
+  bool operator()(int x) { return value == x; }
+};
+int main() {
+  {
+    P source(5);
+    auto f = std::not_fn(std::move(source));
+    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;
+  }
+  return live != 0 || destroyed != 2;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-move-only-cleanup" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NotFnOwnedCallableFactoryAndCleanupEffectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-factory-effects.cpp");
+  const auto Output = tmpFile("not-fn-factory-effects.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int builds, calls, destroyed;
+struct P {
+  int value;
+  bool operator()(int x) { ++calls; return x == value; }
+  ~P() { ++destroyed; }
+};
+P make(int &n) { ++n; ++builds; return P{n}; }
+int main() {
+  int n = 3;
+  {
+    auto f = std::not_fn(make(n));
+    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;
+    if (destroyed != 1) return 2;
+  }
+  return destroyed != 2;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-factory-effects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}

@@ -28629,6 +28629,22 @@ class FunctionLowering {
         Expression Member{{"kind", "member"}, {"type", type(Storage.CallableType, L)},
             {"name", "nct_not_fn_callable"}, {"args", json::Array{json::Object(Result)}},
             {"loc", A.loc(L)}};
+        if (Storage.CallableType->isRecordType()) {
+          const auto *Selected = Factory->second.CallableConstruction;
+          const auto *Constructor = Selected ? Selected->getConstructor() : nullptr;
+          const auto *Function = Factory->second.Factory;
+          if (!Constructor || !Function || Function->getNumParams() != 1 ||
+              !Function->getParamDecl(0)->getType()->isReferenceType())
+            reject(L, "not_fn owned construction",
+                   "The exact selected callable constructor and forwarding parameter are required.");
+          // Bind the original operand once. Materialization and full-expression
+          // cleanup remain with the ordinary argument/lifetime lowering.
+          auto SourcePointer = captureUtilityConstructorArgument(
+              Call->getArg(0), Function->getParamDecl(0)->getType());
+          constructMemorySource(std::move(Member), Storage.CallableType,
+              Constructor, std::move(SourcePointer), L, Selected);
+          return Result;
+        }
         // Snapshot before storing: a pointer-producing factory argument and
         // every source cleanup run once, regardless of the destination form.
         auto Callable = snapshot(Call->getArg(0)->getType()->isFunctionType()
@@ -28643,6 +28659,51 @@ class FunctionLowering {
         Expression Member{{"kind", "member"}, {"type", type(Source.Storage.CallableType, L)},
             {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Object)}},
             {"loc", A.loc(L)}};
+        if (Source.Storage.CallableType->isRecordType()) {
+          const auto *Target = Source.TargetCall
+              ? dyn_cast_or_null<CXXMethodDecl>(Source.TargetCall->getDirectCallee()) : nullptr;
+          const auto *Dispatcher = Source.DispatchCall ? Source.DispatchCall->getDirectCallee() : nullptr;
+          const auto *Negation = dyn_cast_or_null<UnaryOperator>(Source.Negation);
+          if (!Target || !ordinaryOperator(Target) || Target->getOverloadedOperator() != OO_Call ||
+              !Target->getReturnType()->isBooleanType() ||
+              Target->getParent()->getCanonicalDecl() !=
+                  Source.Storage.CallableType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+              !Dispatcher || Dispatcher->getNumParams() != Call->getNumArgs() ||
+              Source.TargetCall->getNumArgs() != Call->getNumArgs() ||
+              !Negation || Negation->getOpcode() != UO_LNot || !Negation->getType()->isBooleanType())
+            reject(L, "not_fn owned invocation",
+                   "The checked original bool call operator and exact SDK forwarding slots are required.");
+          for (const auto *Parameter : Dispatcher->parameters())
+            if (!Parameter->getType()->isReferenceType())
+              reject(L, "not_fn owned invocation", "Every SDK forwarding slot must retain its reference type.");
+          std::vector<Expression> Forwarded;
+          // Keep the receiver's address. Copying its stored state here would
+          // discard mutations and invoke extra user lifecycle operations.
+          Forwarded.push_back(snapshot(cast(
+              address(std::move(Member), Source.Storage.CallableType, L),
+              type(Dispatcher->getParamDecl(0)->getType(), L), L), L));
+          for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+            Forwarded.push_back(captureUtilityConstructorArgument(
+                Call->getArg(I), Dispatcher->getParamDecl(I)->getType()));
+          using StorageNode = decltype(Storage)::node_type;
+          std::vector<std::pair<const Decl *, StorageNode>> Saved;
+          auto Restore = llvm::make_scope_exit([&] {
+            for (auto &Entry : Saved) {
+              Storage.erase(Entry.first);
+              if (!Entry.second.empty()) Storage.insert(std::move(Entry.second));
+            }
+          });
+          for (unsigned I = 0; I < Dispatcher->getNumParams(); ++I) {
+            const auto *Key = Dispatcher->getParamDecl(I)->getCanonicalDecl();
+            Saved.emplace_back(Key, Storage.extract(Key));
+            Storage.emplace(Key, dereference(std::move(Forwarded[I]), L));
+          }
+          // Source admission must have bound this exact SDK expression to its
+          // ordinary owned method and completed its body before recording Call.
+          auto Value = call(Source.TargetCall);
+          return Expression{{"kind", "unary"}, {"type", "bool"},
+              {"operator", "!"}, {"args", json::Array{std::move(Value)}}, {"loc", A.loc(L)}};
+        }
         auto Callable = snapshot(std::move(Member), L);
         const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
         json::Array Args;
@@ -33152,6 +33213,33 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Found = A.VerifiedNotFnCopies.find(C); Found != A.VerifiedNotFnCopies.end()) {
+      const auto &Source = Found->second;
+      if (Source.Construction != C || C->getNumArgs() != 1 ||
+          Constructor->getParent()->getCanonicalDecl() != Source.Storage.Record->getCanonicalDecl() ||
+          !Constructor->getParamDecl(0)->getType()->isReferenceType())
+        reject(L, "not_fn copy source", "The exact checked wrapper construction is required.");
+      auto SourcePointer = captureUtilityConstructorArgument(
+          C->getArg(0), Constructor->getParamDecl(0)->getType());
+      if (Constructor->isTrivial() && Source.TrivialCallableConstruction && !Source.CallableConstruction) {
+        assign(std::move(Place), dereference(std::move(SourcePointer), L), L);
+        return;
+      }
+      const auto *Selected = Source.CallableConstruction;
+      if (!Selected || !Selected->getConstructor())
+        reject(L, "not_fn copy source", "The original selected callable copy or move is required.");
+      const auto Callable = Source.Storage.CallableType;
+      Expression Input{{"kind", "member"}, {"type", type(Callable, L)},
+          {"name", "nct_not_fn_callable"}, {"args", json::Array{dereference(std::move(SourcePointer), L)}},
+          {"loc", A.loc(L)}};
+      Expression Output{{"kind", "member"}, {"type", type(Callable, L)},
+          {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+      const auto Referent = Selected->getConstructor()->getParamDecl(0)
+                                ->getType()->getPointeeType();
+      constructMemorySource(std::move(Output), Callable, Selected->getConstructor(),
+          snapshot(address(std::move(Input), Referent, L), L), L, Selected);
+      return;
+    }
     if (const auto Kind = approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedPiecewiseRecord(A.S, A.Sources, Constructor->getParent(), A.Context);
       const auto Vector = approvedUtilityVectorRecord(A.S, A.Sources,
@@ -35973,6 +36061,12 @@ public:
   FunctionLowering(Adapter &A, const CXXRecordDecl *R)
       : A(A), Function(nullptr), DestroyedRecord(R->getDefinition()) {
     const auto *D = DestroyedRecord->getDestructor();
+    const auto NotFnDestructor = A.VerifiedNotFnDestructions.find(DestroyedRecord->getCanonicalDecl());
+    if (const auto Shape = describeFunctionalNotFnStorage(A.S, A.Sources, DestroyedRecord, A.Context);
+        Shape && Shape->CallableType->isRecordType() &&
+        NotFnDestructor == A.VerifiedNotFnDestructions.end())
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "not_fn destructor source",
+             "The original SDK destruction chain and completed owned callable destructor are required.");
     const bool UniquePtrDestructor =
         approvedUtilityUniquePtrDestructor(A.S, A.Sources, D, A.Context);
     const bool StringDestructor =
@@ -36005,7 +36099,8 @@ public:
         !UnorderedMapDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
-    if (D && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+    if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
+        !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -36075,7 +36170,17 @@ public:
         jump(DestructionEnd, L);
       }
       label(DestructionEnd, L);
-      if (auto Unique = approvedUtilityUniquePtrRecord(
+      if (const auto NotFn = A.VerifiedNotFnDestructions.find(DestroyedRecord->getCanonicalDecl());
+          NotFn != A.VerifiedNotFnDestructions.end()) {
+        const auto &Source = NotFn->second;
+        if (Source.Destructor != DestroyedRecord->getDestructor() ||
+            Source.Storage.Record->getCanonicalDecl() != DestroyedRecord->getCanonicalDecl())
+          reject(L, "not_fn destructor source", "The checked destruction source must match this complete object.");
+        Expression Member{{"kind", "member"}, {"type", type(Source.Storage.CallableType, L)},
+            {"name", "nct_not_fn_callable"}, {"args", json::Array{dereference(*ThisPointer, L)}},
+            {"loc", A.loc(L)}};
+        destroy(std::move(Member), Source.Storage.CallableType, L);
+      } else if (auto Unique = approvedUtilityUniquePtrRecord(
               A.S, A.Sources, DestroyedRecord, A.Context)) {
         Expression Member{{"kind", "member"},
                           {"type", type(Unique->PointerType, L)},

@@ -96,14 +96,14 @@ instructions and bank-owning pseudos. Existing register/opcode identities remain
 stable. The standard native-intrinsic synchronizer owns signatures and immargs;
 the generated-table CI job checks all three authorities and drift regressions.
 
-`tests/verify-mpx-encoding.py` validates independent bytes, full input values,
+[tests/verify-mpx-encoding.py](tests/verify-mpx-encoding.py) validates independent bytes, full input values,
 callee-saved registers and both assembly dialects for 520 combinations at
 O0/O2 across ELF, COFF and Mach-O. It accepts NeverC, full LLVM, or NeverC IR
 with the full LLVM backend. `--mode=32 --llc=...` checks 268 i386 combinations
 against the full LLVM fork; NeverC's x86 backend remains 64-bit only.
 These controlled boundaries do not simulate successful MPX operations.
 
-`tests/verify-mpx-state.py` supplies a freestanding CPL0 QEMU guest with its own
+[tests/verify-mpx-state.py](tests/verify-mpx-state.py) supplies a freestanding CPL0 QEMU guest with its own
 page tables, XCR0, BNDCFG and exception gates. It executes native enable/disable,
 bounds-check, bounds-table hit/miss/fault, repeated-fault and CFG tests. Example:
 
@@ -273,10 +273,10 @@ return `unsigned long long`. Their shared native IR signature is
 the full mask in RCX, then return the actual completion RCX. The instruction
 owns all table accesses and fault/restart progress. The LLVM fork rejects these
 APIs outside 64-bit mode. These fixed signatures are maintained by
-`utils/lint/sync-x86-native-intrinsics.py`; the matching implicit register and
-memory effects are maintained by `utils/lint/sync-x86-system-effects.py`.
+[utils/lint/sync-x86-native-intrinsics.py](utils/lint/sync-x86-native-intrinsics.py); the matching implicit register and
+memory effects are maintained by [utils/lint/sync-x86-system-effects.py](utils/lint/sync-x86-system-effects.py).
 
-`tests/verify-msr-list-completion.py` supports the same `--compiler`, `--llc`,
+[tests/verify-msr-list-completion.py](tests/verify-msr-list-completion.py) supports the same `--compiler`, `--llc`,
 and `--backend-llc` modes. It checks full table pointers, high mask bits, result
 transport, live input-mask preservation, nonvolatile RSI/RDI restoration,
 unmapped table boundaries, and surrounding memory ordering. It injects both
@@ -295,13 +295,13 @@ The descriptor-table APIs retain the instruction-owned access: ten bytes in
 address operand without introducing an ordinary load. CPUID writes its four
 i32 results to the output array in EAX/EBX/ECX/EDX slot order.
 
-`utils/lint/sync-x86-system-effects.py` also maintains these native opcodes'
+[utils/lint/sync-x86-system-effects.py](utils/lint/sync-x86-system-effects.py) also maintains these native opcodes'
 implicit registers and memory effects. CLI/STI update ambient IF/VIF state;
 they preserve arithmetic flags and must not consume an undefined compiler
 EFLAGS value. The old descriptions failed machine verification at function
 entry even though ordinary assembly emission succeeded.
 
-Run `tests/verify-system-completion.py` using `--compiler`, `--llc`, or
+Run [tests/verify-system-completion.py](tests/verify-system-completion.py) using `--compiler`, `--llc`, or
 `--backend-llc` as above. It checks live/dead port reads, full-width port
 values, descriptor sizes and unchanged surrounding memory, unmapped access
 boundaries, all CPUID outputs and restoration of callee-saved RBX/EBX.
@@ -339,7 +339,7 @@ reusing the explicit-schema table machinery for descriptors, operand shapes,
 both printers and both assembler dialects. Existing opcode numbers stay fixed.
 
 All four instructions remain ordered effects and preserve arithmetic flags.
-`tests/verify-bounded-system-completion.py` supports the usual compiler, full
+[tests/verify-bounded-system-completion.py](tests/verify-bounded-system-completion.py) supports the usual compiler, full
 LLVM and NeverC-to-fork modes. It checks actual input operands, full live input
 values, repeated effects, memory ordering, saved registers and unmapped LKGS
 selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
@@ -382,13 +382,13 @@ VMRUN machine-state transport remain separate work.
 
 Microsoft `<intrin.h>` interfaces `__svm_{vmload,vmsave,invlpga,stgi,clgi}`
 and `__halt` lower through the same native paths. The old assembly-only halt
-wrapper is removed. `tests/verify-bounded-virtualization-completion.py`
+wrapper is removed. [tests/verify-bounded-virtualization-completion.py](tests/verify-bounded-virtualization-completion.py)
 checks exact bytes, full inputs, dead/repeated effects, live values, memory
 ordering, saved registers and continuation at O0/O2, including all three
 object formats and both assembly dialects. Linux x64 children compare real
 CPL3 faults with independent byte oracles.
 
-`tests/verify-bounded-virtualization-qemu.py` executes the generated code in
+[tests/verify-bounded-virtualization-qemu.py](tests/verify-bounded-virtualization-qemu.py) executes the generated code in
 disposable i386/x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
 INVLPGA fallthrough, AC changes, SWAPGS exchange, GIF masking of an actual
 pending PIC interrupt, and HLT continuation after a timer interrupt. It shares
@@ -412,7 +412,7 @@ contract, matching Clang's Windows compatibility behavior, while now emitting
 bitcode pass through the full LLVM fork without an unresolved private call.
 Previously produced NeverC intrinsic IDs remain available.
 
-`tests/verify-interrupt-completion.py` checks live inputs, repeated interrupts,
+[tests/verify-interrupt-completion.py](tests/verify-interrupt-completion.py) checks live inputs, repeated interrupts,
 ordered stores/loads and the continuation in i386 and x64 ELF/COFF/Mach-O.
 The native Linux x64 fixture compares independently encoded INT 2C bytes
 with the raw builtin through each compiler route, both with an unhandled fault
@@ -508,7 +508,7 @@ The installed `<sgxintrin.h>`, included through `<immintrin.h>` or
 `<x86intrin.h>`, provides the standard `_encls_u32` and `_enclv_u32` wrappers
 using these builtins. Their three-element `__SIZE_TYPE__` arrays retain the
 standard input/output contract and their return is the low 32 bits of RAX.
-The header retains the LLVM source license. `tests/verify-sgx-supervisor-completion.py`
+The header retains the LLVM source license. [tests/verify-sgx-supervisor-completion.py](tests/verify-sgx-supervisor-completion.py)
 checks independent/all register and flag uses, retained dead/repeated calls,
 input liveness, memory ordering, RBX restoration, standard wrappers and
 unmapped input boundaries at O0/O2. It covers ELF/COFF/Mach-O and both assembly
@@ -541,12 +541,12 @@ update is a read/write effect even with a register selector. LLDT, LKGS and
 VERR/VERW retain their implicit descriptor reads. All APIs remain ordered even
 when their results are unused; no API promises a software descriptor model.
 
-`tests/verify-descriptor-state-completion.py` checks operand encodings, widths,
+[tests/verify-descriptor-state-completion.py](tests/verify-descriptor-state-completion.py) checks operand encodings, widths,
 ZF transport, repeated/dead effects, memory ordering, unmapped boundaries and
 saved registers at O0/O2, including ELF/COFF/Mach-O and both assembly dialects.
 Safe user-mode queries are compared with an independent assembly oracle in
 isolated processes, with explicit UMIP/host-availability skips. The separate
-`tests/verify-descriptor-state-qemu.py` runs disposable CPL0 TCG guests against
+[tests/verify-descriptor-state-qemu.py](tests/verify-descriptor-state-qemu.py) runs disposable CPL0 TCG guests against
 GDT/LDT/TSS and CR0 state. It checks LTR busy-bit writes, both LLDT/LTR/LMSW
 operand forms, native verification, m16 output boundaries and LMSW's inability
 to clear PE. INVD's successful guest fallthrough does not qualify physical
@@ -578,7 +578,7 @@ NeverC remains x64-only. Existing pointer and register builtins are unchanged.
 The instruction generator appends thirteen address-size pseudos while
 preserving every existing opcode identity.
 
-`tests/verify-descriptor-state-address-completion.py` checks complete native
+[tests/verify-descriptor-state-address-completion.py](tests/verify-descriptor-state-address-completion.py) checks complete native
 bytes, all seven segment controls and both address widths, O0/O2, three object
 formats, ATT/Intel assembly round trips, wrapping high offsets, ZF, live inputs,
 repeated/dead calls, memory ordering and saved registers. Its controlled
@@ -624,7 +624,7 @@ discard unused reads; both backends retain dead and repeated queries in order.
 Use the new result/status API when failure preservation matters. Non-Microsoft
 targets need `-fms-extensions` to expose the legacy spelling.
 
-`tests/verify-descriptor-query-completion.py` accepts `--compiler`, `--llc`,
+[tests/verify-descriptor-query-completion.py](tests/verify-descriptor-query-completion.py) accepts `--compiler`, `--llc`,
 and `--backend-llc`. It checks each width and operand form, independent value
 and ZF uses, dead/repeated queries, failure preservation, ordinary memory
 ordering, unmapped selector boundaries and the C ABI at O0/O2. ELF, COFF and
@@ -661,7 +661,7 @@ The LLVM fork exposes matching 64-bit APIs and separate `readcr32/readdr32`
 and `writecr32/writedr32` APIs. Wrong-mode calls and CR8 in 32-bit mode fail
 explicitly.
 
-`tests/verify-system-register-completion.py` accepts `--compiler`, `--llc`,
+[tests/verify-system-register-completion.py](tests/verify-system-register-completion.py) accepts `--compiler`, `--llc`,
 or `--backend-llc`, and `--spelling builtin|microsoft`. It intercepts every
 register access and checks all valid indices, full-width values, live/dead and
 repeated reads, repeated writes, write/read sequences, ordinary memory
@@ -786,7 +786,7 @@ existing offsets; generator tests protect reuse, idempotence and the exact
 result/argument types. Intrinsic insertion still remaps every indexed table
 and the DAG matcher IDs together.
 
-`tests/verify-vmcs-forms-completion.py` checks these forms at O0/O2, including
+[tests/verify-vmcs-forms-completion.py](tests/verify-vmcs-forms-completion.py) checks these forms at O0/O2, including
 each result independently, discarded results, repeated operations with
 independent statuses, full-width values, memory barriers, saved registers and
 unmapped memory-source boundaries. `--llc` and `--backend-llc` select direct
@@ -839,7 +839,7 @@ selects EBX (or BX in the full fork's i386 route) for the actual address.
 `sync-x86-system-address-instructions.py` appends these eight NeverC opcodes
 without renumbering existing IDs. Repeated or discarded calls retain effects.
 
-Run `tests/verify-vmx-address-completion.py` with the same `--compiler`, `--llc`
+Run [tests/verify-vmx-address-completion.py](tests/verify-vmx-address-completion.py) with the same `--compiler`, `--llc`
 and `--backend-llc` routes above. It checks all address-width/prefix choices,
 three object formats, assembly round trips, all VMX completions, full-width
 selectors, preserved live inputs/callee-saved registers, repeated and discarded
@@ -873,7 +873,7 @@ explicitly. The system-address generator appends seven NeverC pseudos while
 retaining the earlier opcode identities; the full fork also owns the i386
 address-size pseudos.
 
-`tests/verify-descriptor-address-completion.py` checks all segment/width
+[tests/verify-descriptor-address-completion.py](tests/verify-descriptor-address-completion.py) checks all segment/width
 combinations, native operand bytes, register and memory ownership, independent
 result/ZF uses, failed-read priors, repeated/dead calls, live inputs and saved
 registers. It covers O0/O2 and all three object formats with the same direct
@@ -941,7 +941,7 @@ ambient input. Port operations additionally have unmodeled I/O side effects.
 The full LLVM fork supplies the matching 64-bit APIs plus 32-bit-code-mode
 memory-string APIs with a `32` suffix; a mismatched code mode is rejected.
 
-`tests/verify-string-completion.py` runs MOVS/STOS in Unicorn against an
+[tests/verify-string-completion.py](tests/verify-string-completion.py) runs MOVS/STOS in Unicorn against an
 independent sequential byte oracle. It covers O0/O2, every element width,
 zero/one/seven elements, both DF values, unaligned overlap, zero-count unmapped
 pointers, register preservation, and ordinary memory before/after the call.
@@ -1003,7 +1003,7 @@ interfaces for 32-bit code and 16/32-bit addresses.
 and unknown memory effects; `sync-x86-native-intrinsics.py` owns signatures
 and immarg positions. Both are checked in generated-table CI.
 
-`tests/verify-rep-state.py` compares the emitted operations with independently
+[tests/verify-rep-state.py](tests/verify-rep-state.py) compares the emitted operations with independently
 encoded hardware REP instructions and a sequential memory/flag oracle. On
 Linux x86-64 with SAHF, each O0/O2 route covers 45,152 memory/flag cases, including
 all six incoming comparison flags, source segments, direction, overlap, early
@@ -1114,7 +1114,7 @@ including release builds; otherwise an allocator-generated tile configuration
 can invalidate the physical operation. Out-of-range physical tile indices also
 receive a backend diagnostic with assertions disabled.
 
-`utils/lint/sync-x86-amx-instructions.py` owns the pruned AMX descriptors,
+[utils/lint/sync-x86-amx-instructions.py](utils/lint/sync-x86-amx-instructions.py) owns the pruned AMX descriptors,
 operand metadata, native encodings, both assembly writers/matchers, compression
 pairs and appended feature bits. Existing opcode and feature IDs stay stable.
 Assembly writers have different mnemonic-offset bit widths, which must not
@@ -1123,7 +1123,7 @@ eligible tile loads to VEX when their allocated address registers fit; explicit
 EVEX assembly retains its requested encoding. These pointer intrinsics do not
 provide an API for forcing an encoding or choosing segment/address width.
 
-`tests/verify-amx-native-completion.py` checks all 336 distinct tile triples for
+[tests/verify-amx-native-completion.py](tests/verify-amx-native-completion.py) checks all 336 distinct tile triples for
 each compute operation, all load destinations, O0/O2, ELF/COFF/Mach-O and both
 assembly dialects. It also checks forced EVEX assembly with extended GPRs and
 controlled completions with high pointers/strides, repeated operations, tile
@@ -1165,7 +1165,7 @@ feature set; this addition qualifies the row APIs, not every AVX10.2 opcode.
 The full LLVM fork accepts the older `avx10.1-256` IR feature spelling so
 NeverC's implied feature list crosses the compiler boundary without warnings.
 
-`tests/verify-amx-row-completion.py` covers all physical tiles, every encoded
+[tests/verify-amx-row-completion.py](tests/verify-amx-row-completion.py) covers all physical tiles, every encoded
 imm8, all 32 ZMM and row GPR numbers, O0/O2, ELF/COFF/Mach-O and both assembly
 dialects. Controlled completions check repeated reads, full-width dynamic
 indices, four vector element types, ordinary memory ordering and saved C
@@ -1217,7 +1217,7 @@ verification. The x86 schema grows from 18,538 to 18,540 opcodes; all prior
 opcode entries, 391 registers and 190 features remain identical, as does the
 AArch64 schema.
 
-`tests/verify-amx-explicit-controls.py` passes 11,136 checks on each of the full
+[tests/verify-amx-explicit-controls.py](tests/verify-amx-explicit-controls.py) passes 11,136 checks on each of the full
 LLVM, NeverC and NeverC-to-LLVM routes: all tiles/widths/segments/encoding
 classes at O0/O2 in ELF/COFF/MachO, ATT/Intel round trips, 32-bit wrap, full
 strides, repeated effects, unknown-memory ordering, complete 512-bit row
