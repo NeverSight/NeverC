@@ -1,30 +1,30 @@
 {
-  "producer_commit": "2135deecd394261dba4ec47b741a3f2f46bad8a2",
-  "producer_run_id": 39886327020,
-  "producer_job_id": 120195244240,
+  "producer_commit": "f084dd26240d588473acd28f9dd5532ba232ed74",
+  "producer_run_id": 40058619484,
+  "producer_job_id": 120767037118,
   "producer_attempt": 1,
-  "producer_report_sha256": "532bbb1143b93f1fb518542eb74b4c7b531aad2057064b78f4890fd5c4e89002",
-  "producer_validation_receipt_sha256": "e11c16c8706475d6b115576cab320024c8797cb1de34a6c23e3bb1f0ae83cd50",
+  "producer_report_sha256": "3cd612d051d131ac2edf3dcbe53a7190348ceeca8999a01c1408b08d4e4cb9d8",
+  "producer_validation_receipt_sha256": "99b66f11ed25f735dba1d8873a090bf2466f6904bd14f62bedcc999a83b318b6",
   "producer_small_artifact": {
-    "id": 12472394457,
-    "name": "cpp-not-fn-custom-negation-clean240-2135deecd394261dba4ec47b741a3f2f46bad8a2",
-    "digest": "sha256:a207c04367614f42cef09079fe8866f928c928cec228585d1013d2be501923d2"
+    "id": 12546967224,
+    "name": "cpp-not-fn-owned-clean256-f084dd26240d588473acd28f9dd5532ba232ed74",
+    "digest": "sha256:4f151c4c253b3d39035427a92d802b90e02ed598d7feee3b45303d7a02780942"
   },
   "producer_binary_artifact": {
-    "id": 12473625487,
-    "name": "cpp-not-fn-custom-negation-clean240-binary-remote-only-2135deecd394261dba4ec47b741a3f2f46bad8a2",
-    "digest": "sha256:db2e19b9b63781813d475ac3bfb1dd98918e8936d3a58bf56326fbec77fbce9d"
+    "id": 12546384898,
+    "name": "cpp-not-fn-owned-clean256-binary-remote-only-f084dd26240d588473acd28f9dd5532ba232ed74",
+    "digest": "sha256:6820a5f98a08486adee7ccdaf2e6cd2371d8e8c95cc752523899998aa43df626"
   },
-  "executable_sha256": "b3a79658d79962b271a9eb75fd08490eedf7abbff67ee2cc575f4f2fe8019448",
-  "executable_bytes": 79998912,
-  "frontend_build_id": "cpp-frontend-1-fcbc6085b0d2bb7af24c83541c8f269b7bec898a1bec9615248aafe3a4a6c261",
+  "executable_sha256": "6d789df4e34dd34e35913988d62c78453cfab8939f1a537f41a31f6def8a74c7",
+  "executable_bytes": 80077128,
+  "frontend_build_id": "cpp-frontend-1-aaaed2e2e35ae8a85f5ec640fa593a7419fb53a58172b1aaa42567a20e9209ea",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "c3b3602d29dd605d577e1c1d343d771f4b4079b01fadea47427646a69de40698",
-    "Lowering.cpp": "e5a63275c895f98201b9b2a062b6439c83e3619498020122ac8e2196c6c9dfed",
+    "Frontend.cpp": "7145929248955b59c5f2a2ef475c69d1d4b0050a125f2e0b8265853a9b172d09",
+    "Lowering.cpp": "1f1b8c3fdce29225842d220a5c00a7d0c3dc66fbe5dbcb3c864726bbe0036724",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "f9a84e15dc33926501fd82b25e419383ebf2618654626b1198b14956007237f8",
+    "MathSDK.cpp": "d3e102a02a51fffe5f5caef8b373669c45b1a89ab092cc51524091e4a3f2f63f",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "b45ab3e8ed32d3d82b79cc42aab95eea638f3b95bb3e85d22808f3850850c418",
+    "Frontend.h": "e10a442ae50df40e7abcbd074be59102f14782d400d822165f72d86391986448",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -39,7 +39,7 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "clean_source_basis": "4be381c48b812fb72be5aea7595ef103a7ac4a70",
+  "clean_source_basis": "4cc54b61e806eb908a8f8ee6333297c9cb0c8cbf",
   "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
   "original_combined_revision": "831f0a6a5b201ca85daf9a6e499197dccaa14991",
   "original_combined_plan": "utils/ci/cpp-ordinary-selected-call-plan.json",
@@ -619,7 +619,7 @@
       "category": "runtime",
       "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { ++calls; state += x; return state > 5; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
       "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
-      "expected": "reject",
+      "expected": "accept",
       "original_name": "not-fn-copied-state"
     },
     {
@@ -627,7 +627,7 @@
       "category": "runtime",
       "source": "#include <functional>\n#include <utility>\nint path;\nstruct P {\n  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }\n  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }\n  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }\n  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }\n};\nint main() {\n  auto a = std::not_fn(P{});\n  const auto b = std::not_fn(P{});\n  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;\n  return path != 1234;\n}\n",
       "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
-      "expected": "reject",
+      "expected": "accept",
       "original_name": "not-fn-four-cvref-calls"
     },
     {
@@ -659,7 +659,7 @@
       "category": "runtime",
       "source": "#include <functional>\n#include <utility>\nint moves, live, destroyed;\nstruct P {\n  int value;\n  P(int x) : value(x) { ++live; }\n  P(const P &) = delete;\n  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }\n  ~P() { --live; ++destroyed; }\n  bool operator()(int x) { return value == x; }\n};\nint main() {\n  {\n    P source(5);\n    auto f = std::not_fn(std::move(source));\n    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;\n  }\n  return live != 0 || destroyed != 2;\n}\n",
       "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
-      "expected": "reject",
+      "expected": "accept",
       "original_name": "not-fn-move-only-cleanup"
     },
     {
@@ -675,7 +675,7 @@
       "category": "runtime",
       "source": "#include <functional>\nint builds, calls, destroyed;\nstruct P {\n  int value;\n  bool operator()(int x) { ++calls; return x == value; }\n  ~P() { ++destroyed; }\n};\nP make(int &n) { ++n; ++builds; return P{n}; }\nint main() {\n  int n = 3;\n  {\n    auto f = std::not_fn(make(n));\n    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;\n    if (destroyed != 1) return 2;\n  }\n  return destroyed != 2;\n}\n",
       "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
-      "expected": "reject",
+      "expected": "accept",
       "original_name": "not-fn-factory-effects"
     },
     {
@@ -800,9 +800,9 @@
     }
   ],
   "required_requests": 808,
-  "required_acceptances": 592,
+  "required_acceptances": 624,
   "required_sdk_guards": 160,
-  "required_unsupported_refusals": 48,
+  "required_unsupported_refusals": 16,
   "required_failed_substitutions": 8,
   "required_pair_subset_requests": 600,
   "required_pair_subset_acceptances": 520,
@@ -818,20 +818,25 @@
     "utils/ci/cpp-current216-elf-combined-808-plan.json",
     ".github/workflows/diagnose-cpp-template-source.yml"
   ],
+  "required_actual_producer_requests": 256,
+  "original_tested_runner_sha256": "26d764cac94c7f3165748fc7351d7077e6e6e2b39b92547ba82bc399034fd95f",
+  "actual240_runner_sha256": "26d764cac94c7f3165748fc7351d7077e6e6e2b39b92547ba82bc399034fd95f",
   "changed_expectations_only_for_already_verified_source_positives": [
+    "ordinary-source-not-fn-copied-state",
     "ordinary-source-not-fn-custom-negation-result",
+    "ordinary-source-not-fn-factory-effects",
+    "ordinary-source-not-fn-four-cvref-calls",
     "ordinary-source-not-fn-function-pointer",
+    "ordinary-source-not-fn-move-only-cleanup",
     "ordinary-source-not-fn-reference-arguments",
     "ordinary-source-not-fn-signature-queries"
   ],
-  "required_actual_producer_requests": 240,
-  "original_tested_runner_sha256": "53d58e7b01b1a920cdde657642022c1f9ad52c1692f5b25f767e1f755aca2f1b",
-  "actual240_runner_sha256": "26d764cac94c7f3165748fc7351d7077e6e6e2b39b92547ba82bc399034fd95f",
-  "actual_formal130_commit": "d1de92bfd1bec6dbcaa88a593640bc671bf64181",
-  "actual_formal130_run_id": 39889472750,
-  "actual_formal130_job_id": 120205499167,
-  "actual_formal130_run_attempt": 1,
-  "actual_formal130_artifact_id": 12475195437,
-  "actual_formal130_proof_sha256": "a7d371fb912217f38de432e3712bc39ac51f3d93649c3f59faf2717d67aa1e88",
-  "actual_formal130_report_sha256": "1a4088e793369b8fd720dcd467ba5f9c536997a63739b38bc56a464dbf27a5fc"
+  "actual256_runner_sha256": "8b0652468ac089a22b0cf0f70d8b9e1917f1d6b35e1603076ce538a43b1c8256",
+  "actual_formal134_commit": "a1ead7f4892b204509174d56548f92139752b913",
+  "actual_formal134_run_id": 40062176959,
+  "actual_formal134_job_id": 120777859209,
+  "actual_formal134_run_attempt": 1,
+  "actual_formal134_artifact_id": 12548867827,
+  "actual_formal134_proof_sha256": "a1c050aa7c2572e0b3b220523d52cf01982b5d7b67e9525192429d2cf656ba76",
+  "actual_formal134_report_sha256": "843f0794e1b1b5eed66745b295adf829c533a945f8ae9d8e2d9540525307f93e"
 }
