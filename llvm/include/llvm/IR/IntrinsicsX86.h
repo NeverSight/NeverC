@@ -1221,6 +1221,20 @@ enum X86Intrinsics : unsigned {
     x86_rdtscp,                                      // llvm.x86.rdtscp
     x86_readcr,                                      // llvm.x86.readcr
     x86_readdr,                                      // llvm.x86.readdr
+    x86_rep_cmps_state,                              // llvm.x86.rep.cmps.state
+    x86_rep_cmps_state32,                            // llvm.x86.rep.cmps.state32
+    x86_rep_ins_state,                               // llvm.x86.rep.ins.state
+    x86_rep_ins_state32,                             // llvm.x86.rep.ins.state32
+    x86_rep_lods_state,                              // llvm.x86.rep.lods.state
+    x86_rep_lods_state32,                            // llvm.x86.rep.lods.state32
+    x86_rep_movs_state,                              // llvm.x86.rep.movs.state
+    x86_rep_movs_state32,                            // llvm.x86.rep.movs.state32
+    x86_rep_outs_state,                              // llvm.x86.rep.outs.state
+    x86_rep_outs_state32,                            // llvm.x86.rep.outs.state32
+    x86_rep_scas_state,                              // llvm.x86.rep.scas.state
+    x86_rep_scas_state32,                            // llvm.x86.rep.scas.state32
+    x86_rep_stos_state,                              // llvm.x86.rep.stos.state
+    x86_rep_stos_state32,                            // llvm.x86.rep.stos.state32
     x86_rstorssp,                                    // llvm.x86.rstorssp
     x86_saveprevssp,                                 // llvm.x86.saveprevssp
     x86_seh_lsda,                                    // llvm.x86.seh.lsda

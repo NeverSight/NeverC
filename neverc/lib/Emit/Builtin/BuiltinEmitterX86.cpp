@@ -3429,6 +3429,69 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmfunc_eptp_switch:
     return Builder.CreateIntrinsic(
         VoidTy, llvm::Intrinsic::x86_vmfunc_eptp_switch, {Ops[0]});
+  case X86::BI__builtin_ia32_rep_movs_state:
+  case X86::BI__builtin_ia32_rep_stos_state:
+  case X86::BI__builtin_ia32_rep_lods_state:
+  case X86::BI__builtin_ia32_rep_cmps_state:
+  case X86::BI__builtin_ia32_rep_scas_state:
+  case X86::BI__builtin_ia32_rep_ins_state:
+  case X86::BI__builtin_ia32_rep_outs_state: {
+    Intrinsic::ID ID;
+    unsigned Words;
+    bool Compare;
+    switch (BuiltinID) {
+    case X86::BI__builtin_ia32_rep_movs_state:
+      ID = Intrinsic::x86_rep_movs_state;
+      Words = 3;
+      Compare = false;
+      break;
+    case X86::BI__builtin_ia32_rep_stos_state:
+      ID = Intrinsic::x86_rep_stos_state;
+      Words = 2;
+      Compare = false;
+      break;
+    case X86::BI__builtin_ia32_rep_lods_state:
+      ID = Intrinsic::x86_rep_lods_state;
+      Words = 3;
+      Compare = false;
+      break;
+    case X86::BI__builtin_ia32_rep_cmps_state:
+      ID = Intrinsic::x86_rep_cmps_state;
+      Words = 3;
+      Compare = true;
+      break;
+    case X86::BI__builtin_ia32_rep_scas_state:
+      ID = Intrinsic::x86_rep_scas_state;
+      Words = 2;
+      Compare = true;
+      break;
+    case X86::BI__builtin_ia32_rep_ins_state:
+      ID = Intrinsic::x86_rep_ins_state;
+      Words = 2;
+      Compare = false;
+      break;
+    case X86::BI__builtin_ia32_rep_outs_state:
+      ID = Intrinsic::x86_rep_outs_state;
+      Words = 2;
+      Compare = false;
+      break;
+    default:
+      llvm_unreachable("invalid REP builtin");
+    }
+    const unsigned Inputs = Ops.size() - (Compare ? 2 : 1);
+    auto *Call = Builder.CreateCall(
+        ME.getIntrinsic(ID),
+        llvm::ArrayRef<llvm::Value *>(Ops).take_front(Inputs));
+    llvm::Value *Result = nullptr;
+    for (unsigned I = 0; I != Words; ++I)
+      Result = Builder.CreateDefaultAlignedStore(
+          Builder.CreateExtractValue(Call, I),
+          Builder.CreateConstGEP1_32(Int64Ty, Ops[Inputs], I));
+    if (Compare)
+      Result = Builder.CreateDefaultAlignedStore(
+          Builder.CreateExtractValue(Call, Words), Ops[Inputs + 1]);
+    return Result;
+  }
   case X86::BI__builtin_ia32_encls:
   case X86::BI__builtin_ia32_enclv:
   case X86::BI__builtin_ia32_enclu_bounded:

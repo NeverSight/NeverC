@@ -123,6 +123,26 @@ for operation, result in (("tcvtrowd2ps", ("V16", "F32")),
                           ("tilemovrow", ("V16", "I32"))):
     ADDRESS_SIGNATURES[operation + "_reg"] = (result + ("I8", "I32", "I32"), (0, 2))
 
+# Complete natural-width REP state. Address widths are controls, not operand
+# truncations; the original instruction owns partial-register completion.
+for bits in (64, 32):
+    word = f"I{bits}"
+    for operation in ("movs", "stos", "lods", "cmps", "scas", "ins", "outs"):
+        compare = operation in ("cmps", "scas")
+        source = operation in ("movs", "lods", "cmps", "outs")
+        port = operation in ("ins", "outs")
+        words = 3 if operation in ("movs", "lods", "cmps") else 2
+        results = (word,) * words + (("I16",) if compare else ())
+        inputs = (word, word, "I16" if port else word, "I8")
+        if compare:
+            inputs += ("I16",)
+        first = len(inputs)
+        controls = 2 + int(source) + int(compare)
+        inputs += ("I32",) * controls
+        name = "rep_" + operation + "_state" + ("32" if bits == 32 else "")
+        ADDRESS_SIGNATURES[name] = ((f"STRUCT{len(results)}",) + results + inputs,
+                                    tuple(range(first, first + controls)))
+
 AMX_SIGNATURES = {
     **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")
        for name in ("tdpbf8ps", "tdpbhf8ps", "tdphbf8ps", "tdphf8ps", "tmmultf32ps")},

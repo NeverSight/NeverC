@@ -20,6 +20,11 @@ on:
       - 'utils/lint/sync-x86-system-effects.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
       - 'utils/lint/test_sync_x86_amx_instructions.py'
+      - 'utils/lint/sync-x86-amx-native-controls.py'
+      - 'utils/lint/test_sync_x86_amx_native_controls.py'
+      - 'utils/lint/sync-x86-rep-state.py'
+      - 'utils/lint/test_sync_x86_rep_state.py'
+      - 'llvm/include/llvm/IR/X86RepStringState.h'
       - 'utils/lint/sync-x86-mpx-registers.py'
       - 'utils/lint/sync-x86-mpx-instructions.py'
       - 'utils/lint/test_sync_x86_mpx_tables.py'
@@ -49,6 +54,11 @@ on:
       - 'utils/lint/sync-x86-system-effects.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
       - 'utils/lint/test_sync_x86_amx_instructions.py'
+      - 'utils/lint/sync-x86-amx-native-controls.py'
+      - 'utils/lint/test_sync_x86_amx_native_controls.py'
+      - 'utils/lint/sync-x86-rep-state.py'
+      - 'utils/lint/test_sync_x86_rep_state.py'
+      - 'llvm/include/llvm/IR/X86RepStringState.h'
       - 'utils/lint/sync-x86-mpx-registers.py'
       - 'utils/lint/sync-x86-mpx-instructions.py'
       - 'utils/lint/test_sync_x86_mpx_tables.py'
@@ -133,6 +143,13 @@ jobs:
         run: |
           python3 utils/lint/sync-x86-amx-instructions.py
           python3 utils/lint/test_sync_x86_amx_instructions.py
+
+      - name: Verify explicit AMX and REP controls
+        run: |
+          python3 utils/lint/sync-x86-amx-native-controls.py
+          python3 utils/lint/test_sync_x86_amx_native_controls.py
+          python3 utils/lint/sync-x86-rep-state.py
+          python3 utils/lint/test_sync_x86_rep_state.py
 
       - name: Verify native MPX bank and instructions
         run: |

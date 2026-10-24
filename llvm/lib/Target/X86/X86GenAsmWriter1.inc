@@ -20095,6 +20095,20 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// INVLPG_ADDR32
     0U,	// AMX_MEMORY_NATIVE
     0U,	// AMX_ROW_NATIVE
+    0U,	// REP_MOVS_STATE64
+    0U,	// REP_STOS_STATE64
+    0U,	// REP_LODS_STATE64
+    0U,	// REP_CMPS_STATE64
+    0U,	// REP_SCAS_STATE64
+    0U,	// REP_INS_STATE64
+    0U,	// REP_OUTS_STATE64
+    0U,	// REP_MOVS_STATE32
+    0U,	// REP_STOS_STATE32
+    0U,	// REP_LODS_STATE32
+    0U,	// REP_CMPS_STATE32
+    0U,	// REP_SCAS_STATE32
+    0U,	// REP_INS_STATE32
+    0U,	// REP_OUTS_STATE32
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38638,6 +38652,20 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// INVLPG_ADDR32
     0U,	// AMX_MEMORY_NATIVE
     0U,	// AMX_ROW_NATIVE
+    0U,	// REP_MOVS_STATE64
+    0U,	// REP_STOS_STATE64
+    0U,	// REP_LODS_STATE64
+    0U,	// REP_CMPS_STATE64
+    0U,	// REP_SCAS_STATE64
+    0U,	// REP_INS_STATE64
+    0U,	// REP_OUTS_STATE64
+    0U,	// REP_MOVS_STATE32
+    0U,	// REP_STOS_STATE32
+    0U,	// REP_LODS_STATE32
+    0U,	// REP_CMPS_STATE32
+    0U,	// REP_SCAS_STATE32
+    0U,	// REP_INS_STATE32
+    0U,	// REP_OUTS_STATE32
 };
 
   // Emit the opcode for the instruction.

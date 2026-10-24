@@ -35,6 +35,7 @@
 #include "llvm/IR/X86AMXNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
+#include "llvm/IR/X86RepStringState.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -1954,7 +1955,146 @@ static void addConstantComments(const MachineInstr *MI,
   }
 }
 
+bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
+  using X86::RepStringKind;
+  RepStringKind Kind;
+  bool Wide;
+  switch (MI->getOpcode()) {
+#define REP_STATE(OP, KIND)                                                    \
+  case X86::REP_##OP##_STATE64:                                                \
+    Kind = RepStringKind::KIND;                                                \
+    Wide = true;                                                               \
+    break;                                                                     \
+  case X86::REP_##OP##_STATE32:                                                \
+    Kind = RepStringKind::KIND;                                                \
+    Wide = false;                                                              \
+    break;
+    REP_STATE(MOVS, Move)
+    REP_STATE(STOS, Store)
+    REP_STATE(LODS, Load)
+    REP_STATE(CMPS, Compare)
+    REP_STATE(SCAS, Scan)
+    REP_STATE(INS, Input)
+    REP_STATE(OUTS, Output)
+#undef REP_STATE
+  default:
+    return false;
+  }
+  if (MI->getNumExplicitOperands() != 2 || !MI->getOperand(0).isImm() ||
+      !MI->getOperand(1).isReg() ||
+      !X86::GR32RegClass.contains(MI->getOperand(1).getReg()))
+    report_fatal_error("invalid REP machine-state operands");
+  const uint64_t Control = MI->getOperand(0).getImm();
+  const unsigned ElementLog = (Control >> X86::RepStringElementShift) & 3;
+  const unsigned Prefix = (Control >> X86::RepStringSegmentShift) & 0xff;
+  const bool NotEqual = Control & X86::RepStringNotEqual;
+  const unsigned Address = Control & X86::RepStringAddressOverride
+                               ? (Wide ? 32 : 16)
+                               : (Wide ? 64 : 32);
+  const bool Compare = X86::repStringCompares(Kind);
+  if ((Control & ~uint64_t(X86::RepStringDescriptorMask)) ||
+      (Control & 7) != unsigned(Kind) || Wide != Subtarget->is64Bit() ||
+      !Wide ||
+      !X86::isRepStringControl(Kind, Wide, 1u << ElementLog, Address, Prefix,
+                               NotEqual) ||
+      (Compare && !Subtarget->hasLAHFSAHF64()))
+    report_fatal_error("invalid REP machine-state descriptor or target mode");
+
+  unsigned Segment = X86::NoRegister;
+  switch (Prefix) {
+  case 0x26:
+    Segment = X86::ES;
+    break;
+  case 0x2e:
+    Segment = X86::CS;
+    break;
+  case 0x36:
+    Segment = X86::SS;
+    break;
+  case 0x3e:
+    Segment = X86::DS;
+    break;
+  case 0x64:
+    Segment = X86::FS;
+    break;
+  case 0x65:
+    Segment = X86::GS;
+    break;
+  }
+  static constexpr unsigned Opcodes[][4] = {
+      {X86::MOVSB, X86::MOVSW, X86::MOVSL, X86::MOVSQ},
+      {X86::STOSB, X86::STOSW, X86::STOSL, X86::STOSQ},
+      {X86::LODSB, X86::LODSW, X86::LODSL, X86::LODSQ},
+      {X86::CMPSB, X86::CMPSW, X86::CMPSL, X86::CMPSQ},
+      {X86::SCASB, X86::SCASW, X86::SCASL, X86::SCASQ},
+      {X86::INSB, X86::INSW, X86::INSL, 0},
+      {X86::OUTSB, X86::OUTSW, X86::OUTSL, 0},
+  };
+  const unsigned SI = Address == 64   ? X86::RSI
+                      : Address == 32 ? X86::ESI
+                                      : X86::SI;
+  const unsigned DI = Address == 64   ? X86::RDI
+                      : Address == 32 ? X86::EDI
+                                      : X86::DI;
+  const unsigned AX = Wide ? X86::RAX : X86::EAX;
+  const unsigned DX = Wide ? X86::RDX : X86::EDX;
+
+  // This local branch cannot live in a patchable stackmap shadow. Keep the
+  // entire DF window opaque to scheduling, spilling and assembler padding.
+  SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+  NoAutoPaddingScope NoPadScope(*OutStreamer);
+  EmitAndCountInstruction(MCInstBuilder(X86::CLD));
+  const auto Direction = MI->getOperand(1).getReg();
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::TEST32rr).addReg(Direction).addReg(Direction));
+  MCSymbol *Ready = OutContext.createTempSymbol();
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::JCC_1)
+          .addExpr(MCSymbolRefExpr::create(Ready, OutContext))
+          .addImm(X86::COND_E));
+  EmitAndCountInstruction(MCInstBuilder(X86::STD));
+  OutStreamer->emitLabel(Ready);
+  if (Compare) {
+    // Incoming flags have already been masked to AH's arithmetic bits and
+    // AL bit zero. ADD restores OF; SAHF restores the other five flags.
+    // SCAS needs its full accumulator restored before the actual access.
+    if (Kind == RepStringKind::Scan)
+      EmitAndCountInstruction(
+          MCInstBuilder(Wide ? X86::XCHG64rr : X86::XCHG32rr)
+              .addReg(AX)
+              .addReg(DX)
+              .addReg(AX)
+              .addReg(DX));
+    EmitAndCountInstruction(
+        MCInstBuilder(X86::ADD8ri).addReg(X86::AL).addReg(X86::AL).addImm(127));
+    EmitAndCountInstruction(MCInstBuilder(X86::SAHF));
+    if (Kind == RepStringKind::Scan)
+      EmitAndCountInstruction(MCInstBuilder(Wide ? X86::MOV64rr : X86::MOV32rr)
+                                  .addReg(AX)
+                                  .addReg(DX));
+  }
+  MCInst Native;
+  Native.setOpcode(Opcodes[unsigned(Kind)][ElementLog]);
+  Native.setFlags(NotEqual ? X86::IP_HAS_REPEAT_NE : X86::IP_HAS_REPEAT);
+  if (X86::repStringHasDestination(Kind))
+    Native.addOperand(MCOperand::createReg(DI));
+  if (X86::repStringHasSource(Kind)) {
+    Native.addOperand(MCOperand::createReg(SI));
+    Native.addOperand(MCOperand::createReg(Segment));
+  }
+  EmitAndCountInstruction(Native);
+  if (Compare) {
+    EmitAndCountInstruction(MCInstBuilder(X86::LAHF));
+    EmitAndCountInstruction(
+        MCInstBuilder(X86::SETCCr).addReg(X86::AL).addImm(X86::COND_O));
+  }
+  EmitAndCountInstruction(MCInstBuilder(X86::CLD));
+  return true;
+}
+
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (emitRepStringState(MI))
+    return;
   if (MI->getOpcode() == X86::MPX_BRANCH) {
     const uint64_t Kind = MI->getOperand(0).getImm();
     if (Kind >= unsigned(X86::MpxBranchKind::Count))

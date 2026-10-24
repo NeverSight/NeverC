@@ -338,6 +338,16 @@ BUILTIN(__builtin_ia32_outbytestring, "vUsvC*Ui", "n")
 BUILTIN(__builtin_ia32_outwordstring, "vUsvC*Ui", "n")
 BUILTIN(__builtin_ia32_outdwordstring, "vUsvC*Ui", "n")
 
+// Explicit REP state: natural-width GPR results go to the final word array.
+// Comparisons additionally store canonical LAHF/SETO flags in unsigned short.
+BUILTIN(__builtin_ia32_rep_movs_state, "vULLiULLiULLiUcIUiIUiIUiULLi*", "n")
+BUILTIN(__builtin_ia32_rep_stos_state, "vULLiULLiULLiUcIUiIUiULLi*", "n")
+BUILTIN(__builtin_ia32_rep_lods_state, "vULLiULLiULLiUcIUiIUiIUiULLi*", "n")
+TARGET_BUILTIN(__builtin_ia32_rep_cmps_state, "vULLiULLiULLiUcUsIUiIUiIUiIUiULLi*Us*", "n", "sahf")
+TARGET_BUILTIN(__builtin_ia32_rep_scas_state, "vULLiULLiULLiUcUsIUiIUiIUiULLi*Us*", "n", "sahf")
+BUILTIN(__builtin_ia32_rep_ins_state, "vULLiULLiUsUcIUiIUiULLi*", "n")
+BUILTIN(__builtin_ia32_rep_outs_state, "vULLiULLiUsUcIUiIUiIUiULLi*", "n")
+
 // Native processor-state effects. The list operations own their memory tables
 // and return the actual RCX completion mask.
 BUILTIN(__builtin_ia32_clts, "v", "n")

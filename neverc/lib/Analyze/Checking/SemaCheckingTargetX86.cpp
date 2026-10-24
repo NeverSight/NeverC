@@ -20,6 +20,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
+#include "llvm/IR/X86RepStringState.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/IR/X86SmxIntrinsics.h"
 #include "llvm/Support/raw_ostream.h"
@@ -555,6 +556,62 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                 << TheCall->getArg(WidthArgument + 1)->getSourceRange());
   };
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_rep_movs_state:
+  case X86::BI__builtin_ia32_rep_stos_state:
+  case X86::BI__builtin_ia32_rep_lods_state:
+  case X86::BI__builtin_ia32_rep_cmps_state:
+  case X86::BI__builtin_ia32_rep_scas_state:
+  case X86::BI__builtin_ia32_rep_ins_state:
+  case X86::BI__builtin_ia32_rep_outs_state: {
+    llvm::X86::RepStringKind Kind;
+    switch (BuiltinID) {
+    case X86::BI__builtin_ia32_rep_movs_state:
+      Kind = llvm::X86::RepStringKind::Move;
+      break;
+    case X86::BI__builtin_ia32_rep_stos_state:
+      Kind = llvm::X86::RepStringKind::Store;
+      break;
+    case X86::BI__builtin_ia32_rep_lods_state:
+      Kind = llvm::X86::RepStringKind::Load;
+      break;
+    case X86::BI__builtin_ia32_rep_cmps_state:
+      Kind = llvm::X86::RepStringKind::Compare;
+      break;
+    case X86::BI__builtin_ia32_rep_scas_state:
+      Kind = llvm::X86::RepStringKind::Scan;
+      break;
+    case X86::BI__builtin_ia32_rep_ins_state:
+      Kind = llvm::X86::RepStringKind::Input;
+      break;
+    case X86::BI__builtin_ia32_rep_outs_state:
+      Kind = llvm::X86::RepStringKind::Output;
+      break;
+    default:
+      llvm_unreachable("invalid REP builtin");
+    }
+    const bool Compare = llvm::X86::repStringCompares(Kind);
+    unsigned Index = Compare ? 5 : 4;
+    const unsigned First = Index;
+    auto Control = [&](uint64_t &Value) {
+      llvm::APSInt Constant;
+      if (SemaBuiltinConstantArg(TheCall, Index++, Constant))
+        return true;
+      Value = Constant.getZExtValue();
+      return false;
+    };
+    uint64_t Element, Address, Segment = 0, NotEqual = 0;
+    if (Control(Element) || Control(Address) ||
+        (llvm::X86::repStringHasSource(Kind) && Control(Segment)) ||
+        (Compare && Control(NotEqual)))
+      return true;
+    if (!llvm::X86::isRepStringControl(Kind, true, Element, Address, Segment,
+                                       NotEqual))
+      return bool(Diag(TheCall->getBeginLoc(),
+                       diag::err_x86_builtin_invalid_rep_control)
+                  << TheCall->getArg(First)->getSourceRange()
+                  << TheCall->getArg(Index - 1)->getSourceRange());
+    return false;
+  }
   case X86::BI__builtin_ia32_ldtilecfg_address:
   case X86::BI__builtin_ia32_sttilecfg_address:
     return CheckMemoryAddress(1) ||

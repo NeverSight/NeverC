@@ -53,6 +53,7 @@
 #include "llvm/IR/X86AMXNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
+#include "llvm/IR/X86RepStringState.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/IR/X86SmxIntrinsics.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -27138,12 +27139,195 @@ static SDValue lowerSystemRegisterAccess(SDValue Op, SelectionDAG &DAG) {
   return DAG.getMergeValues({SDValue(Access, 0), SDValue(Access, 1)}, DL);
 }
 
+static SDValue lowerRepStringState(SDValue Op, const X86Subtarget &Subtarget,
+                                   SelectionDAG &DAG) {
+  using X86::RepStringKind;
+  RepStringKind Kind;
+  unsigned Opcode;
+  bool Wide;
+  switch (Op.getConstantOperandVal(1)) {
+  case Intrinsic::x86_rep_movs_state:
+    Kind = RepStringKind::Move;
+    Opcode = X86::REP_MOVS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_stos_state:
+    Kind = RepStringKind::Store;
+    Opcode = X86::REP_STOS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_lods_state:
+    Kind = RepStringKind::Load;
+    Opcode = X86::REP_LODS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_cmps_state:
+    Kind = RepStringKind::Compare;
+    Opcode = X86::REP_CMPS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_scas_state:
+    Kind = RepStringKind::Scan;
+    Opcode = X86::REP_SCAS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_ins_state:
+    Kind = RepStringKind::Input;
+    Opcode = X86::REP_INS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_outs_state:
+    Kind = RepStringKind::Output;
+    Opcode = X86::REP_OUTS_STATE64;
+    Wide = true;
+    break;
+  case Intrinsic::x86_rep_movs_state32:
+    Kind = RepStringKind::Move;
+    Opcode = X86::REP_MOVS_STATE32;
+    Wide = false;
+    break;
+  case Intrinsic::x86_rep_stos_state32:
+    Kind = RepStringKind::Store;
+    Opcode = X86::REP_STOS_STATE32;
+    Wide = false;
+    break;
+  case Intrinsic::x86_rep_lods_state32:
+    Kind = RepStringKind::Load;
+    Opcode = X86::REP_LODS_STATE32;
+    Wide = false;
+    break;
+  case Intrinsic::x86_rep_cmps_state32:
+    Kind = RepStringKind::Compare;
+    Opcode = X86::REP_CMPS_STATE32;
+    Wide = false;
+    break;
+  case Intrinsic::x86_rep_scas_state32:
+    Kind = RepStringKind::Scan;
+    Opcode = X86::REP_SCAS_STATE32;
+    Wide = false;
+    break;
+  case Intrinsic::x86_rep_ins_state32:
+    Kind = RepStringKind::Input;
+    Opcode = X86::REP_INS_STATE32;
+    Wide = false;
+    break;
+  case Intrinsic::x86_rep_outs_state32:
+    Kind = RepStringKind::Output;
+    Opcode = X86::REP_OUTS_STATE32;
+    Wide = false;
+    break;
+  default:
+    llvm_unreachable("unexpected explicit REP intrinsic");
+  }
+  if (Wide != Subtarget.is64Bit() || !Wide)
+    report_fatal_error(
+        "explicit REP intrinsic does not match the target code mode");
+  const bool Compare = X86::repStringCompares(Kind);
+  if (Compare && !Subtarget.hasLAHFSAHF64())
+    report_fatal_error(
+        "explicit REP comparison requires the sahf target feature");
+  unsigned Index = Compare ? 7 : 6;
+  auto Control = [&]() {
+    const auto *Value = dyn_cast<ConstantSDNode>(Op.getOperand(Index++));
+    if (!Value)
+      report_fatal_error("explicit REP controls must be constant");
+    return Value->getZExtValue();
+  };
+  const auto Element = Control();
+  const auto Address = Control();
+  const auto Segment = X86::repStringHasSource(Kind) ? Control() : 0;
+  const auto NotEqual = Compare ? Control() : 0;
+  if (!X86::isRepStringControl(Kind, Wide, Element, Address, Segment, NotEqual))
+    report_fatal_error(
+        "invalid explicit REP element, address, segment or repeat control");
+  const unsigned ElementLog = Element == 8   ? 3
+                              : Element == 4 ? 2
+                              : Element == 2 ? 1
+                                             : 0;
+  const unsigned Descriptor =
+      unsigned(Kind) | (ElementLog << X86::RepStringElementShift) |
+      (NotEqual ? X86::RepStringNotEqual : 0) |
+      (Address != (Wide ? 64 : 32) ? X86::RepStringAddressOverride : 0) |
+      (Segment << X86::RepStringSegmentShift);
+  const SDLoc DL(Op);
+  const MVT Word = Wide ? MVT::i64 : MVT::i32;
+  const unsigned SI = Wide ? X86::RSI : X86::ESI;
+  const unsigned DI = Wide ? X86::RDI : X86::EDI;
+  const unsigned CX = Wide ? X86::RCX : X86::ECX;
+  const unsigned AX = Wide ? X86::RAX : X86::EAX;
+  const unsigned DX = Wide ? X86::RDX : X86::EDX;
+  SmallVector<unsigned, 3> Registers;
+  if (Kind == RepStringKind::Move || Kind == RepStringKind::Compare)
+    Registers = {SI, DI, CX};
+  else if (Kind == RepStringKind::Load)
+    Registers = {SI, CX, AX};
+  else if (Kind == RepStringKind::Output)
+    Registers = {SI, CX, DX};
+  else
+    Registers = {DI, CX, X86::repStringHasPort(Kind) ? DX : AX};
+  SDValue Chain = Op.getOperand(0), Glue;
+  auto SetRegister = [&](unsigned Register, SDValue Value) {
+    Chain = DAG.getCopyToReg(Chain, DL, Register,
+                             DAG.getZExtOrTrunc(Value, DL, Word), Glue);
+    Glue = Chain.getValue(1);
+  };
+  for (unsigned I = 0; I != Registers.size(); ++I)
+    SetRegister(Registers[I], Op.getOperand(I + 2));
+  if (Compare) {
+    auto Flags =
+        DAG.getNode(ISD::AND, DL, MVT::i16, Op.getOperand(6),
+                    DAG.getConstant(X86::RepStringFlagsMask, DL, MVT::i16));
+    SetRegister(Kind == RepStringKind::Scan ? DX : AX, Flags);
+  }
+  auto *Access = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue),
+      {DAG.getTargetConstant(Descriptor, DL, MVT::i32),
+       DAG.getZExtOrTrunc(Op.getOperand(5), DL, MVT::i32), Chain, Glue});
+  Chain = SDValue(Access, 0);
+  Glue = SDValue(Access, 1);
+  SmallVector<SDValue, 5> Results;
+  auto GetRegister = [&](unsigned Register, MVT Type) {
+    auto Value = DAG.getCopyFromReg(Chain, DL, Register, Type, Glue);
+    Chain = Value.getValue(1);
+    Glue = Value.getValue(2);
+    return Value;
+  };
+  const unsigned Count =
+      (Kind == RepStringKind::Move || Kind == RepStringKind::Load ||
+       Kind == RepStringKind::Compare)
+          ? 3
+          : 2;
+  for (unsigned I = 0; I != Count; ++I)
+    Results.push_back(GetRegister(Registers[I], Word));
+  if (Compare)
+    Results.push_back(
+        DAG.getNode(ISD::AND, DL, MVT::i16, GetRegister(X86::AX, MVT::i16),
+                    DAG.getConstant(X86::RepStringFlagsMask, DL, MVT::i16)));
+  Results.push_back(Chain);
+  return DAG.getMergeValues(Results, DL);
+}
+
 static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                                       SelectionDAG &DAG) {
   unsigned IntNo = Op.getConstantOperandVal(1);
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_rep_movs_state:
+    case Intrinsic::x86_rep_stos_state:
+    case Intrinsic::x86_rep_lods_state:
+    case Intrinsic::x86_rep_cmps_state:
+    case Intrinsic::x86_rep_scas_state:
+    case Intrinsic::x86_rep_ins_state:
+    case Intrinsic::x86_rep_outs_state:
+    case Intrinsic::x86_rep_movs_state32:
+    case Intrinsic::x86_rep_stos_state32:
+    case Intrinsic::x86_rep_lods_state32:
+    case Intrinsic::x86_rep_cmps_state32:
+    case Intrinsic::x86_rep_scas_state32:
+    case Intrinsic::x86_rep_ins_state32:
+    case Intrinsic::x86_rep_outs_state32:
+      return lowerRepStringState(Op, Subtarget, DAG);
     case Intrinsic::x86_ldtilecfg_address:
     case Intrinsic::x86_sttilecfg_address:
     case Intrinsic::x86_tileloadd64_address:

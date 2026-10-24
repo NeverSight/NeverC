@@ -955,6 +955,72 @@ Microsoft names, with `--llc /path/to/llc` for full-fork 32/64-bit IR, or with
 `--backend-llc /path/to/llc` for NeverC IR through the full fork. The current
 matrix has 544 cases per 64-bit route and 1,000 for the full fork.
 
+### Explicit REP state
+
+`__NEVERC_X86_REP_STATE__ == 1` advertises seven additional builtins:
+`__builtin_ia32_rep_{movs,stos,lods,cmps,scas,ins,outs}_state`. They expose
+full 64-bit input/output registers, an explicit `unsigned char` DF input,
+constant element bytes and address bits, a constant source segment for
+MOVS/LODS/CMPS/OUTS, and a constant REPE/REPNE selector for comparisons.
+They lower to `llvm.x86.rep.*.state`, without inline assembly. Their result
+is `void`; the last argument is an `unsigned long long *` state array,
+followed by an additional `unsigned short *` flags output for comparisons.
+
+| Operation | First three inputs | State array order |
+| --- | --- | --- |
+| MOVS | RSI, RDI, RCX | RSI, RDI, RCX |
+| STOS | RDI, RCX, RAX | RDI, RCX |
+| LODS | RSI, RCX, RAX | RSI, RCX, RAX |
+| CMPS | RSI, RDI, RCX | RSI, RDI, RCX |
+| SCAS | RDI, RCX, RAX | RDI, RCX |
+| INS | RDI, RCX, port | RDI, RCX |
+| OUTS | RSI, RCX, port | RSI, RCX |
+
+Each initial register is `unsigned long long`; the port is `unsigned short`.
+After these three inputs comes DF (zero forward, nonzero backward), then
+incoming `unsigned short` flags for comparisons only, then the constant
+controls: element bytes, address bits, source segment if applicable, and
+repeat selector if applicable. Element bytes are 1/2/4/8 (INS/OUTS: 1/2/4);
+address bits are 32/64; source segment is 0 or the architectural prefix byte;
+repeat is 0 for REPE or 1 for REPNE. All controls must be compile-time constants.
+
+Comparison flags use SF/ZF/AF/PF/CF in the LAHF high byte and OF in bit zero,
+masked by `0xd501`. CMPS/SCAS require `target("sahf")`; the capability macro
+does not enable CPU features. Input flags are restored before the instruction,
+including for zero count and architectural fault restart. The actual hardware
+instruction owns accesses and partial-register updates; do not pre-truncate
+register inputs for address overrides. Normal completion restores ABI DF=0.
+The DF window is one backend pseudo, with no compiler-inserted spills or calls.
+
+These APIs expose completed registers, not a complete guest exception ABI:
+non-string registers can be compiler scratch, and no result-array stores take
+place until the operation returns. An OS fault handler may resume the native
+instruction. Port I/O still requires the architectural privilege/permission.
+NeverC supports 64-bit code only. The full LLVM fork also supplies `state32`
+interfaces for 32-bit code and 16/32-bit addresses.
+
+`sync-x86-rep-state.py` owns the pseudo operands, implicit GPR/DF definitions
+and unknown memory effects; `sync-x86-native-intrinsics.py` owns signatures
+and immarg positions. Both are checked in generated-table CI.
+
+`tests/verify-rep-state.py` compares the emitted operations with independently
+encoded hardware REP instructions and a sequential memory/flag oracle. On
+Linux x86-64 with SAHF, each O0/O2 route covers 45,152 memory/flag cases, including
+all six incoming comparison flags, source segments, direction, overlap, early
+termination and address overrides. It also runs 112 real protected-page fault
+restarts. Another 192 port tests inspect the CPL3 fault context and inject a
+controlled completion; they do not execute physical port I/O. The raw reference
+is important: for example, zero-count addr32 MOVS and LODS need not have the same
+high-register write behavior.
+
+Run with `--llc /path/to/llc` for full-fork IR, without it for NeverC, or with
+`--backend-llc /path/to/llc` for NeverC IR through the full fork. Add
+`--llc /path/to/llc --emulate-32` to check 8,928 memory cases and 2,304 controlled
+port cases in 32-bit Unicorn, including 16-bit addresses and preserved high
+register halves. That 32-bit result is emulator coverage, not hardware fault
+restart qualification. Dependencies are `capstone`, `lief`, and `unicorn` for
+the emulator route, plus a host C compiler for native execution.
+
 Port I/O string operations (`__inbytestring`, `__outbytestring`, etc.) are
 implemented via REP pseudo-instructions: `REP_INSB_64`, `REP_INSW_64`,
 `REP_INSL_64`, `REP_OUTSB_64`, `REP_OUTSW_64`, `REP_OUTSL_64`.

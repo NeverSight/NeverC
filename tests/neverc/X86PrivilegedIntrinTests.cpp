@@ -1586,6 +1586,127 @@ TEST_F(X86PrivilegedIntrinTest, FsSegmentReadsLowerCorrectly) {
 // ---------------------------------------------------------------------------
 // Rep string ops: movsb/w/d/q, stosb/w/d/q
 // ---------------------------------------------------------------------------
+TEST_F(X86PrivilegedIntrinTest, ExplicitRepStateRemainsNativeAcrossFormats) {
+  const auto Source = tmpFile("rep_state.c");
+  writeFile(Source, R"(
+    #if !defined(__NEVERC_X86_REP_STATE__) || __NEVERC_X86_REP_STATE__ != 1
+    #error missing compiler REP state capability
+    #endif
+    __attribute__((target("sahf")))
+    void strings(unsigned long long a, unsigned long long b,
+                 unsigned long long c, unsigned char df, unsigned short flags,
+                 unsigned long long *out, unsigned short *cc) {
+      __builtin_ia32_rep_movs_state(a, b, c, df, 1, 32, 0x64, out);
+      __builtin_ia32_rep_stos_state(a, b, c, df, 8, 64, out);
+      __builtin_ia32_rep_lods_state(a, b, c, df, 2, 32, 0x65, out);
+      __builtin_ia32_rep_cmps_state(a, b, c, df, flags, 4, 64, 0, 0, out, cc);
+      __builtin_ia32_rep_scas_state(a, b, c, df, flags, 8, 32, 1, out, cc);
+      __builtin_ia32_rep_ins_state(a, b, c, df, 2, 32, out);
+      __builtin_ia32_rep_outs_state(a, b, c, df, 4, 64, 0x64, out);
+    }
+    void unused(unsigned long long a, unsigned long long b,
+                unsigned long long c) {
+      unsigned long long out[3];
+      __builtin_ia32_rep_movs_state(a, b, c, 0, 1, 64, 0, out);
+      __builtin_ia32_rep_movs_state(a, b, c, 1, 1, 64, 0, out);
+    }
+  )");
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"})
+      for (const char *Mode : {"ir", "asm", "object"}) {
+        SCOPED_TRACE(Target);
+        SCOPED_TRACE(Opt);
+        SCOPED_TRACE(Mode);
+        const auto Output = tmpFile(std::string("rep_state.") + Mode);
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         "-std=c23",
+                                         "-ffreestanding",
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         Opt,
+                                         Source.string(),
+                                         "-o",
+                                         Output.string()};
+        Args.push_back(std::string(Mode) == "object" ? "-c" : "-S");
+        if (std::string(Mode) == "ir")
+          Args.push_back("-emit-llvm");
+        const auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        if (std::string(Mode) == "ir") {
+          for (const char *Name :
+               {"movs", "stos", "lods", "cmps", "scas", "ins", "outs"})
+            EXPECT_NE(
+                Text.find(std::string("@llvm.x86.rep.") + Name + ".state("),
+                std::string::npos)
+                << Text;
+          EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+          const std::regex Moves(
+              "call[^@\\n]*@llvm\\.x86\\.rep\\.movs\\.state\\(");
+          EXPECT_EQ(std::distance(
+                        std::sregex_iterator(Text.begin(), Text.end(), Moves),
+                        std::sregex_iterator()),
+                    3)
+              << Text;
+        } else if (std::string(Mode) == "asm") {
+          for (const char *Name :
+               {"rep", "movsb", "stosq", "lodsw", "cmps", "scasq", "insw",
+                "outs", "sahf", "lahf", "seto", "std", "cld", "fs:", "gs:"})
+            EXPECT_NE(Text.find(Name), std::string::npos) << Text;
+          EXPECT_EQ(Text.find("#APP"), std::string::npos) << Text;
+        } else {
+          EXPECT_FALSE(Text.empty());
+        }
+      }
+}
+
+TEST_F(X86PrivilegedIntrinTest, ExplicitRepStateRejectsInvalidControls) {
+  for (const char *Call :
+       {"__builtin_ia32_rep_movs_state(a,b,c,df,3,64,0,out)",
+        "__builtin_ia32_rep_movs_state(a,b,c,df,1,16,0,out)",
+        "__builtin_ia32_rep_movs_state(a,b,c,df,1,64,1,out)",
+        "__builtin_ia32_rep_movs_state(a,b,c,df,1,64,0x100,out)",
+        "__builtin_ia32_rep_movs_state(a,b,c,df,element,64,0,out)",
+        "__builtin_ia32_rep_stos_state(a,b,c,df,0,64,out)",
+        "__builtin_ia32_rep_lods_state(a,b,c,df,1,0,0,out)",
+        "__builtin_ia32_rep_cmps_state(a,b,c,df,0,1,64,0,2,out,cc)",
+        "__builtin_ia32_rep_scas_state(a,b,c,df,0,1,64,element,out,cc)",
+        "__builtin_ia32_rep_ins_state(a,b,c,df,8,64,out)",
+        "__builtin_ia32_rep_outs_state(a,b,c,df,8,64,0,out)"}) {
+    SCOPED_TRACE(Call);
+    const std::string Source =
+        "__attribute__((target(\"sahf\"))) void bad(unsigned long long a, "
+        "unsigned long long b, unsigned long long c, unsigned char df, "
+        "unsigned element, unsigned long long *out, unsigned short *cc) { " +
+        std::string(Call) + "; }";
+    auto [RC, Error] = compileToAsm(Source.c_str(), "invalid_rep_state");
+    EXPECT_NE(RC, 0) << Error;
+    EXPECT_NE(Error.find("error:"), std::string::npos) << Error;
+  }
+}
+
+TEST_F(X86PrivilegedIntrinTest, ExplicitRepComparisonsRequireSahf) {
+  for (const char *Call :
+       {"__builtin_ia32_rep_cmps_state(a,b,c,0,0,1,64,0,0,out,cc)",
+        "__builtin_ia32_rep_scas_state(a,b,c,0,0,1,64,0,out,cc)"}) {
+    const auto Source = tmpFile("rep_missing_sahf.c");
+    writeFile(Source, "void bad(unsigned long long a, unsigned long long b, "
+                      "unsigned long long c, unsigned long long *out, "
+                      "unsigned short *cc) { " +
+                          std::string(Call) + "; }");
+    const auto Result = ncc({"--target=x86_64-unknown-linux-gnu", "-mno-sahf",
+                             "-ffreestanding", "-fno-builtin-mimalloc", "-S",
+                             Source.string(), "-o", tmpFile("bad.s").string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+    EXPECT_NE(Result.err.find("needs target feature sahf"),
+              std::string::npos)
+        << Result.err;
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, RepStringOpsLowerCorrectly) {
   auto [rc, s] = compileToAsm(R"(
     void do_movsb(void *d, const void *s, unsigned __int64 n) { __movsb((unsigned char*)d, (const unsigned char*)s, n); }
