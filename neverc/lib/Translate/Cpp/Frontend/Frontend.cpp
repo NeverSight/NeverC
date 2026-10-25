@@ -44,6 +44,13 @@
 #include <unistd.h>
 #endif
 
+
+// Diagnostic only: retain every original predicate and Boolean result.
+static bool nevercNestedDefaultSourceTrace(bool Value, const char *Role, unsigned Point) {
+  if (!Value) llvm::errs() << "[NEVERC-NOT-FN-DEFAULT-SOURCE-TRACE] " << Role << " point=" << Point << "\n";
+  return Value;
+}
+
 using namespace clang;
 namespace nct {
 
@@ -5195,7 +5202,7 @@ static bool functionalInvocabilitySource(
        Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
       Prototype->isNothrow() != TargetIsNothrow ||
       Arguments.getKind() != TemplateArgument::Pack)
-    return false;
+    return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
 
   // The SDK's conditional exception specification must refer to its exact
   // invocability variable, with the same callable and deduced argument pack.
@@ -5218,7 +5225,7 @@ static bool functionalInvocabilitySource(
     const auto Site = A.S.sdkFile(A.Sources, Call->getExprLoc());
     if (NotFn->Mode != FunctionalNotFnSourceMode::Runtime || Call != NotFn->InvokeCall ||
         !NotFn->SourceCall || !SourceOwned ||
-        !Site || Site->Root != "libcxx" || Site->Path != "__functional/not_fn.h") return false;
+        !Site || Site->Root != "libcxx" || Site->Path != "__functional/not_fn.h") return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
     if (const auto *Cached = dyn_cast_or_null<ConstantExpr>(Noexcept)) {
       const auto *Written = Cached->getSubExpr();
       auto PinnedSite = [&](SourceLocation Location) {
@@ -5235,7 +5242,7 @@ static bool functionalInvocabilitySource(
           !A.Context.hasSameType(Cached->getType(), Written->getType()) ||
           Cached->getValueKind() != Written->getValueKind() ||
           Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
-          !PinnedSite(Cached->getBeginLoc()) || !PinnedSite(Cached->getEndLoc())) return false;
+          !PinnedSite(Cached->getBeginLoc()) || !PinnedSite(Cached->getEndLoc())) return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
       Noexcept = Written;
     }
   }
@@ -5248,20 +5255,20 @@ static bool functionalInvocabilitySource(
       Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
       Variable->getSpecializedTemplateOrPartial()
           .is<VarTemplatePartialSpecializationDecl *>())
-    return false;
+    return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
   const auto &Traits = Variable->getTemplateArgs();
   if (Traits.size() != 2 || Traits.get(0).getKind() != TemplateArgument::Type ||
       !A.Context.hasSameType(Traits.get(0).getAsType(), Callable) ||
       Traits.get(1).getKind() != TemplateArgument::Pack ||
       Traits.get(1).pack_size() != Arguments.pack_size())
-    return false;
+    return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
   for (unsigned I = 0; I < Traits.get(1).pack_size(); ++I) {
     const auto &Trait = Traits.get(1).pack_elements()[I];
     const auto &Argument = Arguments.pack_elements()[I];
     if (Trait.getKind() != TemplateArgument::Type ||
         Argument.getKind() != TemplateArgument::Type ||
         !A.Context.hasSameType(Trait.getAsType(), Argument.getAsType()))
-      return false;
+      return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
   }
   auto Pinned = [&](const Decl *Declaration) {
     A.chargeExpansion(1, Declaration->getLocation());
@@ -5272,10 +5279,10 @@ static bool functionalInvocabilitySource(
   };
   for (const auto *Declaration : Variable->redecls())
     if (!Pinned(Declaration))
-      return false;
+      return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
   for (const auto *Declaration : Variable->getSpecializedTemplate()->redecls())
     if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
-      return false;
+      return nevercNestedDefaultSourceTrace(false, "invocability", __LINE__);
   return true;
 }
 
@@ -6229,7 +6236,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
                                         const FunctionalNotFnNestedCallSource *Nested = nullptr) {
   if (NotFn.Mode != FunctionalNotFnSourceMode::Runtime || !NotFn.SourceCall ||
       Call != NotFn.InvokeCall || !Call || Call->isTypeDependent() ||
-      Call->isValueDependent() || Call->isInstantiationDependent()) return false;
+      Call->isValueDependent() || Call->isInstantiationDependent()) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
   auto Actual = describeFunctionalNotFnCallSource(
       A.S, A.Sources, NotFn.SourceCall, A.Context, FunctionalNotFnSourceMode::Runtime);
   if (!Actual && Nested) {
@@ -6238,7 +6245,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
     if (!Current || Current->InnerRuntime.SourceCall != NotFn.SourceCall ||
         Current->InnerRuntime.Method != Nested->InnerRuntime.Method ||
         Current->Storage.Outer.Record != Nested->Storage.Outer.Record ||
-        Current->Storage.Inner.Record != Nested->Storage.Inner.Record) return false;
+        Current->Storage.Inner.Record != Nested->Storage.Inner.Record) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
     Actual = Current->InnerRuntime;
   }
   if (!Actual && !A.S.owns(A.Sources, NotFn.SourceCall->getExprLoc())) {
@@ -6249,7 +6256,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
           Current->InnerRuntime.SourceCall != Certificate.InnerRuntime.SourceCall ||
           Current->InnerRuntime.Method != Certificate.InnerRuntime.Method ||
           Current->Storage.Outer.Record != Certificate.Storage.Outer.Record ||
-          Current->Storage.Inner.Record != Certificate.Storage.Inner.Record) return false;
+          Current->Storage.Inner.Record != Certificate.Storage.Inner.Record) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
       Actual = Current->InnerRuntime;
       break;
     }
@@ -6262,7 +6269,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
       Actual->ForwardingCalls != NotFn.ForwardingCalls ||
       Actual->Storage.Record != NotFn.Storage.Record ||
       !A.Context.hasSameType(Actual->Storage.CallableType, NotFn.Storage.CallableType) ||
-      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) return false;
+      !approvedFunctionalNotFnPointerStorage(A.S, A.Sources, Actual->Storage.Record, A.Context)) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
   const auto *Function = Call->getDirectCallee();
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Reference = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
@@ -6283,7 +6290,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
       Inner != NotFn.TargetCall || !Dispatcher || !Inner || Inner->getDirectCallee() ||
       isa<CXXOperatorCallExpr>(Inner) || Dispatcher->getNumParams() != Function->getNumParams() ||
       Dispatch->getNumArgs() != Function->getNumParams() || Inner->getNumArgs() != Target->getNumParams() ||
-      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) return false;
+      !A.Context.hasSameType(operationCalleePrototype(Inner), Target)) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
   // Retain the original forwarding and indirect-argument flow obligations.
   // This pointer slice performs no hidden record copy/construction in the SDK.
   for (unsigned I = 0; I < Function->getNumParams(); ++I) {
@@ -6295,7 +6302,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
     if (!Forward || !Use || Use->getDecl() != Parameter || !Forwarder ||
         !utilitySDKValueAdapterSource(A, Forward, UtilityOperation::Forward) ||
         !A.Context.hasSameType(Forwarder->getReturnType(), Parameter->getType()) ||
-        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) return false;
+        !A.Context.hasSameType(Forwarder->getReturnType(), Dispatcher->getParamDecl(I)->getType())) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
   }
   auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression ? Expression->IgnoreParenImpCasts() : nullptr);
@@ -6309,7 +6316,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
         A.Context.hasSameType(Cast->getType(), Parameter->getType().getNonLValueExprType(A.Context)) &&
         Cast->getValueKind() == Expr::getValueKindForType(Parameter->getType());
   };
-  if (!ParameterCast(Inner->getCallee(), 0)) return false;
+  if (!ParameterCast(Inner->getCallee(), 0)) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
   for (unsigned I = 0; I < Target->getNumParams(); ++I) {
     const auto Parameter = Target->getParamType(I);
     const auto Value = Parameter.getNonReferenceType();
@@ -6319,7 +6326,7 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
         !A.Context.hasSameUnqualifiedType(Value, ActualArgument) ||
         !ParameterCast(Inner->getArg(I), I + 1) ||
         !A.Context.hasSameType(Inner->getArg(I)->getType(), Parameter.getNonLValueExprType(A.Context)) ||
-        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
+        Inner->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter)) return nevercNestedDefaultSourceTrace(false, "leaf-binding", __LINE__);
   }
   return true;
 }
@@ -6329,12 +6336,12 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
     const FunctionalNotFnNestedCallSource *Nested = nullptr) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
-    return false;
+    return nevercNestedDefaultSourceTrace(false, "leaf-source", __LINE__);
   if (NotFn) {
-    if (!functionalNotFnInvokeBinding(A, Call, *NotFn, Nested)) return false;
+    if (!functionalNotFnInvokeBinding(A, Call, *NotFn, Nested)) return nevercNestedDefaultSourceTrace(false, "leaf-source", __LINE__);
   } else {
     const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
-    if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return false;
+    if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return nevercNestedDefaultSourceTrace(false, "leaf-source", __LINE__);
   }
 
   // The runtime operation proves the fixed-arity callable, admitted argument
@@ -6352,7 +6359,7 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
   const auto *InnerPrototype = Inner ? operationCalleePrototype(Inner) : nullptr;
   // Template deduction can desugar the original callable's typedefs and
   // trailing return spelling. Compare types, not their AST node identities.
-  return Target && Arguments && Arguments->size() == 2 &&
+  return nevercNestedDefaultSourceTrace((Target && Arguments && Arguments->size() == 2 &&
          Arguments->get(0).getKind() == TemplateArgument::Type && InnerPrototype &&
          !Inner->getDirectCallee() &&
          A.Context.hasSameType(InnerPrototype, Target) &&
@@ -6363,7 +6370,7 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                   "__type_traits/invoke.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                       Arguments->get(1), Target, NotFn, Nested);
+                                       Arguments->get(1), Target, NotFn, Nested)), "leaf-source-complete", __LINE__);
 }
 
 // The caller supplies a runtime-proven apply operation and its selected target.
@@ -26422,14 +26429,14 @@ public:
     std::vector<const SelectedTemplateCallSource *> Selections;
     for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
       Selections.insert(Selections.end(), Entries.begin(), Entries.end());
-    const bool Complete = Prototype && ordinaryCallbackPrototype(Prototype) &&
-        Prototype->getReturnType()->isArithmeticType() &&
-        A.Context.hasSameType(operationCalleePrototype(Inner.TargetCall), Prototype) &&
-        functionalFunctionInvokeSource(A, Inner.InvokeCall, &Inner, &*Source) &&
-        utilitySDKFunctionSource(A, Source->OuterRuntime.InvokeCall->getDirectCallee(), "__functional/invoke.h") &&
-        utilitySDKFunctionSource(A, Source->Dispatcher, "__type_traits/invoke.h") &&
-        approvedFunctionalNotFnNestedCallDefaults(A.S, A.Sources, A.Context, *Source,
-            NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits);
+    const bool Complete = nevercNestedDefaultSourceTrace((Prototype && ordinaryCallbackPrototype(Prototype)), "nested-call-prototype", __LINE__) &&
+        nevercNestedDefaultSourceTrace((Prototype->getReturnType()->isArithmeticType()), "nested-call-arithmetic-result", __LINE__) &&
+        nevercNestedDefaultSourceTrace((A.Context.hasSameType(operationCalleePrototype(Inner.TargetCall), Prototype)), "nested-call-leaf-prototype", __LINE__) &&
+        nevercNestedDefaultSourceTrace((functionalFunctionInvokeSource(A, Inner.InvokeCall, &Inner, &*Source)), "nested-call-leaf-invoke", __LINE__) &&
+        nevercNestedDefaultSourceTrace((utilitySDKFunctionSource(A, Source->OuterRuntime.InvokeCall->getDirectCallee(), "__functional/invoke.h")), "nested-call-outer-invoke-family", __LINE__) &&
+        nevercNestedDefaultSourceTrace((utilitySDKFunctionSource(A, Source->Dispatcher, "__type_traits/invoke.h")), "nested-call-dispatcher-family", __LINE__) &&
+        nevercNestedDefaultSourceTrace((approvedFunctionalNotFnNestedCallDefaults(A.S, A.Sources, A.Context, *Source,
+            NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits)), "nested-call-all-defaults", __LINE__);
     if (!Complete) {
       A.reject(Call->getExprLoc(), "nested not_fn call source",
                "Both independent selected default/query graphs and the exact leaf invocation source must close.", "TR0203");
@@ -26439,9 +26446,9 @@ public:
     A.VerifiedNotFnNestedCalls.emplace(Call, *Source);
     A.VerifiedNotFnCalls.emplace(Call, Source->OuterRuntime);
     A.type(Source->Storage.Outer.CallableType, Call->getExprLoc());
-    if (!TraverseStmt(const_cast<Expr *>(Source->OuterRuntime.Object))) return false;
+    if (!TraverseStmt(const_cast<Expr *>(Source->OuterRuntime.Object))) return nevercNestedDefaultSourceTrace(false, "nested-call", __LINE__);
     for (unsigned I = 1; I < Call->getNumArgs(); ++I)
-      if (!TraverseStmt(Call->getArg(I))) return false;
+      if (!TraverseStmt(Call->getArg(I))) return nevercNestedDefaultSourceTrace(false, "nested-call", __LINE__);
     return true;
   }
 
