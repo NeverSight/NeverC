@@ -20111,6 +20111,18 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
+    34654226U,	// AADD32mr_EVEX
+    34670610U,	// AADD64mr_EVEX
+    34654600U,	// AAND32mr_EVEX
+    34670984U,	// AAND64mr_EVEX
+    34660386U,	// AOR32mr_EVEX
+    34676770U,	// AOR64mr_EVEX
+    34660429U,	// AXOR32mr_EVEX
+    34676813U,	// AXOR64mr_EVEX
+    0U,	// APX_RAO_NATIVE32
+    0U,	// APX_RAO_NATIVE64
+    0U,	// APX_CMPCCXADD_NATIVE32
+    0U,	// APX_CMPCCXADD_NATIVE64
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38670,6 +38682,18 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
+    0U,	// AADD32mr_EVEX
+    0U,	// AADD64mr_EVEX
+    0U,	// AAND32mr_EVEX
+    0U,	// AAND64mr_EVEX
+    0U,	// AOR32mr_EVEX
+    0U,	// AOR64mr_EVEX
+    0U,	// AXOR32mr_EVEX
+    0U,	// AXOR64mr_EVEX
+    0U,	// APX_RAO_NATIVE32
+    0U,	// APX_RAO_NATIVE64
+    0U,	// APX_CMPCCXADD_NATIVE32
+    0U,	// APX_CMPCCXADD_NATIVE64
 };
 
   // Emit the opcode for the instruction.

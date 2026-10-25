@@ -47,6 +47,94 @@ TEST_F(X86PrivilegedIntrinTest,
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest,
+       APXNativeAtomicInterfacesKeepEncodingAndEffects) {
+  const auto Source = tmpFile("apx_native.c");
+  writeFile(Source, R"(
+    #if !defined(__NEVERC_X86_APX_ATOMIC__)
+    #error Missing APX native atomic capability
+    #endif
+    unsigned long long probe(unsigned long long address, unsigned long long a,
+                              unsigned long long b) {
+      __builtin_ia32_aadd32_address(address, (unsigned)a, 32, 0x64);
+      __builtin_ia32_aadd64_address(address, a, 64, 0);
+      __builtin_ia32_aand32_address(address, (unsigned)a, 64, 0);
+      __builtin_ia32_aand64_address(address, a, 64, 0);
+      __builtin_ia32_aor32_address(address, (unsigned)a, 64, 0);
+      __builtin_ia32_aor64_address(address, a, 64, 0);
+      __builtin_ia32_axor32_address(address, (unsigned)a, 64, 0);
+      __builtin_ia32_axor64_address(address, a, 64, 0);
+      (void)__builtin_ia32_cmpccxadd32_address(address, a, b, 4, 32, 0x65);
+      (void)__builtin_ia32_cmpccxadd32_address(address, a, b, 4, 32, 0x65);
+      return __builtin_ia32_cmpccxadd64_address(address, a, b, 15, 64, 0);
+    }
+  )");
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"})
+      for (bool IR : {true, false}) {
+        SCOPED_TRACE(Target);
+        SCOPED_TRACE(Opt);
+        const auto Output = tmpFile(IR ? "apx_native.ll" : "apx_native.s");
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         Opt,
+                                         "-ffreestanding",
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-masm=att",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         "-S",
+                                         Source.string(),
+                                         "-o",
+                                         Output.string()};
+        if (IR)
+          Args.push_back("-emit-llvm");
+        const auto R = ncc(Args);
+        ASSERT_EQ(R.exitCode, 0) << R.err;
+        const auto Text = readFile(Output);
+        EXPECT_EQ(Text.find(IR ? " asm " : "#APP"), std::string::npos);
+        for (const char *Op : {"aadd", "aand", "aor", "axor", "cmpccxadd"})
+          for (unsigned Bits : {32u, 64u})
+            if (IR)
+              EXPECT_NE(Text.find("@llvm.x86." + std::string(Op) +
+                                  std::to_string(Bits) + ".address("),
+                        std::string::npos)
+                  << Text;
+        if (!IR) {
+          EXPECT_NE(Text.find("{evex}"), std::string::npos) << Text;
+          EXPECT_NE(Text.find("%fs:(%ebx)"), std::string::npos) << Text;
+          EXPECT_NE(Text.find("%gs:(%ebx)"), std::string::npos) << Text;
+          const std::regex Query("cmpexadd");
+          EXPECT_EQ(std::distance(
+                        std::sregex_iterator(Text.begin(), Text.end(), Query),
+                        std::sregex_iterator()),
+                    2)
+              << Text;
+        }
+      }
+}
+
+TEST_F(X86PrivilegedIntrinTest, APXNativeAtomicRejectsInvalidControls) {
+  for (const char *Call :
+       {"__builtin_ia32_aadd32_address(a, b, 16, 0)",
+        "__builtin_ia32_aadd64_address(a, b, 64, 99)",
+        "__builtin_ia32_axor64_address(a, b, n, 0)",
+        "__builtin_ia32_cmpccxadd32_address(a, b, b, 16, 64, 0)",
+        "__builtin_ia32_cmpccxadd64_address(a, b, b, n, 64, 0)",
+        "__builtin_ia32_cmpccxadd64_address(a, b, b, 0, 64, n)"}) {
+    const auto Source = "void f(unsigned long long a, unsigned long long b, "
+                        "unsigned n) { (void)" +
+                        std::string(Call) + "; }";
+    const auto [Status, Error] = compileToAsm(Source.c_str(), "invalid_apx");
+    EXPECT_NE(Status, 0) << Call << "\n" << Error;
+    EXPECT_TRUE(Error.find("constant integer") != std::string::npos ||
+                Error.find("outside the valid range") != std::string::npos ||
+                Error.find("memory address") != std::string::npos)
+        << Error;
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, PortableScalarSystemBuiltinsKeepNativeEffects) {
   const auto Source = tmpFile("scalar_system.c");
   writeFile(Source, R"(

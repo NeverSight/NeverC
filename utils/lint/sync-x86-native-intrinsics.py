@@ -98,6 +98,14 @@ for operation in ("verr_mem", "verw_mem", "sldt_mem", "str_mem", "smsw_mem",
     result = "I8" if operation in ("verr_mem", "verw_mem") else "Done"
     ADDRESS_SIGNATURES[operation + "_address"] = ((result, "I64", "I32", "I32"), (1, 2))
 
+
+# APX native atomic addresses have explicit width and segment controls.
+for bits in (32, 64):
+    word = f"I{bits}"
+    for operation in ("aadd", "aand", "aor", "axor"):
+        ADDRESS_SIGNATURES[f"{operation}{bits}_address"] = (("Done", "I64", word, "I32", "I32"), (2, 3))
+    ADDRESS_SIGNATURES[f"cmpccxadd{bits}_address"] = ((word, "I64", word, word, "I32", "I32", "I32"), (3, 4, 5))
+
 # MPX uses the same constant-argument machinery for bounds-bank indices and
 # address encoding controls. Effects remain conservative for disabled/faulting
 # native operations as well as successful bounds accesses.

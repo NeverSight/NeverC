@@ -268,6 +268,19 @@ BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
 
 // Native MPX uses the physical bounds bank. All controls are constants.
 BUILTIN(__builtin_ia32_bnd_branch, "vIUi", "n")
+
+// Encoding-preserving APX atomic transactions. Addresses are segment offsets.
+BUILTIN(__builtin_ia32_aadd32_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aadd64_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aand32_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aand64_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aor32_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aor64_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_axor32_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_axor64_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_cmpccxadd32_address, "UiULLiUiUiIUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_cmpccxadd64_address, "ULLiULLiULLiULLiIUiIUiIUi", "n")
+
 BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
 BUILTIN(__builtin_ia32_bndcl_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcu_reg, "vIUiULLi", "n")

@@ -51,6 +51,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/X86AMXNative.h"
+#include "llvm/IR/X86APXAtomicNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeArithmeticFlags.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
@@ -26652,6 +26653,69 @@ static SDValue completeDescriptorQuery(SDValue Op, SDNode *Access,
   return DAG.getMergeValues({Value, ZF, SDValue(Access, 1)}, DL);
 }
 
+// Keep APX encoding through all machine optimizations. The integer address
+// denotes an offset, not an LLVM pointer in the default address space. Its
+// native instruction owns segment addition, the atomic transaction and faults.
+static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
+                                   SelectionDAG &DAG) {
+  if (!Subtarget.is64Bit())
+    report_fatal_error("APX atomic intrinsic requires 64-bit mode");
+  const unsigned ID = Op.getConstantOperandVal(1);
+  const bool Compare = ID == Intrinsic::x86_cmpccxadd32_address ||
+                       ID == Intrinsic::x86_cmpccxadd64_address;
+  const unsigned WidthOperand = Compare ? 6 : 4;
+  SDValue Chain, Glue;
+  auto Address = lowerNativeAddressOperands(Op, Subtarget, 2, DAG, Chain, Glue,
+                                           WidthOperand);
+  unsigned Descriptor = 0;
+  if (Compare) {
+    const auto *CC = dyn_cast<ConstantSDNode>(Op.getOperand(5));
+    if (!CC || CC->getZExtValue() >= X86::APXAtomicConditionCount)
+      report_fatal_error("APX atomic condition must be a constant in [0, 15]");
+    Descriptor = CC->getZExtValue();
+  } else {
+    switch (ID) {
+    default:
+      llvm_unreachable("unexpected APX native atomic intrinsic");
+    case Intrinsic::x86_aadd32_address:
+    case Intrinsic::x86_aadd64_address:
+      Descriptor = 0;
+      break;
+    case Intrinsic::x86_aand32_address:
+    case Intrinsic::x86_aand64_address:
+      Descriptor = 1;
+      break;
+    case Intrinsic::x86_aor32_address:
+    case Intrinsic::x86_aor64_address:
+      Descriptor = 2;
+      break;
+    case Intrinsic::x86_axor32_address:
+    case Intrinsic::x86_axor64_address:
+      Descriptor = 3;
+      break;
+    }
+  }
+  if (Op.getConstantOperandVal(WidthOperand) == 32)
+    Descriptor |= X86::APXAtomicAddress32;
+  const bool Wide = Op.getOperand(3).getValueType() == MVT::i64;
+  const unsigned Opcode =
+      Compare ? (Wide ? X86::APX_CMPCCXADD_NATIVE64 : X86::APX_CMPCCXADD_NATIVE32)
+              : (Wide ? X86::APX_RAO_NATIVE64 : X86::APX_RAO_NATIVE32);
+  const SDLoc DL(Op);
+  SmallVector<SDValue, 10> Operands;
+  if (Compare)
+    Operands.push_back(Op.getOperand(3));
+  else
+    Operands.push_back(DAG.getTargetConstant(Descriptor, DL, MVT::i32));
+  llvm::append_range(Operands, Address);
+  Operands.push_back(Op.getOperand(Compare ? 4 : 3));
+  if (Compare)
+    Operands.push_back(DAG.getTargetConstant(Descriptor, DL, MVT::i32));
+  Operands.push_back(Chain);
+  Operands.push_back(Glue);
+  return SDValue(DAG.getMachineNode(Opcode, DL, Op->getVTList(), Operands), 0);
+}
+
 static SDValue lowerAMXNative(SDValue Op, const X86Subtarget &Subtarget,
                               SelectionDAG &DAG) {
   unsigned Kind;
@@ -27399,6 +27463,18 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_tcvtrowps2phl_reg:
     case Intrinsic::x86_tilemovrow_reg:
       return lowerAMXNative(Op, Subtarget, DAG);
+
+    case Intrinsic::x86_aadd32_address:
+    case Intrinsic::x86_aadd64_address:
+    case Intrinsic::x86_aand32_address:
+    case Intrinsic::x86_aand64_address:
+    case Intrinsic::x86_aor32_address:
+    case Intrinsic::x86_aor64_address:
+    case Intrinsic::x86_axor32_address:
+    case Intrinsic::x86_axor64_address:
+    case Intrinsic::x86_cmpccxadd32_address:
+    case Intrinsic::x86_cmpccxadd64_address:
+      return lowerAPXAtomicNative(Op, Subtarget, DAG);
     case Intrinsic::x86_tcvtrowd2ps:
     case Intrinsic::x86_tcvtrowd2psi:
     case Intrinsic::x86_tcvtrowps2bf16h:

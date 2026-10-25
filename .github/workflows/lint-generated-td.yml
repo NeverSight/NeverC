@@ -21,6 +21,9 @@ on:
       - 'utils/lint/sync-x86-amx-instructions.py'
       - 'utils/lint/test_sync_x86_amx_instructions.py'
       - 'utils/lint/sync-x86-amx-native-controls.py'
+      - 'utils/lint/sync-x86-apx-atomic.py'
+      - 'utils/lint/test_sync_x86_apx_atomic.py'
+      - 'llvm/include/llvm/IR/X86APXAtomicNative.h'
       - 'utils/lint/test_sync_x86_amx_native_controls.py'
       - 'utils/lint/sync-x86-rep-state.py'
       - 'utils/lint/test_sync_x86_rep_state.py'
@@ -58,6 +61,9 @@ on:
       - 'utils/lint/sync-x86-amx-instructions.py'
       - 'utils/lint/test_sync_x86_amx_instructions.py'
       - 'utils/lint/sync-x86-amx-native-controls.py'
+      - 'utils/lint/sync-x86-apx-atomic.py'
+      - 'utils/lint/test_sync_x86_apx_atomic.py'
+      - 'llvm/include/llvm/IR/X86APXAtomicNative.h'
       - 'utils/lint/test_sync_x86_amx_native_controls.py'
       - 'utils/lint/sync-x86-rep-state.py'
       - 'utils/lint/test_sync_x86_rep_state.py'
@@ -150,9 +156,11 @@ jobs:
           python3 utils/lint/sync-x86-amx-instructions.py
           python3 utils/lint/test_sync_x86_amx_instructions.py
 
-      - name: Verify explicit AMX and REP controls
+      - name: Verify explicit AMX, APX and REP controls
         run: |
           python3 utils/lint/sync-x86-amx-native-controls.py
+          python3 utils/lint/sync-x86-apx-atomic.py
+          python3 utils/lint/test_sync_x86_apx_atomic.py
           python3 utils/lint/test_sync_x86_amx_native_controls.py
           python3 utils/lint/sync-x86-rep-state.py
           python3 utils/lint/test_sync_x86_rep_state.py

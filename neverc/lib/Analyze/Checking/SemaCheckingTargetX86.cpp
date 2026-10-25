@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/X86MpxState.h"
+#include "llvm/IR/X86APXAtomicNative.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86RepStringState.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
@@ -659,6 +660,21 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1) ||
            CheckMemoryAddress(TheCall->getNumArgs() - 2);
+  case X86::BI__builtin_ia32_aadd32_address:
+  case X86::BI__builtin_ia32_aadd64_address:
+  case X86::BI__builtin_ia32_aand32_address:
+  case X86::BI__builtin_ia32_aand64_address:
+  case X86::BI__builtin_ia32_aor32_address:
+  case X86::BI__builtin_ia32_aor64_address:
+  case X86::BI__builtin_ia32_axor32_address:
+  case X86::BI__builtin_ia32_axor64_address:
+    return CheckMemoryAddress(2);
+  case X86::BI__builtin_ia32_cmpccxadd32_address:
+  case X86::BI__builtin_ia32_cmpccxadd64_address:
+    return SemaBuiltinConstantArgRange(
+               TheCall, 3, 0, llvm::X86::APXAtomicConditionCount - 1) ||
+           CheckMemoryAddress(4);
+
   case X86::BI__builtin_ia32_verr_mem_address:
   case X86::BI__builtin_ia32_verw_mem_address:
   case X86::BI__builtin_ia32_sldt_mem_address:

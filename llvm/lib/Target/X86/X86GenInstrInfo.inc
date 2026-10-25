@@ -18568,7 +18568,19 @@ namespace X86 {
     REP_OUTS_STATE32	= 18553,
     ENCLU_STATE64	= 18554,
     GETSEC_STATE64	= 18555,
-    INSTRUCTION_LIST_END = 18556
+    AADD32mr_EVEX	= 18556,
+    AADD64mr_EVEX	= 18557,
+    AAND32mr_EVEX	= 18558,
+    AAND64mr_EVEX	= 18559,
+    AOR32mr_EVEX	= 18560,
+    AOR64mr_EVEX	= 18561,
+    AXOR32mr_EVEX	= 18562,
+    AXOR64mr_EVEX	= 18563,
+    APX_RAO_NATIVE32	= 18564,
+    APX_RAO_NATIVE64	= 18565,
+    APX_CMPCCXADD_NATIVE32	= 18566,
+    APX_CMPCCXADD_NATIVE64	= 18567,
+    INSTRUCTION_LIST_END = 18568
   };
 
 } // end namespace X86
@@ -20959,9 +20971,9 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18556];
+  MCInstrDesc Insts[18568];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
-  MCOperandInfo OperandInfo[5453];
+  MCOperandInfo OperandInfo[5485];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
   MCPhysReg ImplicitOps[751];
 };
@@ -20978,6 +20990,18 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18567,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	674,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18567 = APX_CMPCCXADD_NATIVE64
+    { 18566,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	665,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18566 = APX_CMPCCXADD_NATIVE32
+    { 18565,	7,	0,	0,	73,	0,	0,	X86ImpOpBase + 0,	5460,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18565 = APX_RAO_NATIVE64
+    { 18564,	7,	0,	0,	73,	0,	0,	X86ImpOpBase + 0,	5453,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18564 = APX_RAO_NATIVE32
+    { 18563,	6,	0,	0,	1401,	0,	0,	X86ImpOpBase + 0,	185,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60031018ULL },  // Inst #18563 = AXOR64mr_EVEX
+    { 18562,	6,	0,	0,	17,	0,	0,	X86ImpOpBase + 0,	272,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60011018ULL },  // Inst #18562 = AXOR32mr_EVEX
+    { 18561,	6,	0,	0,	1401,	0,	0,	X86ImpOpBase + 0,	185,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60031818ULL },  // Inst #18561 = AOR64mr_EVEX
+    { 18560,	6,	0,	0,	17,	0,	0,	X86ImpOpBase + 0,	272,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60011818ULL },  // Inst #18560 = AOR32mr_EVEX
+    { 18559,	6,	0,	0,	1401,	0,	0,	X86ImpOpBase + 0,	185,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60030818ULL },  // Inst #18559 = AAND64mr_EVEX
+    { 18558,	6,	0,	0,	17,	0,	0,	X86ImpOpBase + 0,	272,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60010818ULL },  // Inst #18558 = AAND32mr_EVEX
+    { 18557,	6,	0,	0,	1401,	0,	0,	X86ImpOpBase + 0,	185,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60030018ULL },  // Inst #18557 = AADD64mr_EVEX
+    { 18556,	6,	0,	0,	17,	0,	0,	X86ImpOpBase + 0,	272,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x7e60010018ULL },  // Inst #18556 = AADD32mr_EVEX
     { 18555,	0,	0,	0,	78,	5,	7,	X86ImpOpBase + 739,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18555 = GETSEC_STATE64
     { 18554,	0,	0,	0,	78,	5,	7,	X86ImpOpBase + 739,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18554 = ENCLU_STATE64
     { 18553,	2,	0,	0,	78,	3,	4,	X86ImpOpBase + 732,	5451,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18553 = REP_OUTS_STATE32
@@ -40649,6 +40673,10 @@ extern const X86InstrTable X86Descs = {
     /* 5446 */ { X86::BNDRRegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
     /* 5448 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
     /* 5451 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5453 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5460 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5467 */ { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
+    /* 5476 */ { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
   }, {
     /* 0 */
     /* 0 */ X86::EFLAGS,
@@ -58463,6 +58491,18 @@ extern const char X86InstrNameData[] = {
   /* 259874 */ "REP_OUTS_STATE32\0"
   /* 259891 */ "ENCLU_STATE64\0"
   /* 259905 */ "GETSEC_STATE64\0"
+  /* 259920 */ "AADD32mr_EVEX\0"
+  /* 259934 */ "AADD64mr_EVEX\0"
+  /* 259948 */ "AAND32mr_EVEX\0"
+  /* 259962 */ "AAND64mr_EVEX\0"
+  /* 259976 */ "AOR32mr_EVEX\0"
+  /* 259989 */ "AOR64mr_EVEX\0"
+  /* 260002 */ "AXOR32mr_EVEX\0"
+  /* 260016 */ "AXOR64mr_EVEX\0"
+  /* 260030 */ "APX_RAO_NATIVE32\0"
+  /* 260047 */ "APX_RAO_NATIVE64\0"
+  /* 260064 */ "APX_CMPCCXADD_NATIVE32\0"
+  /* 260087 */ "APX_CMPCCXADD_NATIVE64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60883,10 +60923,22 @@ extern const unsigned X86InstrNameIndices[] = {
     259874U,
     259891U,
     259905U,
+    259920U,
+    259934U,
+    259948U,
+    259962U,
+    259976U,
+    259989U,
+    260002U,
+    260016U,
+    260030U,
+    260047U,
+    260064U,
+    260087U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18556);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18568);
 }
 
 } // end namespace llvm
@@ -60946,7 +60998,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18556);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18568);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98284,6 +98336,30 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     3125,
     /* GETSEC_STATE64 */
     3125,
+    /* AADD32mr_EVEX */
+    839,
+    /* AADD64mr_EVEX */
+    841,
+    /* AAND32mr_EVEX */
+    843,
+    /* AAND64mr_EVEX */
+    845,
+    /* AOR32mr_EVEX */
+    2140,
+    /* AOR64mr_EVEX */
+    2142,
+    /* AXOR32mr_EVEX */
+    2144,
+    /* AXOR64mr_EVEX */
+    2146,
+    /* APX_RAO_NATIVE32 */
+    930,
+    /* APX_RAO_NATIVE64 */
+    64484,
+    /* APX_CMPCCXADD_NATIVE32 */
+    64487,
+    /* APX_CMPCCXADD_NATIVE64 */
+    64492,
   };
 
   using namespace OpTypes;
@@ -134959,6 +135035,9 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     i32imm, GR64, GR64,
     i32imm, i8mem,
     VR512, i32imm, GR32,
+    i32imm, i64mem, GR64,
+    GR32, GR32, i32mem, GR32, i32imm,
+    GR64, GR64, i64mem, GR64, i32imm,
 };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -153698,9 +153777,21 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // REP_OUTS_STATE32 = 18553
     CEFBS_In64BitMode, // ENCLU_STATE64 = 18554
     CEFBS_In64BitMode, // GETSEC_STATE64 = 18555
+    CEFBS_In64BitMode, // AADD32mr_EVEX = 18556
+    CEFBS_In64BitMode, // AADD64mr_EVEX = 18557
+    CEFBS_In64BitMode, // AAND32mr_EVEX = 18558
+    CEFBS_In64BitMode, // AAND64mr_EVEX = 18559
+    CEFBS_In64BitMode, // AOR32mr_EVEX = 18560
+    CEFBS_In64BitMode, // AOR64mr_EVEX = 18561
+    CEFBS_In64BitMode, // AXOR32mr_EVEX = 18562
+    CEFBS_In64BitMode, // AXOR64mr_EVEX = 18563
+    CEFBS_In64BitMode, // APX_RAO_NATIVE32 = 18564
+    CEFBS_In64BitMode, // APX_RAO_NATIVE64 = 18565
+    CEFBS_In64BitMode, // APX_CMPCCXADD_NATIVE32 = 18566
+    CEFBS_In64BitMode, // APX_CMPCCXADD_NATIVE64 = 18567
   };
 
-  assert(Opcode < 18556);
+  assert(Opcode < 18568);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

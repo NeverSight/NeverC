@@ -516,6 +516,41 @@ dialects. Isolated Linux x64 children additionally compare real CPL3 #UD faults
 with independently encoded bytes. Controlled output injection qualifies
 compiler transport, not successful privileged enclave operations.
 
+### APX native atomic transactions
+
+On x86-64, `__NEVERC_X86_APX_ATOMIC__` is 1. The builtins
+`__builtin_ia32_{aadd,aand,aor,axor}{32,64}_address` take an unsigned 64-bit
+offset, an unsigned value of the named width, a constant address width and a
+constant segment prefix. They return void. The two
+`__builtin_ia32_cmpccxadd{32,64}_address` builtins take offset, comparator,
+addend, constant condition, address width and segment prefix, and return the
+old memory value as an unsigned integer of the named width.
+
+Address width is 32 or 64; segment is 0 for the DS default or one of the
+override bytes `0x26`, `0x2e`, `0x36`, `0x3e`, `0x64`, `0x65`. Conditions use
+the architectural 0..15 encoding. Invalid or dynamic controls are diagnosed.
+Narrow addressing wraps before native segment-base addition. The APIs retain
+EVEX encoding, native atomic access and faults, including CMPccXADD write-back
+when its condition is false. They do not check CPU availability or promise
+alignment or successful completion.
+
+These builtins emit `llvm.x86.<operation><width>.address` directly. Unknown
+memory and synchronization effects preserve repeated calls and dead results;
+CMPccXADD defines flags and RAO-INT preserves them. `X86APXAtomicNative.h`
+shares the machine descriptor with the full fork. The generated intrinsic
+synchronizer owns signatures and immediate positions, while
+`sync-x86-apx-atomic.py` appends the pruned EVEX opcodes and native pseudos
+without renumbering existing machine opcodes.
+
+`tests/verify-apx-atomic-completion.py` qualifies O0/O2 in ELF, COFF and Mach-O
+through NeverC, the full fork (`--llc`), or NeverC IR followed by the full fork
+(`--backend-llc`). It checks all conditions and segment/address controls,
+live/dead/repeated calls, aliased ordinary memory and C ABI preservation with
+independently decoded, controlled completions. ATT and Intel assembly round
+trips preserve every effective instruction's bytes and address; alignment
+NOP encodings can differ. Controlled completions do not establish physical
+atomicity, coherence or hardware fault behavior.
+
 ### Bounded leaf state with incoming arithmetic flags
 
 `__NEVERC_X86_BOUNDED_LEAF_STATE__ == 1` advertises two additional x64 APIs:

@@ -1867,6 +1867,10 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 19235 */ "bndcl\t\0"
   /* 19242 */ "bndcu\t\0"
   /* 19249 */ "bndcn\t\0"
+  /* 19256 */ "aadd\t\0"
+  /* 19262 */ "aand\t\0"
+  /* 19268 */ "aor\t\0"
+  /* 19273 */ "axor\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20429,6 +20433,18 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
+    545377081U,	// AADD32mr_EVEX
+    549571385U,	// AADD64mr_EVEX
+    545377087U,	// AAND32mr_EVEX
+    549571391U,	// AAND64mr_EVEX
+    545377093U,	// AOR32mr_EVEX
+    549571397U,	// AOR64mr_EVEX
+    545377098U,	// AXOR32mr_EVEX
+    549571402U,	// AXOR64mr_EVEX
+    0U,	// APX_RAO_NATIVE32
+    0U,	// APX_RAO_NATIVE64
+    0U,	// APX_CMPCCXADD_NATIVE32
+    0U,	// APX_CMPCCXADD_NATIVE64
 };
 
   static const uint16_t OpInfo1[] = {
@@ -38988,6 +39004,18 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
+    0U,	// AADD32mr_EVEX
+    0U,	// AADD64mr_EVEX
+    0U,	// AAND32mr_EVEX
+    0U,	// AAND64mr_EVEX
+    0U,	// AOR32mr_EVEX
+    0U,	// AOR64mr_EVEX
+    0U,	// AXOR32mr_EVEX
+    0U,	// AXOR64mr_EVEX
+    0U,	// APX_RAO_NATIVE32
+    0U,	// APX_RAO_NATIVE64
+    0U,	// APX_CMPCCXADD_NATIVE32
+    0U,	// APX_CMPCCXADD_NATIVE64
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57547,6 +57575,18 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
+    0U,	// AADD32mr_EVEX
+    0U,	// AADD64mr_EVEX
+    0U,	// AAND32mr_EVEX
+    0U,	// AAND64mr_EVEX
+    0U,	// AOR32mr_EVEX
+    0U,	// AOR64mr_EVEX
+    0U,	// AXOR32mr_EVEX
+    0U,	// AXOR64mr_EVEX
+    0U,	// APX_RAO_NATIVE32
+    0U,	// APX_RAO_NATIVE64
+    0U,	// APX_CMPCCXADD_NATIVE32
+    0U,	// APX_CMPCCXADD_NATIVE64
 };
 
   // Emit the opcode for the instruction.

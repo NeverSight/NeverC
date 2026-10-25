@@ -33,6 +33,7 @@
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/X86AMXNative.h"
+#include "llvm/IR/X86APXAtomicNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86RepStringState.h"
@@ -398,6 +399,38 @@ static void lowerNativeAddressOverride(MCInst &Inst, unsigned Opcode,
   }
 }
 
+static void lowerAPXAtomicNative(MCInst &Inst) {
+  const bool Compare = Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE32 ||
+                       Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE64;
+  const bool Wide = Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE64 ||
+                    Inst.getOpcode() == X86::APX_RAO_NATIVE64;
+  const uint64_t D = Inst.getOperand(Compare ? 8 : 0).getImm();
+  const unsigned Kind = D & (X86::APXAtomicConditionCount - 1);
+  if ((D & ~uint64_t(X86::APXAtomicDescriptorMask)) ||
+      (!Compare && Kind >= X86::APXRaoOperationCount))
+    report_fatal_error("invalid APX atomic machine descriptor");
+  MCInst Native;
+  Native.setFlags(Inst.getFlags() | X86::IP_USE_EVEX);
+  if (Compare) {
+    Native.setOpcode(Wide ? X86::CMPCCXADDmr64_EVEX : X86::CMPCCXADDmr32_EVEX);
+    for (unsigned I = 0; I != 8; ++I)
+      Native.addOperand(Inst.getOperand(I));
+    Native.addOperand(MCOperand::createImm(Kind));
+  } else {
+    constexpr unsigned Opcodes[][2] = {
+        {X86::AADD32mr_EVEX, X86::AADD64mr_EVEX},
+        {X86::AAND32mr_EVEX, X86::AAND64mr_EVEX},
+        {X86::AOR32mr_EVEX, X86::AOR64mr_EVEX},
+        {X86::AXOR32mr_EVEX, X86::AXOR64mr_EVEX}};
+    Native.setOpcode(Opcodes[Kind][Wide]);
+    for (unsigned I = 1; I != 7; ++I)
+      Native.addOperand(Inst.getOperand(I));
+  }
+  if (D & X86::APXAtomicAddress32)
+    lowerNativeAddressOverride(Native, Native.getOpcode(), Compare ? 2 : 0, 32);
+  Inst = Native;
+}
+
 static void lowerAMXNative(MCInst &Inst) {
   const bool Row = Inst.getOpcode() == X86::AMX_ROW_NATIVE;
   const unsigned DescriptorIndex = Row ? 1 : 0;
@@ -581,6 +614,12 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
 
   // Handle a few special cases to eliminate operand modifiers.
   switch (OutMI.getOpcode()) {
+  case X86::APX_RAO_NATIVE32:
+  case X86::APX_RAO_NATIVE64:
+  case X86::APX_CMPCCXADD_NATIVE32:
+  case X86::APX_CMPCCXADD_NATIVE64:
+    lowerAPXAtomicNative(OutMI);
+    break;
   case X86::AMX_MEMORY_NATIVE:
   case X86::AMX_ROW_NATIVE:
     lowerAMXNative(OutMI);
