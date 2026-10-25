@@ -41,8 +41,13 @@ typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
  *   timerqueue_node(32) + _softexpires(8) + function(8) + base(8) + 4×u8(4) + pad(4)
  *   5.10–6.6: + ANDROID_KABI_RESERVE(1) = u64(8)  → 72 bytes
  *   6.12–6.18: KABI_RESERVE removed                → 64 bytes
+ *   7.2: linked timerqueue node and reordered fields; function at 72 → 80 bytes
  */
 struct hrtimer {
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+	unsigned char __before_function[72];
+	hrtimer_func_t function;
+#else
 	unsigned char __before_function[40];
 	hrtimer_func_t function;
 #if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
@@ -50,8 +55,15 @@ struct hrtimer {
 #else
 	unsigned char __after_function[16];
 #endif
+#endif
 };
 
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+_Static_assert(__builtin_offsetof(struct hrtimer, function) == 72,
+	       "unexpected GKI 7.2 hrtimer function offset");
+_Static_assert(sizeof(struct hrtimer) == 80,
+	       "unexpected GKI 7.2 hrtimer layout");
+#else
 _Static_assert(__builtin_offsetof(struct hrtimer, function) == 40,
 	       "unexpected GKI hrtimer function offset");
 #if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
@@ -60,6 +72,7 @@ _Static_assert(sizeof(struct hrtimer) == 72,
 #else
 _Static_assert(sizeof(struct hrtimer) == 64,
 	       "unexpected GKI 6.12+ hrtimer layout");
+#endif
 #endif
 
 /*

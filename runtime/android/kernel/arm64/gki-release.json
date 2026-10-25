@@ -83,6 +83,19 @@
       "sha256": "67e1bcba1dd72b9b6297959d1bc36a8856e65968d155b2e3747d8bcbc0409398",
       "size": 249324598,
       "vermagic": "6.18.24-android17-5-maybe-dirty-4k SMP preempt mod_unload modversions aarch64"
+    },
+    "703": {
+      "asset": "gki-android18-7.3-build.tar.gz",
+      "kcfi_typeids": {
+        "cleanup_module": "0xe5c47d60",
+        "init_module": "0x6fbb3035"
+      },
+      "kernel_name": "android18-7.3",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "9398fe874452fbb3ff380385ce296adb496f1b3a0d95ac594748e45437dc0001",
+      "size": 263726718,
+      "tag": "gki-android18-7.3-preview-20261025",
+      "vermagic": "7.2.0-rc9-android18-0-maybe-dirty-neverc-preview-4k SMP preempt mod_unload modversions aarch64"
     }
   },
   "repository": {

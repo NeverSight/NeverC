@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/kernel.h>
+#include <nvkmod_version.h>
 
 struct rb_node {
 	unsigned long __rb_parent_color;
@@ -20,8 +21,27 @@ struct rb_root {
 
 void rb_insert_color(struct rb_node *node, struct rb_root *root);
 void rb_erase(struct rb_node *node, struct rb_root *root);
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+static __always_inline struct rb_node *rb_first(const struct rb_root *root)
+{
+	struct rb_node *node = root->rb_node;
+	if (node)
+		while (node->rb_left)
+			node = node->rb_left;
+	return node;
+}
+static __always_inline struct rb_node *rb_last(const struct rb_root *root)
+{
+	struct rb_node *node = root->rb_node;
+	if (node)
+		while (node->rb_right)
+			node = node->rb_right;
+	return node;
+}
+#else
 struct rb_node *rb_first(const struct rb_root *root);
 struct rb_node *rb_last(const struct rb_root *root);
+#endif
 struct rb_node *rb_next(const struct rb_node *node);
 struct rb_node *rb_prev(const struct rb_node *node);
 struct rb_node *rb_first_postorder(const struct rb_root *root);

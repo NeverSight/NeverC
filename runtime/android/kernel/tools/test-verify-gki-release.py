@@ -35,6 +35,7 @@ def profile_entry(profile):
             "606": "android15-6.6",
             "612": "android16-6.12",
             "618": "android17-6.18",
+            "703": "android18-7.3",
         }[profile],
         "asset": f"gki-{profile}.tar.gz",
         "kcfi_typeids": (
@@ -71,6 +72,25 @@ class LockTests(unittest.TestCase):
         del lock["profiles"]["618"]
         with self.assertRaisesRegex(verify.ValidationError, "profiles"):
             verify.validate_lock(lock)
+
+    def test_optional_preview_uses_its_own_release_tag(self):
+        lock = valid_lock()
+        lock["profiles"]["703"] = profile_entry("703")
+        lock["profiles"]["703"]["tag"] = "gki-android18-7.3-preview-20261025"
+        lock = verify.validate_lock(lock)
+        self.assertEqual(verify.release_tag_for_profile(lock, "703"),
+                         "gki-android18-7.3-preview-20261025")
+        for profile in PROFILES:
+            self.assertEqual(verify.release_tag_for_profile(lock, profile),
+                             "gki-build-20260701")
+
+    def test_invalid_profile_release_tag_is_rejected(self):
+        for tag in (None, "", "v3389.1.4", "../gki-build", "gki-a/b", "gki-a\n"):
+            with self.subTest(tag=tag):
+                lock = valid_lock()
+                lock["profiles"]["618"]["tag"] = tag
+                with self.assertRaisesRegex(verify.ValidationError, "release tag"):
+                    verify.validate_lock(lock)
 
     def test_missing_android_generation_family_is_rejected(self):
         lock = valid_lock()

@@ -34,7 +34,7 @@ class EvidenceAuditCliTests(unittest.TestCase):
 
         self.assertEqual(set(catalog), set(profiles))
         self.assertEqual(set(catalog), {
-            "510", "51013", "515", "51514", "601", "606", "612", "618"
+            "510", "51013", "515", "51514", "601", "606", "612", "618", "703"
         })
         for evidence in catalog.values():
             for key in evidence["manifest_bound_artifacts"]:

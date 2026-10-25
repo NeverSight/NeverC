@@ -169,12 +169,14 @@ The two GKI workflows have deliberately different jobs:
 
 - `.github/workflows/build-gki-kernels.yml` is the expensive, manual producer.
   It syncs and builds complete Android kernel trees, verifies their direct
-  `struct module` relocation evidence, and publishes release archives.
+  `struct module` relocation evidence, and publishes release archives. New
+  families can first run in ABI discovery mode, without a certified runtime
+  profile.
 - `.github/workflows/validate-gki-runtime.yml` is the lightweight consumer and
   compatibility gate. It downloads every archive pinned in
-  `arm64/gki-release.json` (eight families on `gki-build-20260701`: the
-  six official GKI series plus android13-5.10 / android14-5.15). QEMU and
-  smoke therefore cover `51013` and `51514` as well as the original six.
+  `arm64/gki-release.json` (eight stable families on `gki-build-20260701`,
+  plus the separately published 703 production preview). QEMU and smoke cover
+  all nine pinned profiles.
 - `.github/workflows/watch-gki-updates.yml` polls AOSP `kernel/common` daily
   for a newer linux sublevel, a KMI generation bump, a `-kminext` preview, a
   NeverC-read struct-field shift, or a new `androidN-M.m` branch, and posts
@@ -188,8 +190,61 @@ but a KCOV-enabled build needs a separately certified profile. The catalog recor
 verified build artifacts, so a newer upstream branch tip alone is insufficient
 to advance its pinned patch or regenerate module offsets.
 
+### Android 18 / Linux 7.3 production preview
+
+`-DNVK_KERNEL=703` selects the **production preview** of official branch
+`android18-7.3`, KMI **0**, at common commit
+`d05bec5ef839dbeca434de1f27e79dd62eee39e9`. That source temporarily reports
+Linux **7.2.0-rc9**. The measured release token is
+`7.2.0-rc9-android18-0-maybe-dirty-neverc-preview-4k`.
+
+Apply `arm64/android18-7.3-production.fragment` to `gki_defconfig`. It disables
+lockdep and debug locks while keeping CFI, Rust, and the other GKI options.
+The stock debug defconfig has different lock and module layouts and requires
+its own profile. The preview requires the exact measured release token,
+including the RC and configuration marker, for runtime activation. A later RC
+or stable 7.3 release must be measured again. The watcher preserves RC changes
+when comparing the catalog and upstream tips.
+
+The SDK accounts for the new mutex/semaphore waiter pointers, rwsem storage,
+hrtimer callback placement, sysfs const callback slot, and removed KABI
+reserves. It uses the new `mutex_init_generic` export and inline compatibility
+for removed rbtree/string exports. Runtime `do_mmap` dispatch passes the new
+aggregate `vma_flags_t` and retains the existing ABIs for older families.
+The selected GKI uses Rust Binder. The existing C `binder_transaction`
+filter backend is explicitly unavailable on 703 and returns `-EOPNOTSUPP`;
+porting transaction filtering to Rust Binder requires separate ABI evidence.
+
+Select `kernel_version=703` in `build-gki-kernels` to sync
+`common-android18-7.3`, pin the common commit, apply the fragment, and build
+with Kleaf `--nostamp`. It checks module offsets and compares fresh BTF,
+configuration, and SDK export evidence with `arm64/gki-manifests/703.json`
+before publishing. For a standalone make build, put
+`-android18-0-maybe-dirty` in the output directory's `localversion` file to
+reproduce Kleaf's prefix; the fragment supplies `-neverc-preview-4k`.
+
+The checked manifest comes from a local arm64 standalone build with Clang
+20.1.2, Rust 1.97.1, bindgen 0.71.1, and pahole 1.31. Local evidence paths and
+hashes are registered in `arm64/gki-local-evidence.json`. The validated native
+arm64 standalone build is available as
+[`gki-android18-7.3-preview-20261025`](https://github.com/NeverSight/NeverC/releases/tag/gki-android18-7.3-preview-20261025),
+with 128 GKI modules, measured ABI evidence, QEMU logs, and `SHA256SUMS`.
+Use a NeverC build containing 703 support, merged into `dev` in
+[PR #23](https://github.com/NeverSight/NeverC/pull/23).
+`gki-release.json` pins the preview's archive size and SHA-256 and includes
+703 in the consumer's release/QEMU matrix. The optional `tag` on a profile
+overrides the lock's default tag, so 703 uses its standalone release while the
+eight stable archives retain their `gki-build-20260701` pins.
+The consumer permits unpinned RC previews in the catalog while continuing
+to require a release-lock entry for every stable profile. Its boot matrix
+contains only release-pinned profiles; selecting an unpinned preview fails
+with a missing-artifact diagnostic.
+The independent zero-import loader fixture is `gki-qemu-smoke-module.c`;
+`gki-sdk-smoke-module.c` additionally exercises locks, a timer callback,
+rbtree traversal, and string padding in a disposable guest.
+
 The consumer checks each asset's name, byte size, and SHA-256 before safe
-extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks
+extraction; regenerates all checked BTF/DWARF layouts from `vmlinux`; checks
 every packaged config and `Module.symvers` occurrence; and independently derives
 `init`, `exit`, `sizeof(struct module)`, and the module-entry KCFI type IDs from
 the lock-pinned packaged `.ko`. It also runs the complete current runtime
@@ -292,6 +347,7 @@ Official pinned families are **verified** against stock GKI `gki_defconfig`
 evidence computed from each kernel's own prepared headers via
 `tools/gen_struct_module_offsets.c`. Local Android-generation families
 (`51013`, `51514`) are verified against the measured local `vmlinux`:
+`703` uses the local production preview configuration described above.
 
 | preset | release | NAME | INIT | EXIT | sizeof |
 |--------|---------|------|------|------|--------|
@@ -303,6 +359,7 @@ evidence computed from each kernel's own prepared headers via
 | `606` (android15-6.6)  | 6.6.139 | 24 | 392 (0x188) | 1464 (0x5B8) | 1536 (0x600) |
 | `612` (android16-6.12) | 6.12.89 | 24 | 392 (0x188) | 1528 (0x5F8) | 1600 (0x640) |
 | `618` (android17-6.18) | 6.18.24 | 24 | 376 (0x178) | 1536 (0x600) | 1664 (0x680) |
+| `703` (android18-7.3 production preview) | 7.2.0-rc9 | 24 | 336 (0x150) | 1264 (0x4F0) | 1344 (0x540) |
 
 `name` (offset 24) is stable across current GKI builds; `init`/`exit`/sizeof
 depend on the target kernel's `CONFIG_*` (CFI_CLANG, MODULE_UNLOAD, TRACEPOINTS,
@@ -363,6 +420,8 @@ release token; it is not required. The observed OEM patch/Android/KMI
 fields remain visible and are never overwritten with pinned values. There
 is no cross-series, unknown-banner, nearest-version, or maximum-layout
 fallback.
+Development RC profiles such as `703` additionally require the complete
+measured release token, even when explicitly selected; their ABI is unfrozen.
 
 ## Same Linux series, different Android generation
 
@@ -430,6 +489,9 @@ matches the Android generation; do not mix `510`/`51013` or `515`/`51514`.
 prefixes start at the 601 family.
 
 Activation with the selected compile family:
+
+Development RC profiles (`703`) require their complete measured release token.
+The following compatibility rules apply to stable profiles:
 
 1. Same Linux patch + Android generation + KMI + page → `EXACT`, that
    family's layout. The catalog token (often a local `-dirty` / git

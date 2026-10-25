@@ -7,11 +7,13 @@
 
 /*
  * do_mmap signature changed in 6.6: an extra vm_flags parameter was
- * inserted between flags and pgoff.  Both typedefs are kept so the
+ * inserted between flags and pgoff. Linux 7.3 development changes its type to
+ * the aggregate vma_flags_t. Typed entry points are kept so the
  * runtime dispatches through the selected profile's named do_mmap ABI.
  *
  *   5.10/5.15/6.1:      do_mmap(file,addr,len,prot,flags,pgoff,*pop,*uf)       8 params
  *   6.6/6.12/6.18:      do_mmap(file,addr,len,prot,flags,vm_flags,pgoff,*pop,*uf)  9 params
+ *   7.3 development:   same positions, with vma_flags_t in place of vm_flags_t
  */
 #define NEVERC_KRT_XMEM_PROT_READ  0x1
 #define NEVERC_KRT_XMEM_PROT_WRITE 0x2

@@ -144,6 +144,12 @@ class ParseTests(unittest.TestCase):
         self.assertTrue(watch.is_pointer_file("bazel/constants.scl\n"))
         self.assertFalse(watch.is_pointer_file("BRANCH=android16-6.12\nKMI_GENERATION=6\n"))
 
+    def test_android18_temporary_release_override(self):
+        text = makefile(7, 3, 0) + "PATCHLEVEL = 2\nEXTRAVERSION = -rc9\n"
+        self.assertEqual(watch.parse_makefile_version(text), (7, 2, 0))
+        self.assertEqual(watch.parse_makefile_release(text), "7.2.0-rc9")
+        self.assertEqual(watch.parse_makefile_release(makefile(7, 3, 0)), "7.3.0")
+
     def test_ls_remote_filters_gki_heads(self):
         listing = "\n".join(
             [
@@ -171,6 +177,46 @@ class ParseTests(unittest.TestCase):
 
 
 class ProbeTests(unittest.TestCase):
+    def test_development_profile_is_watched_without_catalog_drift(self):
+        branch = "android18-7.3"
+        development = watch.parse_development_profile("703:" + branch)
+        mapping = {
+            aosp_url(branch, "Makefile"): encode_text(
+                makefile(7, 3, 0) + "PATCHLEVEL = 2\nEXTRAVERSION = -rc9\n"
+            ),
+            aosp_url(branch, "bazel/constants.scl"): encode_text(constants(branch, 0)),
+        }
+        records, errors, _ = watch.probe_all(
+            [], opener=FakeOpener(mapping),
+            ls_remote="aaa refs/heads/android18-7.3\n",
+            development_profiles=[development],
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["legacy_id"], 703)
+        self.assertIs(records[0]["development"], True)
+        self.assertEqual(records[0]["live"]["linux_release"], "7.2.0-rc9")
+        self.assertEqual(watch.catalog_drift(records), [])
+        report = watch.build_report(records, [], None, [branch], False)
+        self.assertFalse(report["has_updates"])
+        self.assertIn("runtime profile unavailable", watch.format_markdown_report(report))
+        self.assertIn("runtime profile unavailable", watch.build_discord_payload(report)["embeds"][0]["description"])
+
+    def test_android18_reads_bazel_constants_without_legacy_pointer(self):
+        branch = "android18-7.3"
+        mapping = {
+            aosp_url(branch, "Makefile"): encode_text(
+                makefile(7, 3, 0) + "PATCHLEVEL = 2\nEXTRAVERSION = -rc9\n"
+            ),
+            aosp_url(branch, "bazel/constants.scl"): encode_text(
+                constants(branch, 0)
+            ),
+        }
+        record = watch.probe_branch(branch, opener=FakeOpener(mapping))
+        self.assertEqual(record["linux_release"], "7.2.0-rc9")
+        self.assertEqual(record["kmi_generation"], 0)
+        self.assertEqual(record["kmi_source"], "bazel/constants.scl")
+
     def test_reads_constants_then_common_and_follows_pointer(self):
         mapping = {
             aosp_url("android12-5.10", "Makefile"): encode_text(makefile(5, 10, 260)),
@@ -281,6 +327,39 @@ class ProbeTests(unittest.TestCase):
 
 
 class DiffTests(unittest.TestCase):
+    def test_preview_catalog_preserves_rc_and_detects_next_rc(self):
+        preview = family("android18-7.3", 703, 18, 7, 2, 0, 0)
+        preview["linux_extraversion"] = "-rc9"
+        record = watch.family_identity(preview)
+        record["live"] = {
+            **record, "branch": preview["kernel_name"], "kmi_version": "7.2-android18-0"
+        }
+        record["kminext"] = None
+        snapshot = watch.baseline_from_catalog([preview])
+        self.assertEqual(watch.catalog_drift([record]), [])
+        self.assertEqual(watch.collect_changes([record], snapshot, []), [])
+        record["live"]["linux_release"] = "7.2.0-rc10"
+        self.assertEqual(watch.catalog_drift([record])[0]["catalog_release"], "7.2.0-rc9")
+        changes = watch.collect_changes([record], snapshot, [])
+        self.assertEqual([(c["from"], c["to"]) for c in changes], [("7.2.0-rc9", "7.2.0-rc10")])
+
+    def test_release_candidate_change_survives_snapshot(self):
+        record = live_record(live_patch=90)
+        record["live"]["linux_release"] = "6.12.90-rc9"
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = watch.write_snapshot(
+                Path(directory) / "snapshot.json", [record], [record["kernel_name"]]
+            )
+        self.assertEqual(
+            watch.collect_changes([record], snapshot, []), []
+        )
+        record["live"]["linux_release"] = "6.12.90-rc10"
+        changes = watch.collect_changes([record], snapshot, [])
+        self.assertEqual(
+            [(change["kind"], change["from"], change["to"]) for change in changes],
+            [("gki_version", "6.12.90-rc9", "6.12.90-rc10")],
+        )
+
     def test_first_run_compares_to_catalog_and_skips_historical_branches(self):
         records = [live_record(live_patch=90, kminext_kmi=7)]
         snapshot = watch.baseline_from_catalog([family()])
@@ -713,7 +792,7 @@ class DiscordTests(unittest.TestCase):
 
 
 class CatalogLoadTests(unittest.TestCase):
-    def test_repo_catalog_has_eight_gki_families(self):
+    def test_repo_catalog_has_nine_gki_families(self):
         families = watch.load_catalog(watch.DEFAULT_CATALOG)
         names = [family["kernel_name"] for family in families]
         self.assertEqual(
@@ -727,6 +806,7 @@ class CatalogLoadTests(unittest.TestCase):
                 "android15-6.6",
                 "android16-6.12",
                 "android17-6.18",
+                "android18-7.3",
             ],
         )
 

@@ -12,6 +12,14 @@ typedef unsigned long (*neverc_krt_do_mmap_with_vm_flags_fn)(
 	void *file, unsigned long addr, unsigned long len, unsigned long prot,
 	unsigned long flags, unsigned long vm_flags, unsigned long pgoff,
 	unsigned long *populate, void *uf);
+/* Match the upstream anonymous-structure typedef, including its CFI type. */
+typedef struct {
+	unsigned long __vma_flags[1];
+} vma_flags_t;
+typedef unsigned long (*neverc_krt_do_mmap_with_vma_flags_fn)(
+	void *file, unsigned long addr, unsigned long len, unsigned long prot,
+	unsigned long flags, vma_flags_t vma_flags, unsigned long pgoff,
+	unsigned long *populate, void *uf);
 typedef int (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
 				     unsigned long len, unsigned long prot,
 				     unsigned long flags, unsigned long pgoff);
@@ -135,7 +143,8 @@ unsigned long neverc_krt_xmem_mmap(struct task_struct *task,
 	caps = _neverc_krt_current_caps();
 	if (!caps ||
 	    (caps->do_mmap_abi != NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS &&
-	     caps->do_mmap_abi != NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS))
+	     caps->do_mmap_abi != NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS &&
+	     caps->do_mmap_abi != NEVERC_KRT_DO_MMAP_ABI_WITH_VMA_FLAGS))
 		return 0;
 
 	_neverc_krt_xmem_resolve_mm();
@@ -152,7 +161,12 @@ unsigned long neverc_krt_xmem_mmap(struct task_struct *task,
 	_neverc_krt_use_mm(mm);
 	if (_neverc_krt_mmap_wlock) _neverc_krt_mmap_wlock(mm);
 
-	if (caps->do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS) {
+	if (caps->do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITH_VMA_FLAGS) {
+		neverc_krt_do_mmap_with_vma_flags_fn fn =
+			(neverc_krt_do_mmap_with_vma_flags_fn)(void *)_neverc_krt_do_mmap;
+		result = fn((void *)0, 0, len, prot, flags,
+			    (vma_flags_t){0}, 0, &populate, (void *)0);
+	} else if (caps->do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS) {
 		neverc_krt_do_mmap_with_vm_flags_fn fn =
 			(neverc_krt_do_mmap_with_vm_flags_fn)(void *)_neverc_krt_do_mmap;
 		result = fn((void *)0, 0, len, prot, flags,

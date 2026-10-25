@@ -476,11 +476,18 @@ def main():
         help="retain config/export evidence when only a vmlinux is available",
     )
     parser.add_argument("--compiler", default="clang")
+    parser.add_argument(
+        "--discovery",
+        action="store_true",
+        help="collect an unverified new family's layouts and full export list",
+    )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
     try:
         base = None
+        if args.discovery and args.base_manifest is not None:
+            raise ValueError("discovery requires fresh config and export evidence")
         if args.base_manifest is not None:
             base = json.loads(args.base_manifest.read_text(encoding="utf-8"))
             if base.get("profile") != args.profile:
@@ -554,9 +561,15 @@ def main():
         config = bind_arm64_runtime_config(config, args.vmlinux)
         if args.symvers is not None:
             evidence["symvers_sha256"] = sha256_file(args.symvers)
-            sdk_exports = sdk_export_evidence(
-                args.compiler, args.profile, args.symvers
-            )
+            if args.discovery:
+                export_tool = load_tool(
+                    "nvk_discover_sdk_exports", "check-sdk-exports.py"
+                )
+                sdk_exports = sorted(export_tool.exported_symbols(args.symvers))
+            else:
+                sdk_exports = sdk_export_evidence(
+                    args.compiler, args.profile, args.symvers
+                )
         else:
             evidence["symvers_sha256"] = base["evidence"]["symvers_sha256"]
             sdk_exports = base["sdk_exports"]
@@ -570,6 +583,8 @@ def main():
             "schema": 1,
             "sdk_exports": sdk_exports,
         }
+        if args.discovery:
+            manifest["discovery"] = True
         args.output.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",

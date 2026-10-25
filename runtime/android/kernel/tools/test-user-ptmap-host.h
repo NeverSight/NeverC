@@ -146,6 +146,7 @@ static inline int neverc_krt_user_ptmap_test_profile_backend(
 		return 0;
 	case 612:
 	case 618:
+	case 703:
 		*backend =
 			NEVERC_KRT_USER_PTMAP_BACKEND_NORMALIZED_612_PLUS;
 		return 0;

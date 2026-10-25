@@ -17,6 +17,10 @@ struct attribute {
 struct attribute_group {
 	const char *name;
 	umode_t (*is_visible)(struct kobject *, struct attribute *, int);
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+	/* CONFIG_CFI gives the const callback a separate slot. */
+	umode_t (*is_visible_const)(struct kobject *, const struct attribute *, int);
+#endif
 #if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	umode_t (*is_bin_visible)(struct kobject *,
 				   const struct bin_attribute *, int);
@@ -24,7 +28,14 @@ struct attribute_group {
 #else
 	umode_t (*is_bin_visible)(struct kobject *, struct bin_attribute *, int);
 #endif
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+	union {
+		struct attribute **attrs;
+		const struct attribute *const *attrs_const;
+	};
+#else
 	struct attribute **attrs;
+#endif
 #if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	const struct bin_attribute *const *bin_attrs;
 #else
@@ -36,7 +47,12 @@ _Static_assert(sizeof(struct attribute) == 16,
 	       "unexpected GKI attribute layout");
 _Static_assert(__builtin_offsetof(struct attribute, mode) == 8,
 	       "unexpected GKI attribute.mode offset");
-#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
+#if NEVERC_KRT_LINUX_AT_LEAST(7, 2, 0)
+_Static_assert(sizeof(struct attribute_group) == 56,
+	       "unexpected GKI 7.2 attribute_group layout");
+_Static_assert(__builtin_offsetof(struct attribute_group, attrs) == 40,
+	       "unexpected GKI 7.2 attribute_group.attrs offset");
+#elif NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 _Static_assert(sizeof(struct attribute_group) == 48,
 	       "unexpected GKI 6.18 attribute_group layout");
 _Static_assert(__builtin_offsetof(struct attribute_group, attrs) == 32,

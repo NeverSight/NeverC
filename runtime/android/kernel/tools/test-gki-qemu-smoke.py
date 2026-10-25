@@ -2,8 +2,10 @@
 """Host-side tests for the GKI QEMU load/unload harness."""
 
 import gzip
+import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -84,6 +86,65 @@ class InitramfsTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def release_matrix(self, catalog, lock, selected="all"):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        block = workflow.split('          release_profiles=$(jq', 1)[1]
+        block = '          release_profiles=$(jq' + block.split(
+            '          release_repository=$(jq', 1
+        )[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog_path, lock_path = root / "catalog.json", root / "lock.json"
+            catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            return subprocess.run(
+                ["bash", "-eu", "-c",
+                 'die() { echo "$*" >&2; exit 1; }\n' +
+                 textwrap.dedent(block) + '\nprintf "MATRIX=%s\\n" "$matrix"\n'],
+                env={**os.environ, "catalog_path": str(catalog_path),
+                     "lock_path": str(lock_path), "INPUT_PROFILE": selected},
+                text=True, capture_output=True, check=False,
+            )
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_unpublished_rc_preview_does_not_enter_the_release_matrix(self):
+        runtime = TOOLS.parent
+        catalog = json.loads((runtime / "arm64/gki-profiles.json").read_text())
+        lock = json.loads((runtime / "arm64/gki-release.json").read_text())
+        lock["profiles"].pop("703", None)
+        result = self.release_matrix(catalog, lock)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        matrix = json.loads(result.stdout.split("MATRIX=", 1)[1])
+        self.assertEqual(set(matrix), set(lock["profiles"]))
+        self.assertNotIn("703", matrix)
+        result = self.release_matrix(catalog, lock, "703")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no pinned release artifact: 703", result.stderr)
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_published_703_preview_enters_the_release_matrix(self):
+        runtime = TOOLS.parent
+        catalog = json.loads((runtime / "arm64/gki-profiles.json").read_text())
+        lock = json.loads((runtime / "arm64/gki-release.json").read_text())
+        result = self.release_matrix(catalog, lock)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("703", json.loads(result.stdout.split("MATRIX=", 1)[1]))
+        result = self.release_matrix(catalog, lock, "703")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout.split("MATRIX=", 1)[1]), ["703"])
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_missing_stable_release_and_unknown_locked_profiles_still_fail(self):
+        catalog = {"profiles": [{"legacy_id": 612}, {"legacy_id": 703}]}
+        lock = {"profiles": {"612": {}}}
+        result = self.release_matrix(catalog, lock)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stable profile catalog", result.stderr)
+        result = self.release_matrix({"profiles": [{"legacy_id": 612}]},
+                                     {"profiles": {"612": {}, "999": {}}})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing from the catalog", result.stderr)
+
     def test_kernel_matrix_does_not_run_functional_modules(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("gki-runtime-functional-modules", workflow)
@@ -101,6 +162,111 @@ class WorkflowContractTests(unittest.TestCase):
             'release asset download failed after $attempt attempts',
             download_step,
         )
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_download_uses_preview_override_and_stable_default_tag(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        step = workflow.split(
+            "      - name: Resolve and download pinned release asset", 1
+        )[1].split("      - name: Verify complete release evidence", 1)[0]
+        script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+        lock = json.loads((TOOLS.parent / "arm64/gki-release.json").read_text())
+        for profile in ("703", "618"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                lock_path = root / "runtime/android/kernel/arm64/gki-release.json"
+                lock_path.parent.mkdir(parents=True)
+                lock_path.write_text(json.dumps(lock))
+                binary_dir = root / "bin"
+                binary_dir.mkdir()
+                gh = binary_dir / "gh"
+                gh.write_text(textwrap.dedent('''\
+                    #!/usr/bin/env python3
+                    import json,pathlib,sys
+                    args = sys.argv[1:]
+                    assert args[:2] == ["release", "download"], args
+                    pathlib.Path("download.json").write_text(json.dumps(args))
+                    target = pathlib.Path(args[args.index("--dir") + 1])
+                    (target / args[args.index("--pattern") + 1]).write_bytes(b"fixture")
+                    '''))
+                gh.chmod(0o755)
+                result = subprocess.run(
+                    ["bash", "-eu", "-c", script], cwd=root,
+                    env={**os.environ, "PATH": str(binary_dir) + os.pathsep + os.environ["PATH"],
+                         "PROFILE": profile, "RELEASE_REPOSITORY": lock["repository"]["name"],
+                         "GITHUB_OUTPUT": str(root / "outputs")},
+                    text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = json.loads((root / "download.json").read_text())
+                expected = lock["profiles"][profile].get("tag", lock["tag"])
+                self.assertEqual(args[2], expected)
+                self.assertEqual(args[args.index("--pattern") + 1],
+                                 lock["profiles"][profile]["asset"])
+
+    @unittest.skipUnless(shutil.which("jq"), "jq is required for the workflow gate")
+    def test_metadata_checks_each_release_and_rejects_changed_preview_digest(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        script = '          release_repo_json=$(gh api' + workflow.split(
+            '          release_repo_json=$(gh api', 1
+        )[1].split('          {\n            echo "source_sha=', 1)[0]
+        lock = json.loads((TOOLS.parent / "arm64/gki-release.json").read_text())
+        tags = sorted({entry.get("tag", lock["tag"])
+                       for entry in lock["profiles"].values()})
+        self.assertEqual(len(tags), 2)
+        for bad_digest in (False, True):
+            with self.subTest(bad_digest=bad_digest), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "lock.json").write_text(json.dumps(lock))
+                binary_dir = root / "bin"
+                binary_dir.mkdir()
+                gh = binary_dir / "gh"
+                gh.write_text(textwrap.dedent('''\
+                    #!/usr/bin/env python3
+                    import json,os,pathlib,sys
+                    args = sys.argv[1:]
+                    assert args[0] == "api", args
+                    lock = json.loads(pathlib.Path("lock.json").read_text())
+                    calls_path = pathlib.Path("calls.json")
+                    calls = json.loads(calls_path.read_text()) if calls_path.exists() else []
+                    calls.append(args[1])
+                    calls_path.write_text(json.dumps(calls))
+                    base = "repos/" + lock["repository"]["name"]
+                    if args[1] == base:
+                        print(json.dumps(lock["repository"]))
+                    else:
+                        assert args[1].startswith(base + "/releases/tags/"), args
+                        tag = args[1].split("/tags/", 1)[1]
+                        assets = []
+                        for profile,entry in lock["profiles"].items():
+                            if entry.get("tag", lock["tag"]) != tag:
+                                continue
+                            digest = entry["sha256"]
+                            if profile == "703" and os.environ["BAD_DIGEST"] == "1":
+                                digest = "0" * 64
+                            assets.append({"name": entry["asset"], "size": entry["size"],
+                                           "digest": "sha256:" + digest})
+                        print(json.dumps({"tag_name": tag, "draft": False, "assets": assets}))
+                    '''))
+                gh.chmod(0o755)
+                result = subprocess.run(
+                    ["bash", "-eu", "-c", 'die() { echo "$*" >&2; exit 1; }\n' +
+                     textwrap.dedent(script)], cwd=root,
+                    env={**os.environ, "PATH": str(binary_dir) + os.pathsep + os.environ["PATH"],
+                         "release_repository": lock["repository"]["name"],
+                         "release_repository_id": str(lock["repository"]["id"]),
+                         "release_tags": json.dumps(tags), "lock_path": str(root / "lock.json"),
+                         "BAD_DIGEST": "1" if bad_digest else "0"},
+                    text=True, capture_output=True, check=False,
+                )
+                if bad_digest:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("release metadata digest mismatch", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    calls = json.loads((root / "calls.json").read_text())
+                    self.assertEqual([path.split("/tags/", 1)[1] for path in calls
+                                      if "/tags/" in path], tags)
 
 
 class HarnessTests(unittest.TestCase):

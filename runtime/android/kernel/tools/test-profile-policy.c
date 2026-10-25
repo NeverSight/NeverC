@@ -7,7 +7,7 @@
 
 static void check_exact_lookup(void) {
   static const unsigned int supported[] = {
-      510, 51013, 515, 51514, 601, 606, 612, 618,
+      510, 51013, 515, 51514, 601, 606, 612, 618, 703,
   };
   static const unsigned int aliases[] = {51012, 51513};
   static const unsigned int alias_canonical[] = {510, 515};
@@ -365,6 +365,37 @@ static void check_banner_identity_parsing(void) {
              "Linux version 6.12.89-android16-4294967302", &identity) != 0);
 }
 
+static void check_prerelease_identity_is_token_exact(void) {
+  const struct neverc_krt_profile *preview = neverc_krt_find_profile(703);
+  struct neverc_krt_observed_identity identity;
+  assert(preview != NULL && preview->require_release_token);
+  assert(preview->caps.binder_filter_backend ==
+         NEVERC_KRT_BINDER_FILTER_BACKEND_UNSUPPORTED);
+  assert(preview->caps.do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITH_VMA_FLAGS);
+  assert(preview->caps.procmap_ioctl_layout == NEVERC_KRT_PROCMAP_IOCTL_LAYOUT_GKI_703);
+
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 7.2.0-rc9-android18-0-maybe-dirty-neverc-preview-4k SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(identity.has_android_identity == 1);
+  assert(identity.android_release == 18 && identity.kmi_generation == 0);
+  assert(neverc_krt_match_profile(preview, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_EXACT);
+
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 7.2.0-rc10-android18-0-4k SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(preview, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_NONE);
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 7.3.0-android18-0-4k SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(preview, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_NONE);
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 7.2.0-rc4294967296-android18-0-4k", &identity) != 0);
+}
+
 static void check_vermagic_format_keeps_long_tokens(void) {
   static const char banner[] =
       "Linux version 5.10.223-android13-4-00011-ga33040a671e2-dirty "
@@ -434,6 +465,7 @@ int main(void) {
   check_fail_closed_enums();
   check_capability_contracts();
   check_banner_identity_parsing();
+  check_prerelease_identity_is_token_exact();
   check_vermagic_format_keeps_long_tokens();
   check_certificate_select_is_token_exact();
   return 0;

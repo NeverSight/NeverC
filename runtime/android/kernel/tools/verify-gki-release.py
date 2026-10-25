@@ -29,13 +29,14 @@ REQUIRED_PROFILES = (
     "612",
     "618",
 )
-OPTIONAL_PROFILES = ()
+OPTIONAL_PROFILES = ("703",)
 ALLOWED_PROFILES = REQUIRED_PROFILES + OPTIONAL_PROFILES
 EXPECTED_PROFILES = ALLOWED_PROFILES
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_FILE_SIZE = 1024 * 1024 * 1024
 MAX_ARCHIVE_TOTAL_SIZE = 2 * 1024 * 1024 * 1024
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+RELEASE_TAG_RE = re.compile(r"gki-[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 KCFI_TYPEID_RE = re.compile(r"0x[0-9a-f]{8}\Z")
 LINUX_RELEASE_RE = re.compile(rb"Linux version ([0-9][^ \x00]*)")
 MODULE_ENTRY_SYMBOLS = ("init_module", "cleanup_module")
@@ -112,8 +113,8 @@ def validate_lock(lock):
         raise ValidationError("release lock repository.id must be a positive integer")
     if not re.fullmatch(r"[^/]+/[^/]+", str(repository.get("name", ""))):
         raise ValidationError("release lock repository.name must be owner/name")
-    if not isinstance(lock.get("tag"), str) or not lock["tag"]:
-        raise ValidationError("release lock tag must be a non-empty string")
+    if not isinstance(lock.get("tag"), str) or not RELEASE_TAG_RE.fullmatch(lock["tag"]):
+        raise ValidationError("release lock tag must be a valid gki- tag")
 
     profiles = lock.get("profiles")
     if not isinstance(profiles, dict):
@@ -148,10 +149,15 @@ def validate_lock(lock):
         if profile not in profiles:
             continue
         entry = profiles[profile]
-        if not isinstance(entry, dict) or set(entry) != required:
+        if not isinstance(entry, dict) or set(entry) - {"tag"} != required:
             raise ValidationError(
-                f"profile {profile} fields must be exactly {', '.join(sorted(required))}"
+                f"profile {profile} requires {', '.join(sorted(required))}; only tag is optional"
             )
+        if "tag" in entry and (
+            not isinstance(entry["tag"], str)
+            or not RELEASE_TAG_RE.fullmatch(entry["tag"])
+        ):
+            raise ValidationError(f"profile {profile} has an invalid release tag")
         asset = entry["asset"]
         if (
             not isinstance(asset, str)
@@ -190,6 +196,10 @@ def validate_lock(lock):
         ordered[profile] = entry
     lock["profiles"] = ordered
     return lock
+
+
+def release_tag_for_profile(lock, profile):
+    return lock["profiles"][profile].get("tag", lock["tag"])
 
 
 def load_lock(path):
@@ -894,7 +904,8 @@ def main(argv=None):
         entry = lock["profiles"][args.profile]
         print(
             f"[release] repository={lock['repository']['name']} "
-            f"id={lock['repository']['id']} tag={lock['tag']} profile={args.profile}"
+            f"id={lock['repository']['id']} "
+            f"tag={release_tag_for_profile(lock, args.profile)} profile={args.profile}"
         )
         readelf = find_readelf(args.readelf)
         if args.archive is not None:
