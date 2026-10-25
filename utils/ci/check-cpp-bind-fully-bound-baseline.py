@@ -162,7 +162,7 @@ def main():
         report.setdefault('producer_downloads', []).append(record)
         save()
 
-    environment = dict(os.environ, NEVERC_CPP_PROTOCOL_EXECUTION_DIR=str(out / 'invocations'))
+    environment = dict(os.environ, NEVERC_CPP_PROTOCOL_EXECUTION_DIR=str(out / 'invocations'), NEVERC_CPP_BIND_SOURCE_PACKET='1')
     environment.pop('NEVERC_CPP_PAIR_SOURCE_TRACE', None)
     save()
     try:
@@ -179,9 +179,13 @@ def main():
         current = {name: sha(root / PREFIX / name) for name in inputs}
         changed = sorted(name for name in current if current[name] != inputs[name])
         assert changed == plan['allowed_bridge_source_changes'] == ['Frontend.cpp', 'Frontend.h', 'Lowering.cpp', 'MathSDK.cpp']
-        assert current == plan['published_nested_basis']['exact_private_input_sha256']
+        assert current == plan['observed_private_input_sha256']
         report['exact_private_input_sha256'] = current
         report['published_nested_basis'] = plan['published_nested_basis']
+        assert plan['bind_private_source_packet'] is True and plan['source_trace_included'] is True
+        report['bind_private_source_packet'] = True
+        report['source_packet_clean_basis'] = plan['source_packet_clean_basis']
+        report['source_packet_inverse_source_ledger_sha256'] = plan['source_packet_inverse_source_ledger_sha256']
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
         catalog = json.loads((sdk / 'catalog.json').read_text())
