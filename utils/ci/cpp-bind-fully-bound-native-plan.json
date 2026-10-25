@@ -1,0 +1,135 @@
+{
+  "preparation_only": false,
+  "reference_native_only": true,
+  "private_support_complete": false,
+  "requires_actual_nested_dev_publication_first": true,
+  "published_nested_basis": {
+    "commit": "f961e1f5cc09ba6fd54a708b73e4639a6952f651",
+    "source": "b8da2d4a3dcca753a308a4e0591ed99983e8b919",
+    "exact_private_input_sha256": {
+      "Frontend.cpp": "f6b55fee7f87b88167efae96f21ffd763cc6b83422d6bac21611eb3c84483695",
+      "Lowering.cpp": "5b1e3cb88b700a09fa2c1862f54a1526d50acb3b7b99c4c7ab28474bcff812ca",
+      "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+      "MathSDK.cpp": "03869224eab8cfe6513d2a8170f500e3ced3b95e15466a87af93d452d23b2c35",
+      "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+      "Frontend.h": "0ae5db060a9e547268d6c9113a1eb2c5e614eb308aa4c0b84cfd156eb845a9d3",
+      "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+      "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+      "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+      "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+      "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+      "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+      "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+      "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+      "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+      "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+      "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+      "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+      "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+    },
+    "sdk_tree": "6dde10e07ec19d58637d444d04ea86cfdbb471f6",
+    "receipt_path": "/Users/gmh/code/NeverC-private/build-neverc/stl-goal-20261014/next-not-fn/next-nested-not-fn-selected-default-repair-flow-delivery/not-fn-nested-verified-dev-delivery-published-receipt.json",
+    "receipt_sha256": "fd537e22ca06917a8811e9b91c75ef372ae18065f754457fb0bfc9ab6970225a",
+    "candidate_sha256": "5853086b148a61f4d806a9a70e380d93fb5c3ec4da446ac72016ef7008078638",
+    "gates": {
+      "source6": {
+        "commit": "b8da2d4a3dcca753a308a4e0591ed99983e8b919",
+        "run_id": 40209895091,
+        "job_id": 121218684666,
+        "run_attempt": 1,
+        "artifact_id": 12604359645,
+        "report_sha256": "16116172f10045866a53e7e678262f4e6751f97fa1a55857b16ebfe30a8f6aa3",
+        "proof_sha256": "8be6fe4753030f5b0ba58966d52a155527289278e86e74fa5b97623c5036e27c",
+        "archive_sha256": "10865ecae842ab34e422217a53dedd41f78c9043a49f53a23cbaf06eaa85c375"
+      },
+      "six48": {
+        "commit": "77b0886da9a7df66800ea416b0ec462a537bbd89",
+        "run_id": 40212091979,
+        "job_id": 121225296090,
+        "run_attempt": 1,
+        "artifact_id": 12606313232,
+        "report_sha256": "4302cfab080d8c8af27f3a458413aea5d77c5bc1b08bac918a3b77e09ad334e6",
+        "proof_sha256": "c718680b37ad704de8c6aeecc0ebf9d4b20535bd1d9d3ce8f777b86c61f27d98",
+        "archive_sha256": "634e6af478bab961196eaf95cf848a33dcc10ca3856b363c4d088771dafd9897"
+      },
+      "full288": {
+        "commit": "e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
+        "run_id": 40216069722,
+        "job_id": 121237347037,
+        "run_attempt": 1,
+        "artifact_id": 12607872466,
+        "report_sha256": "cc1951d1669a5010c561d677a4a10c172c1a298a7f0aacce463fa653aa0465f9",
+        "proof_sha256": "0c1bf3a905f243ae0c4408a9e159dcaf5391d94e03efd279e96fc3ff21514794",
+        "archive_sha256": "5755625d1f731cfb83f0e74282d7d02ed5e5cc866ba6a8b64be2b2c632571718"
+      },
+      "formal136": {
+        "commit": "1dc21b826ed3bea35615f01ff5661603d24ca928",
+        "run_id": 40221484085,
+        "job_id": 121253813223,
+        "run_attempt": 1,
+        "artifact_id": 12610626946,
+        "report_sha256": "22fffd85bff4ae918efaa6ecdac80954f1af2aa18866b1ee53759f23428bdee8",
+        "proof_sha256": "ff6020721543b60c48642311e1263f34260c6fa3c2b3a461b179cbefb930a532",
+        "archive_sha256": "a7c361c594aed652665a7c007b61e9dca1ac03a7a7a261e60913f63acd09b70c"
+      },
+      "regression808": {
+        "commit": "f3a8afec1811f02633253f0aebabeb348349f14e",
+        "run_id": 40230578715,
+        "job_id": 121281220035,
+        "run_attempt": 1,
+        "artifact_id": 12613111411,
+        "report_sha256": "4db303fa18fe2115126d3d639a71711c54cb48b5c00035947c8c1fcd1323b5c6",
+        "proof_sha256": "ecac323519f56fc4127e40b28af1cb564cd87d51b8d73a2cf3701ba6de49e902",
+        "archive_sha256": "5b39918e8adc7e73a3a8e4d81fa220eeb3a2c81c17c4be8426b53961f7ae0d74"
+      }
+    },
+    "required_results": {
+      "syntax": 6,
+      "focused": 48,
+      "full": 288,
+      "formal": 136,
+      "not_fn_formal": 12,
+      "generated_o0_o2": 24,
+      "frontend": 747,
+      "regression": 808,
+      "pair": 600
+    }
+  },
+  "cases": [
+    {
+      "name": "bind-fully-bound-value-copies",
+      "source": "#include <functional>\n#include <utility>\nint calls;\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  auto copy = f;\n  const auto fixed = copy;\n  if (f() != 7 || copy() != 7 || fixed() != 7 || std::move(copy)() != 7) return 1;\n  return calls != 4;\n}\n",
+      "source_sha256": "423b8da11cb05ebbcf04d72addc5d1317818a29ad0438742ef6b86097babd9d1"
+    },
+    {
+      "name": "bind-captures-function-pointer-value",
+      "source": "#include <functional>\nint first(int a, int b) { return a + b; }\nint second(int, int) { return -1; }\nint main() {\n  int (*pointer)(int, int) = &first;\n  auto f = std::bind(pointer, 3, 4);\n  pointer = &second;\n  return f() != 7 || pointer(3, 4) != -1;\n}\n",
+      "source_sha256": "e4ed0f2db32931da39daedad796df2ba0ec3b55a4188719072b6934dc41e37b0"
+    },
+    {
+      "name": "bind-bound-expression-effects-once",
+      "source": "#include <functional>\nint left_builds, right_builds, calls;\nint left() { ++left_builds; return 5; }\nint right() { ++right_builds; return 7; }\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, left(), right());\n  if (left_builds != 1 || right_builds != 1 || calls != 0) return 1;\n  auto copy = f;\n  if (f() != 12 || copy() != 12) return 2;\n  return left_builds != 1 || right_builds != 1 || calls != 2;\n}\n",
+      "source_sha256": "2ca7e15dd16efb6cdcb2e627d1a7159f0fb45b56cb5704b877a2b6023dbd6aa8"
+    },
+    {
+      "name": "bind-borrowed-scalar-argument",
+      "source": "#include <functional>\nint calls;\nint add_to(int &value, int delta) { ++calls; value += delta; return value; }\nint main() {\n  int value = 7;\n  auto f = std::bind(&add_to, std::ref(value), 3);\n  auto copy = f;\n  if (f() != 10 || copy() != 13 || value != 13) return 1;\n  return calls != 2;\n}\n",
+      "source_sha256": "a1a56ec0a672eea6bd79aba1c39efadefaca69b6ba5a17290ce30992d0b40a3b"
+    },
+    {
+      "name": "bind-live-reference-result",
+      "source": "#include <functional>\n#include <type_traits>\nint &identity(int &value) { return value; }\nint main() {\n  int value = 7;\n  auto f = std::bind(&identity, std::ref(value));\n  static_assert(std::is_same<decltype(f()), int &>::value, \"reference result\");\n  f() += 3;\n  const auto copy = f;\n  copy() = 14;\n  return value != 14;\n}\n",
+      "source_sha256": "9fe7d9cdd1d857c3e243e18f56b41cc9a1588b6a87e249628af3b1573ebb60db"
+    },
+    {
+      "name": "bind-void-result",
+      "source": "#include <functional>\nint calls;\nvoid store(int *target, int value) { ++calls; *target = value; }\nint main() {\n  int value = 0;\n  auto f = std::bind(&store, &value, 9);\n  f();\n  if (value != 9 || calls != 1) return 1;\n  value = 2;\n  f();\n  return value != 9 || calls != 2;\n}\n",
+      "source_sha256": "cd12e9224b32d26cdff21fcd9d044031de247975ec22faa232762fa49fa41117"
+    },
+    {
+      "name": "bind-result-and-exception-queries",
+      "source": "#include <functional>\n#include <type_traits>\nint add(int a, int b) noexcept { return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  using F = decltype(f);\n  static_assert(std::is_bind_expression<F>::value, \"bind expression\");\n  static_assert(std::is_same<decltype(f()), int>::value, \"result type\");\n  static_assert(!noexcept(f()), \"pinned SDK operator has no noexcept signature\");\n  return f() != 7;\n}\n",
+      "source_sha256": "ebc8e5056c4d6bf0f7517e0ebe1717e79912f5eaa6c7c6e32972cb378472e826"
+    }
+  ]
+}
