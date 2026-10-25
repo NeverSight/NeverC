@@ -551,6 +551,15 @@ trips preserve every effective instruction's bytes and address; alignment
 NOP encodings can differ. Controlled completions do not establish physical
 atomicity, coherence or hardware fault behavior.
 
+The older pointer-taking RAO-INT/CMPccXADD, bit-test and conditional-arithmetic
+intrinsics no longer infer address alignment from their integer bit widths.
+Their backend memory descriptors retain byte alignment and volatile read/write
+effects; native alignment and permission checks remain inside the instruction.
+`neverc-x86-backend-tests` checks 48 signatures against the actual x86 target
+lowering interface. Its source lives in `tests/neverc/X86/`, and
+`check-neverc` builds this target when X86 is enabled. NeverC's target registry
+is x86-64-only; the full LLVM fork additionally tests 32-bit code generation.
+
 ### Bounded leaf state with incoming arithmetic flags
 
 `__NEVERC_X86_BOUNDED_LEAF_STATE__ == 1` advertises two additional x64 APIs:

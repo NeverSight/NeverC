@@ -930,6 +930,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
     neverc-std-tests
   )
   foreach(_neverc_test_target IN ITEMS
+      neverc-x86-backend-tests
       neverc-plugin-core-tests
       neverc-plugin-frontend-tests
       neverc-plugin-ir-tests

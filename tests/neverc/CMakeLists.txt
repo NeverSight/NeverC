@@ -97,6 +97,10 @@ endmacro()
 
 add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 
+if("X86" IN_LIST LLVM_TARGETS_TO_BUILD)
+  add_subdirectory(X86)
+endif()
+
 target_link_libraries(neverc-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
