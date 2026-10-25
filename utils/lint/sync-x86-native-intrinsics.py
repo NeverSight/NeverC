@@ -65,9 +65,10 @@ for operation in ("lar", "lsl"):
             operand = "I16" if source == "reg" else "PTR"
             DECLARATIONS[name] = ("STRUCT2", f"I{bits}", "I8", operand, f"I{bits}")
 PROTOTYPE = "llvm.x86.vmread"
-REGISTER_SIGNATURES = {
+EXISTING_FIRST_IMMEDIATE_SIGNATURES = {
     "readcr": ("I64", "I32"), "readdr": ("I64", "I32"),
     "writecr": ("Done", "I32", "I64"), "writedr": ("Done", "I32", "I64"),
+    "xabort": ("Done", "I8"),
 }
 FIRST_IMMEDIATE_SIGNATURES = {
     **{name + "_bounded_state": ("STRUCT5", "I64", "I64", "I64", "I64", "I16",
@@ -291,17 +292,17 @@ def synchronize(write):
             raise ValueError(f"intrinsic enum/name mismatch: {cpp}")
         additions.append({"cpp": cpp, "name": name, "iit": encoding,
                           "attr_val": attribute, "overloaded": False})
-    # Like INT, CR/DR accesses have conservative effects and an immediate first
-    # argument. Older NeverC metadata omitted the immediate restriction.
-    register_attr = attributes[names.index("llvm.x86.int")][0]
-    for suffix, signature in REGISTER_SIGNATURES.items():
+    # Like INT, CR/DR accesses and XABORT have conservative effects and an
+    # immediate first argument. Older CR/DR metadata omitted that restriction.
+    immediate_attr = attributes[names.index("llvm.x86.int")][0]
+    for suffix, signature in EXISTING_FIRST_IMMEDIATE_SIGNATURES.items():
         name = "llvm.x86." + suffix
         index = names.index(name)
         encoding, _ = encode_signature(signature, impl)
         if int(types[index], 0) != int(encoding, 0) or overloads[index + 1]:
-            raise ValueError(f"invalid system register signature: {name}")
+            raise ValueError(f"invalid existing immediate signature: {name}")
         updated_impl = re.sub(r"^    \d+, // " + re.escape(name) + r"$",
-                              f"    {register_attr}, // {name}", updated_impl, flags=re.MULTILINE)
+                              f"    {immediate_attr}, // {name}", updated_impl, flags=re.MULTILINE)
     if updated_impl != impl:
         if not write:
             raise ValueError("native signature or immediate attributes are stale; run with --write")

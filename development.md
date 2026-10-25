@@ -1530,3 +1530,11 @@ assembly, and includes `<intrin.h>` in Microsoft mode to cover declaration
 compatibility. Callers use the `rtm` function target attribute. These are
 compiler interfaces; the tests do not claim physical transactional execution
 or recovery of an arbitrary binary's original abort continuation.
+
+The Microsoft `_xabort` builtin also requires a constant when used without an
+umbrella header. A variable argument previously reached instruction selection
+and could silently become a fixed abort byte. The frontend now diagnoses it
+before IR emission. The native metadata synchronizer also checks XABORT's
+existing `immarg` contract; a backend regression rejects variable IR operands
+while retaining unknown memory effects and the instruction's possible normal
+completion outside a transaction.

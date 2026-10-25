@@ -2151,6 +2151,40 @@ TEST_F(X86PrivilegedIntrinTest, TsxOpsLowerCorrectly) {
   EXPECT_NE(s.find("xtest"), std::string::npos) << "expected xtest\n" << s;
 }
 
+TEST_F(X86PrivilegedIntrinTest,
+       TransactionAbortRequiresAConstantInEveryInterface) {
+  for (const char *Target :
+       {"--target=x86_64-unknown-linux-gnu", "--target=x86_64-pc-windows-msvc",
+        "--target=x86_64-apple-darwin"}) {
+    SCOPED_TRACE(Target);
+    for (unsigned Interface = 0; Interface != 3; ++Interface) {
+      // The undeclared Microsoft builtin is active only in Microsoft mode.
+      if (Interface == 2 &&
+          std::string(Target).find("windows") == std::string::npos)
+        continue;
+      SCOPED_TRACE(Interface);
+      const auto Source = tmpFile("transaction_nonconstant.c");
+      const std::string Header =
+          Interface == 0 ? "#include <immintrin.h>\n" : "";
+      const std::string Name =
+          Interface == 1 ? "__builtin_ia32_xabort" : "_xabort";
+      writeFile(Source,
+                Header +
+                    "__attribute__((target(\"rtm\"))) void f(unsigned x) { " +
+                    Name + "(x); }\n");
+      // This must fail in the frontend, before LLVM can select an instruction
+      // from an invalid nonconstant immediate or invent an encoded byte.
+      const auto Result =
+          ncc({Target, "-fno-builtin-mimalloc", "-ffreestanding",
+               "-fsyntax-only", Source.string()});
+      EXPECT_GT(Result.exitCode, 0) << Result.err;
+      EXPECT_NE(Result.err.find("must be a constant integer"),
+                std::string::npos)
+          << Result.err;
+    }
+  }
+}
+
 TEST_F(X86PrivilegedIntrinTest, TransactionHeadersExposeNativeInterfaces) {
   for (const char *Header : {"immintrin.h", "x86intrin.h"}) {
     SCOPED_TRACE(Header);
