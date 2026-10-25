@@ -12059,10 +12059,17 @@ public:
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E))
       return Operands.count(Opaque) && !Opaque->getSourceExpr();
     const auto Origin = S.sdkFile(SM, E->getExprLoc());
-    return (GeneratedExceptionLiterals.count(E) ||
+    const bool Complete = (GeneratedExceptionLiterals.count(E) ||
             (Mode == UtilityTupleQueryMode::PairConstruction &&
              GeneratedPairScalarInitializers.count(E)) ||
             (Origin && Origin->Root == "libcxx")) && TraverseType(E->getType());
+    if (!Complete) {
+      llvm::errs() << "[NESTED-RESULT-TYPE-SOURCE-TRACE] visit-expr nested=" << bool(NotFnNestedCall)
+                   << " inner=" << bool(NotFnNestedInner) << " nodes=" << Nodes << " depth=" << Depth
+                   << " type=" << E->getType().getAsString() << "\n";
+      E->dump(llvm::errs(), Context);
+    }
+    return Complete;
   }
   bool TraverseTemplateName(TemplateName Name) {
     const auto *Template = Name.getAsTemplateDecl();
@@ -12156,7 +12163,17 @@ public:
         // Charge the skipped callee nodes without traversing an owned method
         // as though it were an SDK declaration family.
         if (Found->second != notFnQueryTargetMethod() || !step() || !VisitExpr(E) || !step() || !step() ||
-            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) return nevercNestedDefaultSourceTrace(false, "query-graph", __LINE__);
+            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) {
+          llvm::errs() << "[NESTED-RESULT-TYPE-SOURCE-TRACE] selected-query nested=" << bool(NotFnNestedCall)
+                       << " match=" << (Found->second == notFnQueryTargetMethod())
+                       << " actual-args=" << E->getNumArgs()
+                       << " method-params=" << notFnQueryTargetMethod()->getNumParams()
+                       << " type=" << E->getType().getAsString()
+                       << " return=" << notFnQueryTargetMethod()->getReturnType().getAsString() << "\n";
+          E->dump(llvm::errs(), Context);
+          notFnQueryTargetMethod()->dump(llvm::errs());
+          return nevercNestedDefaultSourceTrace(false, "query-graph", __LINE__);
+        }
         for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return nevercNestedDefaultSourceTrace(false, "query-graph", __LINE__);
         return true;
       }
