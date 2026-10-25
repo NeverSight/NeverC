@@ -26825,8 +26825,10 @@ static SDValue lowerFourSourceNative(SDValue Op, const X86Subtarget &Subtarget,
   const EVT Carrier = Op.getOperand(3).getValueType();
   const MVT Vector = Integer ? MVT::v16i32 : Scalar ? MVT::v4f32 : MVT::v16f32;
   const unsigned Registers[] = {
-      Scalar ? X86::XMM4 : X86::ZMM4, Scalar ? X86::XMM5 : X86::ZMM5,
-      Scalar ? X86::XMM6 : X86::ZMM6, Scalar ? X86::XMM7 : X86::ZMM7};
+      static_cast<unsigned>(Scalar ? X86::XMM4 : X86::ZMM4),
+      static_cast<unsigned>(Scalar ? X86::XMM5 : X86::ZMM5),
+      static_cast<unsigned>(Scalar ? X86::XMM6 : X86::ZMM6),
+      static_cast<unsigned>(Scalar ? X86::XMM7 : X86::ZMM7)};
   const SDLoc DL(Op);
   SDValue Chain = Op.getOperand(0), Glue;
   for (unsigned I = 0; I < 4; ++I) {
