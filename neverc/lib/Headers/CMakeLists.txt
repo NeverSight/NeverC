@@ -135,6 +135,7 @@ set(x86_files
   ptwriteintrin.h
   rdpruintrin.h
   rdseedintrin.h
+  rtmintrin.h
   serializeintrin.h
   shaintrin.h
   smmintrin.h
@@ -153,6 +154,7 @@ set(x86_files
   xsaveintrin.h
   xsaveoptintrin.h
   xsavesintrin.h
+  xtestintrin.h
 # others
   cet.h
   cpuid.h

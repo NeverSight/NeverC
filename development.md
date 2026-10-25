@@ -1513,3 +1513,20 @@ DAG references remain owned by `sync-x86-native-intrinsics.py`.
 `X86FourSourceTest.*` checks constant diagnostics and O0/O2 native output across
 ELF/COFF/Mach-O and both assembly dialects. Physical Xeon Phi execution and
 hardware exception behavior remain outside this host qualification.
+
+## Standard transaction headers
+
+`<immintrin.h>` and `<x86intrin.h>` expose `_xbegin`, `_xend`, `_xabort`
+and `_xtest`, together with the standard transaction-status constants. The
+installed `rtmintrin.h` and `xtestintrin.h` retain the LLVM source license.
+When a Microsoft spelling is already a frontend builtin, the header declares
+that interface; otherwise its wrapper uses the existing `__builtin_ia32_*`
+operation. Both forms emit native LLVM intrinsics, including XABORT's constant
+byte, without inline assembly or external helper calls.
+
+`X86PrivilegedIntrinTest.TransactionHeadersExposeNativeInterfaces` compiles
+both umbrella headers at O0/O2 for ELF, COFF and Mach-O, checks native IR and
+assembly, and includes `<intrin.h>` in Microsoft mode to cover declaration
+compatibility. Callers use the `rtm` function target attribute. These are
+compiler interfaces; the tests do not claim physical transactional execution
+or recovery of an arbitrary binary's original abort continuation.

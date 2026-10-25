@@ -251,7 +251,9 @@
 #include <avxvnniint16intrin.h>
 #endif
 
+#include <rtmintrin.h>
 #include <sgxintrin.h>
+#include <xtestintrin.h>
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
     defined(__RDPID__)
