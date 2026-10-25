@@ -32,7 +32,8 @@ TEST_F(X86CompressExpandTest,
                           std::to_string(Bits);
         const auto Builtin = "__builtin_ia32_" + Name + "_native";
         Code += "__attribute__((target(\"" + Features + "\"))) void " + Name +
-                "(void *p, unsigned long long k, " + V + " v) {\n";
+                "(" + (Expand ? "const void" : "void") +
+                " *p, unsigned long long k, " + V + " v) {\n";
         Code +=
             "(void)" + Builtin + "(p,k,v," + (Expand ? "0," : "") + "0x64);\n";
         Code += "(void)" + Builtin + "(p,0,v," + (Expand ? "1," : "") +
@@ -52,6 +53,7 @@ TEST_F(X86CompressExpandTest,
         const auto Out = tmpFile(IR ? "compact.ll" : "compact.s");
         std::vector<std::string> Args = {std::string("--target=") + Target,
                                          Opt,
+                                         "-Werror",
                                          "-fno-builtin-mimalloc",
                                          "-fno-lto",
                                          "-ffreestanding",

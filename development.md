@@ -1435,7 +1435,7 @@ A 128/256/512-bit operand is an unsigned-int vector of 4/8/16 elements,
 regardless of the instruction's element kind. These are raw-bit carriers.
 
 Stores take `(void *offset, unsigned long long mask, vector source,
-const unsigned segment)`. Loads return a vector and take `(void *offset,
+const unsigned segment)`. Loads return a vector and take `(const void *offset,
 unsigned long long mask, vector prior, const unsigned zeroing,
 const unsigned segment)`. Zeroing is 0 or 1. Segment is zero or an override
 byte `0x26/0x2e/0x36/0x3e/0x64/0x65`; the pointer is a segment-relative
@@ -1450,7 +1450,7 @@ operations. For example:
 ```c
 typedef unsigned int U32x4 __attribute__((vector_size(16)));
 __attribute__((target("avx512f,avx512vl")))
-U32x4 expand(void *offset, unsigned long long mask, U32x4 prior) {
+U32x4 expand(const void *offset, unsigned long long mask, U32x4 prior) {
   return __builtin_ia32_vpexpandd128_native(offset, mask, prior, 0, 0);
 }
 ```
