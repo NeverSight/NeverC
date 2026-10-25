@@ -1017,11 +1017,11 @@ for a total of 18,510; both target schemas pass regeneration checks.
 
 ### TSX (xbegin, xabort, xend, xtest)
 
-- **xbegin**: XBEGIN pseudo has `UsesCustomInserter` flag. The custom inserter
-  (already in `EmitInstrWithCustomInserter`) handles the multi-BB expansion.
-  Lowering emits `getMachineNode(X86::XBEGIN, ...)` with 1 def + 1 operand.
-  The frontend passes `-1` as the fallback EAX value. Since the frontend
-  declares it as void return, only the chain is returned from lowering.
+- **xbegin**: The XBEGIN pseudo's custom inserter expands the transaction
+  entry and fallback blocks. Lowering returns the i32 transaction status and
+  effect chain; `_xbegin` exposes that status as `unsigned int`. The custom
+  inserter produces `_XBEGIN_STARTED` on success and the hardware abort status
+  on the fallback path.
 
 - **xabort**: Takes a single i8 immediate operand.
 
@@ -1538,3 +1538,14 @@ before IR emission. The native metadata synchronizer also checks XABORT's
 existing `immarg` contract; a backend regression rejects variable IR operands
 while retaining unknown memory effects and the instruction's possible normal
 completion outside a transaction.
+
+`tests/verify-transaction-encoding.py` checks all 256 abort bytes at O0/O2 in
+ELF, COFF and Mach-O. It checks each native IR call, exact `C6 F8 imm8` object
+encoding, absence of helper calls/assembly, and the optimized store/abort/load
+order. Select `--compiler build-neverc/bin/neverc`, or the full fork with
+`--llc /path/to/llc`; both require `--objdump /path/to/llvm-objdump`. The full
+fork also supports `--mode 32`. `--backend-llc /path/to/llc` sends NeverC's IR
+through the full backend, and `--keep DIRECTORY` retains the inputs, outputs
+and JSON results. The qualified matrix has 40 profiles and 10,240 functions:
+14 NeverC, 14 NeverC-to-full-LLVM, and six full-LLVM profiles per code mode.
+It does not execute physical RTM regions.
