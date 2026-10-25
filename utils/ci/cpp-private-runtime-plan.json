@@ -1,28 +1,28 @@
 {
-  "component_commit": "1f6cb971c11d330cc9300d12b45a7ce09e90b9ae",
-  "component_run_id": 40155631980,
-  "component_actual_job": 121056329604,
+  "component_commit": "e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
+  "component_run_id": 40216069722,
+  "component_actual_job": 121237347037,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12584517598,
-    "name": "cpp-not-fn-reference-clean272-1f6cb971c11d330cc9300d12b45a7ce09e90b9ae",
-    "digest": "sha256:4bad4bae77afa50ef8672170d15706b55cab0114b33c06bfd3e237083021e89a"
+    "id": 12607872466,
+    "name": "cpp-not-fn-nested-clean288-e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
+    "digest": "sha256:5755625d1f731cfb83f0e74282d7d02ed5e5cc866ba6a8b64be2b2c632571718"
   },
   "component_archive_artifact": {
-    "id": 12584389151,
-    "name": "cpp-current-private-archive-remote-only-1f6cb971c11d330cc9300d12b45a7ce09e90b9ae",
-    "digest": "sha256:dc12f0421a5fe1f0447d1765a069d11d325f7d64b92bf1318160ea8028d49717"
+    "id": 12607882427,
+    "name": "cpp-current-private-archive-remote-only-e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
+    "digest": "sha256:6f7b1bab62c6913a738c99d0cc36734221a252ef082ad52d124872c9a611797e"
   },
-  "component_report_sha256": "6054ea4cbfcf6b3ceee84a9ba45138c7ec64f91cb7c8d64f2a665343ef2e6c16",
-  "private_archive_sha256": "7e39e2fe7aa59cc43b75d0bf8b65f4899a6a5e8d195237e4815739971a8bbb10",
-  "frontend_build_id": "cpp-frontend-1-a0ac16b23af91e04746d0c3a64ddc1f8a0dc40b7f767d797556416d6acbe6452",
+  "component_report_sha256": "cc1951d1669a5010c561d677a4a10c172c1a298a7f0aacce463fa653aa0465f9",
+  "private_archive_sha256": "d6241435b68f716daa4491e336daea73accf81a1901ed666967419fe5e32c5f3",
+  "frontend_build_id": "cpp-frontend-1-d3f231fa2ca306b7766357d7bdf7e9746357449c902201144be90593756f3203",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "768e2c0bfe083c545ba6f82dce5081916a61ccdba0015680d32b8bce7e7cb8b1",
-    "Lowering.cpp": "68a23c6862e79cd7e8d348fcde4b5744f46a57c268686a81a6d0ca50a69adbac",
+    "Frontend.cpp": "f6b55fee7f87b88167efae96f21ffd763cc6b83422d6bac21611eb3c84483695",
+    "Lowering.cpp": "5b1e3cb88b700a09fa2c1862f54a1526d50acb3b7b99c4c7ab28474bcff812ca",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "b69f7a60c7fc9fe1c57a80935a2007a53d68246c38fafece9a709fbc1c13755e",
+    "MathSDK.cpp": "03869224eab8cfe6513d2a8170f500e3ced3b95e15466a87af93d452d23b2c35",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "d8c9811ead5925ababc3dc19e79e75f2a647de1be6a384fedef6a817a3c291d1",
+    "Frontend.h": "0ae5db060a9e547268d6c9113a1eb2c5e614eb308aa4c0b84cfd156eb845a9d3",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -66,13 +66,14 @@
     "utils/ci/not-fn-pointer-five-formal-additions.cpp",
     "utils/ci/not-fn-pointer-six-formal-additions.cpp",
     "utils/ci/not-fn-pointer-ten-formal-additions.cpp",
-    "utils/ci/not-fn-pointer-eleven-formal-additions.cpp"
+    "utils/ci/not-fn-pointer-eleven-formal-additions.cpp",
+    "utils/ci/not-fn-pointer-twelve-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "original124_plus_eleven_not_fn_current_private_gtest_and_generated_programs",
+  "scope": "original124_plus_twelve_not_fn_current_private_gtest_and_generated_programs",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -123,8 +124,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/not-fn-pointer-eleven-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "69c4582879c7ffd6a65315a9882a9d42a96ff2b9ccb10a43819384f0356751f8",
+  "not_fn_formal_additions_path": "utils/ci/not-fn-pointer-twelve-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "1773950ecb88dc8436566bb9e2e1bf7601deffb7527ffedfd051bdc9feb4b0c1",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -191,14 +192,20 @@
       "formal_test_name": "TranslateTest.CoreV2NotFnReferenceWrapperRunsAtBothOptimizations",
       "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
       "gtest_body_sha256": "51816760fc5b622a7f49bb5fae40ce6a229efac4ab41a597a8775629a8d0b061"
+    },
+    {
+      "name": "not-fn-nested-adapters",
+      "formal_test_name": "TranslateTest.CoreV2NotFnNestedAdaptersRunAtBothOptimizations",
+      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
+      "gtest_body_sha256": "509cf8b4685764580ecc54d0a700c8a689e3c4bac126f9f3e58ab28465d7ee58"
     }
   ],
-  "required_actual_total_gtest_xml": 135,
-  "required_actual_not_fn_gtest_xml": 11,
-  "required_actual_not_fn_generated_o0_o2_products": 22,
+  "required_actual_total_gtest_xml": 136,
+  "required_actual_not_fn_gtest_xml": 12,
+  "required_actual_not_fn_generated_o0_o2_products": 24,
   "not_fn_registered_previous_additions_path": "utils/ci/not-fn-pointer-eleven-formal-additions.cpp",
   "not_fn_registered_previous_additions_sha256": "69c4582879c7ffd6a65315a9882a9d42a96ff2b9ccb10a43819384f0356751f8",
-  "required_actual_frontend_requests": 746,
+  "required_actual_frontend_requests": 747,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true
 }
