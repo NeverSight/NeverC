@@ -14279,7 +14279,7 @@ describeFunctionalNotFnCallSource(
       llvm::errs() << "[NESTED-Call-SOURCE-TRACE] outer-call point=" << Point << " mode=" << unsigned(Mode) << " location=";
       if (Call) Call->getExprLoc().print(llvm::errs(), SM);
       llvm::errs() << "\n";
-      if (Call) Call->dump(llvm::errs());
+      if (Call) Call->dump(llvm::errs(), Context);
       if (Method) Method->dump(llvm::errs());
     }
     return std::nullopt;
@@ -14425,7 +14425,7 @@ static bool functionalNotFnNestedInnerBinding(
       llvm::errs() << "[NESTED-Inner-SOURCE-TRACE] inner-binding point=" << Point << " location=";
       if (Inner) Inner->getExprLoc().print(llvm::errs(), SM);
       llvm::errs() << "\n";
-      if (Inner) Inner->dump(llvm::errs());
+      if (Inner) Inner->dump(llvm::errs(), Context);
       if (Method) Method->dump(llvm::errs());
     }
     return false;
@@ -14523,7 +14523,7 @@ describeFunctionalNotFnNestedInnerCallSource(
       llvm::errs() << "[NESTED-Call-SOURCE-TRACE] inner-call point=" << Point << " mode=" << unsigned(Mode) << " location=";
       if (Call) Call->getExprLoc().print(llvm::errs(), SM);
       llvm::errs() << "\n";
-      if (Call) Call->dump(llvm::errs());
+      if (Call) Call->dump(llvm::errs(), Context);
       if (Method) Method->dump(llvm::errs());
     }
     return std::nullopt;
@@ -14664,7 +14664,7 @@ describeFunctionalNotFnNestedCallSource(
       llvm::errs() << "[NESTED-Call-SOURCE-TRACE] nested-composition point=" << Point << " location=";
       if (Call) Call->getExprLoc().print(llvm::errs(), SM);
       llvm::errs() << "\n";
-      if (Call) Call->dump(llvm::errs());
+      if (Call) Call->dump(llvm::errs(), Context);
       if ((OuterRuntime ? OuterRuntime->Method : nullptr)) (OuterRuntime ? OuterRuntime->Method : nullptr)->dump(llvm::errs());
     }
     return std::nullopt;
