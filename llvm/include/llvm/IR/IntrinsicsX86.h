@@ -256,6 +256,9 @@ enum X86Intrinsics : unsigned {
     x86_avx512_broadcastmw_128,                      // llvm.x86.avx512.broadcastmw.128
     x86_avx512_broadcastmw_256,                      // llvm.x86.avx512.broadcastmw.256
     x86_avx512_broadcastmw_512,                      // llvm.x86.avx512.broadcastmw.512
+    x86_avx512_compressstore128_native,              // llvm.x86.avx512.compressstore128.native
+    x86_avx512_compressstore256_native,              // llvm.x86.avx512.compressstore256.native
+    x86_avx512_compressstore512_native,              // llvm.x86.avx512.compressstore512.native
     x86_avx512_conflict_d_128,                       // llvm.x86.avx512.conflict.d.128
     x86_avx512_conflict_d_256,                       // llvm.x86.avx512.conflict.d.256
     x86_avx512_conflict_d_512,                       // llvm.x86.avx512.conflict.d.512
@@ -283,6 +286,9 @@ enum X86Intrinsics : unsigned {
     x86_avx512_div_ps_512,                           // llvm.x86.avx512.div.ps.512
     x86_avx512_exp2_pd,                              // llvm.x86.avx512.exp2.pd
     x86_avx512_exp2_ps,                              // llvm.x86.avx512.exp2.ps
+    x86_avx512_expandload128_native,                 // llvm.x86.avx512.expandload128.native
+    x86_avx512_expandload256_native,                 // llvm.x86.avx512.expandload256.native
+    x86_avx512_expandload512_native,                 // llvm.x86.avx512.expandload512.native
     x86_avx512_fpclass_pd_128,                       // llvm.x86.avx512.fpclass.pd.128
     x86_avx512_fpclass_pd_256,                       // llvm.x86.avx512.fpclass.pd.256
     x86_avx512_fpclass_pd_512,                       // llvm.x86.avx512.fpclass.pd.512

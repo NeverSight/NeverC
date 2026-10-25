@@ -1425,3 +1425,41 @@ Windows x64 ABI: args in RCX, RDX, R8, R9.
 | EFLAGS | `__readeflags`, `__writeeflags` |
 | XCR | `_xgetbv`, `_xsetbv` |
 | TSX | `_xbegin`, `_xend`, `_xabort`, `_xtest` |
+
+## Native compact-memory interfaces
+
+`__NEVERC_X86_COMPRESS_EXPAND__=1` advertises 36 x86-64 builtins:
+`__builtin_ia32_vp{compress,expand}{b,w,d,q}{128,256,512}_native` and
+`__builtin_ia32_v{compress,expand}{ps,pd}{128,256,512}_native`.
+A 128/256/512-bit operand is an unsigned-int vector of 4/8/16 elements,
+regardless of the instruction's element kind. These are raw-bit carriers.
+
+Stores take `(void *offset, unsigned long long mask, vector source,
+const unsigned segment)`. Loads return a vector and take `(void *offset,
+unsigned long long mask, vector prior, const unsigned zeroing,
+const unsigned segment)`. Zeroing is 0 or 1. Segment is zero or an override
+byte `0x26/0x2e/0x36/0x3e/0x64/0x65`; the pointer is a segment-relative
+offset. The backend uses the DS-default RBX carrier. An SS prefix in long
+mode does not preserve the original RSP/RBP address's #SS fault provenance.
+
+Functions need `avx512f`, plus `avx512vl` for 128/256-bit widths.
+Byte/word forms also need `avx512bw,avx512vbmi2`. The C frontend enables
+512-bit EVEX through `avx512f`; LLVM IR must retain `+evex512` for 512-bit
+operations. For example:
+
+```c
+typedef unsigned int U32x4 __attribute__((vector_size(16)));
+__attribute__((target("avx512f,avx512vl")))
+U32x4 expand(void *offset, unsigned long long mask, U32x4 prior) {
+  return __builtin_ia32_vpexpandd128_native(offset, mask, prior, 0, 0);
+}
+```
+
+Six fixed-signature LLVM native interfaces carry these operations; constant
+kind selectors preserve PS/PD versus D/Q opcodes. Native calls conservatively
+retain memory effects, including zero-mask calls and unused load results.
+They do not use inline assembly or generic masked loads/stores. The full LLVM
+fork also supports i386; NeverC's builtin registry remains x86-64 only.
+`X86CompressExpandTest.*` checks frontend controls and O0/O2 output in
+ELF/COFF/Mach-O and both assembly dialects. Hardware AVX-512/fault execution
+requires separate qualification.

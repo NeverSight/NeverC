@@ -3741,6 +3741,151 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndldx), Ops);
   case X86::BI__builtin_ia32_bndstx:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndstx), Ops);
+  case X86::BI__builtin_ia32_vpcompressb128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(0), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandb128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(0), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressw128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(1), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandw128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(1), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressd128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(2), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandd128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(2), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressq128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(3), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandq128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(3), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vcompressps128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(4), Ops[3]});
+  case X86::BI__builtin_ia32_vexpandps128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(4), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vcompresspd128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(5), Ops[3]});
+  case X86::BI__builtin_ia32_vexpandpd128_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload128_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(5), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressb256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(0), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandb256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(0), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressw256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(1), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandw256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(1), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressd256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(2), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandd256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(2), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressq256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(3), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandq256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(3), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vcompressps256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(4), Ops[3]});
+  case X86::BI__builtin_ia32_vexpandps256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(4), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vcompresspd256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(5), Ops[3]});
+  case X86::BI__builtin_ia32_vexpandpd256_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload256_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(5), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressb512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(0), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandb512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(0), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressw512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(1), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandw512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(1), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressd512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(2), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandd512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(2), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vpcompressq512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(3), Ops[3]});
+  case X86::BI__builtin_ia32_vpexpandq512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(3), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vcompressps512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(4), Ops[3]});
+  case X86::BI__builtin_ia32_vexpandps512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(4), Ops[3], Ops[4]});
+  case X86::BI__builtin_ia32_vcompresspd512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_compressstore512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(5), Ops[3]});
+  case X86::BI__builtin_ia32_vexpandpd512_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_expandload512_native),
+        {Ops[0], Ops[1], Ops[2], Builder.getInt32(5), Ops[3], Ops[4]});
+
   case X86::BI__builtin_ia32_aadd32_address:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_aadd32_address),
                               Ops);

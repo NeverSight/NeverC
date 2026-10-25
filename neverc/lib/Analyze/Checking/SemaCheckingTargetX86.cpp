@@ -660,6 +660,64 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1) ||
            CheckMemoryAddress(TheCall->getNumArgs() - 2);
+  case X86::BI__builtin_ia32_vpcompressb128_native:
+  case X86::BI__builtin_ia32_vpcompressw128_native:
+  case X86::BI__builtin_ia32_vpcompressd128_native:
+  case X86::BI__builtin_ia32_vpcompressq128_native:
+  case X86::BI__builtin_ia32_vcompressps128_native:
+  case X86::BI__builtin_ia32_vcompresspd128_native:
+  case X86::BI__builtin_ia32_vpcompressb256_native:
+  case X86::BI__builtin_ia32_vpcompressw256_native:
+  case X86::BI__builtin_ia32_vpcompressd256_native:
+  case X86::BI__builtin_ia32_vpcompressq256_native:
+  case X86::BI__builtin_ia32_vcompressps256_native:
+  case X86::BI__builtin_ia32_vcompresspd256_native:
+  case X86::BI__builtin_ia32_vpcompressb512_native:
+  case X86::BI__builtin_ia32_vpcompressw512_native:
+  case X86::BI__builtin_ia32_vpcompressd512_native:
+  case X86::BI__builtin_ia32_vpcompressq512_native:
+  case X86::BI__builtin_ia32_vcompressps512_native:
+  case X86::BI__builtin_ia32_vcompresspd512_native: {
+    llvm::APSInt Prefix;
+    if (SemaBuiltinConstantArg(TheCall, 3, Prefix))
+      return true;
+    if (llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(3)->getSourceRange()
+                << TheCall->getArg(3)->getSourceRange());
+  }
+  case X86::BI__builtin_ia32_vpexpandb128_native:
+  case X86::BI__builtin_ia32_vpexpandw128_native:
+  case X86::BI__builtin_ia32_vpexpandd128_native:
+  case X86::BI__builtin_ia32_vpexpandq128_native:
+  case X86::BI__builtin_ia32_vexpandps128_native:
+  case X86::BI__builtin_ia32_vexpandpd128_native:
+  case X86::BI__builtin_ia32_vpexpandb256_native:
+  case X86::BI__builtin_ia32_vpexpandw256_native:
+  case X86::BI__builtin_ia32_vpexpandd256_native:
+  case X86::BI__builtin_ia32_vpexpandq256_native:
+  case X86::BI__builtin_ia32_vexpandps256_native:
+  case X86::BI__builtin_ia32_vexpandpd256_native:
+  case X86::BI__builtin_ia32_vpexpandb512_native:
+  case X86::BI__builtin_ia32_vpexpandw512_native:
+  case X86::BI__builtin_ia32_vpexpandd512_native:
+  case X86::BI__builtin_ia32_vpexpandq512_native:
+  case X86::BI__builtin_ia32_vexpandps512_native:
+  case X86::BI__builtin_ia32_vexpandpd512_native: {
+    if (SemaBuiltinConstantArgRange(TheCall, 3, 0, 1))
+      return true;
+    llvm::APSInt Prefix;
+    if (SemaBuiltinConstantArg(TheCall, 4, Prefix))
+      return true;
+    if (llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(4)->getSourceRange()
+                << TheCall->getArg(4)->getSourceRange());
+  }
   case X86::BI__builtin_ia32_aadd32_address:
   case X86::BI__builtin_ia32_aadd64_address:
   case X86::BI__builtin_ia32_aand32_address:

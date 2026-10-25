@@ -55,6 +55,7 @@ set(NEVERC_TEST_SOURCES
   CustomCallConvTests.cpp
   SEHTests.cpp
   X86PrivilegedIntrinTests.cpp
+  X86/CompressExpandTests.cpp
   X86HeaderTests.cpp
   StrHashTests.cpp
   XorStrTests.cpp

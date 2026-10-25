@@ -52,6 +52,7 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/X86AMXNative.h"
 #include "llvm/IR/X86APXAtomicNative.h"
+#include "llvm/IR/X86CompressExpandNative.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeArithmeticFlags.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
@@ -26655,6 +26656,129 @@ static SDValue completeDescriptorQuery(SDValue Op, SDNode *Access,
   return DAG.getMergeValues({Value, ZF, SDValue(Access, 1)}, DL);
 }
 
+// A volatile native access survives dead results and zero masks. The CPU
+// owns the packed memory interval, lane suppression and architectural faults.
+static SDValue lowerCompressExpandNative(SDValue Op,
+                                         const X86Subtarget &Subtarget,
+                                         SelectionDAG &DAG) {
+  const unsigned ID = Op.getConstantOperandVal(1);
+  const bool Expand = ID == Intrinsic::x86_avx512_expandload128_native ||
+                      ID == Intrinsic::x86_avx512_expandload256_native ||
+                      ID == Intrinsic::x86_avx512_expandload512_native;
+  const EVT CarrierVT = Op.getOperand(4).getValueType();
+  const unsigned Bytes = CarrierVT.getSizeInBits() / 8;
+  const auto *KindArg = dyn_cast<ConstantSDNode>(Op.getOperand(5));
+  const auto *ZeroArg =
+      Expand ? dyn_cast<ConstantSDNode>(Op.getOperand(6)) : nullptr;
+  const auto *PrefixArg =
+      dyn_cast<ConstantSDNode>(Op.getOperand(Expand ? 7 : 6));
+  if (!KindArg || KindArg->getZExtValue() >= X86::CompressExpandKindCount ||
+      (Expand && (!ZeroArg || ZeroArg->getZExtValue() > 1)) || !PrefixArg ||
+      !X86::isNativeMemorySegmentPrefix(PrefixArg->getZExtValue()))
+    report_fatal_error("invalid native compress/expand controls");
+  const unsigned Kind = KindArg->getZExtValue();
+  const bool Zero = Expand && ZeroArg->getZExtValue();
+  if (!Subtarget.hasAVX512() || (Bytes == 64 && !Subtarget.hasEVEX512()) ||
+      (Bytes < 64 && !Subtarget.hasVLX()) ||
+      (Kind < 2 && (!Subtarget.hasBWI() || !Subtarget.hasVBMI2())))
+    report_fatal_error("native compress/expand requires its AVX-512 features");
+  const unsigned WidthIndex = Bytes == 16 ? 0 : Bytes == 32 ? 1 : 2;
+  constexpr unsigned Stores[][3] = {
+      {X86::VPCOMPRESSBZ128mrk, X86::VPCOMPRESSBZ256mrk, X86::VPCOMPRESSBZmrk},
+      {X86::VPCOMPRESSWZ128mrk, X86::VPCOMPRESSWZ256mrk, X86::VPCOMPRESSWZmrk},
+      {X86::VPCOMPRESSDZ128mrk, X86::VPCOMPRESSDZ256mrk, X86::VPCOMPRESSDZmrk},
+      {X86::VPCOMPRESSQZ128mrk, X86::VPCOMPRESSQZ256mrk, X86::VPCOMPRESSQZmrk},
+      {X86::VCOMPRESSPSZ128mrk, X86::VCOMPRESSPSZ256mrk, X86::VCOMPRESSPSZmrk},
+      {X86::VCOMPRESSPDZ128mrk, X86::VCOMPRESSPDZ256mrk, X86::VCOMPRESSPDZmrk},
+  };
+  constexpr unsigned Loads[][3] = {
+      {X86::VPEXPANDBZ128rmk, X86::VPEXPANDBZ256rmk, X86::VPEXPANDBZrmk},
+      {X86::VPEXPANDWZ128rmk, X86::VPEXPANDWZ256rmk, X86::VPEXPANDWZrmk},
+      {X86::VPEXPANDDZ128rmk, X86::VPEXPANDDZ256rmk, X86::VPEXPANDDZrmk},
+      {X86::VPEXPANDQZ128rmk, X86::VPEXPANDQZ256rmk, X86::VPEXPANDQZrmk},
+      {X86::VEXPANDPSZ128rmk, X86::VEXPANDPSZ256rmk, X86::VEXPANDPSZrmk},
+      {X86::VEXPANDPDZ128rmk, X86::VEXPANDPDZ256rmk, X86::VEXPANDPDZrmk},
+  };
+  constexpr unsigned ZeroLoads[][3] = {
+      {X86::VPEXPANDBZ128rmkz, X86::VPEXPANDBZ256rmkz, X86::VPEXPANDBZrmkz},
+      {X86::VPEXPANDWZ128rmkz, X86::VPEXPANDWZ256rmkz, X86::VPEXPANDWZrmkz},
+      {X86::VPEXPANDDZ128rmkz, X86::VPEXPANDDZ256rmkz, X86::VPEXPANDDZrmkz},
+      {X86::VPEXPANDQZ128rmkz, X86::VPEXPANDQZ256rmkz, X86::VPEXPANDQZrmkz},
+      {X86::VEXPANDPSZ128rmkz, X86::VEXPANDPSZ256rmkz, X86::VEXPANDPSZrmkz},
+      {X86::VEXPANDPDZ128rmkz, X86::VEXPANDPDZ256rmkz, X86::VEXPANDPDZrmkz},
+  };
+  const unsigned Opcode =
+      (Expand ? (Zero ? ZeroLoads : Loads) : Stores)[Kind][WidthIndex];
+  const unsigned Lanes = Bytes / X86::compressExpandElementBytes(Kind);
+  const MVT Scalars[] = {MVT::i8,  MVT::i16, MVT::i32,
+                         MVT::i64, MVT::f32, MVT::f64};
+  const MVT DataVT = MVT::getVectorVT(Scalars[Kind], Lanes);
+  const SDLoc DL(Op);
+  const unsigned MaskBits = std::max(8u, Lanes);
+  SDValue Mask =
+      DAG.getZExtOrTrunc(Op.getOperand(3), DL, MVT::getIntegerVT(MaskBits));
+  Mask = DAG.getBitcast(MVT::getVectorVT(MVT::i1, MaskBits), Mask);
+  if (MaskBits != Lanes)
+    Mask = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL,
+                       MVT::getVectorVT(MVT::i1, Lanes), Mask,
+                       DAG.getVectorIdxConstant(0, DL));
+  unsigned Segment = 0;
+  switch (PrefixArg->getZExtValue()) {
+  case 0x26:
+    Segment = X86::ES;
+    break;
+  case 0x2e:
+    Segment = X86::CS;
+    break;
+  case 0x36:
+    Segment = X86::SS;
+    break;
+  case 0x3e:
+    Segment = X86::DS;
+    break;
+  case 0x64:
+    Segment = X86::FS;
+    break;
+  case 0x65:
+    Segment = X86::GS;
+    break;
+  }
+  const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
+  const unsigned Base = Subtarget.is64Bit() ? X86::RBX : X86::EBX;
+  SDValue Chain =
+      DAG.getCopyToReg(Op.getOperand(0), DL, Base, Op.getOperand(2), SDValue());
+  SmallVector<SDValue, 10> Operands;
+  if (Expand) {
+    if (!Zero)
+      Operands.push_back(DAG.getBitcast(DataVT, Op.getOperand(4)));
+    Operands.push_back(Mask);
+  }
+  Operands.append(
+      {DAG.getRegister(Base, PtrVT), DAG.getTargetConstant(1, DL, MVT::i8),
+       DAG.getRegister(0, PtrVT), DAG.getTargetConstant(0, DL, MVT::i32),
+       DAG.getRegister(Segment, MVT::i16)});
+  if (!Expand) {
+    Operands.push_back(Mask);
+    Operands.push_back(DAG.getBitcast(DataVT, Op.getOperand(4)));
+  }
+  Operands.push_back(Chain);
+  Operands.push_back(Chain.getValue(1));
+  auto *Node = DAG.getMachineNode(Opcode, DL,
+                                  Expand ? DAG.getVTList(DataVT, MVT::Other)
+                                         : DAG.getVTList(MVT::Other),
+                                  Operands);
+  auto Flags =
+      MachineMemOperand::MOVolatile |
+      (Expand ? MachineMemOperand::MOLoad : MachineMemOperand::MOStore);
+  auto *MMO = DAG.getMachineFunction().getMachineMemOperand(
+      MachinePointerInfo(), Flags, LLT(), Align(1));
+  DAG.setNodeMemRefs(Node, {MMO});
+  if (!Expand)
+    return SDValue(Node, 0);
+  return DAG.getMergeValues(
+      {DAG.getBitcast(CarrierVT, SDValue(Node, 0)), SDValue(Node, 1)}, DL);
+}
+
 // Keep APX encoding through all machine optimizations. The integer address
 // denotes an offset, not an LLVM pointer in the default address space. Its
 // native instruction owns segment addition, the atomic transaction and faults.
@@ -27465,6 +27589,14 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_tcvtrowps2phl_reg:
     case Intrinsic::x86_tilemovrow_reg:
       return lowerAMXNative(Op, Subtarget, DAG);
+
+    case Intrinsic::x86_avx512_compressstore128_native:
+    case Intrinsic::x86_avx512_expandload128_native:
+    case Intrinsic::x86_avx512_compressstore256_native:
+    case Intrinsic::x86_avx512_expandload256_native:
+    case Intrinsic::x86_avx512_compressstore512_native:
+    case Intrinsic::x86_avx512_expandload512_native:
+      return lowerCompressExpandNative(Op, Subtarget, DAG);
 
     case Intrinsic::x86_aadd32_address:
     case Intrinsic::x86_aadd64_address:

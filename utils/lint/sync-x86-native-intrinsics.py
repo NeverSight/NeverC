@@ -106,6 +106,13 @@ for bits in (32, 64):
         ADDRESS_SIGNATURES[f"{operation}{bits}_address"] = (("Done", "I64", word, "I32", "I32"), (2, 3))
     ADDRESS_SIGNATURES[f"cmpccxadd{bits}_address"] = ((word, "I64", word, word, "I32", "I32", "I32"), (3, 4, 5))
 
+# Native compact-memory vector carriers preserve all six opcode families.
+for bits in (128, 256, 512):
+    vector = (f"V{bits // 32}", "I32")
+    args = ("PTR", "I64") + vector + ("I32", "I32")
+    ADDRESS_SIGNATURES[f"avx512_compressstore{bits}_native"] = (("Done",) + args, (3, 4))
+    ADDRESS_SIGNATURES[f"avx512_expandload{bits}_native"] = (vector + args + ("I32",), (3, 4, 5))
+
 # MPX uses the same constant-argument machinery for bounds-bank indices and
 # address encoding controls. Effects remain conservative for disabled/faulting
 # native operations as well as successful bounds accesses.
