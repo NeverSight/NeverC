@@ -1524,7 +1524,7 @@ that interface; otherwise its wrapper uses the existing `__builtin_ia32_*`
 operation. Both forms emit native LLVM intrinsics, including XABORT's constant
 byte, without inline assembly or external helper calls.
 
-`X86PrivilegedIntrinTest.TransactionHeadersExposeNativeInterfaces` compiles
+`X86TransactionTest.TransactionHeadersExposeNativeInterfaces` compiles
 both umbrella headers at O0/O2 for ELF, COFF and Mach-O, checks native IR and
 assembly, and includes `<intrin.h>` in Microsoft mode to cover declaration
 compatibility. Callers use the `rtm` function target attribute. These are
@@ -1549,3 +1549,7 @@ through the full backend, and `--keep DIRECTORY` retains the inputs, outputs
 and JSON results. The qualified matrix has 40 profiles and 10,240 functions:
 14 NeverC, 14 NeverC-to-full-LLVM, and six full-LLVM profiles per code mode.
 It does not execute physical RTM regions.
+
+Transaction frontend tests live in `tests/neverc/X86/TransactionFrontendTests.cpp`;
+the shared x86 assembly fixture is `X86/NativeBuiltinFixture.h`. Native IR
+operand/effect tests stay in `X86/TransactionTests.cpp`.
