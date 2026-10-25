@@ -174,9 +174,9 @@ The two GKI workflows have deliberately different jobs:
   profile.
 - `.github/workflows/validate-gki-runtime.yml` is the lightweight consumer and
   compatibility gate. It downloads every archive pinned in
-  `arm64/gki-release.json` (eight families on `gki-build-20260701`: the
-  six official GKI series plus android13-5.10 / android14-5.15). QEMU and
-  smoke therefore cover `51013` and `51514` as well as the original six.
+  `arm64/gki-release.json` (eight stable families on `gki-build-20260701`,
+  plus the separately published 703 production preview). QEMU and smoke cover
+  all nine pinned profiles.
 - `.github/workflows/watch-gki-updates.yml` polls AOSP `kernel/common` daily
   for a newer linux sublevel, a KMI generation bump, a `-kminext` preview, a
   NeverC-read struct-field shift, or a new `androidN-M.m` branch, and posts
@@ -231,9 +231,10 @@ arm64 standalone build is available as
 with 128 GKI modules, measured ABI evidence, QEMU logs, and `SHA256SUMS`.
 Use a NeverC build containing 703 support, merged into `dev` in
 [PR #23](https://github.com/NeverSight/NeverC/pull/23).
-The release consumer continues to cover the eight archives in
-`gki-release.json`; a 703 archive
-must be built, verified, and hash-pinned there before that consumer covers it.
+`gki-release.json` pins the preview's archive size and SHA-256 and includes
+703 in the consumer's release/QEMU matrix. The optional `tag` on a profile
+overrides the lock's default tag, so 703 uses its standalone release while the
+eight stable archives retain their `gki-build-20260701` pins.
 The consumer permits unpinned RC previews in the catalog while continuing
 to require a release-lock entry for every stable profile. Its boot matrix
 contains only release-pinned profiles; selecting an unpinned preview fails
@@ -243,7 +244,7 @@ The independent zero-import loader fixture is `gki-qemu-smoke-module.c`;
 rbtree traversal, and string padding in a disposable guest.
 
 The consumer checks each asset's name, byte size, and SHA-256 before safe
-extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks
+extraction; regenerates all checked BTF/DWARF layouts from `vmlinux`; checks
 every packaged config and `Module.symvers` occurrence; and independently derives
 `init`, `exit`, `sizeof(struct module)`, and the module-entry KCFI type IDs from
 the lock-pinned packaged `.ko`. It also runs the complete current runtime

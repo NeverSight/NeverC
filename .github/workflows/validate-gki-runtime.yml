@@ -41,7 +41,7 @@ jobs:
       compiler_artifact_id: ${{ steps.resolve.outputs.compiler_artifact_id }}
       matrix: ${{ steps.resolve.outputs.matrix }}
       release_repository: ${{ steps.resolve.outputs.release_repository }}
-      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      release_tags: ${{ steps.resolve.outputs.release_tags }}
     steps:
       - name: Validate caller, compiler artifact, and release lock
         id: resolve
@@ -119,7 +119,7 @@ jobs:
             die "stable profile catalog has profiles missing from the release lock"
           unpublished=$(jq -cn --argjson release "$release_profiles" --argjson catalog "$catalog_profiles" \
             '$catalog - $release')
-          echo "Unpublished previews excluded from the release boot matrix: $unpublished"
+          echo "Unpinned previews excluded from the release boot matrix: $unpublished"
 
           selected=${INPUT_PROFILE:-all}
           if [ "$selected" = "all" ]; then
@@ -130,23 +130,28 @@ jobs:
           fi
           release_repository=$(jq -r .repository.name "$lock_path")
           release_repository_id=$(jq -r .repository.id "$lock_path")
-          release_tag=$(jq -r .tag "$lock_path")
+          release_tags=$(jq -c '. as $lock | [.profiles[] | (.tag // $lock.tag)] | unique' "$lock_path")
           [[ "$release_repository" =~ ^[^/]+/[^/]+$ ]] || die "invalid release repository"
           [[ "$release_repository_id" =~ ^[1-9][0-9]*$ ]] || die "invalid release repository ID"
-          [ -n "$release_tag" ] && [ "$release_tag" != "null" ] || die "invalid release tag"
+          jq -e 'all(.[]; type == "string" and test("\\Agki-[A-Za-z0-9][A-Za-z0-9._-]*\\z"))' \
+            <<<"$release_tags" >/dev/null || die "invalid release tag"
 
           release_repo_json=$(gh api "repos/$release_repository")
           [ "$(jq -r .id <<<"$release_repo_json")" = "$release_repository_id" ] || die "release repository ID mismatch"
-          release_json=$(gh api "repos/$release_repository/releases/tags/$release_tag")
-          [ "$(jq -r .tag_name <<<"$release_json")" = "$release_tag" ] || die "release tag response mismatch"
-          while IFS=$'\t' read -r asset size digest; do
-            count=$(jq --arg asset "$asset" '[.assets[] | select(.name == $asset)] | length' <<<"$release_json")
-            [ "$count" = "1" ] || die "release asset $asset appears $count times"
-            actual_size=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .size' <<<"$release_json")
-            actual_digest=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest' <<<"$release_json")
-            [ "$actual_size" = "$size" ] || die "release metadata size mismatch for $asset"
-            [ "$actual_digest" = "sha256:$digest" ] || die "release metadata digest mismatch for $asset"
-          done < <(jq -r '.profiles[] | [.asset, (.size | tostring), .sha256] | @tsv' "$lock_path")
+          while IFS= read -r release_tag; do
+            release_json=$(gh api "repos/$release_repository/releases/tags/$release_tag")
+            [ "$(jq -r .tag_name <<<"$release_json")" = "$release_tag" ] || die "release tag response mismatch"
+            [ "$(jq -r .draft <<<"$release_json")" = false ] || die "release is still a draft: $release_tag"
+            while IFS=$'\t' read -r asset size digest; do
+              count=$(jq --arg asset "$asset" '[.assets[] | select(.name == $asset)] | length' <<<"$release_json")
+              [ "$count" = "1" ] || die "release asset $asset appears $count times"
+              actual_size=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .size' <<<"$release_json")
+              actual_digest=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest' <<<"$release_json")
+              [ "$actual_size" = "$size" ] || die "release metadata size mismatch for $asset"
+              [ "$actual_digest" = "sha256:$digest" ] || die "release metadata digest mismatch for $asset"
+            done < <(jq -r --arg tag "$release_tag" '. as $lock | .profiles[] |
+              select((.tag // $lock.tag) == $tag) | [.asset, (.size | tostring), .sha256] | @tsv' "$lock_path")
+          done < <(jq -r '.[]' <<<"$release_tags")
 
           {
             echo "source_sha=$source_sha"
@@ -154,7 +159,7 @@ jobs:
             echo "compiler_artifact_id=$artifact_id"
             echo "matrix=$matrix"
             echo "release_repository=$release_repository"
-            echo "release_tag=$release_tag"
+            echo "release_tags=$release_tags"
           } >>"$GITHUB_OUTPUT"
 
           {
@@ -162,7 +167,8 @@ jobs:
             echo
             echo "- Source SHA: \`$source_sha\`"
             echo "- Compiler run/artifact: \`$INPUT_RUN_ID\` / \`$artifact_id\`"
-            echo "- Release: \`$release_repository@$release_tag\`"
+            echo "- Release repository: \`$release_repository\`"
+            echo "- Release tags: \`$release_tags\`"
             echo "- Profiles: \`$matrix\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
@@ -306,6 +312,7 @@ jobs:
             binutils \
             clang \
             gcc-aarch64-linux-gnu \
+            ipxe-qemu \
             libc6-dev-arm64-cross \
             qemu-system-arm
           python3 -m pip install --disable-pip-version-check pyelftools==0.32
@@ -322,9 +329,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROFILE: ${{ matrix.profile }}
           RELEASE_REPOSITORY: ${{ needs.prepare.outputs.release_repository }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
+          set -euo pipefail
           asset=$(jq -r --arg profile "$PROFILE" '.profiles[$profile].asset' runtime/android/kernel/arm64/gki-release.json)
+          RELEASE_TAG=$(jq -r --arg profile "$PROFILE" '.profiles[$profile].tag // .tag' runtime/android/kernel/arm64/gki-release.json)
           [ -n "$asset" ] && [ "$asset" != "null" ]
           mkdir -p release logs
           for attempt in 1 2 3; do
@@ -406,7 +414,7 @@ jobs:
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
           COMPILER_RUN_ID: ${{ needs.prepare.outputs.compiler_run_id }}
           RELEASE_REPOSITORY: ${{ needs.prepare.outputs.release_repository }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          RELEASE_TAGS: ${{ needs.prepare.outputs.release_tags }}
           MATRIX: ${{ needs.prepare.outputs.matrix }}
         run: |
           {
@@ -414,7 +422,8 @@ jobs:
             echo
             echo "- Source SHA: \`${SOURCE_SHA:-unresolved}\`"
             echo "- Compiler run: \`${COMPILER_RUN_ID:-unresolved}\`"
-            echo "- Release: \`${RELEASE_REPOSITORY:-unresolved}@${RELEASE_TAG:-unresolved}\`"
+            echo "- Release repository: \`${RELEASE_REPOSITORY:-unresolved}\`"
+            echo "- Release tags: \`${RELEASE_TAGS:-unresolved}\`"
             echo "- Profiles: \`${MATRIX:-unresolved}\`"
             echo "- Prepare: \`$PREPARE_RESULT\`"
             echo "- Current runtime: \`$RUNTIME_RESULT\`"

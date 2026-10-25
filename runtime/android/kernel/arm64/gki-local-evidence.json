@@ -100,7 +100,7 @@
       "artifacts": {
         "config": "GKI-android18-7.3-kit/evidence-d05bec5-production/config",
         "image": "GKI-android18-7.3-kit/evidence-d05bec5-production/Image",
-        "symvers": "GKI-android18-7.3-kit/evidence-d05bec5-production/vmlinux.symvers",
+        "symvers": "GKI-android18-7.3-kit/release-preview-20261025/stage/dist/Module.symvers",
         "system_map": "GKI-android18-7.3-kit/evidence-d05bec5-production/System.map",
         "vmlinux": "GKI-android18-7.3-kit/evidence-d05bec5-production/vmlinux"
       },

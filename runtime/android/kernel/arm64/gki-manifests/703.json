@@ -26,7 +26,7 @@
     "config_sha256": "c93a23d7018df1befea809d4db08b0dc34c208839807b2d5467b70c1ac074837",
     "layout_format": "BTF",
     "layout_sha256": "91dd99ca444b58e723ca5b5172c410fa176b4ce86b624c2db16f4e1819f9702a",
-    "symvers_sha256": "a94f9fb8d17f70519e29132c808bd418e7ff700e09dc4d26cc8bfb952ad53aa3",
+    "symvers_sha256": "02dea78d259cd4334dcc9910cc1a7e5b2b4a82d31a179dff3c28720d5d7cb793",
     "vmlinux_build_id": "33cd5f0660192947e636c53550317d4be4c57506"
   },
   "kernel_name": "android18-7.3",
