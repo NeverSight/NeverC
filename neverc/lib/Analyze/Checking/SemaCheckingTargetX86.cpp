@@ -660,6 +660,24 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1) ||
            CheckMemoryAddress(TheCall->getNumArgs() - 2);
+  case X86::BI__builtin_ia32_v4fmaddps_native:
+  case X86::BI__builtin_ia32_v4fnmaddps_native:
+  case X86::BI__builtin_ia32_v4fmaddss_native:
+  case X86::BI__builtin_ia32_v4fnmaddss_native:
+  case X86::BI__builtin_ia32_vp4dpwssd_native:
+  case X86::BI__builtin_ia32_vp4dpwssds_native: {
+    if (SemaBuiltinConstantArgRange(TheCall, 7, 0, 1))
+      return true;
+    llvm::APSInt Prefix;
+    if (SemaBuiltinConstantArg(TheCall, 8, Prefix))
+      return true;
+    if (llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(8)->getSourceRange()
+                << TheCall->getArg(8)->getSourceRange());
+  }
   case X86::BI__builtin_ia32_vpcompressb128_native:
   case X86::BI__builtin_ia32_vpcompressw128_native:
   case X86::BI__builtin_ia32_vpcompressd128_native:

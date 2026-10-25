@@ -858,6 +858,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__NEVERC_X86_BOUNDED_LEAF_STATE__", "1");
     Builder.defineMacro("__NEVERC_X86_APX_ATOMIC__", "1");
     Builder.defineMacro("__NEVERC_X86_COMPRESS_EXPAND__", "1");
+    Builder.defineMacro("__NEVERC_X86_FOUR_SOURCE__", "1");
   }
   if (HasAMXTILE)
     Builder.defineMacro("__AMX_TILE__");

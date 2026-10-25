@@ -3741,6 +3741,24 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndldx), Ops);
   case X86::BI__builtin_ia32_bndstx:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndstx), Ops);
+  case X86::BI__builtin_ia32_v4fmaddps_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_v4fmaddps_native), Ops);
+  case X86::BI__builtin_ia32_v4fnmaddps_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_v4fnmaddps_native), Ops);
+  case X86::BI__builtin_ia32_v4fmaddss_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_v4fmaddss_native), Ops);
+  case X86::BI__builtin_ia32_v4fnmaddss_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_v4fnmaddss_native), Ops);
+  case X86::BI__builtin_ia32_vp4dpwssd_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_vp4dpwssd_native), Ops);
+  case X86::BI__builtin_ia32_vp4dpwssds_native:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_avx512_vp4dpwssds_native), Ops);
   case X86::BI__builtin_ia32_vpcompressb128_native:
     return Builder.CreateCall(
         ME.getIntrinsic(Intrinsic::x86_avx512_compressstore128_native),

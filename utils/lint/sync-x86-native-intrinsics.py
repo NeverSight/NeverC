@@ -113,6 +113,11 @@ for bits in (128, 256, 512):
     ADDRESS_SIGNATURES[f"avx512_compressstore{bits}_native"] = (("Done",) + args, (3, 4))
     ADDRESS_SIGNATURES[f"avx512_expandload{bits}_native"] = (vector + args + ("I32",), (3, 4, 5))
 
+# Four-source arithmetic takes each group member as an independent SSA value.
+for operation in ("v4fmaddps", "v4fnmaddps", "v4fmaddss", "v4fnmaddss", "vp4dpwssd", "vp4dpwssds"):
+    vector = ("V4" if operation in ("v4fmaddss", "v4fnmaddss") else "V16", "I32")
+    ADDRESS_SIGNATURES[f"avx512_{operation}_native"] = (vector + ("PTR",) + vector * 5 + ("I16", "I32", "I32"), (7, 8))
+
 # MPX uses the same constant-argument machinery for bounds-bank indices and
 # address encoding controls. Effects remain conservative for disabled/faulting
 # native operations as well as successful bounds accesses.

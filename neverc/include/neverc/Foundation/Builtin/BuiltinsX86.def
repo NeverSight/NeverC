@@ -2276,6 +2276,24 @@ TARGET_BUILTIN(__builtin_ia32_vexpandps512_native, "V16UivC*ULLiV16UiIUiIUi", "n
 TARGET_BUILTIN(__builtin_ia32_vcompresspd512_native, "vv*ULLiV16UiIUi", "nV:512:", "avx512f,evex512")
 TARGET_BUILTIN(__builtin_ia32_vexpandpd512_native, "V16UivC*ULLiV16UiIUiIUi", "nV:512:", "avx512f,evex512")
 
+// Native four-register arithmetic with explicit source values.
+TARGET_BUILTIN(__builtin_ia32_v4fmaddps_native,
+               "V16UivC*V16UiV16UiV16UiV16UiV16UiUsIUiIUi",
+               "nV:512:", "avx512f")
+TARGET_BUILTIN(__builtin_ia32_v4fnmaddps_native,
+               "V16UivC*V16UiV16UiV16UiV16UiV16UiUsIUiIUi",
+               "nV:512:", "avx512f")
+TARGET_BUILTIN(__builtin_ia32_v4fmaddss_native,
+               "V4UivC*V4UiV4UiV4UiV4UiV4UiUsIUiIUi", "nV:128:", "avx512f")
+TARGET_BUILTIN(__builtin_ia32_v4fnmaddss_native,
+               "V4UivC*V4UiV4UiV4UiV4UiV4UiUsIUiIUi", "nV:128:", "avx512f")
+TARGET_BUILTIN(__builtin_ia32_vp4dpwssd_native,
+               "V16UivC*V16UiV16UiV16UiV16UiV16UiUsIUiIUi",
+               "nV:512:", "avx512f")
+TARGET_BUILTIN(__builtin_ia32_vp4dpwssds_native,
+               "V16UivC*V16UiV16UiV16UiV16UiV16UiUsIUiIUi",
+               "nV:512:", "avx512f")
+
 #undef BUILTIN
 #undef TARGET_BUILTIN
 #undef TARGET_HEADER_BUILTIN

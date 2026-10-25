@@ -1463,3 +1463,31 @@ fork also supports i386; NeverC's builtin registry remains x86-64 only.
 `X86CompressExpandTest.*` checks frontend controls and O0/O2 output in
 ELF/COFF/Mach-O and both assembly dialects. Hardware AVX-512/fault execution
 requires separate qualification.
+
+## Native four-register arithmetic interfaces
+
+`__NEVERC_X86_FOUR_SOURCE__=1` advertises the six x86-64 builtins
+`__builtin_ia32_{v4fmaddps,v4fnmaddps,v4fmaddss,v4fnmaddss,vp4dpwssd,vp4dpwssds}_native`.
+Each returns a raw unsigned-int vector and takes `(const void *offset,
+vector accumulator, vector source0, vector source1, vector source2,
+vector source3, unsigned short mask, const unsigned zeroing,
+const unsigned segment)`. Scalar SS vectors contain four elements; the
+remaining vectors contain 16. Zeroing and segment use the checked constant
+controls described above. The scalar result retains accumulator bits 127:32.
+
+The frontend requires `avx512f` for these register carriers; execution requires
+the actual CPU's AVX512_4FMAPS or AVX512_4VNNIW capability and enabled extended
+state. These builtins neither dispatch at runtime nor imply that every
+AVX512F processor supports the instructions.
+
+All four source values enter fixed-signature LLVM intrinsics. The backend
+materializes the aligned XMM4..7 or ZMM4..7 block and records the unencoded
+register uses so optimization cannot discard its other members. Native
+instructions retain each arithmetic, rounding and saturation step, mask
+suppression, segment addition and memory completion. No source-level assembly
+or ordinary arithmetic replaces them. Generated intrinsic IDs, signatures and
+DAG references remain owned by `sync-x86-native-intrinsics.py`.
+
+`X86FourSourceTest.*` checks constant diagnostics and O0/O2 native output across
+ELF/COFF/Mach-O and both assembly dialects. Physical Xeon Phi execution and
+hardware exception behavior remain outside this host qualification.

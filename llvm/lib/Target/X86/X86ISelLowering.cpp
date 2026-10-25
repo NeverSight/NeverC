@@ -26779,6 +26779,113 @@ static SDValue lowerCompressExpandNative(SDValue Op,
       {DAG.getBitcast(CarrierVT, SDValue(Node, 0)), SDValue(Node, 1)}, DL);
 }
 
+// The encoded source names a block of four architectural registers. Supplying
+// only its first member would let scheduling or register allocation discard
+// the other three values. Glue their copies and record the hidden physical
+// uses on the actual machine instruction, just as register arguments on calls.
+static SDValue lowerFourSourceNative(SDValue Op, const X86Subtarget &Subtarget,
+                                     SelectionDAG &DAG) {
+  const unsigned ID = Op.getConstantOperandVal(1);
+  const bool Scalar = ID == Intrinsic::x86_avx512_v4fmaddss_native ||
+                      ID == Intrinsic::x86_avx512_v4fnmaddss_native;
+  const auto *Zero = dyn_cast<ConstantSDNode>(Op.getOperand(9));
+  const auto *Prefix = dyn_cast<ConstantSDNode>(Op.getOperand(10));
+  if (!Zero || Zero->getZExtValue() > 1 || !Prefix ||
+      !X86::isNativeMemorySegmentPrefix(Prefix->getZExtValue()))
+    report_fatal_error("invalid native four-source controls");
+  if (!Subtarget.hasAVX512() || (!Scalar && !Subtarget.hasEVEX512()))
+    report_fatal_error(
+        "native four-source instructions require AVX-512 carriers");
+  unsigned Opcode;
+  bool Integer = false;
+  switch (ID) {
+  case Intrinsic::x86_avx512_v4fmaddps_native:
+    Opcode = Zero->isZero() ? X86::V4FMADDPSrmk : X86::V4FMADDPSrmkz;
+    break;
+  case Intrinsic::x86_avx512_v4fnmaddps_native:
+    Opcode = Zero->isZero() ? X86::V4FNMADDPSrmk : X86::V4FNMADDPSrmkz;
+    break;
+  case Intrinsic::x86_avx512_v4fmaddss_native:
+    Opcode = Zero->isZero() ? X86::V4FMADDSSrmk : X86::V4FMADDSSrmkz;
+    break;
+  case Intrinsic::x86_avx512_v4fnmaddss_native:
+    Opcode = Zero->isZero() ? X86::V4FNMADDSSrmk : X86::V4FNMADDSSrmkz;
+    break;
+  case Intrinsic::x86_avx512_vp4dpwssd_native:
+    Integer = true;
+    Opcode = Zero->isZero() ? X86::VP4DPWSSDrmk : X86::VP4DPWSSDrmkz;
+    break;
+  case Intrinsic::x86_avx512_vp4dpwssds_native:
+    Integer = true;
+    Opcode = Zero->isZero() ? X86::VP4DPWSSDSrmk : X86::VP4DPWSSDSrmkz;
+    break;
+  default:
+    llvm_unreachable("unexpected four-source intrinsic");
+  }
+  const EVT Carrier = Op.getOperand(3).getValueType();
+  const MVT Vector = Integer ? MVT::v16i32 : Scalar ? MVT::v4f32 : MVT::v16f32;
+  const unsigned Registers[] = {
+      Scalar ? X86::XMM4 : X86::ZMM4, Scalar ? X86::XMM5 : X86::ZMM5,
+      Scalar ? X86::XMM6 : X86::ZMM6, Scalar ? X86::XMM7 : X86::ZMM7};
+  const SDLoc DL(Op);
+  SDValue Chain = Op.getOperand(0), Glue;
+  for (unsigned I = 0; I < 4; ++I) {
+    Chain =
+        DAG.getCopyToReg(Chain, DL, Registers[I],
+                         DAG.getBitcast(Vector, Op.getOperand(4 + I)), Glue);
+    Glue = Chain.getValue(1);
+  }
+  const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
+  const unsigned Base = Subtarget.is64Bit() ? X86::RBX : X86::EBX;
+  Chain = DAG.getCopyToReg(Chain, DL, Base, Op.getOperand(2), Glue);
+  Glue = Chain.getValue(1);
+  unsigned Segment = 0;
+  switch (Prefix->getZExtValue()) {
+  case 0x26:
+    Segment = X86::ES;
+    break;
+  case 0x2e:
+    Segment = X86::CS;
+    break;
+  case 0x36:
+    Segment = X86::SS;
+    break;
+  case 0x3e:
+    Segment = X86::DS;
+    break;
+  case 0x64:
+    Segment = X86::FS;
+    break;
+  case 0x65:
+    Segment = X86::GS;
+    break;
+  }
+  SDValue Mask = DAG.getBitcast(MVT::v16i1, Op.getOperand(8));
+  if (Scalar)
+    Mask = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, MVT::v1i1, Mask,
+                       DAG.getVectorIdxConstant(0, DL));
+  SmallVector<SDValue, 13> Operands = {DAG.getBitcast(Vector, Op.getOperand(3)),
+                                       Mask,
+                                       DAG.getRegister(Registers[0], Vector),
+                                       DAG.getRegister(Base, PtrVT),
+                                       DAG.getTargetConstant(1, DL, MVT::i8),
+                                       DAG.getRegister(0, PtrVT),
+                                       DAG.getTargetConstant(0, DL, MVT::i32),
+                                       DAG.getRegister(Segment, MVT::i16)};
+  for (unsigned I = 1; I < 4; ++I)
+    Operands.push_back(DAG.getRegister(Registers[I], Vector));
+  Operands.append({Chain, Glue});
+  auto *Node = DAG.getMachineNode(Opcode, DL, DAG.getVTList(Vector, MVT::Other),
+                                  Operands);
+  auto *MMO = DAG.getMachineFunction().getMachineMemOperand(
+      MachinePointerInfo(),
+      MachineMemOperand::MOLoad | MachineMemOperand::MOVolatile, LLT(),
+      Align(1));
+  DAG.setNodeMemRefs(Node, {MMO});
+  return DAG.getMergeValues(
+      {DAG.getBitcast(Carrier, SDValue(Node, 0)), SDValue(Node, 1)}, DL);
+}
+
 // Keep APX encoding through all machine optimizations. The integer address
 // denotes an offset, not an LLVM pointer in the default address space. Its
 // native instruction owns segment addition, the atomic transaction and faults.
@@ -27597,6 +27704,14 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_avx512_compressstore512_native:
     case Intrinsic::x86_avx512_expandload512_native:
       return lowerCompressExpandNative(Op, Subtarget, DAG);
+
+    case Intrinsic::x86_avx512_v4fmaddps_native:
+    case Intrinsic::x86_avx512_v4fnmaddps_native:
+    case Intrinsic::x86_avx512_v4fmaddss_native:
+    case Intrinsic::x86_avx512_v4fnmaddss_native:
+    case Intrinsic::x86_avx512_vp4dpwssd_native:
+    case Intrinsic::x86_avx512_vp4dpwssds_native:
+      return lowerFourSourceNative(Op, Subtarget, DAG);
 
     case Intrinsic::x86_aadd32_address:
     case Intrinsic::x86_aadd64_address:

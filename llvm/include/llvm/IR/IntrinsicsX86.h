@@ -769,6 +769,10 @@ enum X86Intrinsics : unsigned {
     x86_avx512_sub_pd_512,                           // llvm.x86.avx512.sub.pd.512
     x86_avx512_sub_ps_512,                           // llvm.x86.avx512.sub.ps.512
     x86_avx512_uitofp_round,                         // llvm.x86.avx512.uitofp.round
+    x86_avx512_v4fmaddps_native,                     // llvm.x86.avx512.v4fmaddps.native
+    x86_avx512_v4fmaddss_native,                     // llvm.x86.avx512.v4fmaddss.native
+    x86_avx512_v4fnmaddps_native,                    // llvm.x86.avx512.v4fnmaddps.native
+    x86_avx512_v4fnmaddss_native,                    // llvm.x86.avx512.v4fnmaddss.native
     x86_avx512_vcomi_sd,                             // llvm.x86.avx512.vcomi.sd
     x86_avx512_vcomi_ss,                             // llvm.x86.avx512.vcomi.ss
     x86_avx512_vcvtsd2si32,                          // llvm.x86.avx512.vcvtsd2si32
@@ -791,6 +795,8 @@ enum X86Intrinsics : unsigned {
     x86_avx512_vp2intersect_q_128,                   // llvm.x86.avx512.vp2intersect.q.128
     x86_avx512_vp2intersect_q_256,                   // llvm.x86.avx512.vp2intersect.q.256
     x86_avx512_vp2intersect_q_512,                   // llvm.x86.avx512.vp2intersect.q.512
+    x86_avx512_vp4dpwssd_native,                     // llvm.x86.avx512.vp4dpwssd.native
+    x86_avx512_vp4dpwssds_native,                    // llvm.x86.avx512.vp4dpwssds.native
     x86_avx512_vpdpbusd_128,                         // llvm.x86.avx512.vpdpbusd.128
     x86_avx512_vpdpbusd_256,                         // llvm.x86.avx512.vpdpbusd.256
     x86_avx512_vpdpbusd_512,                         // llvm.x86.avx512.vpdpbusd.512
