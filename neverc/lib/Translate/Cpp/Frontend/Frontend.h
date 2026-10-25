@@ -1763,6 +1763,16 @@ describeFunctionalNotFnReferenceStorage(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
+// Exactly two authenticated storage layers over the existing arithmetic-result
+// function-pointer slice. Descriptions supply no default, body or lifetime grant.
+struct FunctionalNotFnNestedStorage {
+  FunctionalNotFnStorage Outer, Inner;
+};
+std::optional<FunctionalNotFnNestedStorage>
+describeFunctionalNotFnNestedStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
 struct FunctionalNotFnFactorySource {
   FunctionalNotFnStorage Storage;
   const clang::FunctionDecl *Factory;
@@ -1828,6 +1838,28 @@ std::optional<FunctionalNotFnCallSource>
 describeFunctionalNotFnCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context, FunctionalNotFnSourceMode Mode);
+
+// The SDK-origin inner root is meaningful only through this exact owned outer
+// root. Its independent runtime/signature/exception roots are all retained.
+struct FunctionalNotFnNestedCallSource {
+  FunctionalNotFnNestedStorage Storage;
+  FunctionalNotFnCallSource OuterRuntime, OuterSignature, OuterException;
+  FunctionalNotFnCallSource InnerRuntime, InnerSignature, InnerException;
+  const clang::FunctionDecl *Dispatcher;
+};
+std::optional<FunctionalNotFnNestedCallSource>
+describeFunctionalNotFnNestedCallSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
+struct FunctionalNotFnNestedFactorySource {
+  FunctionalNotFnFactorySource Outer;
+  FunctionalNotFnCopySource InnerCopy;
+};
+std::optional<FunctionalNotFnNestedFactorySource>
+describeFunctionalNotFnNestedFactorySource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 
 struct FunctionalNotFnOwnedCallSource {
   FunctionalNotFnCallSource Selected;
@@ -1978,6 +2010,32 @@ bool approvedFunctionalNotFnReferenceCallDefaults(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
     std::set<const clang::CXXMethodDecl *> &ReferenceQuerySources);
+
+bool approvedFunctionalNotFnNestedFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias);
+bool approvedFunctionalNotFnNestedCallDefaults(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnNestedCallSource &Call,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedFunctionalNotFnNestedCopySource(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnCopySource &Copy,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedFunctionalNotFnNestedDestructionSource(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnNestedStorage &Storage,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
 bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const State &S, const clang::SourceManager &SM,
@@ -2856,6 +2914,9 @@ public:
   std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
   std::map<const clang::CallExpr *, FunctionalNotFnCallSource> VerifiedNotFnCalls;
   std::map<const clang::CallExpr *, FunctionalNotFnReferenceCallSource> VerifiedNotFnReferenceCalls;
+  // Published only after independent retained defaults and both query graphs
+  // close; selected lifecycle uses its own exact nested source gate.
+  std::map<const clang::CallExpr *, FunctionalNotFnNestedCallSource> VerifiedNotFnNestedCalls;
   std::set<const clang::CXXMethodDecl *> NotFnOwnedQuerySources;
   std::set<const clang::CXXMethodDecl *> NotFnReferenceQuerySources;
   std::map<const clang::CXXConstructExpr *, FunctionalNotFnCopySource> VerifiedNotFnCopies;

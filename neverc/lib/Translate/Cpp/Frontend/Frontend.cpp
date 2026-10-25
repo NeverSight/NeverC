@@ -58,6 +58,8 @@ static std::optional<FunctionalNotFnStorage> functionalNotFnLayout(
     return Owned;
   if (const auto Reference = describeFunctionalNotFnReferenceStorage(S, Sources, Record, Context))
     return Reference->Storage;
+  if (const auto Nested = describeFunctionalNotFnNestedStorage(S, Sources, Record, Context))
+    return Nested->Outer;
   return std::nullopt;
 }
 
@@ -5184,7 +5186,8 @@ static bool functionalInvocabilitySource(
     Adapter &A, const CallExpr *Call, QualType Callable,
     const TemplateArgument &Arguments, bool TargetIsNothrow,
     llvm::StringRef TraitName = "is_nothrow_invocable_v",
-    const FunctionalNotFnCallSource *NotFn = nullptr) {
+    const FunctionalNotFnCallSource *NotFn = nullptr,
+    const FunctionalNotFnNestedCallSource *Nested = nullptr) {
   const auto *Function = Call->getDirectCallee();
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   if (!Prototype || operationCalleePrototype(Call) != Prototype ||
@@ -5200,9 +5203,21 @@ static bool functionalInvocabilitySource(
   // caller-side conversions, defaults and cleanup still retain their sources.
   const Expr *Noexcept = Prototype->getNoexceptExpr();
   if (NotFn) {
+    bool SourceOwned = NotFn->SourceCall &&
+        A.S.owns(A.Sources, NotFn->SourceCall->getExprLoc());
+    if (!SourceOwned && Nested) {
+      const auto Current = describeFunctionalNotFnNestedCallSource(
+          A.S, A.Sources, Nested->OuterRuntime.SourceCall, A.Context);
+      SourceOwned = Current && Current->InnerRuntime.SourceCall == NotFn->SourceCall &&
+          Current->InnerRuntime.Method == NotFn->Method &&
+          Current->InnerRuntime.InvokeCall == Call &&
+          Current->InnerRuntime.TargetCall == NotFn->TargetCall &&
+          Current->Storage.Outer.Record == Nested->Storage.Outer.Record &&
+          Current->Storage.Inner.Record == Nested->Storage.Inner.Record;
+    }
     const auto Site = A.S.sdkFile(A.Sources, Call->getExprLoc());
     if (NotFn->Mode != FunctionalNotFnSourceMode::Runtime || Call != NotFn->InvokeCall ||
-        !NotFn->SourceCall || !A.S.owns(A.Sources, NotFn->SourceCall->getExprLoc()) ||
+        !NotFn->SourceCall || !SourceOwned ||
         !Site || Site->Root != "libcxx" || Site->Path != "__functional/not_fn.h") return false;
     if (const auto *Cached = dyn_cast_or_null<ConstantExpr>(Noexcept)) {
       const auto *Written = Cached->getSubExpr();
@@ -5267,10 +5282,11 @@ static bool functionalInvocabilitySource(
 static bool functionalInvocabilitySource(
     Adapter &A, const CallExpr *Call, QualType Callable,
     const TemplateArgument &Arguments, const FunctionProtoType *Target,
-    const FunctionalNotFnCallSource *NotFn = nullptr) {
+    const FunctionalNotFnCallSource *NotFn = nullptr,
+    const FunctionalNotFnNestedCallSource *Nested = nullptr) {
   return Target && functionalInvocabilitySource(
                        A, Call, Callable, Arguments, Target->isNothrow(),
-                       "is_nothrow_invocable_v", NotFn);
+                       "is_nothrow_invocable_v", NotFn, Nested);
 }
 
 static const FunctionProtoType *
@@ -6209,12 +6225,35 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call,
 // This path authenticates an internal call only through its real, independently
 // described not_fn root. It supplies no generic SDK-call or runtime-body grant.
 static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
-                                        const FunctionalNotFnCallSource &NotFn) {
+                                        const FunctionalNotFnCallSource &NotFn,
+                                        const FunctionalNotFnNestedCallSource *Nested = nullptr) {
   if (NotFn.Mode != FunctionalNotFnSourceMode::Runtime || !NotFn.SourceCall ||
       Call != NotFn.InvokeCall || !Call || Call->isTypeDependent() ||
       Call->isValueDependent() || Call->isInstantiationDependent()) return false;
-  const auto Actual = describeFunctionalNotFnCallSource(
+  auto Actual = describeFunctionalNotFnCallSource(
       A.S, A.Sources, NotFn.SourceCall, A.Context, FunctionalNotFnSourceMode::Runtime);
+  if (!Actual && Nested) {
+    const auto Current = describeFunctionalNotFnNestedCallSource(
+        A.S, A.Sources, Nested->OuterRuntime.SourceCall, A.Context);
+    if (!Current || Current->InnerRuntime.SourceCall != NotFn.SourceCall ||
+        Current->InnerRuntime.Method != Nested->InnerRuntime.Method ||
+        Current->Storage.Outer.Record != Nested->Storage.Outer.Record ||
+        Current->Storage.Inner.Record != Nested->Storage.Inner.Record) return false;
+    Actual = Current->InnerRuntime;
+  }
+  if (!Actual && !A.S.owns(A.Sources, NotFn.SourceCall->getExprLoc())) {
+    for (const auto &[Outer, Certificate] : A.VerifiedNotFnNestedCalls) {
+      if (Certificate.InnerRuntime.SourceCall != NotFn.SourceCall) continue;
+      const auto Current = describeFunctionalNotFnNestedCallSource(A.S, A.Sources, Outer, A.Context);
+      if (!Current || Current->OuterRuntime.TargetCall != NotFn.SourceCall ||
+          Current->InnerRuntime.SourceCall != Certificate.InnerRuntime.SourceCall ||
+          Current->InnerRuntime.Method != Certificate.InnerRuntime.Method ||
+          Current->Storage.Outer.Record != Certificate.Storage.Outer.Record ||
+          Current->Storage.Inner.Record != Certificate.Storage.Inner.Record) return false;
+      Actual = Current->InnerRuntime;
+      break;
+    }
+  }
   if (!Actual || Actual->Method != NotFn.Method || Actual->Object != NotFn.Object ||
       Actual->Receiver != NotFn.Receiver || Actual->BoundGet != NotFn.BoundGet ||
       Actual->BoundMove != NotFn.BoundMove || Actual->OperationCall != NotFn.OperationCall ||
@@ -6286,12 +6325,13 @@ static bool functionalNotFnInvokeBinding(Adapter &A, const CallExpr *Call,
 }
 
 static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
-    const FunctionalNotFnCallSource *NotFn = nullptr) {
+    const FunctionalNotFnCallSource *NotFn = nullptr,
+    const FunctionalNotFnNestedCallSource *Nested = nullptr) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
     return false;
   if (NotFn) {
-    if (!functionalNotFnInvokeBinding(A, Call, *NotFn)) return false;
+    if (!functionalNotFnInvokeBinding(A, Call, *NotFn, Nested)) return false;
   } else {
     const auto Operation = approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
     if (!Operation || *Operation != UtilityOperation::FunctionalInvoke) return false;
@@ -6323,7 +6363,7 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call,
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                   "__type_traits/invoke.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                       Arguments->get(1), Target, NotFn);
+                                       Arguments->get(1), Target, NotFn, Nested);
 }
 
 // The caller supplies a runtime-proven apply operation and its selected target.
@@ -11485,6 +11525,17 @@ public:
     if (!Record || Depth > 64)
       return false;
     A.chargeExpansion(1, Record->getLocation());
+    if (const auto Nested = describeFunctionalNotFnNestedStorage(A.S, A.Sources, Record, A.Context)) {
+      const auto *Destructor = Record->getDestructor();
+      const auto Source = describeFunctionalNotFnDestructionSource(A.S, A.Sources, Destructor, A.Context);
+      if (!Source || !Source->TrivialCallableDestruction ||
+          Source->CallableDestructor != Nested->Inner.Record->getDestructor() ||
+          !approvedFunctionalNotFnNestedDestructionSource(A.S, A.Sources, A.Context, *Nested,
+              A.SpecialMembers, A.OperationTraits)) return false;
+      const auto [Entry, Inserted] = A.VerifiedNotFnDestructions.emplace(Record->getCanonicalDecl(), *Source);
+      return Inserted || (Entry->second.Destructor == Destructor &&
+                          Entry->second.CallableDestructor == Source->CallableDestructor);
+    }
     if (const auto Reference = describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Record, A.Context)) {
       if (!functionalReferenceDestructionSource(A, Reference->Reference.Record)) return false;
       const auto *Destructor = Record->getDestructor();
@@ -18012,7 +18063,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() && Constructor && Constructor->isCopyOrMoveConstructor() &&
         (describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Constructor->getParent(), A.Context) ||
-         describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Constructor->getParent(), A.Context))) {
+         describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Constructor->getParent(), A.Context) ||
+         describeFunctionalNotFnNestedStorage(A.S, A.Sources, Constructor->getParent(), A.Context))) {
       const auto Source = describeFunctionalNotFnCopySource(A.S, A.Sources, C, A.Context);
       if (!Source || !A.S.owns(A.Sources, C->getExprLoc()) ||
           C->getNumArgs() != 1 || !Constructor->getParamDecl(0)->getType()->isReferenceType()) {
@@ -18021,6 +18073,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return;
       }
       checkBinding(C->getArg(0), true);
+      const auto Nested = describeFunctionalNotFnNestedStorage(A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (Nested && !approvedFunctionalNotFnNestedCopySource(A.S, A.Sources, A.Context, *Source,
+          A.SpecialMembers, A.OperationTraits)) {
+        A.reject(L, "nested not_fn copy source", "The exact outer and inner selected lifecycle graph is required.", "TR0203");
+        return;
+      }
       const auto Reference = describeFunctionalNotFnReferenceStorage(
           A.S, A.Sources, Constructor->getParent(), A.Context);
       if (Reference && Source->CallableConstruction &&
@@ -18029,7 +18087,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         A.reject(L, "not_fn reference copy source", "Only the exact trivial SDK wrapper copy is admitted.", "TR0203");
         return;
       }
-      if (!Reference && Source->CallableConstruction &&
+      if (!Reference && !Nested && Source->CallableConstruction &&
           !checkUtilitySelectedConstruction(Source->CallableConstruction, L, 1)) return;
       if (!A.S.Diagnostics.empty()) return;
       // Lowering consumes only this exact expression after the ordinary
@@ -25929,7 +25987,8 @@ public:
     }
     for (const auto &[Call, Source] : A.VerifiedNotFnFactories) {
       if (!Source.Storage.CallableType->isRecordType() ||
-          describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
+          describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context) ||
+          describeFunctionalNotFnNestedStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
       if (!ConstructorSource(Source.CallableConstruction, Source.Storage, false, Call->getExprLoc())) {
         A.reject(Call->getExprLoc(), "not_fn owned constructor source",
                  "The exact selected callable constructor, defaults and completed ordinary source are required.", "TR0203");
@@ -25937,7 +25996,8 @@ public:
       }
     }
     for (const auto &[Construction, Source] : A.VerifiedNotFnCopies) {
-      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
+      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context) ||
+          describeFunctionalNotFnNestedStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
       if (!ConstructorSource(Source.CallableConstruction, Source.Storage,
                              Source.TrivialCallableConstruction, Construction->getExprLoc())) {
         A.reject(Construction->getExprLoc(), "not_fn owned copy source",
@@ -25947,7 +26007,7 @@ public:
     }
     for (const auto &[Call, Source] : A.VerifiedNotFnCalls) {
       if (!Source.Storage.CallableType->isRecordType() ||
-          A.VerifiedNotFnReferenceCalls.count(Call)) continue;
+          A.VerifiedNotFnReferenceCalls.count(Call) || A.VerifiedNotFnNestedCalls.count(Call)) continue;
       const auto Selected = describeFunctionalNotFnOwnedCallSource(A.S, A.Sources, Call, A.Context);
       auto Check = NewCheck();
       const auto *Definition = Selected ? Selected->CallableMethod->getDefinition() : nullptr;
@@ -25960,7 +26020,8 @@ public:
       }
     }
     for (const auto &[Wrapper, Source] : A.VerifiedNotFnDestructions) {
-      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Wrapper, A.Context)) continue;
+      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Wrapper, A.Context) ||
+          describeFunctionalNotFnNestedStorage(A.S, A.Sources, Wrapper, A.Context)) continue;
       const auto Owned = describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Wrapper, A.Context);
       const auto *Record = Owned ? Owned->CallableType->getAsCXXRecordDecl() : nullptr;
       const auto *Destructor = Record ? Record->getDestructor() : nullptr;
@@ -25977,6 +26038,35 @@ public:
     }
     return true;
   }
+  bool finishNotFnNestedSources() {
+    for (const auto &[Call, Source] : A.VerifiedNotFnNestedCalls) {
+      const auto Actual = describeFunctionalNotFnNestedCallSource(A.S, A.Sources, Call, A.Context);
+      const auto Shared = A.VerifiedNotFnCalls.find(Call);
+      if (!Actual || Shared == A.VerifiedNotFnCalls.end() ||
+          Actual->OuterRuntime.Method != Source.OuterRuntime.Method ||
+          Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall ||
+          Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
+          Shared->second.TargetCall != Source.InnerRuntime.SourceCall ||
+          !functionalFunctionInvokeSource(A, Actual->InnerRuntime.InvokeCall, &Actual->InnerRuntime, &*Actual)) {
+        A.reject(Call->getExprLoc(), "nested not_fn source completion", "The exact two-layer certificate must remain complete.", "TR0203");
+        return false;
+      }
+    }
+    for (const auto &[Construction, Source] : A.VerifiedNotFnCopies)
+      if (describeFunctionalNotFnNestedStorage(A.S, A.Sources, Source.Storage.Record, A.Context) &&
+          !approvedFunctionalNotFnNestedCopySource(A.S, A.Sources, A.Context, Source, A.SpecialMembers, A.OperationTraits)) {
+        A.reject(Construction->getExprLoc(), "nested not_fn copy completion", "The selected wrapper copy graph must remain complete.", "TR0203");
+        return false;
+      }
+    for (const auto &[Call, Source] : A.VerifiedNotFnFactories)
+      if (describeFunctionalNotFnNestedStorage(A.S, A.Sources, Source.Storage.Record, A.Context) &&
+          !describeFunctionalNotFnNestedFactorySource(A.S, A.Sources, Call, A.Context)) {
+        A.reject(Call->getExprLoc(), "nested not_fn factory completion", "The exact inner copy selected by the outer factory is required.", "TR0203");
+        return false;
+      }
+    return true;
+  }
+
   bool finishNotFnReferenceSources() {
     auto StoredCopy = [&](const FunctionalNotFnStorage &Storage,
                           const CXXConstructExpr *Selected, bool TrivialWrapperCopy) {
@@ -26230,7 +26320,9 @@ public:
     const auto ReferenceStorage = Shape
         ? describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Shape->Storage.Record, A.Context)
         : std::nullopt;
-    if (!Shape || (!Owned && !ReferenceStorage && !approvedFunctionalNotFnPointerStorage(
+    const auto NestedStorage = Shape
+        ? describeFunctionalNotFnNestedStorage(A.S, A.Sources, Shape->Storage.Record, A.Context) : std::nullopt;
+    if (!Shape || (!Owned && !ReferenceStorage && !NestedStorage && !approvedFunctionalNotFnPointerStorage(
             A.S, A.Sources, Shape->Storage.Record, A.Context))) return std::nullopt;
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
     if (!Reference || Reference->getDecl() != Shape->Factory ||
@@ -26279,6 +26371,9 @@ public:
             : ReferenceStorage
                 ? approvedFunctionalNotFnReferenceFactorySource(A.S, A.Sources, A.Context, *Source,
                     Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource)
+            : NestedStorage
+                ? approvedFunctionalNotFnNestedFactorySource(A.S, A.Sources, A.Context, *Source,
+                    Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource)
             : approvedFunctionalNotFnPointerFactorySource(A.S, A.Sources, A.Context, *Source,
                 Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource));
         if (!Approved) {
@@ -26310,11 +26405,48 @@ public:
                "The exact selected trivial SDK wrapper copy is required.", "TR0203");
       return true;
     }
+    if (NestedStorage && !describeFunctionalNotFnNestedFactorySource(A.S, A.Sources, Call, A.Context)) {
+      A.reject(Call->getExprLoc(), "nested not_fn factory source",
+               "The exact selected inner wrapper copy must remain bound after graph completion.", "TR0203");
+      return true;
+    }
     A.VerifiedNotFnFactories.emplace(Call, *Shape);
     A.type(Call->getType(), Call->getExprLoc());
     return TraverseStmt(Call->getArg(0));
   }
+  std::optional<bool> traverseNotFnNestedCall(CXXOperatorCallExpr *Call) {
+    const auto Source = describeFunctionalNotFnNestedCallSource(A.S, A.Sources, Call, A.Context);
+    if (!Source) return std::nullopt;
+    const auto &Inner = Source->InnerRuntime;
+    const auto *Prototype = Source->Storage.Inner.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    std::vector<const SelectedTemplateCallSource *> Selections;
+    for (const auto &[Expression, Entries] : NotFnSelectedCallSources)
+      Selections.insert(Selections.end(), Entries.begin(), Entries.end());
+    const bool Complete = Prototype && ordinaryCallbackPrototype(Prototype) &&
+        Prototype->getReturnType()->isArithmeticType() &&
+        A.Context.hasSameType(operationCalleePrototype(Inner.TargetCall), Prototype) &&
+        functionalFunctionInvokeSource(A, Inner.InvokeCall, &Inner, &*Source) &&
+        utilitySDKFunctionSource(A, Source->OuterRuntime.InvokeCall->getDirectCallee(), "__functional/invoke.h") &&
+        utilitySDKFunctionSource(A, Source->Dispatcher, "__type_traits/invoke.h") &&
+        approvedFunctionalNotFnNestedCallDefaults(A.S, A.Sources, A.Context, *Source,
+            NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits);
+    if (!Complete) {
+      A.reject(Call->getExprLoc(), "nested not_fn call source",
+               "Both independent selected default/query graphs and the exact leaf invocation source must close.", "TR0203");
+      return true;
+    }
+    // These maps never contain the SDK inner operator as an ordinary body.
+    A.VerifiedNotFnNestedCalls.emplace(Call, *Source);
+    A.VerifiedNotFnCalls.emplace(Call, Source->OuterRuntime);
+    A.type(Source->Storage.Outer.CallableType, Call->getExprLoc());
+    if (!TraverseStmt(const_cast<Expr *>(Source->OuterRuntime.Object))) return false;
+    for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+      if (!TraverseStmt(Call->getArg(I))) return false;
+    return true;
+  }
+
   std::optional<bool> traverseNotFnCall(CXXOperatorCallExpr *Call) {
+    if (auto Nested = traverseNotFnNestedCall(Call)) return *Nested;
     const auto Runtime = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
         A.Context, FunctionalNotFnSourceMode::Runtime);
     const auto Owned = Runtime
@@ -29054,7 +29186,8 @@ public:
             approvedUtilityPiecewiseConstructExpression(A.S, A.Sources, C, A.Context)) {
           // Authenticated SDK tags are erased by their selected library operations.
         } else if (((describeFunctionalNotFnOwnedStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context) ||
-                     describeFunctionalNotFnReferenceStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context)) &&
+                     describeFunctionalNotFnReferenceStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context) ||
+                     describeFunctionalNotFnNestedStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context)) &&
                     describeFunctionalNotFnCopySource(A.S, A.Sources, C, A.Context)) ||
                    approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
@@ -29502,7 +29635,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   if (!Check.finishTypeQueries() || !Check.finishPairConstructorSources() ||
       !Check.finishPairPiecewiseConstructions() || !Check.finishTupleFactories() ||
       !Check.finishAlgorithmPredicates() || !Check.finishNotFnNegationSources() ||
-      !Check.finishNotFnOwnedSources() || !Check.finishNotFnReferenceSources())
+      !Check.finishNotFnOwnedSources() || !Check.finishNotFnReferenceSources() || !Check.finishNotFnNestedSources())
     return;
   SynchronizeTemplateSourceEvents();
   if (!S.Diagnostics.empty())

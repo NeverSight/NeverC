@@ -7599,9 +7599,15 @@ class UtilityTupleQueryGraph
   std::set<const Expr *> GeneratedPairScalarInitializers;
   unsigned Depth = 0, Nodes = 0;
   bool Failed = false;
+  bool NestedSharedBudget = false;
   const UtilityTupleQueryMode Mode;
   UtilityTupleQueryGraph *ParentBudget = nullptr;
   std::optional<FunctionalNotFnReferenceStorage> NotFnReferenceStorage;
+  std::optional<FunctionalNotFnNestedStorage> NotFnNestedStorage;
+  std::optional<FunctionalNotFnNestedCallSource> NotFnNestedCall, NotFnNestedInner;
+  std::set<const CXXRecordDecl *> NotFnNestedRecords;
+  std::set<const Decl *> NotFnNestedFamilies;
+  bool NotFnNestedChildClosed = false;
   std::optional<FunctionalNotFnReferenceCallSource> NotFnReferenceCall;
   std::set<const CXXMethodDecl *> *NotFnReferenceQuerySources = nullptr;
   bool NotFnReferenceDependency = false;
@@ -7712,9 +7718,19 @@ class UtilityTupleQueryGraph
   std::set<const CXXRecordDecl *> Records;
   std::map<const NonTypeTemplateParmDecl *, const ClassTemplateDecl *> DefinitionParameters;
 
+  bool nestedBudgetActive() const {
+    return NestedSharedBudget || (ParentBudget && ParentBudget->nestedBudgetActive());
+  }
+  bool nestedDepthFits(unsigned ChildDepth) const {
+    if (Failed || ChildDepth > 64 || Depth > 64 - ChildDepth) return false;
+    return !ParentBudget || ParentBudget->nestedDepthFits(Depth + ChildDepth);
+  }
+
   bool step() {
     if (Failed || ++Nodes > 200000 || Depth > 64 ||
-        (ParentBudget && (ParentBudget->Depth + Depth > 64 || !ParentBudget->step()))) {
+        (ParentBudget && ((nestedBudgetActive() ? !ParentBudget->nestedDepthFits(Depth)
+                                               : ParentBudget->Depth + Depth > 64) ||
+                          !ParentBudget->step()))) {
       Failed = true;
       return false;
     }
@@ -7768,6 +7784,8 @@ class UtilityTupleQueryGraph
         : NotFnInvocation ? NotFnInvocation->Method : nullptr;
   }
   const CXXMethodDecl *notFnQueryTargetMethod() const {
+    if (NotFnNestedCall)
+      return NotFnNestedChildClosed ? NotFnNestedCall->InnerRuntime.Method : nullptr;
     if (NotFnReferenceCall)
       return NotFnReferenceDependency ? NotFnReferenceCall->Reference.Method
           : dyn_cast_or_null<CXXMethodDecl>(NotFnReferenceCall->Selected.TargetCall->getDirectCallee());
@@ -7786,6 +7804,7 @@ class UtilityTupleQueryGraph
     const auto *Call = NotFnInvocation;
     const auto *Wrapper = notFnQueryMethod();
     const auto *Method = notFnQueryTargetMethod();
+    const bool NestedWrapper = NotFnNestedCall && NotFnNestedChildClosed;
     const bool ReferenceWrapper = NotFnReferenceCall && !NotFnReferenceDependency;
     const auto *OrdinaryRecord = NotFnReferenceDependency && NotFnReferenceCall
         ? NotFnReferenceCall->Reference.Wrapper.ReferentType->getAsCXXRecordDecl()->getCanonicalDecl()
@@ -7795,12 +7814,16 @@ class UtilityTupleQueryGraph
     const auto *Reference = Target
         ? dyn_cast<DeclRefExpr>(Target->getCallee()->IgnoreParenImpCasts()) : nullptr;
     const auto *Arguments = Wrapper ? Wrapper->getTemplateSpecializationArgs() : nullptr;
-    if (Mode != UtilityTupleQueryMode::NotFnSignature || (!ReferenceWrapper && (!OrdinaryRecord || !OrdinarySources)) || !Call || !Wrapper || !Method || !Target ||
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || (!ReferenceWrapper && !NestedWrapper && (!OrdinaryRecord || !OrdinarySources)) || !Call || !Wrapper || !Method || !Target ||
         !Reference || Target->getDirectCallee() != Method || Reference->getDecl() != Method ||
         Target->getOperator() != OO_Call || Target->isTypeDependent() || Target->isValueDependent() ||
         Target->isInstantiationDependent() || !Target->isPRValue() ||
         !Target->getType()->isBooleanType() || !Method->getReturnType()->isBooleanType() ||
-        (ReferenceWrapper
+        (NestedWrapper
+            ? Method != NotFnNestedCall->InnerRuntime.Method ||
+              Method->getParent()->getCanonicalDecl() != NotFnNestedCall->Storage.Inner.Forwarder->getCanonicalDecl() ||
+              !family(Method)
+            : ReferenceWrapper
             ? Method->getParent()->getCanonicalDecl() != NotFnReferenceCall->Reference.Wrapper.Record->getCanonicalDecl() ||
               !family(Method)
             : Method->getParent()->getCanonicalDecl() != OrdinaryRecord ||
@@ -7865,6 +7888,18 @@ class UtilityTupleQueryGraph
     // declval<P>() and the actual forwarded receiver both have category P&&.
     const auto ReceiverType = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
     const Expr *Receiver = Target->getArg(0);
+    if (NestedWrapper) {
+      const auto &Inner = NotFnNestedCall->Storage.Inner;
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Receiver->IgnoreParens());
+      const auto Forwarder = Bound.getNonReferenceType().isConstQualified()
+          ? Context.getConstType(Context.getRecordType(Inner.Forwarder)) : Context.getRecordType(Inner.Forwarder);
+      if (!Cast || Cast->getCastKind() != CK_UncheckedDerivedToBase ||
+          Cast->path_size() != 1 || *Cast->path_begin() != &*Inner.Record->bases_begin() ||
+          !Context.hasSameType(Cast->getType(), Forwarder) ||
+          !Context.hasSameType(Cast->getSubExpr()->getType(), Bound.getNonReferenceType()) ||
+          Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return false;
+      Receiver = Cast->getSubExpr();
+    }
     if (ReferenceWrapper) {
       // operator() is const even when the stored wrapper is mutable. Consume
       // only the actual no-op qualification cast before checking its origin.
@@ -7881,7 +7916,7 @@ class UtilityTupleQueryGraph
         !Operand(Receiver, Bound, 0)) return false;
     for (unsigned I = 0; I < Pack.size(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
-      if ((ReferenceWrapper ? !Parameter->isReferenceType() : !Parameter->isScalarType()) ||
+      if (((ReferenceWrapper || NestedWrapper) ? !Parameter->isReferenceType() : !Parameter->isScalarType()) ||
           Parameter.getNonReferenceType().isVolatileQualified() ||
           !Context.hasSameType(Target->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
           Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter) ||
@@ -7890,7 +7925,7 @@ class UtilityTupleQueryGraph
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     const auto Inserted = NotFnOwnedInvokeQueries.emplace(Target, Method);
     if (!Inserted.second && Inserted.first->second != Method) return false;
-    if (!ReferenceWrapper) OrdinarySources->insert(Method);
+    if (!ReferenceWrapper && !NestedWrapper) OrdinarySources->insert(Method);
     return true;
   }
   bool notFnInvokeForwardedCall(const CallExpr *Expression) {
@@ -8031,6 +8066,7 @@ class UtilityTupleQueryGraph
     const auto Origin = S.sdkFile(SM, D->getLocation());
     return Origin && Origin->Root == "libcxx" &&
            (DefaultEqualityFamilies.count(D) ||
+            (NotFnNestedStorage && NotFnNestedFamilies.count(D)) ||
             (NotFnReferenceStorage &&
              (Mode == UtilityTupleQueryMode::NotFnSignature ||
               (Mode == UtilityTupleQueryMode::CatSignature && NotFnTupleTagStorage)) &&
@@ -8065,12 +8101,12 @@ class UtilityTupleQueryGraph
   bool family(const Decl *D) {
     bool Complete = false;
     auto Latch = llvm::make_scope_exit([&] {
-      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || NotFnReferenceStorage)) Failed = true;
+      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
     });
     if (!pinned(D)) {
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
-      if ((Mode == UtilityTupleQueryMode::PairConstruction || NotFnReferenceStorage)) Failed = true;
+      if ((Mode == UtilityTupleQueryMode::PairConstruction || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
       return false;
     }
     if (!Declarations.insert(D).second) {
@@ -9086,6 +9122,9 @@ class UtilityTupleQueryGraph
             (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage)) &&
            PairBorrowedStorageRecords.count(Record->getCanonicalDecl()) &&
            Method->isImplicit() && Method->isTrivial()) ||
+          (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnNestedStorage &&
+           NotFnNestedRecords.count(Record->getCanonicalDecl()) &&
+           Method->isDefaulted() && Method->isTrivial()) ||
           (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage &&
            (Record->getCanonicalDecl() == NotFnReferenceStorage->Storage.Record->getCanonicalDecl() ||
             Record->getCanonicalDecl() == NotFnReferenceStorage->Storage.Forwarder->getCanonicalDecl()) &&
@@ -9225,6 +9264,8 @@ class UtilityTupleQueryGraph
     if (utilityScalar(Context, T) || T->isVoidType())
       return true;
     const auto *R = T->getAsCXXRecordDecl();
+    if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnNestedStorage && R &&
+        NotFnNestedRecords.count(R->getCanonicalDecl())) return family(R);
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceStorage && R) {
       if (R->getCanonicalDecl() == NotFnReferenceStorage->Reference.Record->getCanonicalDecl() &&
           Context.hasSameType(T.getUnqualifiedType(), NotFnCallableType))
@@ -10212,6 +10253,8 @@ class UtilityTupleQueryGraph
   }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
+    if (NotFnNestedStorage && NotFnNestedRecords.count(R->getCanonicalDecl()))
+      return family(R); // Exact descriptor metadata only; selected operations still close independently.
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnReferenceCall) {
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(NotFnReferenceCall->Reference.Wrapper.Record);
       const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
@@ -10219,7 +10262,7 @@ class UtilityTupleQueryGraph
         return R->getDescribedClassTemplate() == Primary && family(R);
     }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
-        (NotFnOwnedCallableRecord || NotFnReferenceStorage) &&
+        (NotFnOwnedCallableRecord || NotFnReferenceStorage || NotFnNestedStorage) &&
         (NotFnConstructorDefaultParameter || NotFnConstructorTypeParameter ||
          (NotFnConstructorQuery && NotFnConstructorRoot)) &&
         R->getCanonicalDecl() == NotFnFactoryDefaults->Selected.Storage.Tuple->getCanonicalDecl()) {
@@ -10233,7 +10276,9 @@ class UtilityTupleQueryGraph
            NotFnConstructorRoot->getConstructor()->getParent()->getCanonicalDecl() != R->getCanonicalDecl()))
         return false;
       const auto &Storage = NotFnFactoryDefaults->Selected.Storage;
-      const auto Owned = NotFnReferenceStorage
+      const auto Owned = NotFnNestedStorage
+          ? std::optional<FunctionalNotFnStorage>(NotFnNestedStorage->Outer)
+          : NotFnReferenceStorage
           ? std::optional<FunctionalNotFnStorage>(NotFnReferenceStorage->Storage)
           : describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context);
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
@@ -10326,7 +10371,8 @@ class UtilityTupleQueryGraph
       if (const auto *Owned = NotFnTupleTagStorage->CallableType->getAsCXXRecordDecl();
           Owned && R->getCanonicalDecl() == Owned->getCanonicalDecl())
         return describeFunctionalNotFnOwnedStorage(S, SM, NotFnTupleTagStorage->Record, Context).has_value() ||
-            describeFunctionalNotFnReferenceStorage(S, SM, NotFnTupleTagStorage->Record, Context).has_value();
+            describeFunctionalNotFnReferenceStorage(S, SM, NotFnTupleTagStorage->Record, Context).has_value() ||
+            (NotFnNestedStorage && R->getCanonicalDecl() == NotFnNestedStorage->Inner.Record->getCanonicalDecl());
       const auto *Target = NotFnTupleTagStorage->CallableType->isFunctionPointerType()
           ? NotFnTupleTagStorage->CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
       const auto *Result = Target ? approvedFunctionalNotFnPointerResultRecord(
@@ -10506,15 +10552,101 @@ public:
                         UtilityTupleQueryGraph *ParentBudget = nullptr)
       : S(S), SM(SM), Context(Context), SpecialMembers(Members), OperationTraits(Traits),
         Mode(Mode), ParentBudget(ParentBudget) {}
+  // A single root owns all nested defaults/query/lifecycle children. Every
+  // child failure poisons this root before any completed signature is exposed.
+  bool withNotFnChildProof(const std::function<bool()> &Proof) {
+    NestedSharedBudget = true;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !Proof || Failed ||
+        Depth >= 64 || !step()) { Failed = true; return false; }
+    ++Depth;
+    auto Restore = llvm::make_scope_exit([&] { --Depth; });
+    const bool Complete = Proof();
+    if (!Complete) Failed = true;
+    return Complete && !Failed;
+  }
+  bool bindNotFnNestedStorage(const FunctionalNotFnNestedStorage &Storage) {
+    if ((Mode != UtilityTupleQueryMode::NotFnSignature && Mode != UtilityTupleQueryMode::CatSignature) ||
+        NotFnOwnedCallableRecord || NotFnReferenceStorage || NotFnNestedStorage || !step()) return false;
+    const auto Actual = describeFunctionalNotFnNestedStorage(S, SM, Storage.Outer.Record, Context);
+    if (!Actual || Actual->Outer.Record != Storage.Outer.Record ||
+        Actual->Inner.Record != Storage.Inner.Record ||
+        !Context.hasSameType(Actual->Inner.CallableType, Storage.Inner.CallableType)) return false;
+    NotFnNestedStorage = *Actual;
+    for (const auto *Layer : {Actual->Outer.Record, Actual->Outer.Forwarder, Actual->Outer.Tuple,
+                             Actual->Outer.TupleImplementation, Actual->Outer.TupleLeaf,
+                             Actual->Inner.Record, Actual->Inner.Forwarder, Actual->Inner.Tuple,
+                             Actual->Inner.TupleImplementation, Actual->Inner.TupleLeaf}) {
+      if (!step()) return false;
+      NotFnNestedRecords.insert(Layer->getCanonicalDecl());
+      const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Layer);
+      const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+      if (!Primary) return false;
+      for (const auto *R : Layer->redecls()) NotFnNestedFamilies.insert(R);
+      for (const auto *T : Primary->redecls()) {
+        NotFnNestedFamilies.insert(T);NotFnNestedFamilies.insert(T->getTemplatedDecl());
+        for (const auto *Parameter : *T->getTemplateParameters()) NotFnNestedFamilies.insert(Parameter);
+      }
+    }
+    return !Failed;
+  }
+  bool bindNotFnNestedInner(const FunctionalNotFnNestedCallSource &Source) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnNestedInner || NotFnNestedStorage ||
+        NotFnReferenceStorage || NotFnOwnedCallableRecord) return false;
+    const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Source.OuterRuntime.SourceCall, Context);
+    if (!Actual || Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall ||
+        Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
+        Actual->OuterRuntime.TargetCall != Actual->InnerRuntime.SourceCall) return false;
+    NotFnNestedInner = *Actual;
+    return true;
+  }
+  bool boundNotFnNestedInner(const FunctionalNotFnCallSource &Source) const {
+    return NotFnNestedInner && Source.SourceCall == NotFnNestedInner->InnerRuntime.SourceCall &&
+        Source.Method == NotFnNestedInner->InnerRuntime.Method &&
+        Source.Storage.Record == NotFnNestedInner->Storage.Inner.Record;
+  }
+  std::optional<FunctionalNotFnCallSource> describeNotFnInvocation(
+      const CallExpr *Call, FunctionalNotFnSourceMode SourceMode) const {
+    if (NotFnNestedInner) {
+      const auto Actual = describeFunctionalNotFnNestedCallSource(
+          S, SM, NotFnNestedInner->OuterRuntime.SourceCall, Context);
+      if (!Actual || Actual->InnerRuntime.SourceCall != Call ||
+          Actual->InnerRuntime.Method != NotFnNestedInner->InnerRuntime.Method) return std::nullopt;
+      if (SourceMode == FunctionalNotFnSourceMode::Runtime) return Actual->InnerRuntime;
+      if (SourceMode == FunctionalNotFnSourceMode::Signature) return Actual->InnerSignature;
+      return Actual->InnerException;
+    }
+    return describeFunctionalNotFnCallSource(S, SM, Call, Context, SourceMode);
+  }
+  bool bindNotFnNestedCall(const FunctionalNotFnNestedCallSource &Source, bool InnerClosed) {
+    if (!InnerClosed || !NotFnNestedStorage || NotFnNestedInner || NotFnNestedCall) return false;
+    const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Source.OuterRuntime.SourceCall, Context);
+    if (!Actual || Actual->Storage.Outer.Record != NotFnNestedStorage->Outer.Record ||
+        Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
+        Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall) return false;
+    NotFnNestedCall = *Actual;NotFnNestedChildClosed = true;
+    return true;
+  }
+  bool notFnNestedSpecialMember(const CXXMethodDecl *Method) {
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnNestedStorage || !Method ||
+        !NotFnNestedRecords.count(Method->getParent()->getCanonicalDecl())) return false;
+    const bool Complete = specialMember(Method) && !Failed;
+    if (!Complete) Failed = true;
+    return Complete;
+  }
+
   bool bindNotFnTupleTagSlices(const FunctionalNotFnFactorySource &Factory,
-      llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false, bool Reference = false) {
+      llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false, bool Reference = false, bool Nested = false) {
     if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
         NotFnTupleTagStorage || Tags.size() != 4 ||
         Factory.SelectedConstructions.size() != 4) return false;
-    if (Owned && Reference) return false;
+    if ((Owned && Reference) || (Nested && (Owned || Reference))) return false;
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
-    const auto Pointer = Reference
+    const auto NestedStorage = Nested
+        ? describeFunctionalNotFnNestedStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
+    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return false;
+    const auto Pointer = NestedStorage
+        ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
         : Owned ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Factory.Storage.Record, Context);
@@ -10619,7 +10751,7 @@ public:
           approvedStandardSDKDeclaration(S, SM, Alias) ||
           (Named && Named->getDescribedAliasTemplate()) ||
           (!Alias->getUnderlyingType()->isFunctionPointerType() && !NotFnOwnedCallableRecord &&
-           !NotFnReferenceStorage) ||
+           !NotFnReferenceStorage && !NotFnNestedStorage) ||
           !Context.hasSameType(Alias->getUnderlyingType(), NotFnCallableType) ||
           !Pending.emplace(Alias, Info).second) return false;
       // Complete the actual alias TSI, callback signature and owned spelling
@@ -10641,13 +10773,17 @@ public:
     return bindPairReferenceFactory(Call->getArg(0));
   }
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage,
-      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false) {
+      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false, bool Nested = false) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
       return false;
-    if (OwnedQuerySources && Reference) return false;
+    if ((OwnedQuerySources && Reference) || (Nested && (OwnedQuerySources || Reference))) return false;
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Storage.Record, Context) : std::nullopt;
-    const auto Pointer = Reference
+    const auto NestedStorage = Nested
+        ? describeFunctionalNotFnNestedStorage(S, SM, Storage.Record, Context) : std::nullopt;
+    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return false;
+    const auto Pointer = NestedStorage
+        ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
         : OwnedQuerySources ? describeFunctionalNotFnOwnedStorage(S, SM, Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
@@ -10678,7 +10814,7 @@ public:
     } else if (OwnedQuerySources) {
       NotFnOwnedCallableRecord = Pointer->CallableType->getAsCXXRecordDecl()->getCanonicalDecl();
       NotFnOwnedQuerySources = OwnedQuerySources;
-    } else if (const auto *Result = approvedFunctionalNotFnPointerResultRecord(S, SM,
+    } else if (!NestedStorage) if (const auto *Result = approvedFunctionalNotFnPointerResultRecord(S, SM,
             NotFnCallableType->getPointeeType()->getAs<FunctionProtoType>()->getReturnType(), Context))
       NotFnCallbackResultRecord = Result->getCanonicalDecl();
     return true;
@@ -10799,6 +10935,11 @@ public:
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
         !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return false;
+    if (NotFnNestedStorage &&
+        (!NotFnNestedCall || !NotFnNestedChildClosed ||
+         NotFnNestedCall->OuterRuntime.SourceCall != Call.SourceCall ||
+         NotFnNestedCall->OuterRuntime.Method != Call.Method ||
+         NotFnNestedCall->OuterRuntime.TargetCall != Call.TargetCall)) return false;
     if (NotFnOwnedCallableRecord) {
       const auto Owned = describeFunctionalNotFnOwnedCallSource(S, SM, Call.SourceCall, Context);
       if (!Owned || !NotFnOwnedQuerySources || Owned->Selected.TargetCall != Call.TargetCall ||
@@ -10871,8 +11012,7 @@ public:
     // is admitted by this metadata binding.
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
                            FunctionalNotFnSourceMode::Exception, FunctionalNotFnSourceMode::Runtime}) {
-      const auto Source = describeFunctionalNotFnCallSource(S, SM,
-          NotFnInvocation->SourceCall, Context, Mode);
+      const auto Source = describeNotFnInvocation(NotFnInvocation->SourceCall, Mode);
       if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
           !NotFnPublicInvokeUses.count(Source->InvokeCall)) return false;
       if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source->Negation)) {
@@ -11574,7 +11714,7 @@ public:
         !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
       return false;
     const auto Input = Query->getArg(1)->getType();
-    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage)) {
+    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage)) {
       if (!Input->isRValueReferenceType() ||
           !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return false;
     } else {
@@ -11595,7 +11735,7 @@ public:
     if (const auto *Binding = dyn_cast_or_null<CXXBindTemporaryExpr>(QueryRoot)) {
       const auto *Temporary = Binding->getTemporary();
       const auto *Destructor = Temporary ? Temporary->getDestructor() : nullptr;
-      if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage) || !Destructor ||
+      if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !Destructor ||
           Destructor->getParent()->getCanonicalDecl() != Storage.Tuple->getCanonicalDecl() ||
           !Context.hasSameType(Binding->getType(), Context.getRecordType(Storage.Tuple)))
         return false;
@@ -11633,7 +11773,7 @@ public:
       const TemplateTypeParmDecl *Parameter, std::function<bool()> Proof) {
     if (!Constructor || !Parameter || !Parameter->hasDefaultArgument() || !Proof) return false;
     const auto Default = Parameter->getDefaultArgument().getArgument().getAsType();
-    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage) || !NotFnFactoryDefaults ||
+    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !NotFnFactoryDefaults ||
         Constructor->getParent()->getCanonicalDecl() !=
             NotFnFactoryDefaults->Selected.Storage.Forwarder->getCanonicalDecl())
       return Proof() && !Failed;
@@ -11666,7 +11806,7 @@ public:
              TraverseTypeLoc(Type.Type->getTypeLoc()) && !Failed;
     };
     const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Source.Declaration);
-    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage) || !NotFnFactoryDefaults || !Constructor ||
+    if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !NotFnFactoryDefaults || !Constructor ||
         Constructor->getParent()->getCanonicalDecl() !=
             NotFnFactoryDefaults->Selected.Storage.Tuple->getCanonicalDecl())
       return TraverseSources();
@@ -13762,6 +13902,55 @@ describeFunctionalNotFnReferenceStorage(
   return FunctionalNotFnReferenceStorage{*Storage, *Reference};
 }
 
+// Inert callback identity only. Do not ask for layout, completion or a body
+// while Sema is retaining a nested callable's actual selection/default packet.
+static bool functionalNotFnPointerAdapterIdentity(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!S.coreV2() || !Instance || !Instance->getIdentifier() ||
+      Instance->getName() != "__not_fn_t" || Instance->isInvalidDecl() ||
+      Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Instance->getTemplateArgs().size() != 1 ||
+      Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
+    return false;
+  const auto Callable = Instance->getTemplateArgs()[0].getAsType();
+  const auto *Prototype = !Callable.isNull() && Callable->isFunctionPointerType()
+      ? Callable->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  NotFnSelectedSource Check(S, SM, Context);
+  return Prototype && !Callable.hasQualifiers() && !Prototype->isVariadic() &&
+      Prototype->getReturnType()->isArithmeticType() &&
+      Check.family(Instance, {"__functional/not_fn.h"});
+}
+
+std::optional<FunctionalNotFnNestedStorage>
+describeFunctionalNotFnNestedStorage(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  const auto Outer = describeFunctionalNotFnStorage(S, SM, Record, Context);
+  const auto *Callable = Outer ? Outer->CallableType->getAsCXXRecordDecl() : nullptr;
+  if (!Outer || !functionalNotFnPointerAdapterIdentity(S, SM, Callable, Context) ||
+      Outer->Callable.EmptyBase || !Outer->Callable.Field)
+    return std::nullopt;
+  const auto Inner = approvedFunctionalNotFnPointerStorage(S, SM, Callable, Context);
+  const auto *Prototype = Inner && Inner->CallableType->isFunctionPointerType()
+      ? Inner->CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Inner || !Prototype || !Prototype->getReturnType()->isArithmeticType() ||
+      !Context.hasSameType(Outer->CallableType, Context.getRecordType(Inner->Record)) ||
+      Inner->Callable.EmptyBase || !Inner->Callable.Field ||
+      Inner->Record->getCanonicalDecl() == Outer->Record->getCanonicalDecl())
+    return std::nullopt;
+  for (const auto *Layer : {Outer->Record, Outer->Forwarder, Outer->Tuple,
+                           Outer->TupleImplementation, Outer->TupleLeaf,
+                           Inner->Record, Inner->Forwarder, Inner->Tuple,
+                           Inner->TupleImplementation, Inner->TupleLeaf})
+    if (!Layer->hasTrivialCopyConstructor() || !Layer->hasTrivialMoveConstructor() ||
+        !Layer->hasTrivialDestructor()) return std::nullopt;
+  // Each original five-layer descriptor retains all actual target ABI offsets,
+  // sizes and alignments. No flattening or pointer-size approximation is used.
+  return FunctionalNotFnNestedStorage{*Outer, *Inner};
+}
+
 std::optional<FunctionalNotFnStorage>
 describeFunctionalNotFnOwnedStorage(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
@@ -14017,6 +14206,27 @@ describeFunctionalNotFnCopySource(
   return std::nullopt;
 }
 
+std::optional<FunctionalNotFnNestedFactorySource>
+describeFunctionalNotFnNestedFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto Outer = describeFunctionalNotFnFactorySource(S, SM, Call, Context);
+  const auto Storage = Outer
+      ? describeFunctionalNotFnNestedStorage(S, SM, Outer->Storage.Record, Context)
+      : std::nullopt;
+  const auto Copy = Outer && Outer->CallableConstruction
+      ? describeFunctionalNotFnCopySource(S, SM, Outer->CallableConstruction, Context)
+      : std::nullopt;
+  if (!Outer || !Storage || !Copy || !Copy->TrivialCallableConstruction ||
+      Copy->Storage.Record != Storage->Inner.Record ||
+      !Context.hasSameType(Copy->Storage.CallableType, Storage->Inner.CallableType) ||
+      !Context.hasSameType(Outer->CallableConstruction->getType(), Storage->Outer.CallableType))
+    return std::nullopt;
+  // The actual selected inner copy/move remains a separate lifecycle graph.
+  // Triviality and this descriptor cannot manufacture missing Sema events.
+  return FunctionalNotFnNestedFactorySource{*Outer, *Copy};
+}
+
 std::optional<FunctionalNotFnDestructionSource>
 describeFunctionalNotFnDestructionSource(
     const State &S, const SourceManager &SM,
@@ -14176,6 +14386,274 @@ describeFunctionalNotFnCallSource(
   }
   return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
+}
+
+// SDK-origin entry points are deliberately private and require the exact
+// target expression from a freshly re-described owned outer runtime call.
+static bool functionalNotFnNestedInnerBinding(
+    const State &S, const SourceManager &SM,
+    const FunctionalNotFnCallSource &Outer, const CallExpr *Inner,
+    const ASTContext &Context) {
+  const auto Actual = describeFunctionalNotFnCallSource(
+      S, SM, Outer.SourceCall, Context, FunctionalNotFnSourceMode::Runtime);
+  const auto Storage = Actual
+      ? describeFunctionalNotFnNestedStorage(S, SM, Actual->Storage.Record, Context)
+      : std::nullopt;
+  const auto *Invoke = Actual && Actual->InvokeCall ? Actual->InvokeCall->getDirectCallee() : nullptr;
+  const auto *Dispatcher = Actual && Actual->DispatchCall ? Actual->DispatchCall->getDirectCallee() : nullptr;
+  const auto *Target = dyn_cast_or_null<CXXOperatorCallExpr>(Inner);
+  const auto *Method = Target ? dyn_cast_or_null<CXXMethodDecl>(Target->getDirectCallee()) : nullptr;
+  const auto *Reference = Target ? dyn_cast<DeclRefExpr>(Target->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Actual || !Storage || Outer.Mode != FunctionalNotFnSourceMode::Runtime ||
+      Actual->Method != Outer.Method || Actual->Object != Outer.Object || Actual->Receiver != Outer.Receiver ||
+      Actual->Storage.Record != Outer.Storage.Record || Actual->TargetCall != Inner ||
+      Outer.TargetCall != Inner || Actual->DispatchCall != Outer.DispatchCall ||
+      Actual->InvokeCall != Outer.InvokeCall || !Invoke || !Dispatcher || !Target ||
+      !Invoke->getPrimaryTemplate() || !Dispatcher->getPrimaryTemplate() ||
+      Invoke->isVariadic() || Dispatcher->isVariadic() ||
+      !Check.family(Invoke, {"__functional/invoke.h"}) ||
+      !Check.family(Dispatcher, {"__type_traits/invoke.h"}) ||
+      Check.core(Check.returned(Invoke)) != Actual->DispatchCall ||
+      Check.core(Check.returned(Dispatcher)) != Target ||
+      !Check.location(Target->getExprLoc(), {"__type_traits/invoke.h"}) ||
+      !Reference || Reference->getDecl() != Method || !Method ||
+      !Context.hasSameType(Reference->getType(), Method->getType()) ||
+      !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
+      !Check.family(Method, {"__functional/perfect_forward.h"}) ||
+      Method->getParent()->getCanonicalDecl() != Storage->Inner.Forwarder->getCanonicalDecl() ||
+      !Method->getReturnType()->isBooleanType() || !Target->isPRValue() ||
+      !Target->getType()->isBooleanType() || Target->getOperator() != OO_Call ||
+      Target->getNumArgs() != Actual->SourceCall->getNumArgs() ||
+      Dispatcher->getNumParams() != Target->getNumArgs() ||
+      Invoke->getNumParams() != Target->getNumArgs() ||
+      Actual->DispatchCall->getNumArgs() != Target->getNumArgs() ||
+      Method->getNumParams() + 1 != Target->getNumArgs()) return false;
+  for (unsigned I = 0; I < Invoke->getNumParams(); ++I) {
+    const auto *Parameter = Invoke->getParamDecl(I);
+    const CallExpr *Forward = nullptr;
+    if (!Parameter->getType()->isReferenceType() || Parameter->hasDefaultArg() ||
+        Dispatcher->getParamDecl(I)->hasDefaultArg() ||
+        !Context.hasSameType(Parameter->getType(), Dispatcher->getParamDecl(I)->getType()) ||
+        !Check.forwarding(Actual->DispatchCall->getArg(I), Parameter,
+                          "__functional/invoke.h", Forward)) return false;
+  }
+  const auto *Receiver = dyn_cast<ImplicitCastExpr>(Target->getArg(0)->IgnoreParens());
+  if (!Receiver || Receiver->getCastKind() != CK_UncheckedDerivedToBase ||
+      Receiver->path_size() != 1 ||
+      *Receiver->path_begin() != &*Storage->Inner.Record->bases_begin() ||
+      !Context.hasSameUnqualifiedType(Receiver->getType(), Context.getRecordType(Storage->Inner.Forwarder)))
+    return false;
+  auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression ? Expression->IgnoreParens() : nullptr);
+    const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Parameter = Dispatcher->getParamDecl(Index);
+    return Cast && Cast->getCastKind() == CK_NoOp && Use && Use->getDecl() == Parameter &&
+        Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"}) &&
+        Context.hasSameType(Cast->getTypeAsWritten(), Parameter->getType()) &&
+        Context.hasSameType(Cast->getType(), Parameter->getType().getNonLValueExprType(Context)) &&
+        Cast->getValueKind() == Expr::getValueKindForType(Parameter->getType());
+  };
+  const auto Bound = Dispatcher->getParamDecl(0)->getType();
+  const auto Expected = Actual->Method->isConst()
+      ? Context.getConstType(Storage->Outer.CallableType) : Storage->Outer.CallableType;
+  const auto ExpectedForwarder = Actual->Method->isConst()
+      ? Context.getConstType(Context.getRecordType(Storage->Inner.Forwarder))
+      : Context.getRecordType(Storage->Inner.Forwarder);
+  if (!Context.hasSameType(Bound.getNonReferenceType(), Expected) ||
+      !Context.hasSameType(Receiver->getType(), ExpectedForwarder) ||
+      !Context.hasSameType(Receiver->getSubExpr()->getType(), Expected) ||
+      Receiver->getValueKind() != Receiver->getSubExpr()->getValueKind() ||
+      Bound->isRValueReferenceType() != (Actual->Method->getRefQualifier() == RQ_RValue) ||
+      Method->isConst() != Actual->Method->isConst() ||
+      Method->getRefQualifier() != Actual->Method->getRefQualifier() ||
+      !ParameterCast(Receiver->getSubExpr(), 0)) return false;
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        !Parameter.getNonReferenceType()->isScalarType() ||
+        Parameter.getNonReferenceType().isVolatileQualified() ||
+        Parameter.getNonReferenceType().isRestrictQualified() ||
+        !Context.hasSameType(Parameter, Dispatcher->getParamDecl(I + 1)->getType()) ||
+        !Context.hasSameType(Parameter, Actual->Method->getParamDecl(I)->getType()) ||
+        !ParameterCast(Target->getArg(I + 1), I + 1)) return false;
+  }
+  return true;
+}
+
+static std::optional<FunctionalNotFnCallSource>
+describeFunctionalNotFnNestedInnerCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, FunctionalNotFnSourceMode Mode,
+    const FunctionalNotFnCallSource &Outer) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Operator || Operator->getOperator() != OO_Call || !Method ||
+      !Call->getNumArgs() || Method->getNumParams() + 1 != Call->getNumArgs() ||
+      Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
+      Method->getAccess() != AS_public || Method->isVolatile() ||
+      Method->getRefQualifier() == RQ_None || !functionalNotFnNestedInnerBinding(S, SM, Outer, Call, Context))
+    return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
+  // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
+  // roots. Both language-level derived-to-base forms must still identify the
+  // exact single public base below; this does not admit arbitrary base casts.
+  if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
+                    Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Receiver->path_size() != 1)
+    return std::nullopt;
+  const auto *Object = Receiver->getSubExpr()->IgnoreParens();
+  const auto Storage = describeFunctionalNotFnStorage(S, SM,
+      Object->getType()->getAsCXXRecordDecl(), Context);
+  if (!Storage || *Receiver->path_begin() != &*Storage->Record->bases_begin() ||
+      Method->getParent()->getCanonicalDecl() != Storage->Forwarder->getCanonicalDecl() ||
+      Method->isConst() != Object->getType().isConstQualified() ||
+      !Check.family(Method, {"__functional/perfect_forward.h"}) ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
+      Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
+    return std::nullopt;
+  const bool RValue = Method->getRefQualifier() == RQ_RValue;
+  if (Object->isLValue() == RValue) return std::nullopt;
+  const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
+      Check.core(Check.resultSource(Method, Mode)));
+  const auto *OperationMethod = Operation
+      ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee()) : nullptr;
+  if (!Operation || Operation->getOperator() != OO_Call || !OperationMethod ||
+      Operation->getNumArgs() != Call->getNumArgs() + 1 ||
+      OperationMethod->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl() ||
+      OperationMethod->getNumParams() != Call->getNumArgs() ||
+      !OperationMethod->isConst() || OperationMethod->isVolatile() ||
+      OperationMethod->isStatic() || OperationMethod->isVariadic() ||
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return std::nullopt;
+  const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
+  if (!OpConstruction || OpConstruction->getNumArgs() ||
+      OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
+    return std::nullopt;
+  const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
+  const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
+  const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
+  if (!Get || Get->getNumArgs() != 1 || !GetFunction || !GetFunction->getIdentifier() ||
+      GetFunction->getName() != "get" || !GetArguments || GetArguments->size() != 2 ||
+      GetArguments->get(0).getKind() != TemplateArgument::Integral ||
+      !GetArguments->get(0).getAsIntegral().isZero() ||
+      !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
+      !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+  const Expr *Bound = Check.stripped(Get->getArg(0));
+  const CallExpr *Move = nullptr;
+  if (RValue) {
+    Move = dyn_cast_or_null<CallExpr>(Bound);
+    const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
+    if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
+        Move->getNumArgs() != 1 || !Move->isXValue() ||
+        !Check.family(MoveFunction, {"__utility/move.h"}) ||
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return std::nullopt;
+    Bound = Check.stripped(Move->getArg(0));
+  }
+  const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
+  const auto *This = Member ? dyn_cast<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()) : nullptr;
+  const auto Callable = Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
+  const auto ExpectedGet = RValue ? Context.getRValueReferenceType(Callable)
+                                 : Context.getLValueReferenceType(Callable);
+  if (!Member || !Member->isArrow() || Member->getMemberDecl() != Storage->BoundArguments ||
+      !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
+      !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
+      !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
+    return std::nullopt;
+  std::vector<const CallExpr *> Forwards;
+  const CallExpr *Forward = nullptr;
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
+                          "__functional/perfect_forward.h", Forward)) return std::nullopt;
+    Forwards.push_back(Forward);
+  }
+  const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
+  const Expr *InvokeExpression = nullptr;
+  if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
+    if (Unary->getOpcode() != UO_LNot) return std::nullopt;
+    InvokeExpression = Unary->getSubExpr();
+  } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
+    if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
+      return std::nullopt;
+    InvokeExpression = NegateCall->getArg(0);
+  } else return std::nullopt;
+  const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
+  const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
+  if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
+      Invoke->getNumArgs() != OperationMethod->getNumParams() ||
+      !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return std::nullopt;
+  for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
+    if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
+                          "__functional/not_fn.h", Forward)) return std::nullopt;
+    Forwards.push_back(Forward);
+  }
+  // A signature-only description never materializes or relies on an invoke
+  // runtime body. Its target remains a separate pending signature obligation.
+  const CallExpr *Dispatch = nullptr;
+  const CallExpr *Target = nullptr;
+  if (Mode == FunctionalNotFnSourceMode::Runtime) {
+    Dispatch = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
+    const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+    if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
+        !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+    Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
+    if (!Target) return std::nullopt;
+  }
+  return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
+      Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
+}
+
+
+std::optional<FunctionalNotFnNestedCallSource>
+describeFunctionalNotFnNestedCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto OuterRuntime = describeFunctionalNotFnCallSource(S, SM, Call, Context, FunctionalNotFnSourceMode::Runtime);
+  const auto OuterSignature = describeFunctionalNotFnCallSource(S, SM, Call, Context, FunctionalNotFnSourceMode::Signature);
+  const auto OuterException = describeFunctionalNotFnCallSource(S, SM, Call, Context, FunctionalNotFnSourceMode::Exception);
+  const auto Storage = OuterRuntime
+      ? describeFunctionalNotFnNestedStorage(S, SM, OuterRuntime->Storage.Record, Context) : std::nullopt;
+  if (!OuterRuntime || !OuterSignature || !OuterException || !Storage) return std::nullopt;
+  const auto *InnerCall = OuterRuntime->TargetCall;
+  const auto InnerRuntime = describeFunctionalNotFnNestedInnerCallSource(
+      S, SM, InnerCall, Context, FunctionalNotFnSourceMode::Runtime, *OuterRuntime);
+  const auto InnerSignature = describeFunctionalNotFnNestedInnerCallSource(
+      S, SM, InnerCall, Context, FunctionalNotFnSourceMode::Signature, *OuterRuntime);
+  const auto InnerException = describeFunctionalNotFnNestedInnerCallSource(
+      S, SM, InnerCall, Context, FunctionalNotFnSourceMode::Exception, *OuterRuntime);
+  if (!InnerRuntime || !InnerSignature || !InnerException ||
+      InnerRuntime->Storage.Record != Storage->Inner.Record ||
+      OuterRuntime->Method == InnerRuntime->Method || !InnerRuntime->TargetCall ||
+      InnerRuntime->TargetCall->getDirectCallee() || isa<CXXOperatorCallExpr>(InnerRuntime->TargetCall))
+    return std::nullopt;
+  auto Layer = [&](const FunctionalNotFnCallSource &Runtime,
+                   const FunctionalNotFnCallSource &Signature,
+                   const FunctionalNotFnCallSource &Exception) {
+    for (const auto *Source : {&Runtime, &Signature, &Exception}) {
+      const auto *Negation = dyn_cast_or_null<UnaryOperator>(Source->Negation);
+      if (Source->SourceCall != Runtime.SourceCall || Source->Method != Runtime.Method ||
+          Source->Storage.Record != Runtime.Storage.Record ||
+          !Source->InvokeCall || !Runtime.InvokeCall ||
+          Source->InvokeCall->getDirectCallee() != Runtime.InvokeCall->getDirectCallee() ||
+          !Negation || Negation->getOpcode() != UO_LNot || !Negation->getType()->isBooleanType() ||
+          !Source->Method->getReturnType()->isBooleanType()) return false;
+    }
+    return true;
+  };
+  const auto *Leaf = Storage->Inner.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+  const auto *OuterPrototype = OuterRuntime->Method->getType()->getAs<FunctionProtoType>();
+  const auto *InnerPrototype = InnerRuntime->Method->getType()->getAs<FunctionProtoType>();
+  if (!Layer(*OuterRuntime, *OuterSignature, *OuterException) ||
+      !Layer(*InnerRuntime, *InnerSignature, *InnerException) || !Leaf ||
+      !Leaf->getReturnType()->isArithmeticType() || !OuterPrototype || !InnerPrototype ||
+      OuterPrototype->isNothrow() != InnerPrototype->isNothrow() ||
+      InnerPrototype->isNothrow() != Leaf->isNothrow() ||
+      InnerRuntime->Method->getNumParams() != Leaf->getNumParams()) return std::nullopt;
+  return FunctionalNotFnNestedCallSource{*Storage, *OuterRuntime, *OuterSignature, *OuterException,
+      *InnerRuntime, *InnerSignature, *InnerException, OuterRuntime->DispatchCall->getDirectCallee()};
 }
 
 std::optional<FunctionalNotFnOwnedCallSource>
@@ -14354,7 +14832,8 @@ bool retainFunctionalNotFnConstraintRoot(
       const auto *Record = Value->getAsCXXRecordDecl();
       if (!Value.isVolatileQualified() && !Value.isRestrictQualified() &&
           Value.getAddressSpace() == LangAS::Default &&
-          functionalNotFnReferenceIdentity(S, SM, Record, Template->getASTContext()))
+          (functionalNotFnReferenceIdentity(S, SM, Record, Template->getASTContext()) ||
+           functionalNotFnPointerAdapterIdentity(S, SM, Record, Template->getASTContext())))
         return true; // Inert callback retention only; no source or runtime grant.
       return Record && !Value->isDependentType() &&
           !Value.isVolatileQualified() && !Value.isRestrictQualified() &&
@@ -14607,7 +15086,8 @@ bool matchesFunctionalNotFnSelectedSource(
       Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       (!Owner->getTemplateArgs()[0].getAsType()->isFunctionPointerType() &&
        (!describeFunctionalNotFnOwnedStorage(S, SM, Owner, Context) &&
-        !describeFunctionalNotFnReferenceStorage(S, SM, Owner, Context))) ||
+        !describeFunctionalNotFnReferenceStorage(S, SM, Owner, Context) &&
+        !describeFunctionalNotFnNestedStorage(S, SM, Owner, Context))) ||
       Source.Location != Construction->getExprLoc() ||
       !Check.location(Source.Location, {"__functional/not_fn.h"}) ||
       !Check.family(Actual, {"__functional/not_fn.h"}) ||
@@ -14757,6 +15237,7 @@ class NotFnPointerSourceProof {
   const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
   const std::map<const TypeTraitExpr *, OperationTraitSource> &OperationTraits;
   UtilityTupleQueryGraph Graph;
+  const FunctionalNotFnNestedCallSource *NestedInnerCertificate = nullptr;
   llvm::ArrayRef<const TemplateUseSource *> Sources;
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
   std::function<bool(const TypedefNameDecl *)> OwnedInputAliasSource;
@@ -15375,32 +15856,40 @@ public:
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
       const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
       const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
-      std::function<bool(const TypedefNameDecl *)> SourceAlias = {})
+      std::function<bool(const TypedefNameDecl *)> SourceAlias = {},
+      UtilityTupleQueryGraph *ParentBudget = nullptr,
+      const FunctionalNotFnNestedCallSource *NestedInner = nullptr)
       : S(S), SM(SM), Context(Context), Check(S, SM, Context),
         SpecialMembers(Members), OperationTraits(Traits),
-        Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature),
-        Sources(Sources), Selections(Selections), OwnedInputAliasSource(std::move(SourceAlias)) {}
+        Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature, ParentBudget),
+        NestedInnerCertificate(NestedInner), Sources(Sources), Selections(Selections),
+        OwnedInputAliasSource(std::move(SourceAlias)) {}
   NotFnPointerSourceProof(const NotFnPointerSourceProof &) = delete;
   NotFnPointerSourceProof &operator=(const NotFnPointerSourceProof &) = delete;
 
   bool factory(const FunctionalNotFnFactoryTemplateSource &Factory,
-      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false) {
-    if (OwnedQuerySources && Reference) return false;
+      std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false, bool Nested = false) {
+    if ((OwnedQuerySources && Reference) || (Nested && (OwnedQuerySources || Reference))) return false;
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Factory.Selected.Storage.Record, Context) : std::nullopt;
-    const auto Pointer = Reference
+    const auto NestedStorage = Nested
+        ? describeFunctionalNotFnNestedStorage(S, SM, Factory.Selected.Storage.Record, Context) : std::nullopt;
+    const auto Pointer = NestedStorage
+        ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
         : OwnedQuerySources ? describeFunctionalNotFnOwnedStorage(S, SM, Factory.Selected.Storage.Record, Context)
         : approvedFunctionalNotFnPointerStorage(S, SM, Factory.Selected.Storage.Record, Context);
-    if (!Pointer || ((OwnedQuerySources || Reference) ? !Factory.Selected.CallableConstruction
+    if (!Pointer || ((OwnedQuerySources || Reference || Nested) ? !Factory.Selected.CallableConstruction
                                                     : bool(Factory.Selected.CallableConstruction)) ||
         !Graph.bindNotFnFactoryDefaults(Factory) ||
-        !Graph.bindNotFnOperation(Factory.Selected.Storage, OwnedQuerySources, Reference)) return false;
+        !Graph.bindNotFnOperation(Factory.Selected.Storage, OwnedQuerySources, Reference, Nested)) return false;
     if (Reference && !Graph.bindNotFnReferenceInputFactory(Factory)) return false;
     if (Reference &&
         (approvedFunctionalReferenceConstruction(S, SM, Factory.Selected.CallableConstruction, Context) !=
              FunctionalReferenceConstruction::CopyOrMove ||
          !Graph.notFnReferenceSpecialMember(Factory.Selected.CallableConstruction->getConstructor()))) return false;
+    if (Nested && (!NestedStorage ||
+        !Graph.notFnNestedSpecialMember(Factory.Selected.CallableConstruction->getConstructor()))) return false;
     const auto Input = Factory.Use.Canonical->get(0).getAsType();
     const auto Callable = Pointer->CallableType;
     // This first slice stores only an actual function pointer, with no
@@ -15408,7 +15897,7 @@ public:
     const auto InputValue = Input.getNonReferenceType();
     const auto Decayed = InputValue->isFunctionType()
         ? Context.getPointerType(InputValue) : InputValue.getUnqualifiedType();
-    if (((OwnedQuerySources || Reference) ? !InputValue->isRecordType()
+    if (((OwnedQuerySources || Reference || Nested) ? !InputValue->isRecordType()
                           : (!InputValue->isFunctionPointerType() && !InputValue->isFunctionType())) ||
         !Context.hasSameType(Decayed, Callable) ||
         !Graph.bindNotFnOwnedInputAliases(Factory, OwnedInputAliasSource)) return false;
@@ -15461,8 +15950,8 @@ public:
     const auto Tags = describeFunctionalNotFnTupleTagSources(S, SM, Factory.Selected, Context);
     if (!Tags || Tags->size() != 4) return false;
     UtilityTupleQueryGraph Tuple(S, SM, Context, SpecialMembers, OperationTraits,
-                                UtilityTupleQueryMode::CatSignature, Reference ? &Graph : nullptr);
-    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags, OwnedQuerySources != nullptr, Reference)) return false;
+                                UtilityTupleQueryMode::CatSignature, (Reference || Nested) ? &Graph : nullptr);
+    if (!Tuple.bindNotFnTupleTagSlices(Factory.Selected, *Tags, OwnedQuerySources != nullptr, Reference, Nested)) return false;
     for (const auto &Tag : *Tags)
       if (!Tuple.TraverseTypeLoc(Tag.Written->getTypeLoc())) return false;
     // Every selected construction keeps its actual signature. The exact
@@ -15573,7 +16062,7 @@ public:
     std::vector<const CallExpr *> Roots, Forwards;
     for (const auto Mode : {FunctionalNotFnSourceMode::Signature,
                            FunctionalNotFnSourceMode::Exception, FunctionalNotFnSourceMode::Runtime}) {
-      const auto Source = describeFunctionalNotFnCallSource(S, SM, Call.SourceCall, Context, Mode);
+      const auto Source = Graph.describeNotFnInvocation(Call.SourceCall, Mode);
       const auto *Negation = Source ? dyn_cast_or_null<UnaryOperator>(Source->Negation) : nullptr;
       if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
           (Negation ? Negation->getOpcode() != UO_LNot
@@ -15725,8 +16214,10 @@ public:
   bool callDefaults(const FunctionalNotFnCallSource &Call, const TemplateUseSource &Use,
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr,
       const FunctionalNotFnReferenceCallSource *ReferenceSource = nullptr,
-      std::set<const CXXMethodDecl *> *ReferenceQuerySources = nullptr) {
+      std::set<const CXXMethodDecl *> *ReferenceQuerySources = nullptr,
+      const FunctionalNotFnNestedCallSource *NestedSource = nullptr, bool InnerClosed = false) {
     if (PublicInvokeFunction || PublicNothrowInitializer ||
+        (NestedSource && (OwnedQuerySources || ReferenceSource || ReferenceQuerySources || NestedInnerCertificate)) ||
         bool(ReferenceSource) != bool(ReferenceQuerySources) || (ReferenceSource && OwnedQuerySources) ||
         (ReferenceSource && (ReferenceSource->Selected.SourceCall != Call.SourceCall ||
                              ReferenceSource->Selected.TargetCall != Call.TargetCall))) return false;
@@ -15734,10 +16225,13 @@ public:
       PublicInvokeFunction = nullptr;
       PublicNothrowInitializer = false;
     });
-    if (!Graph.bindNotFnOperation(Call.Storage, OwnedQuerySources, ReferenceSource != nullptr) ||
+    if (NestedInnerCertificate &&
+        (!Graph.bindNotFnNestedInner(*NestedInnerCertificate) || !Graph.boundNotFnNestedInner(Call))) return false;
+    if (!Graph.bindNotFnOperation(Call.Storage, OwnedQuerySources, ReferenceSource != nullptr, NestedSource != nullptr) ||
         !Graph.bindNotFnConstraintVariables([this, Call](const DeclRefExpr *Reference) {
           return invocationVariableUse(Reference, Call);
         })) return false;
+    if (NestedSource && !Graph.bindNotFnNestedCall(*NestedSource, InnerClosed)) return false;
     const auto *Method = Call.Method;
     const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Method ? Method->getTemplateSpecializationArgs() : nullptr;
@@ -15748,7 +16242,8 @@ public:
         SourceCall->getOperator() != OO_Call ||
         SourceCall->getDirectCallee() != Method || !SourceCall->getNumArgs() ||
         SourceCall->getArg(0)->IgnoreParens() != Call.Receiver ||
-        !S.owns(SM, Reference->getExprLoc()) || !Use.Location.isValid()) return false;
+        (!S.owns(SM, Reference->getExprLoc()) && !Graph.boundNotFnNestedInner(Call)) ||
+        !Use.Location.isValid()) return false;
     bool Selected = false;
     // Retain the original owned-source proof. Only an SDK-origin packet
     // needs the additional exact retained selection of this same method.
@@ -15970,6 +16465,95 @@ bool approvedFunctionalNotFnOwnedCallDefaults(const State &S,
     std::set<const CXXMethodDecl *> &OwnedQuerySources) {
   return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits)
       .callDefaults(Call, Use, &OwnedQuerySources);
+}
+
+bool approvedFunctionalNotFnNestedFactorySource(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  const auto Selected = describeFunctionalNotFnNestedFactorySource(S, SM,
+      dyn_cast_or_null<CallExpr>(Factory.Selection.Expression), Context);
+  if (!Selected || Selected->Outer.Construction != Factory.Selected.Construction ||
+      Selected->Outer.CallableConstruction != Factory.Selected.CallableConstruction) return false;
+  UtilityTupleQueryGraph Root(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature);
+  return Root.withNotFnChildProof([&] {
+    return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits,
+        SourceAlias, &Root).factory(Factory, nullptr, false, true);
+  });
+}
+
+bool approvedFunctionalNotFnNestedCallDefaults(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnNestedCallSource &Call,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Call.OuterRuntime.SourceCall, Context);
+  if (!Actual || Actual->InnerRuntime.Method != Call.InnerRuntime.Method ||
+      Actual->InnerRuntime.SourceCall != Call.InnerRuntime.SourceCall ||
+      Actual->OuterRuntime.Method != Call.OuterRuntime.Method) return false;
+  UtilityTupleQueryGraph Root(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature);
+  bool InnerClosed = false, OuterClosed = false;
+  for (const auto *Use : Sources) {
+    if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Actual->InnerRuntime.Method) continue;
+    if (!Root.withNotFnChildProof([&] {
+      return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits,
+          {}, &Root, &*Actual).callDefaults(Actual->InnerRuntime, *Use);
+    })) return false;
+    InnerClosed = true;
+  }
+  if (!InnerClosed) return false;
+  for (const auto *Use : Sources) {
+    if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Actual->OuterRuntime.Method) continue;
+    if (!Root.withNotFnChildProof([&] {
+      return NotFnPointerSourceProof(S, SM, Context, Sources, Selections, Members, Traits,
+          {}, &Root).callDefaults(Actual->OuterRuntime, *Use, nullptr, nullptr, nullptr, &*Actual, InnerClosed);
+    })) return false;
+    OuterClosed = true;
+  }
+  return InnerClosed && OuterClosed;
+}
+
+bool approvedFunctionalNotFnNestedCopySource(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnCopySource &Copy,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  const auto Actual = describeFunctionalNotFnCopySource(S, SM, Copy.Construction, Context);
+  const auto Nested = Actual ? describeFunctionalNotFnNestedStorage(S, SM, Actual->Storage.Record, Context) : std::nullopt;
+  if (!Actual || !Nested || !Actual->TrivialCallableConstruction ||
+      Actual->Storage.Record != Copy.Storage.Record || Actual->SDKConstructions != Copy.SDKConstructions) return false;
+  UtilityTupleQueryGraph Root(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature);
+  return Root.withNotFnChildProof([&] {
+    UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature, &Root);
+    return Graph.bindNotFnNestedStorage(*Nested) &&
+        Graph.notFnNestedSpecialMember(Copy.Construction->getConstructor());
+  });
+}
+
+bool approvedFunctionalNotFnNestedDestructionSource(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const FunctionalNotFnNestedStorage &Storage,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  const auto Actual = describeFunctionalNotFnNestedStorage(S, SM, Storage.Outer.Record, Context);
+  if (!Actual || Actual->Inner.Record != Storage.Inner.Record) return false;
+  UtilityTupleQueryGraph Root(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature);
+  for (const auto *Layer : {Actual->Outer.Record, Actual->Inner.Record}) {
+    const auto *Destructor = Layer->getDestructor();
+    // Missing actual special-member source remains failure. Triviality alone
+    // cannot replace the selected outer/inner destruction graph.
+    if (!Destructor || !Root.withNotFnChildProof([&] {
+      UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::NotFnSignature, &Root);
+      return Graph.bindNotFnNestedStorage(*Actual) && Graph.notFnNestedSpecialMember(Destructor);
+    })) return false;
+  }
+  return true;
 }
 
 bool approvedFunctionalNotFnReferenceFactorySource(
