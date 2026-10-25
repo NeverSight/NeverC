@@ -54,7 +54,11 @@ static std::optional<FunctionalNotFnStorage> functionalNotFnLayout(
     const ASTContext &Context) {
   if (const auto Pointer = approvedFunctionalNotFnPointerStorage(S, Sources, Record, Context))
     return Pointer;
-  return describeFunctionalNotFnOwnedStorage(S, Sources, Record, Context);
+  if (const auto Owned = describeFunctionalNotFnOwnedStorage(S, Sources, Record, Context))
+    return Owned;
+  if (const auto Reference = describeFunctionalNotFnReferenceStorage(S, Sources, Record, Context))
+    return Reference->Storage;
+  return std::nullopt;
 }
 
 static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
@@ -11481,6 +11485,18 @@ public:
     if (!Record || Depth > 64)
       return false;
     A.chargeExpansion(1, Record->getLocation());
+    if (const auto Reference = describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Record, A.Context)) {
+      if (!functionalReferenceDestructionSource(A, Reference->Reference.Record)) return false;
+      const auto *Destructor = Record->getDestructor();
+      if (!Destructor) return Record->hasTrivialDestructor();
+      const auto Source = describeFunctionalNotFnDestructionSource(A.S, A.Sources, Destructor, A.Context);
+      if (!Source || !Source->TrivialCallableDestruction ||
+          Source->Storage.Record->getCanonicalDecl() != Record->getCanonicalDecl() ||
+          Source->CallableDestructor != Reference->Reference.Record->getDestructor()) return false;
+      const auto [Entry, Inserted] = A.VerifiedNotFnDestructions.emplace(Record->getCanonicalDecl(), *Source);
+      return Inserted || (Entry->second.Destructor == Destructor &&
+                         Entry->second.CallableDestructor == Source->CallableDestructor);
+    }
     if (const auto Storage = describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Record, A.Context)) {
       const auto *Destructor = Record->getDestructor();
       const auto Source = describeFunctionalNotFnDestructionSource(A.S, A.Sources, Destructor, A.Context);
@@ -17995,7 +18011,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() && Constructor && Constructor->isCopyOrMoveConstructor() &&
-        describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Constructor->getParent(), A.Context)) {
+        (describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Constructor->getParent(), A.Context) ||
+         describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Constructor->getParent(), A.Context))) {
       const auto Source = describeFunctionalNotFnCopySource(A.S, A.Sources, C, A.Context);
       if (!Source || !A.S.owns(A.Sources, C->getExprLoc()) ||
           C->getNumArgs() != 1 || !Constructor->getParamDecl(0)->getType()->isReferenceType()) {
@@ -18004,7 +18021,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return;
       }
       checkBinding(C->getArg(0), true);
-      if (Source->CallableConstruction &&
+      const auto Reference = describeFunctionalNotFnReferenceStorage(
+          A.S, A.Sources, Constructor->getParent(), A.Context);
+      if (Reference && Source->CallableConstruction &&
+          approvedFunctionalReferenceConstruction(A.S, A.Sources, Source->CallableConstruction, A.Context) !=
+              FunctionalReferenceConstruction::CopyOrMove) {
+        A.reject(L, "not_fn reference copy source", "Only the exact trivial SDK wrapper copy is admitted.", "TR0203");
+        return;
+      }
+      if (!Reference && Source->CallableConstruction &&
           !checkUtilitySelectedConstruction(Source->CallableConstruction, L, 1)) return;
       if (!A.S.Diagnostics.empty()) return;
       // Lowering consumes only this exact expression after the ordinary
@@ -25903,7 +25928,8 @@ public:
       }
     }
     for (const auto &[Call, Source] : A.VerifiedNotFnFactories) {
-      if (!Source.Storage.CallableType->isRecordType()) continue;
+      if (!Source.Storage.CallableType->isRecordType() ||
+          describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
       if (!ConstructorSource(Source.CallableConstruction, Source.Storage, false, Call->getExprLoc())) {
         A.reject(Call->getExprLoc(), "not_fn owned constructor source",
                  "The exact selected callable constructor, defaults and completed ordinary source are required.", "TR0203");
@@ -25911,6 +25937,7 @@ public:
       }
     }
     for (const auto &[Construction, Source] : A.VerifiedNotFnCopies) {
+      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
       if (!ConstructorSource(Source.CallableConstruction, Source.Storage,
                              Source.TrivialCallableConstruction, Construction->getExprLoc())) {
         A.reject(Construction->getExprLoc(), "not_fn owned copy source",
@@ -25919,7 +25946,8 @@ public:
       }
     }
     for (const auto &[Call, Source] : A.VerifiedNotFnCalls) {
-      if (!Source.Storage.CallableType->isRecordType()) continue;
+      if (!Source.Storage.CallableType->isRecordType() ||
+          A.VerifiedNotFnReferenceCalls.count(Call)) continue;
       const auto Selected = describeFunctionalNotFnOwnedCallSource(A.S, A.Sources, Call, A.Context);
       auto Check = NewCheck();
       const auto *Definition = Selected ? Selected->CallableMethod->getDefinition() : nullptr;
@@ -25932,6 +25960,7 @@ public:
       }
     }
     for (const auto &[Wrapper, Source] : A.VerifiedNotFnDestructions) {
+      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Wrapper, A.Context)) continue;
       const auto Owned = describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Wrapper, A.Context);
       const auto *Record = Owned ? Owned->CallableType->getAsCXXRecordDecl() : nullptr;
       const auto *Destructor = Record ? Record->getDestructor() : nullptr;
@@ -25945,6 +25974,86 @@ public:
                  "Callable cleanup requires the complete ordinary destructor source; a query signature cannot supply a runtime body.", "TR0203");
         return false;
       }
+    }
+    return true;
+  }
+  bool finishNotFnReferenceSources() {
+    auto StoredCopy = [&](const FunctionalNotFnStorage &Storage,
+                          const CXXConstructExpr *Selected, bool TrivialWrapperCopy) {
+      const auto Reference = describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Storage.Record, A.Context);
+      if (!Reference || !functionalReferenceDestructionSource(A, Reference->Reference.Record)) return false;
+      if (!Selected) return TrivialWrapperCopy;
+      if (approvedFunctionalReferenceConstruction(A.S, A.Sources, Selected, A.Context) !=
+          FunctionalReferenceConstruction::CopyOrMove) return false;
+      const auto *Constructor = Selected->getConstructor();
+      for (const auto *Declaration : Constructor->redecls()) {
+        const auto *Member = cast<CXXConstructorDecl>(Declaration);
+        if (!Member->isImplicit() || !Member->isDefaulted() || !Member->isTrivial() ||
+            Member->isDeleted() || Member->isInvalidDecl() || !Member->isCopyOrMoveConstructor() ||
+            Member->getParent()->getCanonicalDecl() != Reference->Reference.Record->getCanonicalDecl() ||
+            !approvedStandardSDKDeclaration(A.S, A.Sources, Member)) return false;
+      }
+      return true; // Factory/copy entrypoints independently close the retained graph.
+    };
+    for (const auto &[Call, Source] : A.VerifiedNotFnFactories)
+      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context) &&
+          !StoredCopy(Source.Storage, Source.CallableConstruction, false)) {
+        A.reject(Call->getExprLoc(), "not_fn reference factory source",
+                 "The selected SDK wrapper copy and trivial wrapper lifetime require exact source.", "TR0203");
+        return false;
+      }
+    for (const auto &[Construction, Source] : A.VerifiedNotFnCopies)
+      if (describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context) &&
+          (!approvedFunctionalNotFnReferenceCopySource(A.S, A.Sources, A.Context, Source,
+                A.SpecialMembers, A.OperationTraits) ||
+           !StoredCopy(Source.Storage, Source.CallableConstruction, Source.TrivialCallableConstruction))) {
+        A.reject(Construction->getExprLoc(), "not_fn reference copy source",
+                 "Copying a borrowed callable preserves only its checked wrapper binding.", "TR0203");
+        return false;
+      }
+    for (const auto *Method : A.NotFnReferenceQuerySources) {
+      const bool Bound = std::any_of(A.VerifiedNotFnReferenceCalls.begin(), A.VerifiedNotFnReferenceCalls.end(),
+          [&](const auto &Entry) { return Entry.second.Reference.Method == Method; });
+      OperationSourceChecker Check(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+          &CompletedOperationDefaults);
+      const auto *Definition = Method ? Method->getDefinition() : nullptr;
+      if (!Bound || !Definition || !A.S.owns(A.Sources, Method->getLocation()) ||
+          !Check.defined(Method) || !Check.finish(Method->getLocation()) ||
+          std::find(A.Functions.begin(), A.Functions.end(), Definition) == A.Functions.end()) {
+        A.reject(Method->getLocation(), "not_fn reference query source",
+                 "Every actual queried referent call requires its independent complete ordinary body.", "TR0203");
+        return false;
+      }
+    }
+    for (const auto &[Call, Source] : A.VerifiedNotFnReferenceCalls) {
+      const auto Current = describeFunctionalNotFnReferenceCallSource(A.S, A.Sources, Call, A.Context);
+      const auto Shared = A.VerifiedNotFnCalls.find(Call);
+      const auto *Method = Source.Reference.Method;
+      const auto *Definition = Method ? Method->getDefinition() : nullptr;
+      OperationSourceChecker Check(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+          &CompletedOperationDefaults);
+      if (!Current || Shared == A.VerifiedNotFnCalls.end() ||
+          Current->Selected.TargetCall != Source.Selected.TargetCall ||
+          Shared->second.TargetCall != Source.Selected.TargetCall ||
+          Current->Reference.Method != Method || !Definition ||
+          !Check.defined(Method) || !Check.finish(Call->getExprLoc()) ||
+          std::find(A.Functions.begin(), A.Functions.end(), Definition) == A.Functions.end()) {
+        A.reject(Call->getExprLoc(), "not_fn reference call source",
+                 "The exact borrowed ordinary method requires its independent completed signature and emitted body.", "TR0203");
+        return false;
+      }
+    }
+    for (const auto &[Wrapper, Source] : A.VerifiedNotFnDestructions) {
+      const auto Reference = describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Wrapper, A.Context);
+      if (!Reference) continue;
+      if (!Source.TrivialCallableDestruction ||
+          Source.CallableDestructor != Reference->Reference.Record->getDestructor() ||
+          !functionalReferenceDestructionSource(A, Reference->Reference.Record)) return false;
+      // No destruction(ReferentType): borrowing does not extend or end T's life.
     }
     return true;
   }
@@ -26118,7 +26227,10 @@ public:
     const auto Owned = Shape
         ? describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Shape->Storage.Record, A.Context)
         : std::nullopt;
-    if (!Shape || (!Owned && !approvedFunctionalNotFnPointerStorage(
+    const auto ReferenceStorage = Shape
+        ? describeFunctionalNotFnReferenceStorage(A.S, A.Sources, Shape->Storage.Record, A.Context)
+        : std::nullopt;
+    if (!Shape || (!Owned && !ReferenceStorage && !approvedFunctionalNotFnPointerStorage(
             A.S, A.Sources, Shape->Storage.Record, A.Context))) return std::nullopt;
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
     if (!Reference || Reference->getDecl() != Shape->Factory ||
@@ -26164,6 +26276,9 @@ public:
             ? approvedFunctionalNotFnOwnedFactorySource(A.S, A.Sources, A.Context, *Source,
                 Dependencies, Selections, A.SpecialMembers, A.OperationTraits,
                 A.NotFnOwnedQuerySources, AliasSource)
+            : ReferenceStorage
+                ? approvedFunctionalNotFnReferenceFactorySource(A.S, A.Sources, A.Context, *Source,
+                    Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource)
             : approvedFunctionalNotFnPointerFactorySource(A.S, A.Sources, A.Context, *Source,
                 Dependencies, Selections, A.SpecialMembers, A.OperationTraits, AliasSource));
         if (!Approved) {
@@ -26188,6 +26303,13 @@ public:
           queueGenerated(Method, Call->getExprLoc());
       }
     }
+    if (ReferenceStorage && (!Shape->CallableConstruction ||
+        approvedFunctionalReferenceConstruction(A.S, A.Sources, Shape->CallableConstruction, A.Context) !=
+            FunctionalReferenceConstruction::CopyOrMove)) {
+      A.reject(Call->getExprLoc(), "not_fn reference factory source",
+               "The exact selected trivial SDK wrapper copy is required.", "TR0203");
+      return true;
+    }
     A.VerifiedNotFnFactories.emplace(Call, *Shape);
     A.type(Call->getType(), Call->getExprLoc());
     return TraverseStmt(Call->getArg(0));
@@ -26197,7 +26319,9 @@ public:
         A.Context, FunctionalNotFnSourceMode::Runtime);
     const auto Owned = Runtime
         ? describeFunctionalNotFnOwnedCallSource(A.S, A.Sources, Call, A.Context) : std::nullopt;
-    if (!Runtime || (!Owned && !approvedFunctionalNotFnPointerStorage(
+    const auto Reference = Runtime
+        ? describeFunctionalNotFnReferenceCallSource(A.S, A.Sources, Call, A.Context) : std::nullopt;
+    if (!Runtime || (!Owned && !Reference && !approvedFunctionalNotFnPointerStorage(
             A.S, A.Sources, Runtime->Storage.Record, A.Context))) return std::nullopt;
     const auto Signature = describeFunctionalNotFnCallSource(A.S, A.Sources, Call,
         A.Context, FunctionalNotFnSourceMode::Signature);
@@ -26227,6 +26351,13 @@ public:
         ? OwnedQuery(Signature) && OwnedQuery(Exception) && NegationSource &&
           Runtime->TargetCall == Owned->Selected.TargetCall &&
           Runtime->Method == Owned->Selected.Method
+        : Reference
+          ? OwnedQuery(Signature) && OwnedQuery(Exception) && NegationSource &&
+            Runtime->TargetCall == Reference->Selected.TargetCall &&
+            functionalReferenceDirectInvokeSource(A, Runtime->TargetCall, Reference->Reference,
+                Reference->Reference.Method->getType()->getAs<FunctionProtoType>()) &&
+            utilitySDKFunctionSource(A, Runtime->InvokeCall->getDirectCallee(), "__functional/invoke.h") &&
+            utilitySDKFunctionSource(A, Runtime->DispatchCall->getDirectCallee(), "__type_traits/invoke.h")
         : NegationSource && Target && ordinaryCallbackPrototype(Target) &&
           (Target->getReturnType()->isArithmeticType() || NegationMethod) &&
           Prototype && Prototype->isNothrow() ==
@@ -26258,6 +26389,10 @@ public:
       SelectedDefault = Owned
           ? approvedFunctionalNotFnOwnedCallDefaults(A.S, A.Sources, A.Context, *Runtime, *Use,
               NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits, A.NotFnOwnedQuerySources)
+          : Reference
+            ? approvedFunctionalNotFnReferenceCallDefaults(A.S, A.Sources, A.Context, *Reference, *Use,
+                NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits,
+                A.NotFnReferenceQuerySources)
           : approvedFunctionalNotFnPointerCallDefaults(A.S, A.Sources, A.Context, *Runtime, *Use,
               NotFnConstraintSources, Selections, A.SpecialMembers, A.OperationTraits);
       if (!SelectedDefault) { Source = false; break; }
@@ -26282,6 +26417,21 @@ public:
       for (auto *Dependencies : ActiveOperationSources)
         if (Dependencies->Definitions.insert(Owned->CallableMethod).second)
           A.chargeExpansion(1, Call->getExprLoc());
+    }
+    if (Reference) {
+      const auto *Method = Reference->Reference.Method;
+      for (const auto *Query : A.NotFnReferenceQuerySources) {
+        if (!A.S.owns(A.Sources, Query->getLocation())) {
+          A.reject(Call->getExprLoc(), "not_fn reference query source",
+                   "Only the exact independently owned referent method may supply an ordinary query source.", "TR0203");
+          return true;
+        }
+        collectOperationFunctionTypeSource(Query);
+      }
+      collectOperationFunctionTypeSource(Method);
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Definitions.insert(Method).second) A.chargeExpansion(1, Call->getExprLoc());
+      A.VerifiedNotFnReferenceCalls.emplace(Call, *Reference);
     }
     A.VerifiedNotFnCalls.emplace(Call, *Runtime);
     A.type(Runtime->Storage.CallableType, Call->getExprLoc());
@@ -28903,7 +29053,8 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context) ||
             approvedUtilityPiecewiseConstructExpression(A.S, A.Sources, C, A.Context)) {
           // Authenticated SDK tags are erased by their selected library operations.
-        } else if ((describeFunctionalNotFnOwnedStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context) &&
+        } else if (((describeFunctionalNotFnOwnedStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context) ||
+                     describeFunctionalNotFnReferenceStorage(A.S, A.Sources, C->getConstructor()->getParent(), A.Context)) &&
                     describeFunctionalNotFnCopySource(A.S, A.Sources, C, A.Context)) ||
                    approvedPiecewiseConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedDiscreteDistributionConstruction(A.S, A.Sources, C, A.Context) ||
@@ -29351,7 +29502,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   if (!Check.finishTypeQueries() || !Check.finishPairConstructorSources() ||
       !Check.finishPairPiecewiseConstructions() || !Check.finishTupleFactories() ||
       !Check.finishAlgorithmPredicates() || !Check.finishNotFnNegationSources() ||
-      !Check.finishNotFnOwnedSources())
+      !Check.finishNotFnOwnedSources() || !Check.finishNotFnReferenceSources())
     return;
   SynchronizeTemplateSourceEvents();
   if (!S.Diagnostics.empty())

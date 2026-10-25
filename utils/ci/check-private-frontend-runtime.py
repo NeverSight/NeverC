@@ -85,9 +85,9 @@ def main():
         assert sha(args.component_report) == args.component_report_sha256
         assert component['revision'] == args.component_revision and component['completed'] and component['passed'] is True and component['not_fn_private_support_complete'] is False
         assert component['all_five_bridge_units_recompiled'] is True
-        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 256
-        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 112
-        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 136
+        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 272
+        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 120
+        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 144
         assert sum(row['expected'] == 'invalid' and row['expectation_satisfied'] for row in component['requests']) == 8
         archive = args.archive.resolve()
         assert archive.is_file() and sha(archive) == component['replayed_archive_sha256']
@@ -131,14 +131,14 @@ def main():
             registered_source_sha256=hashlib.sha256(registered).hexdigest(),
             restored_original_source_sha256=hashlib.sha256(original).hexdigest(),
             original_extractor_and_7493_guard_unchanged=True,
-            registered_goldens_replayed_once_in_formal134=True)
+            registered_goldens_replayed_once_in_formal135=True)
         generated, source_proof = extract(original, selected)
         original_selected = tuple(selected)
         original_generated_sha256 = hashlib.sha256(generated).hexdigest()
         additional = plan['not_fn_formal_cases']
-        assert len(additional) == 10 and len({c['formal_test_name'] for c in additional}) == 10
+        assert len(additional) == 11 and len({c['formal_test_name'] for c in additional}) == 11
         assert not set(original_selected) & {c['formal_test_name'] for c in additional}
-        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 10
+        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 11
         generated += additions
         selected += [c['formal_test_name'] for c in additional]
         r['not_fn_formal_extension'] = dict(original_registered_source_names=7493,
@@ -195,7 +195,7 @@ def main():
                 suite = line.strip()
             elif suite and line.startswith('  '):
                 found.append(suite + line.strip().split()[0])
-        assert set(found) == set(selected) and len(found) == 134
+        assert set(found) == set(selected) and len(found) == 135
         xml = out / 'gtest.xml'
         environment = dict(os.environ, NEVERC_PRIVATE_RUNTIME_RETAIN=str(build / 'retained-programs'))
         code = run([tests, '--gtest_filter=' + ':'.join(selected), '--gtest_output=xml:' + str(xml)],
@@ -205,7 +205,7 @@ def main():
         tree = ET.parse(xml).getroot()
         cases = tree.findall('.//testcase')
         names = [case.attrib['classname'] + '.' + case.attrib['name'] for case in cases]
-        assert len(cases) == 134 and set(names) == set(selected)
+        assert len(cases) == 135 and set(names) == set(selected)
         failed = [name for name, case in zip(names, cases) if case.find('failure') is not None]
         skipped = [name for name, case in zip(names, cases) if case.find('skipped') is not None]
         r.update(formal_xml_sha256=sha(xml), actual_formal_tests=len(cases),
@@ -242,7 +242,7 @@ def main():
                         sha256=sha(product), first_64_bytes_hex=header.hex()))
         r['actual_not_fn_generated_products'] = not_fn_products
         if not failed and not skipped and code == 0:
-            assert len(not_fn_products) == 20
+            assert len(not_fn_products) == 22
             for product in not_fn_products:
                 header = bytes.fromhex(product['first_64_bytes_hex'])
                 assert product['bytes'] > 64 and len(header) == 64

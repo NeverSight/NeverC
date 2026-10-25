@@ -542,7 +542,7 @@ synchronizer owns signatures and immediate positions, while
 `sync-x86-apx-atomic.py` appends the pruned EVEX opcodes and native pseudos
 without renumbering existing machine opcodes.
 
-`tests/verify-apx-atomic-completion.py` qualifies O0/O2 in ELF, COFF and Mach-O
+[tests/verify-apx-atomic-completion.py](tests/verify-apx-atomic-completion.py) qualifies O0/O2 in ELF, COFF and Mach-O
 through NeverC, the full fork (`--llc`), or NeverC IR followed by the full fork
 (`--backend-llc`). It checks all conditions and segment/address controls,
 live/dead/repeated calls, aliased ordinary memory and C ABI preservation with
