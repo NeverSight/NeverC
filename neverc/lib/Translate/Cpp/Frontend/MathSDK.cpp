@@ -18,6 +18,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 #include <functional>
 #include <set>
 
@@ -14270,12 +14271,25 @@ describeFunctionalNotFnCallSource(
     const ASTContext &Context, FunctionalNotFnSourceMode Mode) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+
+  // Observational trace only: every original guard and returned value stays intact.
+  auto TraceFailure = [&](unsigned Point) -> std::optional<FunctionalNotFnCallSource> {
+    static llvm::DenseSet<std::pair<const CallExpr *, unsigned>> Seen;
+    if (Seen.insert({Call, unsigned(Mode) * 1000 + Point}).second) {
+      llvm::errs() << "[NESTED-Call-SOURCE-TRACE] outer-call point=" << Point << " mode=" << unsigned(Mode) << " location=";
+      if (Call) Call->getExprLoc().print(llvm::errs(), SM);
+      llvm::errs() << "\n";
+      if (Call) Call->dump(llvm::errs());
+      if (Method) Method->dump(llvm::errs());
+    }
+    return std::nullopt;
+  };
   if (!Operator || Operator->getOperator() != OO_Call || !Method ||
       !Call->getNumArgs() || Method->getNumParams() + 1 != Call->getNumArgs() ||
       Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() == RQ_None || !S.owns(SM, Call->getExprLoc()))
-    return std::nullopt;
+    return TraceFailure(1);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
   // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
@@ -14284,7 +14298,7 @@ describeFunctionalNotFnCallSource(
   if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
                     Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
       Receiver->path_size() != 1)
-    return std::nullopt;
+    return TraceFailure(2);
   const auto *Object = Receiver->getSubExpr()->IgnoreParens();
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
       Object->getType()->getAsCXXRecordDecl(), Context);
@@ -14294,9 +14308,9 @@ describeFunctionalNotFnCallSource(
       !Check.family(Method, {"__functional/perfect_forward.h"}) ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
-    return std::nullopt;
+    return TraceFailure(3);
   const bool RValue = Method->getRefQualifier() == RQ_RValue;
-  if (Object->isLValue() == RValue) return std::nullopt;
+  if (Object->isLValue() == RValue) return TraceFailure(4);
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
       Check.core(Check.resultSource(Method, Mode)));
   const auto *OperationMethod = Operation
@@ -14307,11 +14321,11 @@ describeFunctionalNotFnCallSource(
       OperationMethod->getNumParams() != Call->getNumArgs() ||
       !OperationMethod->isConst() || OperationMethod->isVolatile() ||
       OperationMethod->isStatic() || OperationMethod->isVariadic() ||
-      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return TraceFailure(5);
   const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
   if (!OpConstruction || OpConstruction->getNumArgs() ||
       OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
-    return std::nullopt;
+    return TraceFailure(6);
   const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
   const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
   const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
@@ -14321,7 +14335,7 @@ describeFunctionalNotFnCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return TraceFailure(7);
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -14330,7 +14344,7 @@ describeFunctionalNotFnCallSource(
     if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
         Move->getNumArgs() != 1 || !Move->isXValue() ||
         !Check.family(MoveFunction, {"__utility/move.h"}) ||
-        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return std::nullopt;
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return TraceFailure(8);
     Bound = Check.stripped(Move->getArg(0));
   }
   const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
@@ -14342,33 +14356,33 @@ describeFunctionalNotFnCallSource(
       !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
       !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
       !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
-    return std::nullopt;
+    return TraceFailure(9);
   std::vector<const CallExpr *> Forwards;
   const CallExpr *Forward = nullptr;
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
-                          "__functional/perfect_forward.h", Forward)) return std::nullopt;
+                          "__functional/perfect_forward.h", Forward)) return TraceFailure(10);
     Forwards.push_back(Forward);
   }
   const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
   const Expr *InvokeExpression = nullptr;
   if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
-    if (Unary->getOpcode() != UO_LNot) return std::nullopt;
+    if (Unary->getOpcode() != UO_LNot) return TraceFailure(11);
     InvokeExpression = Unary->getSubExpr();
   } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
     if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
-      return std::nullopt;
+      return TraceFailure(12);
     InvokeExpression = NegateCall->getArg(0);
-  } else return std::nullopt;
+  } else return TraceFailure(13);
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
   const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
   if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
       Invoke->getNumArgs() != OperationMethod->getNumParams() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
-      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return std::nullopt;
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return TraceFailure(14);
   for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
     if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
-                          "__functional/not_fn.h", Forward)) return std::nullopt;
+                          "__functional/not_fn.h", Forward)) return TraceFailure(15);
     Forwards.push_back(Forward);
   }
   // A signature-only description never materializes or relies on an invoke
@@ -14380,9 +14394,9 @@ describeFunctionalNotFnCallSource(
     const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
     if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
         !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
-        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return TraceFailure(16);
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
-    if (!Target) return std::nullopt;
+    if (!Target) return TraceFailure(17);
   }
   return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
@@ -14403,6 +14417,19 @@ static bool functionalNotFnNestedInnerBinding(
   const auto *Dispatcher = Actual && Actual->DispatchCall ? Actual->DispatchCall->getDirectCallee() : nullptr;
   const auto *Target = dyn_cast_or_null<CXXOperatorCallExpr>(Inner);
   const auto *Method = Target ? dyn_cast_or_null<CXXMethodDecl>(Target->getDirectCallee()) : nullptr;
+
+  // Observational trace only: every original guard and returned value stays intact.
+  auto TraceFailure = [&](unsigned Point) -> bool {
+    static llvm::DenseSet<std::pair<const CallExpr *, unsigned>> Seen;
+    if (Seen.insert({Inner, Point}).second) {
+      llvm::errs() << "[NESTED-Inner-SOURCE-TRACE] inner-binding point=" << Point << " location=";
+      if (Inner) Inner->getExprLoc().print(llvm::errs(), SM);
+      llvm::errs() << "\n";
+      if (Inner) Inner->dump(llvm::errs());
+      if (Method) Method->dump(llvm::errs());
+    }
+    return false;
+  };
   const auto *Reference = Target ? dyn_cast<DeclRefExpr>(Target->getCallee()->IgnoreParenImpCasts()) : nullptr;
   NotFnSelectedSource Check(S, SM, Context);
   if (!Actual || !Storage || Outer.Mode != FunctionalNotFnSourceMode::Runtime ||
@@ -14428,7 +14455,7 @@ static bool functionalNotFnNestedInnerBinding(
       Dispatcher->getNumParams() != Target->getNumArgs() ||
       Invoke->getNumParams() != Target->getNumArgs() ||
       Actual->DispatchCall->getNumArgs() != Target->getNumArgs() ||
-      Method->getNumParams() + 1 != Target->getNumArgs()) return false;
+      Method->getNumParams() + 1 != Target->getNumArgs()) return TraceFailure(1);
   for (unsigned I = 0; I < Invoke->getNumParams(); ++I) {
     const auto *Parameter = Invoke->getParamDecl(I);
     const CallExpr *Forward = nullptr;
@@ -14436,14 +14463,14 @@ static bool functionalNotFnNestedInnerBinding(
         Dispatcher->getParamDecl(I)->hasDefaultArg() ||
         !Context.hasSameType(Parameter->getType(), Dispatcher->getParamDecl(I)->getType()) ||
         !Check.forwarding(Actual->DispatchCall->getArg(I), Parameter,
-                          "__functional/invoke.h", Forward)) return false;
+                          "__functional/invoke.h", Forward)) return TraceFailure(2);
   }
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Target->getArg(0)->IgnoreParens());
   if (!Receiver || Receiver->getCastKind() != CK_UncheckedDerivedToBase ||
       Receiver->path_size() != 1 ||
       *Receiver->path_begin() != &*Storage->Inner.Record->bases_begin() ||
       !Context.hasSameUnqualifiedType(Receiver->getType(), Context.getRecordType(Storage->Inner.Forwarder)))
-    return false;
+    return TraceFailure(3);
   auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression ? Expression->IgnoreParens() : nullptr);
     const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
@@ -14467,7 +14494,7 @@ static bool functionalNotFnNestedInnerBinding(
       Bound->isRValueReferenceType() != (Actual->Method->getRefQualifier() == RQ_RValue) ||
       Method->isConst() != Actual->Method->isConst() ||
       Method->getRefQualifier() != Actual->Method->getRefQualifier() ||
-      !ParameterCast(Receiver->getSubExpr(), 0)) return false;
+      !ParameterCast(Receiver->getSubExpr(), 0)) return TraceFailure(4);
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
     if (!Parameter->isReferenceType() ||
@@ -14476,7 +14503,7 @@ static bool functionalNotFnNestedInnerBinding(
         Parameter.getNonReferenceType().isRestrictQualified() ||
         !Context.hasSameType(Parameter, Dispatcher->getParamDecl(I + 1)->getType()) ||
         !Context.hasSameType(Parameter, Actual->Method->getParamDecl(I)->getType()) ||
-        !ParameterCast(Target->getArg(I + 1), I + 1)) return false;
+        !ParameterCast(Target->getArg(I + 1), I + 1)) return TraceFailure(5);
   }
   return true;
 }
@@ -14488,12 +14515,25 @@ describeFunctionalNotFnNestedInnerCallSource(
     const FunctionalNotFnCallSource &Outer) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+
+  // Observational trace only: every original guard and returned value stays intact.
+  auto TraceFailure = [&](unsigned Point) -> std::optional<FunctionalNotFnCallSource> {
+    static llvm::DenseSet<std::pair<const CallExpr *, unsigned>> Seen;
+    if (Seen.insert({Call, unsigned(Mode) * 1000 + Point}).second) {
+      llvm::errs() << "[NESTED-Call-SOURCE-TRACE] inner-call point=" << Point << " mode=" << unsigned(Mode) << " location=";
+      if (Call) Call->getExprLoc().print(llvm::errs(), SM);
+      llvm::errs() << "\n";
+      if (Call) Call->dump(llvm::errs());
+      if (Method) Method->dump(llvm::errs());
+    }
+    return std::nullopt;
+  };
   if (!Operator || Operator->getOperator() != OO_Call || !Method ||
       !Call->getNumArgs() || Method->getNumParams() + 1 != Call->getNumArgs() ||
       Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() == RQ_None || !functionalNotFnNestedInnerBinding(S, SM, Outer, Call, Context))
-    return std::nullopt;
+    return TraceFailure(1);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
   // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
@@ -14502,7 +14542,7 @@ describeFunctionalNotFnNestedInnerCallSource(
   if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
                     Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
       Receiver->path_size() != 1)
-    return std::nullopt;
+    return TraceFailure(2);
   const auto *Object = Receiver->getSubExpr()->IgnoreParens();
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
       Object->getType()->getAsCXXRecordDecl(), Context);
@@ -14512,9 +14552,9 @@ describeFunctionalNotFnNestedInnerCallSource(
       !Check.family(Method, {"__functional/perfect_forward.h"}) ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
-    return std::nullopt;
+    return TraceFailure(3);
   const bool RValue = Method->getRefQualifier() == RQ_RValue;
-  if (Object->isLValue() == RValue) return std::nullopt;
+  if (Object->isLValue() == RValue) return TraceFailure(4);
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
       Check.core(Check.resultSource(Method, Mode)));
   const auto *OperationMethod = Operation
@@ -14525,11 +14565,11 @@ describeFunctionalNotFnNestedInnerCallSource(
       OperationMethod->getNumParams() != Call->getNumArgs() ||
       !OperationMethod->isConst() || OperationMethod->isVolatile() ||
       OperationMethod->isStatic() || OperationMethod->isVariadic() ||
-      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return TraceFailure(5);
   const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
   if (!OpConstruction || OpConstruction->getNumArgs() ||
       OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
-    return std::nullopt;
+    return TraceFailure(6);
   const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
   const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
   const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
@@ -14539,7 +14579,7 @@ describeFunctionalNotFnNestedInnerCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return TraceFailure(7);
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -14548,7 +14588,7 @@ describeFunctionalNotFnNestedInnerCallSource(
     if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
         Move->getNumArgs() != 1 || !Move->isXValue() ||
         !Check.family(MoveFunction, {"__utility/move.h"}) ||
-        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return std::nullopt;
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return TraceFailure(8);
     Bound = Check.stripped(Move->getArg(0));
   }
   const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
@@ -14560,33 +14600,33 @@ describeFunctionalNotFnNestedInnerCallSource(
       !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
       !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
       !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
-    return std::nullopt;
+    return TraceFailure(9);
   std::vector<const CallExpr *> Forwards;
   const CallExpr *Forward = nullptr;
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
-                          "__functional/perfect_forward.h", Forward)) return std::nullopt;
+                          "__functional/perfect_forward.h", Forward)) return TraceFailure(10);
     Forwards.push_back(Forward);
   }
   const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
   const Expr *InvokeExpression = nullptr;
   if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
-    if (Unary->getOpcode() != UO_LNot) return std::nullopt;
+    if (Unary->getOpcode() != UO_LNot) return TraceFailure(11);
     InvokeExpression = Unary->getSubExpr();
   } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
     if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
-      return std::nullopt;
+      return TraceFailure(12);
     InvokeExpression = NegateCall->getArg(0);
-  } else return std::nullopt;
+  } else return TraceFailure(13);
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
   const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
   if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
       Invoke->getNumArgs() != OperationMethod->getNumParams() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
-      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return std::nullopt;
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return TraceFailure(14);
   for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
     if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
-                          "__functional/not_fn.h", Forward)) return std::nullopt;
+                          "__functional/not_fn.h", Forward)) return TraceFailure(15);
     Forwards.push_back(Forward);
   }
   // A signature-only description never materializes or relies on an invoke
@@ -14598,9 +14638,9 @@ describeFunctionalNotFnNestedInnerCallSource(
     const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
     if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
         !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
-        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return TraceFailure(16);
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
-    if (!Target) return std::nullopt;
+    if (!Target) return TraceFailure(17);
   }
   return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
@@ -14616,7 +14656,20 @@ describeFunctionalNotFnNestedCallSource(
   const auto OuterException = describeFunctionalNotFnCallSource(S, SM, Call, Context, FunctionalNotFnSourceMode::Exception);
   const auto Storage = OuterRuntime
       ? describeFunctionalNotFnNestedStorage(S, SM, OuterRuntime->Storage.Record, Context) : std::nullopt;
-  if (!OuterRuntime || !OuterSignature || !OuterException || !Storage) return std::nullopt;
+
+  // Observational trace only: every original guard and returned value stays intact.
+  auto TraceFailure = [&](unsigned Point) -> std::optional<FunctionalNotFnNestedCallSource> {
+    static llvm::DenseSet<std::pair<const CallExpr *, unsigned>> Seen;
+    if (Seen.insert({Call, Point}).second) {
+      llvm::errs() << "[NESTED-Call-SOURCE-TRACE] nested-composition point=" << Point << " location=";
+      if (Call) Call->getExprLoc().print(llvm::errs(), SM);
+      llvm::errs() << "\n";
+      if (Call) Call->dump(llvm::errs());
+      if ((OuterRuntime ? OuterRuntime->Method : nullptr)) (OuterRuntime ? OuterRuntime->Method : nullptr)->dump(llvm::errs());
+    }
+    return std::nullopt;
+  };
+  if (!OuterRuntime || !OuterSignature || !OuterException || !Storage) return TraceFailure(1);
   const auto *InnerCall = OuterRuntime->TargetCall;
   const auto InnerRuntime = describeFunctionalNotFnNestedInnerCallSource(
       S, SM, InnerCall, Context, FunctionalNotFnSourceMode::Runtime, *OuterRuntime);
@@ -14628,7 +14681,7 @@ describeFunctionalNotFnNestedCallSource(
       InnerRuntime->Storage.Record != Storage->Inner.Record ||
       OuterRuntime->Method == InnerRuntime->Method || !InnerRuntime->TargetCall ||
       InnerRuntime->TargetCall->getDirectCallee() || isa<CXXOperatorCallExpr>(InnerRuntime->TargetCall))
-    return std::nullopt;
+    return TraceFailure(2);
   auto Layer = [&](const FunctionalNotFnCallSource &Runtime,
                    const FunctionalNotFnCallSource &Signature,
                    const FunctionalNotFnCallSource &Exception) {
@@ -14651,7 +14704,7 @@ describeFunctionalNotFnNestedCallSource(
       !Leaf->getReturnType()->isArithmeticType() || !OuterPrototype || !InnerPrototype ||
       OuterPrototype->isNothrow() != InnerPrototype->isNothrow() ||
       InnerPrototype->isNothrow() != Leaf->isNothrow() ||
-      InnerRuntime->Method->getNumParams() != Leaf->getNumParams()) return std::nullopt;
+      InnerRuntime->Method->getNumParams() != Leaf->getNumParams()) return TraceFailure(3);
   return FunctionalNotFnNestedCallSource{*Storage, *OuterRuntime, *OuterSignature, *OuterException,
       *InnerRuntime, *InnerSignature, *InnerException, OuterRuntime->DispatchCall->getDirectCallee()};
 }
