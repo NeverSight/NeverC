@@ -131,9 +131,9 @@
   "base_source_six_report_sha256": "d102f4324eb380628fa24131af8b1c7a97f82024fe836780bbe6b8931d3e1fde",
   "diagnostic_observation_only": true,
   "selected_input_subset_only": true,
-  "observational_inverse_source_ledger_sha256": "5c8f6c115336bd50f24c5a8b850bfc154ed0fb9983d2763bd7f4b5fee00cf681",
+  "observational_inverse_source_ledger_sha256": "d2c58ff23470e3989dbc3adcd0acc1ae3730e1e162707c6a25a13733bb73f072",
   "original_six48_report_sha256": "84bbe8277121f9a9d4adf729fbecde814ccedba8b7f8880ce5af5f188a615ae7",
   "original_six48_failed": true,
   "source_trace_base_commit": "3eed7a6943877cd2578ed95215e201e52e42240d",
-  "source_trace_commit": "bf47bdd2bd16f39effee6dc324c43a5b9cdfe22a"
+  "source_trace_commit": "b2eb840e70e8464cfa13d5dea141a9df2128bdfa"
 }
