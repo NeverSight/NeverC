@@ -1539,7 +1539,8 @@ existing `immarg` contract; a backend regression rejects variable IR operands
 while retaining unknown memory effects and the instruction's possible normal
 completion outside a transaction.
 
-`tests/verify-transaction-encoding.py` checks all 256 abort bytes at O0/O2 in
+[tests/verify-transaction-encoding.py](tests/verify-transaction-encoding.py)
+checks all 256 abort bytes at O0/O2 in
 ELF, COFF and Mach-O. It checks each native IR call, exact `C6 F8 imm8` object
 encoding, absence of helper calls/assembly, and the optimized store/abort/load
 order. Select `--compiler build-neverc/bin/neverc`, or the full fork with
@@ -1550,6 +1551,7 @@ and JSON results. The qualified matrix has 40 profiles and 10,240 functions:
 14 NeverC, 14 NeverC-to-full-LLVM, and six full-LLVM profiles per code mode.
 It does not execute physical RTM regions.
 
-Transaction frontend tests live in `tests/neverc/X86/TransactionFrontendTests.cpp`;
+Transaction frontend tests live in
+[TransactionFrontendTests.cpp](tests/neverc/X86/TransactionFrontendTests.cpp);
 the shared x86 assembly fixture is `X86/NativeBuiltinFixture.h`. Native IR
 operand/effect tests stay in `X86/TransactionTests.cpp`.
