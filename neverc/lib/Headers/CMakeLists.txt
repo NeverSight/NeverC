@@ -139,6 +139,7 @@ set(x86_files
   serializeintrin.h
   shaintrin.h
   smmintrin.h
+  tbmintrin.h
   tmmintrin.h
   vaesintrin.h
   vpclmulqdqintrin.h

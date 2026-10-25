@@ -1555,3 +1555,24 @@ Transaction frontend tests live in
 [TransactionFrontendTests.cpp](tests/neverc/X86/TransactionFrontendTests.cpp);
 the shared x86 assembly fixture is `X86/NativeBuiltinFixture.h`. Native IR
 operand/effect tests stay in `X86/TransactionTests.cpp`.
+
+### TBM header interfaces
+
+The installed [tbmintrin.h](neverc/lib/Headers/tbmintrin.h), also exposed by
+`<x86intrin.h>`, provides both widths of `__bextri`, `__blcfill`, `__blci`,
+`__blcic`, `__blcmsk`, `__blcs`, `__blsfill`, `__blsic`, `__t1mskc` and
+`__tzmsk`. Callers can use `__attribute__((target("tbm")))` on the function
+without a translation-unit-wide target flag, including in Microsoft mode.
+The header retains its LLVM license and records its import revision.
+
+BEXTR uses the existing native LLVM intrinsic and requires a constant control
+operand. The nine arithmetic operations use LLVM's existing instruction
+selection patterns: O2 emits native TBM; O0 may retain ordinary arithmetic.
+Neither route needs inline assembly or an external helper. These C interfaces
+return values and do not expose machine flags. NeverD owns the original
+instruction's CF/ZF/SF/OF and undefined AF/PF semantics separately.
+
+[TBMFrontendTests.cpp](tests/neverc/X86/TBMFrontendTests.cpp) compiles all
+20 interfaces at O0/O2 for ELF, COFF and Mach-O, checks native O2 assembly,
+checks BEXTR IR, and rejects variable immediate controls. It does not execute
+physical TBM instructions.
