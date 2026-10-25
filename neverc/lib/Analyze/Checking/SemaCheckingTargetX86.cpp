@@ -737,16 +737,26 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                 << TheCall->getArg(4)->getSourceRange());
   }
   case X86::BI__builtin_ia32_aadd32_address:
+  case X86::BI__builtin_ia32_aadd32_legacy_address:
   case X86::BI__builtin_ia32_aadd64_address:
+  case X86::BI__builtin_ia32_aadd64_legacy_address:
   case X86::BI__builtin_ia32_aand32_address:
+  case X86::BI__builtin_ia32_aand32_legacy_address:
   case X86::BI__builtin_ia32_aand64_address:
+  case X86::BI__builtin_ia32_aand64_legacy_address:
   case X86::BI__builtin_ia32_aor32_address:
+  case X86::BI__builtin_ia32_aor32_legacy_address:
   case X86::BI__builtin_ia32_aor64_address:
+  case X86::BI__builtin_ia32_aor64_legacy_address:
   case X86::BI__builtin_ia32_axor32_address:
+  case X86::BI__builtin_ia32_axor32_legacy_address:
   case X86::BI__builtin_ia32_axor64_address:
+  case X86::BI__builtin_ia32_axor64_legacy_address:
     return CheckMemoryAddress(2);
   case X86::BI__builtin_ia32_cmpccxadd32_address:
+  case X86::BI__builtin_ia32_cmpccxadd32_legacy_address:
   case X86::BI__builtin_ia32_cmpccxadd64_address:
+  case X86::BI__builtin_ia32_cmpccxadd64_legacy_address:
     return SemaBuiltinConstantArgRange(
                TheCall, 3, 0, llvm::X86::APXAtomicConditionCount - 1) ||
            CheckMemoryAddress(4);

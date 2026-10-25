@@ -46,12 +46,18 @@ enum X86Intrinsics : unsigned {
     x86_3dnowa_pswapd,                               // llvm.x86.3dnowa.pswapd
     x86_aadd32,                                      // llvm.x86.aadd32
     x86_aadd32_address,                              // llvm.x86.aadd32.address
+    x86_aadd32_legacy_address,                       // llvm.x86.aadd32.legacy.address
+    x86_aadd32_legacy_address32,                     // llvm.x86.aadd32.legacy.address32
     x86_aadd64,                                      // llvm.x86.aadd64
     x86_aadd64_address,                              // llvm.x86.aadd64.address
+    x86_aadd64_legacy_address,                       // llvm.x86.aadd64.legacy.address
     x86_aand32,                                      // llvm.x86.aand32
     x86_aand32_address,                              // llvm.x86.aand32.address
+    x86_aand32_legacy_address,                       // llvm.x86.aand32.legacy.address
+    x86_aand32_legacy_address32,                     // llvm.x86.aand32.legacy.address32
     x86_aand64,                                      // llvm.x86.aand64
     x86_aand64_address,                              // llvm.x86.aand64.address
+    x86_aand64_legacy_address,                       // llvm.x86.aand64.legacy.address
     x86_addcarry_32,                                 // llvm.x86.addcarry.32
     x86_addcarry_64,                                 // llvm.x86.addcarry.64
     x86_aesdec128kl,                                 // llvm.x86.aesdec128kl
@@ -78,8 +84,11 @@ enum X86Intrinsics : unsigned {
     x86_aesni_aeskeygenassist,                       // llvm.x86.aesni.aeskeygenassist
     x86_aor32,                                       // llvm.x86.aor32
     x86_aor32_address,                               // llvm.x86.aor32.address
+    x86_aor32_legacy_address,                        // llvm.x86.aor32.legacy.address
+    x86_aor32_legacy_address32,                      // llvm.x86.aor32.legacy.address32
     x86_aor64,                                       // llvm.x86.aor64
     x86_aor64_address,                               // llvm.x86.aor64.address
+    x86_aor64_legacy_address,                        // llvm.x86.aor64.legacy.address
     x86_atomic_add_cc,                               // llvm.x86.atomic.add.cc
     x86_atomic_and_cc,                               // llvm.x86.atomic.and.cc
     x86_atomic_btc,                                  // llvm.x86.atomic.btc
@@ -1003,8 +1012,11 @@ enum X86Intrinsics : unsigned {
     x86_avx512fp16_vfmaddsub_ph_512,                 // llvm.x86.avx512fp16.vfmaddsub.ph.512
     x86_axor32,                                      // llvm.x86.axor32
     x86_axor32_address,                              // llvm.x86.axor32.address
+    x86_axor32_legacy_address,                       // llvm.x86.axor32.legacy.address
+    x86_axor32_legacy_address32,                     // llvm.x86.axor32.legacy.address32
     x86_axor64,                                      // llvm.x86.axor64
     x86_axor64_address,                              // llvm.x86.axor64.address
+    x86_axor64_legacy_address,                       // llvm.x86.axor64.legacy.address
     x86_bmi_bextr_32,                                // llvm.x86.bmi.bextr.32
     x86_bmi_bextr_64,                                // llvm.x86.bmi.bextr.64
     x86_bmi_bzhi_32,                                 // llvm.x86.bmi.bzhi.32
@@ -1041,8 +1053,10 @@ enum X86Intrinsics : unsigned {
     x86_clzero,                                      // llvm.x86.clzero
     x86_cmpccxadd32,                                 // llvm.x86.cmpccxadd32
     x86_cmpccxadd32_address,                         // llvm.x86.cmpccxadd32.address
+    x86_cmpccxadd32_legacy_address,                  // llvm.x86.cmpccxadd32.legacy.address
     x86_cmpccxadd64,                                 // llvm.x86.cmpccxadd64
     x86_cmpccxadd64_address,                         // llvm.x86.cmpccxadd64.address
+    x86_cmpccxadd64_legacy_address,                  // llvm.x86.cmpccxadd64.legacy.address
     x86_cpuidex,                                     // llvm.x86.cpuidex
     x86_directstore32,                               // llvm.x86.directstore32
     x86_directstore64,                               // llvm.x86.directstore64

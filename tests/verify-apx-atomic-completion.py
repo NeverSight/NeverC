@@ -78,11 +78,11 @@ def cases():
     return result
 
 
-def source(matrix, ir):
+def source(matrix, ir, legacy=False):
     declarations, functions = set(), []
     for index, (op, bits, address, segment, cc, variant) in enumerate(matrix):
         compare = op == "cmpccxadd"
-        word, api = f"i{bits}", f"llvm.x86.{op}{bits}.address"
+        word, api = f"i{bits}", f"llvm.x86.{op}{bits}{'.legacy' if legacy else ''}.address"
         ty = word if compare else "void"
         count = 2 if variant == "twice" else 1
         if ir:
@@ -122,7 +122,7 @@ def source(matrix, ir):
             terms = ["address", "compare", "add", "condition", "*ordinary"]
             for call in range(count):
                 body.append((f"{word} old{call} = " if compare else "") +
-                            f"__builtin_ia32_{op}{bits}_address({', '.join(args)});")
+                            f"__builtin_ia32_{op}{bits}{'_legacy' if legacy else ''}_address({', '.join(args)});")
                 if compare and variant != "dead":
                     terms.append(f"(unsigned long long)old{call}")
             body.append("return " + " ^ ".join(terms) + ";")
@@ -130,15 +130,23 @@ def source(matrix, ir):
     return "\n".join(sorted(declarations)) + "\n" + "\n".join(functions) + "\n"
 
 
-def decode(code, stop_at_return=False):
-    """Read APX memory encodings independently of the producer's decoder."""
-    cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+def decode(code, stop_at_return=False, mode64=True):
+    """Read atomic memory encodings independently of the producer's decoder."""
+    cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64 if mode64 else capstone.CS_MODE_32)
+    rex_prefixes = tuple(range(0x40, 0x50)) if mode64 else ()
     result, at = {}, 0
     while at < len(code):
-        start, segment, address = at, 0, 64
-        while at < len(code) and code[at] in SEGMENTS[1:] + (0x67,):
-            if code[at] == 0x67:
-                address = 32
+        start, segment, address, mandatory, rex = at, 0, 64 if mode64 else 32, 0, 0
+        while at < len(code) and code[at] in SEGMENTS[1:] + (0x67, 0x66, 0xf2, 0xf3) + rex_prefixes:
+            if code[at] in rex_prefixes:
+                rex = code[at]
+                at += 1
+                continue
+            rex = 0
+            if code[at] in (0x66, 0xf2, 0xf3):
+                mandatory = code[at]
+            elif code[at] == 0x67:
+                address = 32 if mode64 else 16
             else:
                 segment = code[at]
             at += 1
@@ -148,6 +156,7 @@ def decode(code, stop_at_return=False):
             compare = opmap == 2 and pp == 1 and 0xe0 <= opcode <= 0xef
             rao = opmap == 4 and opcode == 0xfc
             if compare or rao:
+                assert mode64, "APX atomic encoding requires long mode"
                 assert (p2 & 0xf7) == 0 and modrm >> 6 != 3
                 if rao:
                     assert p2 == 8 and p1 & 0x78 == 0x78
@@ -161,9 +170,34 @@ def decode(code, stop_at_return=False):
                 result[start] = dict(op=name, bits=64 if p1 & 0x80 else 32,
                                      address=address, segment=segment,
                                      cc=opcode - 0xe0 if compare else 0,
-                                     compare=register, add=add, base=base, end=at + 6)
+                                     compare=register, add=add, base=base, end=at + 6, legacy=False)
                 at += 6
                 continue
+        is_vex = at + 5 <= len(code) and code[at] == 0xc4 and code[at + 1] & 31 == 2 and 0xe0 <= code[at + 3] <= 0xef
+        is_rao = at + 4 <= len(code) and code[at:at + 3] == b"\x0f\x38\xfc"
+        if is_vex or is_rao:
+            if is_vex:
+                assert mode64, "VEX CMPccXADD requires long mode"
+                p0, p1, opcode, modrm = code[at + 1:at + 5]
+                assert p1 & 7 == 1 and not mandatory and not rex
+                register = ((modrm >> 3) & 7) | ((~p0 & 0x80) >> 4)
+                add = (~p1 & 0x78) >> 3
+                base = (modrm & 7) | ((~p0 & 0x20) >> 2)
+                bits, cc, end, name = 64 if p1 & 0x80 else 32, opcode - 0xe0, at + 5, "cmpccxadd"
+            else:
+                modrm = code[at + 3]
+                register = ((modrm >> 3) & 7) | ((rex & 4) << 1)
+                add, base = register, (modrm & 7) | ((rex & 1) << 3)
+                bits, cc, end = 64 if rex & 8 else 32, 0, at + 4
+                name = {0: "aadd", 0x66: "aand", 0xf2: "aor", 0xf3: "axor"}[mandatory]
+                if address == 16:
+                    assert modrm & 7 == 7, "addr16 native carrier must be BX"
+                    base = 3
+            assert modrm >> 6 == 0 and base == 3, (start, modrm, base)
+            result[start] = dict(op=name, bits=bits, address=address, segment=segment,
+                                 cc=cc, compare=register, add=add, base=base, end=end, legacy=True)
+            at = end
+            continue
         instruction = next(cs.disasm(code[start:], start, count=1), None)
         assert instruction is not None, (start, code[start:start + 16].hex())
         at = start + instruction.size
@@ -225,7 +259,7 @@ def condition(cc, flags):
     return bool(base ^ (cc & 1))
 
 
-def qualify(obj, matrix, windows):
+def qualify(obj, matrix, windows, legacy=False):
     binary = lief.parse(str(obj))
     text = text_section(binary)
     code = bytes(text.content)
@@ -242,6 +276,7 @@ def qualify(obj, matrix, windows):
         for offset, insn in decode(code[start:end], stop_at_return=True).items():
             native[start + offset] = {**insn, "end": start + insn["end"]}
     assert len(native) == sum(2 if c[-1] == "twice" else 1 for c in matrix)
+    assert all(i["legacy"] == legacy for i in native.values()), "native encoding family changed"
     patched = bytearray(code)
     for offset, insn in native.items():
         patched[offset:insn["end"]] = b"\x90" * (insn["end"] - offset)
@@ -338,6 +373,7 @@ def main():
     group.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
     parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--legacy", action="store_true", help="qualify exact legacy RAO/VEX CMPccXADD")
     args = parser.parse_args()
     for name in ("compiler", "llc", "backend_llc"):
         if getattr(args, name):
@@ -353,9 +389,9 @@ def main():
             stem = directory / f"{opt}-{TRIPLES.index(triple)}"
             src, ir, obj = (stem.with_suffix(suffix) for suffix in (".c", ".ll", ".o"))
             if args.llc:
-                ir.write_text(source(matrix, True))
+                ir.write_text(source(matrix, True, args.legacy))
             else:
-                src.write_text(source(matrix, False))
+                src.write_text(source(matrix, False, args.legacy))
                 # Match standalone assembler relaxation at O0 as well as O2.
                 command = [args.compiler, "--target=" + triple, "-" + opt,
                            "-mno-relax-all", "-fno-function-sections",
@@ -377,10 +413,10 @@ def main():
             roundtrips = assembly_roundtrips(command, obj, triple, args.compiler, backend)
             result = {"optimization": opt, "triple": triple,
                       "assembly_roundtrips": roundtrips,
-                      **qualify(obj, matrix, "windows" in triple)}
+                      **qualify(obj, matrix, "windows" in triple, args.legacy)}
             results.append(result)
             print(result, flush=True)
-        report = {"results": results, "physical_atomicity_qualified": False}
+        report = {"legacy_encoding": args.legacy, "results": results, "physical_atomicity_qualified": False}
         (directory / "qualification.json").write_text(json.dumps(report, indent=2) + "\n")
 
 

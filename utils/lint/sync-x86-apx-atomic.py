@@ -22,6 +22,8 @@ NATIVE = tuple((op + str(bits) + "mr_EVEX", op + str(bits) + "mr", None, op.lowe
                for op in ("AADD", "AAND", "AOR", "AXOR") for bits in (32, 64))
 PSEUDOS = tuple((f"APX_{op}_NATIVE{bits}", f"CMPCCXADDmr{bits}_EVEX" if op == "CMPCCXADD" else "WRITE_SYSREG64", None, None)
                for op in ("RAO", "CMPCCXADD") for bits in (32, 64))
+PSEUDOS += tuple((f"LEGACY_{op}_NATIVE{bits}", f"CMPCCXADDmr{bits}" if op == "CMPCCXADD" else "WRITE_SYSREG64", None, None)
+                 for op in ("RAO", "CMPCCXADD") for bits in (32, 64))
 INSTRUCTIONS = NATIVE + PSEUDOS
 
 
@@ -37,14 +39,16 @@ def synchronize_table(text):
     for name, prototype, _, _ in PSEUDOS:
         compare = "CMPCCXADD" in name
         bits = name[-2:]
-        kinds = (f"GR{bits}", f"GR{bits}", f"i{bits}mem", f"GR{bits}", "i32imm") if compare else ("i32imm", f"i{bits}mem", f"GR{bits}")
-        text, operand_offset, offsets[name] = MPX.operands(text, kinds)
+        legacy = name.startswith("LEGACY_")
+        register = f"GR{bits}" + ("_NOREX2" if legacy else "")
+        kinds = (register, register, f"i{bits}mem", register, "i32imm") if compare else ("i32imm", f"i{bits}mem", register)
+        text, operand_offset, offsets[name] = MPX.operands(text, kinds, {1: 0} if legacy and compare else None)
         fields = TABLES.descriptor(text, prototype)
         fields[1:4] = [str(9 if compare else 7), str(int(compare)), "0"]
         fields[4] = TABLES.descriptor(text, "CMPCCXADDmr32_EVEX")[4]
         fields[5:8] = ["0", str(int(compare)), "X86ImpOpBase + 0"]
         # CMP has the native operand sequence, including its tied input 1.
-        if not compare:
+        if not compare or legacy:
             fields[8] = str(operand_offset)
         fields[9] = "0" + "".join(f"|(1ULL<<MCID::{flag})" for flag in
                                   ("Pseudo", "UnmodeledSideEffects", "MayLoad", "MayStore")) + ", 0x0ULL"

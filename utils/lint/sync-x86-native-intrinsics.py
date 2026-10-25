@@ -106,6 +106,13 @@ for bits in (32, 64):
         ADDRESS_SIGNATURES[f"{operation}{bits}_address"] = (("Done", "I64", word, "I32", "I32"), (2, 3))
     ADDRESS_SIGNATURES[f"cmpccxadd{bits}_address"] = ((word, "I64", word, word, "I32", "I32", "I32"), (3, 4, 5))
 
+# Exact legacy/VEX transactions; 32-bit code mode has a natural-width offset.
+for bits in (32, 64):
+    for operation in ("aadd", "aand", "aor", "axor", "cmpccxadd"):
+        ADDRESS_SIGNATURES[f"{operation}{bits}_legacy_address"] = ADDRESS_SIGNATURES[f"{operation}{bits}_address"]
+for operation in ("aadd", "aand", "aor", "axor"):
+    ADDRESS_SIGNATURES[f"{operation}32_legacy_address32"] = (("Done", "I32", "I32", "I32", "I32"), (2, 3))
+
 # Native compact-memory vector carriers preserve all six opcode families.
 for bits in (128, 256, 512):
     vector = (f"V{bits // 32}", "I32")

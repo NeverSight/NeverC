@@ -14,7 +14,10 @@ namespace llvm::X86 {
 inline constexpr unsigned APXAtomicConditionCount = 16;
 inline constexpr unsigned APXRaoOperationCount = 4;
 inline constexpr unsigned APXAtomicAddress32 = 1 << 4;
+inline constexpr unsigned AtomicAddress16 = 1 << 5;
 inline constexpr unsigned APXAtomicDescriptorMask = 31;
+inline constexpr unsigned LegacyAtomicDescriptorMask =
+    APXAtomicDescriptorMask | AtomicAddress16;
 } // namespace llvm::X86
 
 #endif // LLVM_IR_X86APXATOMICNATIVE_H

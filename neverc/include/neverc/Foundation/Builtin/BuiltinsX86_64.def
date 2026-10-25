@@ -281,6 +281,18 @@ BUILTIN(__builtin_ia32_axor64_address, "vULLiULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_cmpccxadd32_address, "UiULLiUiUiIUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_cmpccxadd64_address, "ULLiULLiULLiULLiIUiIUiIUi", "n")
 
+// Legacy RAO-INT and VEX CMPccXADD keep their original feature topology.
+BUILTIN(__builtin_ia32_aadd32_legacy_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aadd64_legacy_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aand32_legacy_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aand64_legacy_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aor32_legacy_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_aor64_legacy_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_axor32_legacy_address, "vULLiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_axor64_legacy_address, "vULLiULLiIUiIUi", "n")
+BUILTIN(__builtin_ia32_cmpccxadd32_legacy_address, "UiULLiUiUiIUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_cmpccxadd64_legacy_address, "ULLiULLiULLiULLiIUiIUiIUi", "n")
+
 BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
 BUILTIN(__builtin_ia32_bndcl_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcu_reg, "vIUiULLi", "n")

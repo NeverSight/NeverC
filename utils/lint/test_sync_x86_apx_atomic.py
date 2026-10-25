@@ -31,7 +31,7 @@ class APXAtomicTablesTest(unittest.TestCase):
         for name, value in (("AADD32mr", 351), ("CMPCCXADDmr32_EVEX", 1085),
                             ("ENCLU_STATE64", 18554), ("GETSEC_STATE64", 18555)):
             self.assertEqual(ids[name], value)
-        self.assertEqual(len({ids[n] for n, *_ in APX.INSTRUCTIONS}), 12)
+        self.assertEqual(len({ids[n] for n, *_ in APX.INSTRUCTIONS}), 16)
         self.assertTrue(all(ids[n] > 18555 for n, *_ in APX.INSTRUCTIONS))
 
     def test_atomic_transactions_have_both_memory_effects(self):
@@ -39,17 +39,25 @@ class APXAtomicTablesTest(unittest.TestCase):
             fields = APX.TABLES.descriptor(self.text, name)
             for flag in ("MayLoad", "MayStore"):
                 self.assertIn("MCID::" + flag, fields[9])
-            if name.startswith("APX_"):
+            if name.startswith(("APX_", "LEGACY_")):
                 self.assertIn("MCID::UnmodeledSideEffects", fields[9])
                 compare = "CMPCC" in name
                 self.assertEqual(fields[5:7], ["0", str(int(compare))])
-                if compare:
+                if compare and name.startswith("APX_"):
                     native = APX.TABLES.descriptor(self.text, prototype)
                     self.assertEqual(fields[8], native[8], "comparison input must remain tied to result")
             else:
                 flags = int(fields[9].split(", ")[1].removesuffix("ULL"), 16)
                 self.assertEqual((flags >> 29) & 3, 3)
                 self.assertEqual((flags >> 13) & 15, 8)
+
+    def test_legacy_pseudos_keep_low_register_classes_and_compare_ties(self):
+        for op in ("RAO", "CMPCCXADD"):
+            for bits in (32, 64):
+                fields = APX.TABLES.descriptor(self.text, f"LEGACY_{op}_NATIVE{bits}")
+                record = re.search(r"/\* " + fields[8] + r" \*/[^\n]+", self.text).group(0)
+                self.assertEqual(record.count(f"GR{bits}_NOREX2RegClassID"), 3 if op == "CMPCCXADD" else 1)
+                self.assertEqual(record.count("MCOI_TIED_TO(0)"), int(op == "CMPCCXADD"))
 
     def test_mutated_effect_is_rejected(self):
         corrupted = re.sub(r"\|\(1ULL<<MCID::MayLoad\)(?=\|\(1ULL<<MCID::MayStore\), 0x0ULL \},  // Inst #\d+ = APX_RAO_NATIVE32)", "", self.text)

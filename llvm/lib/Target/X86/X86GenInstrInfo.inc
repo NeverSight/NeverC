@@ -18580,7 +18580,11 @@ namespace X86 {
     APX_RAO_NATIVE64	= 18565,
     APX_CMPCCXADD_NATIVE32	= 18566,
     APX_CMPCCXADD_NATIVE64	= 18567,
-    INSTRUCTION_LIST_END = 18568
+    LEGACY_RAO_NATIVE32	= 18568,
+    LEGACY_RAO_NATIVE64	= 18569,
+    LEGACY_CMPCCXADD_NATIVE32	= 18570,
+    LEGACY_CMPCCXADD_NATIVE64	= 18571,
+    INSTRUCTION_LIST_END = 18572
   };
 
 } // end namespace X86
@@ -20971,9 +20975,9 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18568];
+  MCInstrDesc Insts[18572];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
-  MCOperandInfo OperandInfo[5485];
+  MCOperandInfo OperandInfo[5517];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
   MCPhysReg ImplicitOps[751];
 };
@@ -20990,6 +20994,10 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18571,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	5508,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18571 = LEGACY_CMPCCXADD_NATIVE64
+    { 18570,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	5499,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18570 = LEGACY_CMPCCXADD_NATIVE32
+    { 18569,	7,	0,	0,	73,	0,	0,	X86ImpOpBase + 0,	5492,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18569 = LEGACY_RAO_NATIVE64
+    { 18568,	7,	0,	0,	73,	0,	0,	X86ImpOpBase + 0,	5485,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18568 = LEGACY_RAO_NATIVE32
     { 18567,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	674,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18567 = APX_CMPCCXADD_NATIVE64
     { 18566,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	665,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18566 = APX_CMPCCXADD_NATIVE32
     { 18565,	7,	0,	0,	73,	0,	0,	X86ImpOpBase + 0,	5460,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18565 = APX_RAO_NATIVE64
@@ -40677,6 +40685,10 @@ extern const X86InstrTable X86Descs = {
     /* 5460 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
     /* 5467 */ { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
     /* 5476 */ { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
+    /* 5485 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5492 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5499 */ { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
+    /* 5508 */ { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
   }, {
     /* 0 */
     /* 0 */ X86::EFLAGS,
@@ -58503,6 +58515,10 @@ extern const char X86InstrNameData[] = {
   /* 260047 */ "APX_RAO_NATIVE64\0"
   /* 260064 */ "APX_CMPCCXADD_NATIVE32\0"
   /* 260087 */ "APX_CMPCCXADD_NATIVE64\0"
+  /* 260110 */ "LEGACY_RAO_NATIVE32\0"
+  /* 260130 */ "LEGACY_RAO_NATIVE64\0"
+  /* 260150 */ "LEGACY_CMPCCXADD_NATIVE32\0"
+  /* 260176 */ "LEGACY_CMPCCXADD_NATIVE64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60935,10 +60951,14 @@ extern const unsigned X86InstrNameIndices[] = {
     260047U,
     260064U,
     260087U,
+    260110U,
+    260130U,
+    260150U,
+    260176U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18568);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18572);
 }
 
 } // end namespace llvm
@@ -60998,7 +61018,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18568);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18572);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98360,6 +98380,14 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64487,
     /* APX_CMPCCXADD_NATIVE64 */
     64492,
+    /* LEGACY_RAO_NATIVE32 */
+    64497,
+    /* LEGACY_RAO_NATIVE64 */
+    64500,
+    /* LEGACY_CMPCCXADD_NATIVE32 */
+    64503,
+    /* LEGACY_CMPCCXADD_NATIVE64 */
+    64508,
   };
 
   using namespace OpTypes;
@@ -135038,6 +135066,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     i32imm, i64mem, GR64,
     GR32, GR32, i32mem, GR32, i32imm,
     GR64, GR64, i64mem, GR64, i32imm,
+    i32imm, i32mem, GR32_NOREX2,
+    i32imm, i64mem, GR64_NOREX2,
+    GR32_NOREX2, GR32_NOREX2, i32mem, GR32_NOREX2, i32imm,
+    GR64_NOREX2, GR64_NOREX2, i64mem, GR64_NOREX2, i32imm,
 };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -153789,9 +153821,13 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // APX_RAO_NATIVE64 = 18565
     CEFBS_In64BitMode, // APX_CMPCCXADD_NATIVE32 = 18566
     CEFBS_In64BitMode, // APX_CMPCCXADD_NATIVE64 = 18567
+    CEFBS_In64BitMode, // LEGACY_RAO_NATIVE32 = 18568
+    CEFBS_In64BitMode, // LEGACY_RAO_NATIVE64 = 18569
+    CEFBS_In64BitMode, // LEGACY_CMPCCXADD_NATIVE32 = 18570
+    CEFBS_In64BitMode, // LEGACY_CMPCCXADD_NATIVE64 = 18571
   };
 
-  assert(Opcode < 18568);
+  assert(Opcode < 18572);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

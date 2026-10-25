@@ -400,19 +400,33 @@ static void lowerNativeAddressOverride(MCInst &Inst, unsigned Opcode,
 }
 
 static void lowerAPXAtomicNative(MCInst &Inst) {
+  const bool Legacy = Inst.getOpcode() == X86::LEGACY_RAO_NATIVE32 ||
+                      Inst.getOpcode() == X86::LEGACY_RAO_NATIVE64 ||
+                      Inst.getOpcode() == X86::LEGACY_CMPCCXADD_NATIVE32 ||
+                      Inst.getOpcode() == X86::LEGACY_CMPCCXADD_NATIVE64;
   const bool Compare = Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE32 ||
-                       Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE64;
+                       Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE64 ||
+                       Inst.getOpcode() == X86::LEGACY_CMPCCXADD_NATIVE32 ||
+                       Inst.getOpcode() == X86::LEGACY_CMPCCXADD_NATIVE64;
   const bool Wide = Inst.getOpcode() == X86::APX_CMPCCXADD_NATIVE64 ||
-                    Inst.getOpcode() == X86::APX_RAO_NATIVE64;
+                    Inst.getOpcode() == X86::APX_RAO_NATIVE64 ||
+                    Inst.getOpcode() == X86::LEGACY_CMPCCXADD_NATIVE64 ||
+                    Inst.getOpcode() == X86::LEGACY_RAO_NATIVE64;
   const uint64_t D = Inst.getOperand(Compare ? 8 : 0).getImm();
   const unsigned Kind = D & (X86::APXAtomicConditionCount - 1);
-  if ((D & ~uint64_t(X86::APXAtomicDescriptorMask)) ||
-      (!Compare && Kind >= X86::APXRaoOperationCount))
+  if ((D & ~uint64_t(Legacy ? X86::LegacyAtomicDescriptorMask
+                            : X86::APXAtomicDescriptorMask)) ||
+      (!Compare && Kind >= X86::APXRaoOperationCount) ||
+      ((D & X86::AtomicAddress16) &&
+       (Compare || Wide || (D & X86::APXAtomicAddress32))))
     report_fatal_error("invalid APX atomic machine descriptor");
   MCInst Native;
-  Native.setFlags(Inst.getFlags() | X86::IP_USE_EVEX);
+  Native.setFlags(Inst.getFlags() | (Legacy ? (Compare ? X86::IP_USE_VEX : 0)
+                                            : X86::IP_USE_EVEX));
   if (Compare) {
-    Native.setOpcode(Wide ? X86::CMPCCXADDmr64_EVEX : X86::CMPCCXADDmr32_EVEX);
+    Native.setOpcode(
+        Legacy ? (Wide ? X86::CMPCCXADDmr64 : X86::CMPCCXADDmr32)
+               : (Wide ? X86::CMPCCXADDmr64_EVEX : X86::CMPCCXADDmr32_EVEX));
     for (unsigned I = 0; I != 8; ++I)
       Native.addOperand(Inst.getOperand(I));
     Native.addOperand(MCOperand::createImm(Kind));
@@ -422,12 +436,18 @@ static void lowerAPXAtomicNative(MCInst &Inst) {
         {X86::AAND32mr_EVEX, X86::AAND64mr_EVEX},
         {X86::AOR32mr_EVEX, X86::AOR64mr_EVEX},
         {X86::AXOR32mr_EVEX, X86::AXOR64mr_EVEX}};
-    Native.setOpcode(Opcodes[Kind][Wide]);
+    constexpr unsigned LegacyOpcodes[][2] = {{X86::AADD32mr, X86::AADD64mr},
+                                             {X86::AAND32mr, X86::AAND64mr},
+                                             {X86::AOR32mr, X86::AOR64mr},
+                                             {X86::AXOR32mr, X86::AXOR64mr}};
+    Native.setOpcode(Legacy ? LegacyOpcodes[Kind][Wide] : Opcodes[Kind][Wide]);
     for (unsigned I = 1; I != 7; ++I)
       Native.addOperand(Inst.getOperand(I));
   }
   if (D & X86::APXAtomicAddress32)
     lowerNativeAddressOverride(Native, Native.getOpcode(), Compare ? 2 : 0, 32);
+  if (D & X86::AtomicAddress16)
+    lowerNativeAddressOverride(Native, Native.getOpcode(), 0, 16);
   Inst = Native;
 }
 
@@ -614,6 +634,10 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
 
   // Handle a few special cases to eliminate operand modifiers.
   switch (OutMI.getOpcode()) {
+  case X86::LEGACY_RAO_NATIVE32:
+  case X86::LEGACY_RAO_NATIVE64:
+  case X86::LEGACY_CMPCCXADD_NATIVE32:
+  case X86::LEGACY_CMPCCXADD_NATIVE64:
   case X86::APX_RAO_NATIVE32:
   case X86::APX_RAO_NATIVE64:
   case X86::APX_CMPCCXADD_NATIVE32:

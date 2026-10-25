@@ -551,6 +551,28 @@ trips preserve every effective instruction's bytes and address; alignment
 NOP encodings can differ. Controlled completions do not establish physical
 atomicity, coherence or hardware fault behavior.
 
+The additional `__NEVERC_X86_LEGACY_ATOMIC__` capability is 1 on x86-64.
+The ten `__builtin_ia32_{aadd,aand,aor,axor,cmpccxadd}{32,64}_legacy_address`
+builtins have the same operand and control contracts as the APX forms, but
+emit `llvm.x86.<operation><width>.legacy.address`. They retain legacy RAO
+or VEX CMPccXADD encoding even when APX register allocation is enabled.
+The machine pseudos restrict their data operands to the low sixteen GPRs;
+CMPccXADD's comparator is tied to its result. The ordinary RAO/VEX opcodes
+already exist in the embedded backend, so no duplicate encoding tables are
+introduced. Existing opcode identities remain stable.
+
+The embedded intrinsic metadata and lowering also share the full fork's four
+`llvm.x86.{aadd,aand,aor,axor}32.legacy.address32` interfaces for i386 IR.
+These use an i32 offset and constant address width 16 or 32. NeverC's C
+frontend remains x86-64-only; these i386 IR declarations are not frontend
+builtins. Code mode, data width and address width are separate contracts.
+
+Pass `--legacy` to the completion oracle for the legacy/VEX matrix. Each
+compiler route covers 10,080 functions and 120,960 controlled completions
+across O0/O2 and ELF/COFF/Mach-O, plus twelve assembly round trips. The
+legacy encoding check is independent of the producer's instruction decoder;
+the existing APX matrix remains available without the option.
+
 The older pointer-taking RAO-INT/CMPccXADD, bit-test and conditional-arithmetic
 intrinsics no longer infer address alignment from their integer bit widths.
 Their backend memory descriptors retain byte alignment and volatile read/write

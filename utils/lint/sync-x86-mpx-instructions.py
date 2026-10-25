@@ -41,16 +41,17 @@ INSTRUCTIONS = tuple((name, prototype, None, re.match(r"[A-Z]+", name).group(0).
                      for name, prototype, encoding, _, _, _ in SCHEMA)
 
 
-def operands(text, kinds):
+def operands(text, kinds, ties=None):
     memory = re.search(r"/\* 209 \*/ ([^\n]+)", text).group(1).strip()
     values = []
-    for kind in kinds:
+    for index, kind in enumerate(kinds):
         if kind.endswith("mem"):
             values.append(memory)
         elif kind == "i32imm":
             values.append("{ -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },")
         else:
-            values.append("{ X86::" + kind + "RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },")
+            tie = f"MCOI_TIED_TO({ties[index]})" if ties and index in ties else "0"
+            values.append("{ X86::" + kind + "RegClassID, 0, MCOI::OPERAND_REGISTER, " + tie + " },")
     info = " ".join(values)
     existing = re.search(r"/\* (\d+) \*/ " + re.escape(info), text)
     if existing:

@@ -26890,12 +26890,29 @@ static SDValue lowerFourSourceNative(SDValue Op, const X86Subtarget &Subtarget,
 // denotes an offset, not an LLVM pointer in the default address space. Its
 // native instruction owns segment addition, the atomic transaction and faults.
 static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
-                                   SelectionDAG &DAG) {
-  if (!Subtarget.is64Bit())
-    report_fatal_error("APX atomic intrinsic requires 64-bit mode");
+                                    SelectionDAG &DAG) {
   const unsigned ID = Op.getConstantOperandVal(1);
+  const bool I386 = ID == Intrinsic::x86_aadd32_legacy_address32 ||
+                    ID == Intrinsic::x86_aand32_legacy_address32 ||
+                    ID == Intrinsic::x86_aor32_legacy_address32 ||
+                    ID == Intrinsic::x86_axor32_legacy_address32;
+  const bool Legacy = I386 || ID == Intrinsic::x86_aadd32_legacy_address ||
+                      ID == Intrinsic::x86_aadd64_legacy_address ||
+                      ID == Intrinsic::x86_aand32_legacy_address ||
+                      ID == Intrinsic::x86_aand64_legacy_address ||
+                      ID == Intrinsic::x86_aor32_legacy_address ||
+                      ID == Intrinsic::x86_aor64_legacy_address ||
+                      ID == Intrinsic::x86_axor32_legacy_address ||
+                      ID == Intrinsic::x86_axor64_legacy_address ||
+                      ID == Intrinsic::x86_cmpccxadd32_legacy_address ||
+                      ID == Intrinsic::x86_cmpccxadd64_legacy_address;
+  if (I386 ? Subtarget.is64Bit() : !Subtarget.is64Bit())
+    report_fatal_error(I386 ? "legacy RAO address32 requires 32-bit mode"
+                            : "APX atomic intrinsic requires 64-bit mode");
   const bool Compare = ID == Intrinsic::x86_cmpccxadd32_address ||
-                       ID == Intrinsic::x86_cmpccxadd64_address;
+                       ID == Intrinsic::x86_cmpccxadd64_address ||
+                       ID == Intrinsic::x86_cmpccxadd32_legacy_address ||
+                       ID == Intrinsic::x86_cmpccxadd64_legacy_address;
   const unsigned WidthOperand = Compare ? 6 : 4;
   SDValue Chain, Glue;
   auto Address = lowerNativeAddressOperands(Op, Subtarget, 2, DAG, Chain, Glue,
@@ -26912,28 +26929,48 @@ static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
       llvm_unreachable("unexpected APX native atomic intrinsic");
     case Intrinsic::x86_aadd32_address:
     case Intrinsic::x86_aadd64_address:
+    case Intrinsic::x86_aadd32_legacy_address:
+    case Intrinsic::x86_aadd64_legacy_address:
+    case Intrinsic::x86_aadd32_legacy_address32:
       Descriptor = 0;
       break;
     case Intrinsic::x86_aand32_address:
     case Intrinsic::x86_aand64_address:
+    case Intrinsic::x86_aand32_legacy_address:
+    case Intrinsic::x86_aand64_legacy_address:
+    case Intrinsic::x86_aand32_legacy_address32:
       Descriptor = 1;
       break;
     case Intrinsic::x86_aor32_address:
     case Intrinsic::x86_aor64_address:
+    case Intrinsic::x86_aor32_legacy_address:
+    case Intrinsic::x86_aor64_legacy_address:
+    case Intrinsic::x86_aor32_legacy_address32:
       Descriptor = 2;
       break;
     case Intrinsic::x86_axor32_address:
     case Intrinsic::x86_axor64_address:
+    case Intrinsic::x86_axor32_legacy_address:
+    case Intrinsic::x86_axor64_legacy_address:
+    case Intrinsic::x86_axor32_legacy_address32:
       Descriptor = 3;
       break;
     }
   }
   if (Op.getConstantOperandVal(WidthOperand) == 32)
     Descriptor |= X86::APXAtomicAddress32;
+  if (Op.getConstantOperandVal(WidthOperand) == 16)
+    Descriptor |= X86::AtomicAddress16;
   const bool Wide = Op.getOperand(3).getValueType() == MVT::i64;
   const unsigned Opcode =
-      Compare ? (Wide ? X86::APX_CMPCCXADD_NATIVE64 : X86::APX_CMPCCXADD_NATIVE32)
-              : (Wide ? X86::APX_RAO_NATIVE64 : X86::APX_RAO_NATIVE32);
+      Legacy
+          ? (Compare
+                 ? (Wide ? X86::LEGACY_CMPCCXADD_NATIVE64
+                         : X86::LEGACY_CMPCCXADD_NATIVE32)
+                 : (Wide ? X86::LEGACY_RAO_NATIVE64 : X86::LEGACY_RAO_NATIVE32))
+      : Compare
+          ? (Wide ? X86::APX_CMPCCXADD_NATIVE64 : X86::APX_CMPCCXADD_NATIVE32)
+          : (Wide ? X86::APX_RAO_NATIVE64 : X86::APX_RAO_NATIVE32);
   const SDLoc DL(Op);
   SmallVector<SDValue, 10> Operands;
   if (Compare)
@@ -27713,6 +27750,20 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_avx512_vp4dpwssds_native:
       return lowerFourSourceNative(Op, Subtarget, DAG);
 
+    case Intrinsic::x86_aadd32_legacy_address:
+    case Intrinsic::x86_aadd64_legacy_address:
+    case Intrinsic::x86_aand32_legacy_address:
+    case Intrinsic::x86_aand64_legacy_address:
+    case Intrinsic::x86_aor32_legacy_address:
+    case Intrinsic::x86_aor64_legacy_address:
+    case Intrinsic::x86_axor32_legacy_address:
+    case Intrinsic::x86_axor64_legacy_address:
+    case Intrinsic::x86_cmpccxadd32_legacy_address:
+    case Intrinsic::x86_cmpccxadd64_legacy_address:
+    case Intrinsic::x86_aadd32_legacy_address32:
+    case Intrinsic::x86_aand32_legacy_address32:
+    case Intrinsic::x86_aor32_legacy_address32:
+    case Intrinsic::x86_axor32_legacy_address32:
     case Intrinsic::x86_aadd32_address:
     case Intrinsic::x86_aadd64_address:
     case Intrinsic::x86_aand32_address:

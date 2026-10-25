@@ -3935,6 +3935,37 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(
         ME.getIntrinsic(Intrinsic::x86_cmpccxadd64_address), Ops);
 
+  case X86::BI__builtin_ia32_aadd32_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_aadd32_legacy_address), Ops);
+  case X86::BI__builtin_ia32_aadd64_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_aadd64_legacy_address), Ops);
+  case X86::BI__builtin_ia32_aand32_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_aand32_legacy_address), Ops);
+  case X86::BI__builtin_ia32_aand64_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_aand64_legacy_address), Ops);
+  case X86::BI__builtin_ia32_aor32_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_aor32_legacy_address), Ops);
+  case X86::BI__builtin_ia32_aor64_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_aor64_legacy_address), Ops);
+  case X86::BI__builtin_ia32_axor32_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_axor32_legacy_address), Ops);
+  case X86::BI__builtin_ia32_axor64_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_axor64_legacy_address), Ops);
+  case X86::BI__builtin_ia32_cmpccxadd32_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_cmpccxadd32_legacy_address), Ops);
+  case X86::BI__builtin_ia32_cmpccxadd64_legacy_address:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_cmpccxadd64_legacy_address), Ops);
+
   case X86::BI__builtin_ia32_verr_mem_address:
     return Builder.CreateIntrinsic(Int8Ty,
                                    llvm::Intrinsic::x86_verr_mem_address,
