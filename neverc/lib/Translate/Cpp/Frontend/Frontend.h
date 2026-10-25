@@ -1731,6 +1731,62 @@ approvedUtilityPairPiecewiseConstruction(
     const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 
+// Inert shape only. Factory/default, lifecycle, invocation, ordinary callback
+// body and lifetime proofs must complete before any SDK runtime use is granted.
+struct FunctionalBindStorage {
+  const clang::CXXRecordDecl *Record, *WeakResult;
+  const clang::FieldDecl *Callable, *BoundArguments;
+  clang::QualType CallableType;
+  UtilityTupleRecord Arguments;
+  uint64_t CallableOffsetBits, BoundOffsetBits, SizeBytes, AlignmentBytes;
+};
+std::optional<FunctionalBindStorage>
+describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
+                              const clang::CXXRecordDecl *Record,
+                              const clang::ASTContext &Context);
+
+
+// These are descriptions of the original selected source, not operation
+// certificates. The default/trait/alias/partial graph and tuple leaves must
+// close independently before either construction or lowering is permitted.
+struct FunctionalBindFactorySource {
+  FunctionalBindStorage Storage;
+  const clang::CallExpr *SourceCall;
+  const clang::FunctionDecl *Factory;
+  const clang::CXXConstructExpr *Construction;
+  const clang::CXXConstructExpr *WeakBaseConstruction;
+  const clang::Expr *CallableInitializer;
+  const clang::CXXConstructExpr *BoundConstruction;
+  std::vector<const clang::CallExpr *> FactoryForwards;
+  const clang::CallExpr *CallableForward;
+  std::vector<const clang::CallExpr *> BoundForwards;
+};
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+struct FunctionalBindArgumentSource {
+  const clang::CallExpr *Get, *Unwrap;
+  const clang::CXXConstructExpr *WrapperCopy;
+  std::optional<FunctionalReferenceAccessCall> Reference;
+  clang::QualType ForwardedType;
+};
+struct FunctionalBindCallSource {
+  FunctionalBindStorage Storage;
+  const clang::CXXOperatorCallExpr *SourceCall;
+  const clang::CXXMethodDecl *Method;
+  const clang::Expr *Object;
+  const clang::CallExpr *Apply, *Invoke, *Target;
+  const clang::CXXConstructExpr *Indices, *EmptyArguments;
+  std::vector<FunctionalBindArgumentSource> Arguments;
+  std::vector<const clang::CallExpr *> InvokeForwards;
+};
+std::optional<FunctionalBindCallSource>
+describeFunctionalBindCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 // These descriptions retain the selected library path. They provide neither
 // runtime permission nor a completed ordinary source/trait certificate.
 struct FunctionalNotFnStorage {

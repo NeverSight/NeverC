@@ -13762,6 +13762,420 @@ public:
 };
 } // namespace
 
+std::optional<FunctionalBindStorage>
+describeFunctionalBindStorage(const State &S, const SourceManager &SM,
+                              const CXXRecordDecl *Record,
+                              const ASTContext &Context) {
+  if (!S.coreV2() || !Record) return std::nullopt;
+  // Reuse only the declaration-family locator. Its mode-specific not_fn
+  // expression, default and exception routines do not prove any bind source.
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Instance = Check.record(Context.getRecordType(Record), "__bind",
+                                       {"__functional/bind.h"});
+  if (!Instance || Instance->getNumBases() != 1 ||
+      std::distance(Instance->field_begin(), Instance->field_end()) != 2 ||
+      !Instance->hasTrivialDestructor()) return std::nullopt;
+  const auto &TemplateArguments = Instance->getTemplateArgs();
+  if (TemplateArguments.size() != 2 ||
+      TemplateArguments[0].getKind() != TemplateArgument::Type ||
+      TemplateArguments[1].getKind() != TemplateArgument::Pack ||
+      TemplateArguments[1].pack_size() < 1 ||
+      TemplateArguments[1].pack_size() > 2) return std::nullopt;
+
+  auto DecayedValue = [&](QualType Type) -> QualType {
+    if (Type.isNull()) return {};
+    Type = Type.getNonReferenceType();
+    if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        Type.getAddressSpace() != LangAS::Default || Type->isDependentType() ||
+        Type->isIncompleteType() || Type->isArrayType()) return {};
+    Type = Type.getUnqualifiedType();
+    return Type->isFunctionType() ? Context.getPointerType(Type) : Type;
+  };
+  auto ScalarValue = [&](QualType Type) {
+    if (Type.isNull() || Type->isReferenceType() || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default ||
+        Type->isDependentType() || Type->isIncompleteType()) return false;
+    Type = Type.getUnqualifiedType();
+    return supportedFunctionalScalar(Type, Context) ||
+           utilityObjectPointer(Context, Type);
+  };
+
+  auto Field = Instance->field_begin();
+  const auto *Callable = *Field++;
+  const auto *Bound = *Field;
+  auto StorageField = [&](const FieldDecl *Value, llvm::StringRef Name) {
+    return Value && Value->getIdentifier() && Value->getName() == Name &&
+           Value->getAccess() == AS_private && !Value->isBitField() &&
+           !Value->isMutable() && !Value->hasAttrs() &&
+           Check.family(Value, {"__functional/bind.h"});
+  };
+  if (!StorageField(Callable, "__f_") ||
+      !StorageField(Bound, "__bound_args_")) return std::nullopt;
+  const auto CallableType = Callable->getType();
+  const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
+  if (CallableType.isNull() || CallableType.hasQualifiers() ||
+      CallableType->isDependentType() || !CallableType->isFunctionPointerType() ||
+      OriginalCallable.isNull() ||
+      !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
+  const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
+      Prototype->getNumParams() != TemplateArguments[1].pack_size())
+    return std::nullopt;
+  const auto Result = Prototype->getReturnType();
+  if (!Result->isVoidType() &&
+      !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
+    return std::nullopt;
+  for (const auto Parameter : Prototype->param_types())
+    if (!ScalarValue(Parameter->isReferenceType()
+                         ? Parameter->getPointeeType() : Parameter))
+      return std::nullopt;
+
+  const auto &Base = *Instance->bases_begin();
+  const auto *Weak = Check.record(Base.getType(), "__weak_result_type",
+                                  {"__functional/weak_result_type.h"});
+  if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public || !Weak ||
+      !Weak->isEmpty() || !Weak->field_empty() || !Weak->hasTrivialDestructor() ||
+      Weak->getTemplateArgs().size() != 1 ||
+      Weak->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Weak->getTemplateArgs()[0].getAsType(), CallableType))
+    return std::nullopt;
+  // A noexcept callback can select the generic weak-result chain. Its
+  // selected partial/default/base sources are independent later obligations.
+  const auto *Tuple = Check.record(Bound->getType(), "tuple",
+                                   {"tuple", "__fwd/tuple.h"});
+  auto Arguments = Tuple ? approvedUtilityTupleRecord(S, SM, Tuple, Context)
+                         : std::nullopt;
+  if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
+    return std::nullopt;
+  unsigned Index = 0;
+  for (const auto &Argument : TemplateArguments[1].pack_elements()) {
+    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    const auto Value = DecayedValue(Argument.getAsType());
+    if (Value.isNull() ||
+        !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
+      return std::nullopt;
+    if (ScalarValue(Value)) continue;
+    const auto Reference = approvedFunctionalReferenceRecord(
+        S, SM, Value->getAsCXXRecordDecl(), Context);
+    if (!Reference || !ScalarValue(Reference->ReferentType)) return std::nullopt;
+  }
+
+  // Retain the real ABI offsets rather than copying reference_wrapper's
+  // one-field layout or assuming the callback begins at byte zero. A tuple's
+  // own structural certificate governs its leaves and selected operations.
+  const auto &Layout = Context.getASTRecordLayout(Instance);
+  const auto CallableOffset = Layout.getFieldOffset(0);
+  const auto BoundOffset = Layout.getFieldOffset(1);
+  const auto Size = uint64_t(Layout.getSize().getQuantity());
+  if (Layout.getBaseClassOffset(Weak).getQuantity() || CallableOffset % 8 ||
+      BoundOffset % 8 ||
+      CallableOffset + Context.getTypeSize(CallableType) > BoundOffset ||
+      BoundOffset + Context.getTypeSize(Bound->getType()) > Size * 8)
+    return std::nullopt;
+  return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
+      std::move(*Arguments), CallableOffset, BoundOffset, Size,
+      uint64_t(Layout.getAlignment().getQuantity())};
+}
+
+
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
+  const auto Storage = describeFunctionalBindStorage(
+      S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  if (!Storage || !Factory || !Factory->getIdentifier() ||
+      Factory->getName() != "bind" || !S.owns(SM, Call->getExprLoc()) ||
+      !Call->isPRValue() || Call->isTypeDependent() || Call->isValueDependent() ||
+      Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
+      Call->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
+      !Context.hasSameType(Call->getType(), Factory->getReturnType()))
+    return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Primary = Factory->getPrimaryTemplate();
+  const auto *Arguments = Factory->getTemplateSpecializationArgs();
+  if (!Primary || !Arguments || Arguments->size() != 2 ||
+      Primary->getTemplateParameters()->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Pack ||
+      Arguments->get(1).pack_size() + 1 != Factory->getNumParams() ||
+      !Check.family(Factory, {"__functional/bind.h"})) return std::nullopt;
+  auto DeducedParameter = [&](unsigned Index) -> QualType {
+    const auto &Argument = Index ? Arguments->get(1).pack_elements()[Index - 1]
+                                 : Arguments->get(0);
+    if (Argument.getKind() != TemplateArgument::Type) return {};
+    const auto Type = Argument.getAsType();
+    return Type->isReferenceType() ? Type : Context.getRValueReferenceType(Type);
+  };
+  for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
+    const auto Expected = DeducedParameter(Index);
+    if (Expected.isNull() ||
+        !Context.hasSameType(Factory->getParamDecl(Index)->getType(), Expected) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
+                                        Expected->getPointeeType()))
+      return std::nullopt;
+  }
+  const auto *Construction = Check.construction(Check.returned(Factory));
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
+                                 : nullptr;
+  if (!Construction || !Constructor || !Body || !Body->body_empty() ||
+      Constructor->isDeleted() || Constructor->isCopyOrMoveConstructor() ||
+      Constructor->isInheritingConstructor() || !Constructor->getPrimaryTemplate() ||
+      Constructor->getAccess() != AS_public || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
+      Constructor->getNumParams() != Factory->getNumParams() ||
+      Construction->getNumArgs() != Factory->getNumParams() ||
+      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+  std::vector<const CallExpr *> FactoryForwards;
+  for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
+    const CallExpr *Forward = nullptr;
+    if (!Check.forwarding(Construction->getArg(Index), Factory->getParamDecl(Index),
+                          "__functional/bind.h", Forward)) return std::nullopt;
+    FactoryForwards.push_back(Forward);
+  }
+  const CXXConstructExpr *WeakConstruction = nullptr, *BoundConstruction = nullptr;
+  const Expr *CallableInitializer = nullptr;
+  for (const auto *Initializer : Constructor->inits()) {
+    if (Initializer->isBaseInitializer()) {
+      const auto *Base = Initializer->getBaseClass()->getAsCXXRecordDecl();
+      const auto *Construct = Check.construction(Initializer->getInit());
+      const auto *Selected = Construct ? Construct->getConstructor() : nullptr;
+      if (WeakConstruction || Initializer->isBaseVirtual() || !Base ||
+          Base->getCanonicalDecl() != Storage->WeakResult->getCanonicalDecl() ||
+          !Construct || Construct->getNumArgs() || !Selected ||
+          !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
+          !Check.family(Selected, {"__functional/weak_result_type.h"}))
+        return std::nullopt;
+      WeakConstruction = Construct;
+    } else if (Initializer->isMemberInitializer() &&
+               Initializer->getMember() == Storage->Callable) {
+      if (CallableInitializer) return std::nullopt;
+      CallableInitializer = Initializer->getInit();
+    } else if (Initializer->isMemberInitializer() &&
+               Initializer->getMember() == Storage->BoundArguments) {
+      if (BoundConstruction) return std::nullopt;
+      BoundConstruction = Check.construction(Initializer->getInit());
+    } else return std::nullopt;
+  }
+  const auto *BoundConstructor = BoundConstruction
+      ? BoundConstruction->getConstructor() : nullptr;
+  if (!WeakConstruction || !CallableInitializer || !BoundConstruction ||
+      !BoundConstructor || Constructor->getNumCtorInitializers() != 3 ||
+      BoundConstruction->getNumArgs() != Storage->Arguments.Elements.size() ||
+      BoundConstructor->getNumParams() != Storage->Arguments.Elements.size() ||
+      BoundConstructor->getParent()->getCanonicalDecl() !=
+          Storage->Arguments.Record->getCanonicalDecl() ||
+      !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
+  const CallExpr *CallableForward = nullptr;
+  const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
+  if (const auto *Decay = dyn_cast_or_null<ImplicitCastExpr>(ForwardedCallable);
+      Decay && Decay->getCastKind() == CK_FunctionToPointerDecay) {
+    // A function designator is retained by reference until all factory
+    // arguments are evaluated. Keep this original cast as a later source
+    // obligation; locate only its exact unchanged forwarding child here.
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (!Parameter->isReferenceType() ||
+        !Parameter->getPointeeType()->isFunctionType() ||
+        !Context.hasSameType(Decay->getSubExpr()->getType(), Parameter->getPointeeType()) ||
+        !Context.hasSameType(Decay->getType(), Storage->CallableType))
+      return std::nullopt;
+    ForwardedCallable = Decay->getSubExpr();
+  }
+  if (!Check.forwarding(ForwardedCallable, Constructor->getParamDecl(0),
+                        "__functional/bind.h", CallableForward)) return std::nullopt;
+  std::vector<const CallExpr *> BoundForwards;
+  for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
+    const CallExpr *Forward = nullptr;
+    if (!Check.forwarding(BoundConstruction->getArg(Index),
+                          Constructor->getParamDecl(Index + 1),
+                          "__functional/bind.h", Forward)) return std::nullopt;
+    BoundForwards.push_back(Forward);
+  }
+  return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
+      WeakConstruction, CallableInitializer, BoundConstruction,
+      std::move(FactoryForwards), CallableForward, std::move(BoundForwards)};
+}
+
+std::optional<FunctionalBindCallSource>
+describeFunctionalBindCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())
+                            : nullptr;
+  if (!Operator || Operator->getOperator() != OO_Call || !Method ||
+      Call->getNumArgs() != 1 || Method->getNumParams() || Method->isStatic() ||
+      Method->isVariadic() || Method->isDeleted() || Method->isVolatile() ||
+      Method->getRefQualifier() != RQ_None || Method->getAccess() != AS_public ||
+      !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Object = Check.stripped(Call->getArg(0));
+  const auto Storage = describeFunctionalBindStorage(
+      S, SM, Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  const auto *MethodArguments = Method->getTemplateSpecializationArgs();
+  if (!Storage || !Object->isGLValue() || !Prototype || Prototype->isNothrow() ||
+      Prototype->getNoexceptExpr() || !Method->getPrimaryTemplate() ||
+      !MethodArguments || MethodArguments->size() != 1 ||
+      MethodArguments->get(0).getKind() != TemplateArgument::Pack ||
+      MethodArguments->get(0).pack_size() ||
+      Method->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
+      Method->isConst() != Object->getType().isConstQualified() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
+      Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
+      !Check.family(Method, {"__functional/bind.h"})) return std::nullopt;
+  const auto *Apply = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Method)));
+  const auto *ApplyFunction = Apply ? Apply->getDirectCallee() : nullptr;
+  if (!Apply || !ApplyFunction || !ApplyFunction->getIdentifier() ||
+      ApplyFunction->getName() != "__apply_functor" || Apply->getNumArgs() != 4 ||
+      ApplyFunction->getNumParams() != 4 || !ApplyFunction->getPrimaryTemplate() ||
+      ApplyFunction->isVariadic() ||
+      !Check.location(Apply->getExprLoc(), {"__functional/bind.h"}) ||
+      !Check.family(ApplyFunction, {"__functional/bind.h"})) return std::nullopt;
+  auto MemberSlot = [&](const Expr *Expression, const FieldDecl *Field,
+                        const ParmVarDecl *Parameter) {
+    const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression));
+    const auto *This = Member
+        ? dyn_cast_or_null<CXXThisExpr>(Check.stripped(Member->getBase())) : nullptr;
+    const auto Value = Method->isConst() ? Context.getConstType(Field->getType())
+                                       : Field->getType();
+    return Member && Member->isArrow() && Member->getMemberDecl() == Field &&
+           This && Context.hasSameType(This->getType(), Method->getThisType()) &&
+           Member->isLValue() && Parameter &&
+           Context.hasSameType(Parameter->getType(), Context.getLValueReferenceType(Value));
+  };
+  if (!MemberSlot(Apply->getArg(0), Storage->Callable, ApplyFunction->getParamDecl(0)) ||
+      !MemberSlot(Apply->getArg(1), Storage->BoundArguments, ApplyFunction->getParamDecl(1)))
+    return std::nullopt;
+  const auto *Indices = Check.construction(Check.core(Apply->getArg(2)));
+  const auto *IndexRecord = Indices ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Indices->getType()->getAsCXXRecordDecl()) : nullptr;
+  const auto *IndexPrimary = IndexRecord ? IndexRecord->getSpecializedTemplate() : nullptr;
+  const auto *IndexPattern = IndexPrimary
+      ? IndexPrimary->getTemplatedDecl()->getDefinition() : nullptr;
+  if (!Indices || Indices->getNumArgs() || !IndexRecord || !IndexPattern ||
+      !IndexRecord->getIdentifier() || IndexRecord->getName() != "__tuple_indices" ||
+      IndexPattern->getNumBases() || !IndexPattern->field_empty() ||
+      !Check.family(IndexRecord, {"__tuple/tuple_indices.h"}) ||
+      !Context.hasSameType(Indices->getType(), ApplyFunction->getParamDecl(2)->getType()))
+    return std::nullopt;
+  const auto &IndexArguments = IndexRecord->getTemplateArgs();
+  if (IndexArguments.size() != 1 || IndexArguments[0].getKind() != TemplateArgument::Pack ||
+      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return std::nullopt;
+  unsigned Index = 0;
+  for (const auto &Argument : IndexArguments[0].pack_elements()) {
+    if (Argument.getKind() != TemplateArgument::Integral ||
+        Argument.getAsIntegral().isNegative() ||
+        Argument.getAsIntegral().getLimitedValue(65) != Index++ ||
+        !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
+      return std::nullopt;
+  }
+  const auto *Empty = Check.construction(Check.core(Apply->getArg(3)));
+  const auto EmptyStorage = Empty ? approvedUtilityTupleRecord(
+      S, SM, Empty->getType()->getAsCXXRecordDecl(), Context) : std::nullopt;
+  if (!Empty || Empty->getNumArgs() || !EmptyStorage || !EmptyStorage->Elements.empty() ||
+      !Context.hasSameType(ApplyFunction->getParamDecl(3)->getType(),
+                           Context.getRValueReferenceType(Empty->getType()))) return std::nullopt;
+  const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(ApplyFunction)));
+  const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
+  if (!Invoke || !InvokeFunction || !InvokeFunction->getIdentifier() ||
+      InvokeFunction->getName() != "__invoke" || !InvokeFunction->getPrimaryTemplate() ||
+      Invoke->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
+      InvokeFunction->getNumParams() != Invoke->getNumArgs() ||
+      !Check.location(Invoke->getExprLoc(), {"__functional/bind.h"}) ||
+      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+  auto ParameterReference = [&](const Expr *Expression, const ParmVarDecl *Parameter) {
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
+    return Reference && Reference->getDecl() == Parameter &&
+        Context.hasSameType(Reference->getType(), Parameter->getType().getNonReferenceType());
+  };
+  if (!ParameterReference(Invoke->getArg(0), ApplyFunction->getParamDecl(0)))
+    return std::nullopt;
+  std::vector<FunctionalBindArgumentSource> Arguments;
+  for (unsigned I = 0; I < Storage->Arguments.Elements.size(); ++I) {
+    const auto Stored = Storage->Arguments.Elements[I].getType();
+    const auto *Unwrap = dyn_cast_or_null<CallExpr>(Check.core(Invoke->getArg(I + 1)));
+    const auto *UnwrapFunction = Unwrap ? Unwrap->getDirectCallee() : nullptr;
+    if (!Unwrap || !UnwrapFunction || !UnwrapFunction->getIdentifier() ||
+        UnwrapFunction->getName() != "__mu" || Unwrap->getNumArgs() != 2 ||
+        UnwrapFunction->getNumParams() != 2 || !UnwrapFunction->getPrimaryTemplate() ||
+        !Check.location(Unwrap->getExprLoc(), {"__functional/bind.h"}) ||
+        !Check.family(UnwrapFunction, {"__functional/bind.h"}) ||
+        !ParameterReference(Unwrap->getArg(1), ApplyFunction->getParamDecl(3)))
+      return std::nullopt;
+    const auto Wrapper = approvedFunctionalReferenceRecord(
+        S, SM, Stored->getAsCXXRecordDecl(), Context);
+    const auto *Copy = Wrapper ? Check.construction(Check.core(Unwrap->getArg(0))) : nullptr;
+    const Expr *GetExpression = Copy && Copy->getNumArgs() == 1
+        ? Copy->getArg(0) : Unwrap->getArg(0);
+    const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(GetExpression));
+    const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
+    const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
+    const auto Bound = Method->isConst() ? Context.getConstType(Stored) : Stored;
+    if (!Get || !GetFunction || !GetFunction->getIdentifier() || GetFunction->getName() != "get" ||
+        Get->getNumArgs() != 1 || !GetArguments || GetArguments->size() != 2 ||
+        GetArguments->get(0).getKind() != TemplateArgument::Integral ||
+        GetArguments->get(0).getAsIntegral().isNegative() ||
+        GetArguments->get(0).getAsIntegral().getLimitedValue(65) != I ||
+        GetArguments->get(1).getKind() != TemplateArgument::Pack ||
+        GetArguments->get(1).pack_size() != Storage->Arguments.Elements.size() ||
+        !Context.hasSameType(GetFunction->getReturnType(), Context.getLValueReferenceType(Bound)) ||
+        !ParameterReference(Get->getArg(0), ApplyFunction->getParamDecl(1)) ||
+        !Check.family(GetFunction, {"tuple"})) return std::nullopt;
+    unsigned ArgumentIndex = 0;
+    for (const auto &Argument : GetArguments->get(1).pack_elements()) {
+      if (Argument.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Argument.getAsType(),
+              Storage->Arguments.Elements[ArgumentIndex++].getType())) return std::nullopt;
+    }
+    std::optional<FunctionalReferenceAccessCall> Access;
+    QualType Forwarded;
+    if (Wrapper) {
+      const auto *SelectedCopy = Copy ? Copy->getConstructor() : nullptr;
+      const auto *GetReference = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(UnwrapFunction)));
+      Access = approvedFunctionalReferenceAccessCallImpl(S, SM, GetReference, Context, false);
+      if (!Copy || !SelectedCopy || !SelectedCopy->isCopyOrMoveConstructor() ||
+          !SelectedCopy->isTrivial() || SelectedCopy->isDeleted() ||
+          SelectedCopy->getParent()->getCanonicalDecl() != Wrapper->Record->getCanonicalDecl() ||
+          !Access || Access->ObjectIsArrow ||
+          Access->Wrapper.Record->getCanonicalDecl() != Wrapper->Record->getCanonicalDecl() ||
+          !ParameterReference(Access->Object, UnwrapFunction->getParamDecl(0)) ||
+          !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Stored))
+        return std::nullopt;
+      Forwarded = Context.getLValueReferenceType(Wrapper->ReferentType);
+    } else {
+      Forwarded = Context.getLValueReferenceType(Bound);
+      if (Copy || !ParameterReference(Check.returned(UnwrapFunction),
+                                     UnwrapFunction->getParamDecl(0)) ||
+          !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Forwarded))
+        return std::nullopt;
+    }
+    if (!Context.hasSameType(UnwrapFunction->getReturnType(), Forwarded) ||
+        !Context.hasSameType(InvokeFunction->getParamDecl(I + 1)->getType(), Forwarded))
+      return std::nullopt;
+    Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded});
+  }
+  const auto *Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
+  if (!Target || Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
+      !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType) ||
+      !Context.hasSameType(Target->getType(), Method->getReturnType().getNonReferenceType()) ||
+      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return std::nullopt;
+  std::vector<const CallExpr *> Forwards;
+  const CallExpr *Forward = nullptr;
+  if (!Check.forwarding(Target->getCallee(), InvokeFunction->getParamDecl(0),
+                        "__type_traits/invoke.h", Forward)) return std::nullopt;
+  Forwards.push_back(Forward);
+  for (unsigned I = 0; I < Arguments.size(); ++I) {
+    if (!Check.forwarding(Target->getArg(I), InvokeFunction->getParamDecl(I + 1),
+                          "__type_traits/invoke.h", Forward)) return std::nullopt;
+    Forwards.push_back(Forward);
+  }
+  return FunctionalBindCallSource{*Storage, Operator, Method, Object, Apply, Invoke,
+      Target, Indices, Empty, std::move(Arguments), std::move(Forwards)};
+}
+
 std::optional<FunctionalNotFnStorage>
 describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
