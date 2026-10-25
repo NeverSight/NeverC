@@ -28659,6 +28659,40 @@ class FunctionLowering {
         Expression Member{{"kind", "member"}, {"type", type(Source.Storage.CallableType, L)},
             {"name", "nct_not_fn_callable"}, {"args", json::Array{std::move(Object)}},
             {"loc", A.loc(L)}};
+        if (const auto Nested = A.VerifiedNotFnNestedCalls.find(Call);
+            Nested != A.VerifiedNotFnNestedCalls.end()) {
+          const auto &Selected = Nested->second;
+          const auto *Prototype = Selected.Storage.Inner.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+          const auto *OuterNegation = dyn_cast<UnaryOperator>(Selected.OuterRuntime.Negation);
+          const auto *InnerNegation = dyn_cast<UnaryOperator>(Selected.InnerRuntime.Negation);
+          if (Selected.OuterRuntime.SourceCall != Call || Selected.OuterRuntime.Method != Source.Method ||
+              Selected.OuterRuntime.TargetCall != Selected.InnerRuntime.SourceCall ||
+              Selected.Storage.Outer.Record != Source.Storage.Record || !Prototype ||
+              !Prototype->getReturnType()->isArithmeticType() ||
+              Prototype->getNumParams() + 1 != Call->getNumArgs() ||
+              !OuterNegation || OuterNegation->getOpcode() != UO_LNot ||
+              !InnerNegation || InnerNegation->getOpcode() != UO_LNot)
+            reject(L, "nested not_fn invocation", "Both completed exact adapter certificates are required.");
+          // Capture the original receiver address, then each original argument
+          // once. Loading the stored leaf pointer happens only after those
+          // argument effects; neither SDK operator is emitted as an ordinary body.
+          auto InnerAddress = snapshot(address(std::move(Member), Source.Storage.CallableType, L), L);
+          auto Sources = captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
+          Expression LeafMember{{"kind", "member"}, {"type", type(Selected.Storage.Inner.CallableType, L)},
+              {"name", "nct_not_fn_callable"}, {"args", json::Array{dereference(std::move(InnerAddress), L)}},
+              {"loc", A.loc(L)}};
+          auto Callable = snapshot(std::move(LeafMember), L);
+          json::Array Arguments;
+          for (unsigned I = 0; I < Prototype->getNumParams(); ++I)
+            Arguments.push_back(utilityInvocationArgument(std::move(Sources[I]),
+                Source.Method->getParamDecl(I)->getType(), Prototype->getParamType(I), nullptr, L));
+          auto Leaf = emitIndirectCall(std::move(Callable), std::move(Arguments), Prototype->getReturnType(), L);
+          Expression InnerValue{{"kind", "unary"}, {"type", "bool"}, {"operator", "!"},
+              {"args", json::Array{std::move(Leaf)}}, {"loc", A.loc(L)}};
+          return Expression{{"kind", "unary"}, {"type", "bool"}, {"operator", "!"},
+              {"args", json::Array{std::move(InnerValue)}}, {"loc", A.loc(L)}};
+        }
+
         if (const auto Reference = A.VerifiedNotFnReferenceCalls.find(Call);
             Reference != A.VerifiedNotFnReferenceCalls.end()) {
           const auto &Selected = Reference->second;
@@ -32899,7 +32933,8 @@ class FunctionLowering {
     if (!A.S.coreV2() || !R || !R->getDefinition())
       return false;
     if (approvedFunctionalNotFnPointerStorage(A.S, A.Sources, R, A.Context) ||
-        describeFunctionalNotFnReferenceStorage(A.S, A.Sources, R, A.Context))
+        describeFunctionalNotFnReferenceStorage(A.S, A.Sources, R, A.Context) ||
+        describeFunctionalNotFnNestedStorage(A.S, A.Sources, R, A.Context))
       return false; // The exact validated base stores the callable, including reference ABI padding.
     if (R->getDefinition()->field_empty())
       return true;

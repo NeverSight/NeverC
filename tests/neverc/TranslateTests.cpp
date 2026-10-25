@@ -372034,3 +372034,29 @@ int main() {
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
+
+TEST_F(TranslateTest, CoreV2NotFnNestedAdaptersRunAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-nested-adapters.cpp");
+  const auto Output = tmpFile("not-fn-nested-adapters.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int calls;
+int value(int x) { ++calls; return x; }
+int main() {
+  auto f = std::not_fn(std::not_fn(&value));
+  if (f(0) || !f(2) || calls != 2) return 1;
+  auto g = f;
+  if (!g(-3) || calls != 3) return 2;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-nested-adapters" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}

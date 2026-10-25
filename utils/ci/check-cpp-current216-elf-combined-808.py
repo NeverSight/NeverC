@@ -170,7 +170,7 @@ def main():
         assert len(reports) == 1 and sha(reports[0]) == plan['producer_report_sha256']
         previous = json.loads(reports[0].read_text())
         assert previous['revision'] == plan['producer_commit'] and previous['completed'] and previous['passed']
-        assert previous['focused_request_contract_passed'] and len(previous['requests']) == 272
+        assert previous['focused_request_contract_passed'] and len(previous['requests']) == 288
         assert all(r['expectation_satisfied'] for r in previous['requests'])
         assert previous['exact_private_input_sha256'] == plan['exact_private_input_sha256']
         assert previous['new_build_id'] == plan['frontend_build_id']
