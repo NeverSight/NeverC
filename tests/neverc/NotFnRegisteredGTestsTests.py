@@ -21,7 +21,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
-        cls.additions = (ROOT / 'utils/ci/not-fn-pointer-ten-formal-additions.cpp').read_bytes()
+        cls.additions = (ROOT / 'utils/ci/not-fn-pointer-eleven-formal-additions.cpp').read_bytes()
         cls.original = cls.adapter.restore_original_gtests(cls.registered, cls.additions)
 
     def test_restores_the_exact_original_7493_source(self):
@@ -40,7 +40,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         self.assertEqual(actual_proof, proof)
         self.assertEqual(proof['original_test_names'], 7493)
         self.assertEqual(proof['selected_count'], 124)
-        self.assertEqual((actual + self.additions).count(b'TEST_F('), 134)
+        self.assertEqual((actual + self.additions).count(b'TEST_F('), 135)
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.registered, selected)
 
@@ -68,9 +68,15 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                          self.adapter.SIX_REGISTERED_SOURCE_SHA256)
         self.assertEqual(self.adapter.restore_original_gtests(registered_six, six), self.original)
 
+    def test_preserves_archived_ten_test_replay(self):
+        ten = (ROOT / 'utils/ci/not-fn-pointer-ten-formal-additions.cpp').read_bytes()
+        self.assertTrue(self.additions.startswith(ten + b'\n'))
+        self.assertEqual(hashlib.sha256(self.original + ten).hexdigest(), self.adapter.TEN_REGISTERED_SOURCE_SHA256)
+        self.assertEqual(self.adapter.restore_original_gtests(self.original + ten, ten), self.original)
+
     def test_rejects_mismatched_registered_suffix_versions(self):
         suffixes = [(ROOT / ('utils/ci/not-fn-pointer-' + version + '-formal-additions.cpp')).read_bytes()
-                    for version in ['four', 'five', 'six', 'ten']]
+                    for version in ['four', 'five', 'six', 'ten', 'eleven']]
         for source_suffix in suffixes:
             for supplied_suffix in suffixes:
                 with self.subTest(source=hashlib.sha256(source_suffix).hexdigest(),

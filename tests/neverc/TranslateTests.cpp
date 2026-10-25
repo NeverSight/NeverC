@@ -372000,3 +372000,37 @@ int main() {
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
+
+TEST_F(TranslateTest, CoreV2NotFnReferenceWrapperRunsAtBothOptimizations) {
+  const auto Source = tmpFile("not-fn-reference-wrapper.cpp");
+  const auto Output = tmpFile("not-fn-reference-wrapper.nc");
+  writeFile(Source, R"cpp(#include <functional>
+struct P {
+  int value;
+  bool operator()(int x) { value += x; return value > 4; }
+};
+struct C {
+  int value;
+  bool operator()(int x) const { return value == x; }
+};
+int main() {
+  P p{1}; const C c{7};
+  auto f = std::not_fn(std::ref(p));
+  auto g = std::not_fn(std::cref(c));
+  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;
+  auto copy = f;
+  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("not-fn-reference-wrapper" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}

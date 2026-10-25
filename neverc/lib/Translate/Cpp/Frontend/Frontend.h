@@ -1752,6 +1752,17 @@ std::optional<FunctionalNotFnStorage>
 describeFunctionalNotFnOwnedStorage(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+// A separate storage role: copying the wrapper keeps its pointer binding. The
+// referent's ordinary source/body and lifetime are never supplied by this shape.
+struct FunctionalNotFnReferenceStorage {
+  FunctionalNotFnStorage Storage;
+  FunctionalReferenceRecord Reference;
+};
+std::optional<FunctionalNotFnReferenceStorage>
+describeFunctionalNotFnReferenceStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
 struct FunctionalNotFnFactorySource {
   FunctionalNotFnStorage Storage;
   const clang::FunctionDecl *Factory;
@@ -1825,6 +1836,17 @@ struct FunctionalNotFnOwnedCallSource {
 };
 std::optional<FunctionalNotFnOwnedCallSource>
 describeFunctionalNotFnOwnedCallSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
+struct FunctionalNotFnReferenceCallSource {
+  FunctionalNotFnCallSource Selected;
+  FunctionalReferenceInvokeCall Reference;
+  const clang::FunctionDecl *Dispatcher;
+  const clang::FunctionDecl *ReferentDispatcher;
+};
+std::optional<FunctionalNotFnReferenceCallSource>
+describeFunctionalNotFnReferenceCallSource(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 
@@ -1932,6 +1954,30 @@ bool approvedFunctionalNotFnOwnedCallDefaults(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
     std::set<const clang::CXXMethodDecl *> &OwnedQuerySources);
+
+// Exact retained Reference-specific default/query and implicit lifecycle source
+// proofs remain separate from layout and from the ordinary emitted method body.
+bool approvedFunctionalNotFnReferenceFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnFactoryTemplateSource &Factory,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias);
+bool approvedFunctionalNotFnReferenceCopySource(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnCopySource &Copy,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedFunctionalNotFnReferenceCallDefaults(
+    const State &S, const clang::SourceManager &SM, const clang::ASTContext &Context,
+    const FunctionalNotFnReferenceCallSource &Call, const TemplateUseSource &Use,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferenceQuerySources);
 
 bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const State &S, const clang::SourceManager &SM,
@@ -2809,7 +2855,9 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
   std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
   std::map<const clang::CallExpr *, FunctionalNotFnCallSource> VerifiedNotFnCalls;
+  std::map<const clang::CallExpr *, FunctionalNotFnReferenceCallSource> VerifiedNotFnReferenceCalls;
   std::set<const clang::CXXMethodDecl *> NotFnOwnedQuerySources;
+  std::set<const clang::CXXMethodDecl *> NotFnReferenceQuerySources;
   std::map<const clang::CXXConstructExpr *, FunctionalNotFnCopySource> VerifiedNotFnCopies;
   std::map<const clang::CXXRecordDecl *, FunctionalNotFnDestructionSource> VerifiedNotFnDestructions;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
