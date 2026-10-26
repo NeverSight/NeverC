@@ -278,10 +278,10 @@
   "private_bind_admission_implemented": false,
   "bind_support_verified": false,
   "observed_private_input_sha256": {
-    "Frontend.cpp": "2b2df0208332ac63229952e662ba7579ebf9b1ae0cff813637b52471ec5092ba",
+    "Frontend.cpp": "30659b31813846def4f9e8c7999c6978f078e7641f669f2071657bef2047c374",
     "Lowering.cpp": "5b1e3cb88b700a09fa2c1862f54a1526d50acb3b7b99c4c7ab28474bcff812ca",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "99751bbf781de171f14956ce7637ace313a407bee67856c8ea977c3dae7fcf8d",
+    "MathSDK.cpp": "007d29181e1ce67ab62d823154010aacafbcc4d00c4598b530d1e2fc17ef3291",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "e8b60fbe3da4dc37a4fa44237ea1a04c2948382ec1666cd38009ff63da5e0a4a",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -299,8 +299,11 @@
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
   "bind_private_source_packet": true,
-  "source_packet_clean_basis": "9595247a983c1becc051be24d7277917fd30f06b",
-  "source_trace_commit": "66c0d16dd531f500746dab072f4205e8856ae9e5",
-  "source_packet_clean_syntax_proof_sha256": "17169e4c97282d16d716a14e1aac9b52ac676ac6427b089775e5dc663c31660b",
-  "source_packet_inverse_source_ledger_sha256": "ab9ee66c9b9cb2b4fadca8df574c0d92bc344e1e31cac4f37a644cf6eff9a677"
+  "source_packet_clean_basis": "be753aeab425b52bf436700e31abd191e5e6c658",
+  "source_trace_commit": "daa2978a3d2256fd63ef09d69ebfcf9065597dfc",
+  "source_packet_inverse_source_ledger_sha256": "b5f06adb72977823a7aef43c959e7b897a77fba4e9c48c68ff86967d5b78f759",
+  "pre_refinement_clean_basis": "9595247a983c1becc051be24d7277917fd30f06b",
+  "pre_refinement_clean_syntax6_proof_sha256": "17169e4c97282d16d716a14e1aac9b52ac676ac6427b089775e5dc663c31660b",
+  "new_descriptor_source6_verified": false,
+  "bind_descriptor_shape_refinement": true
 }
