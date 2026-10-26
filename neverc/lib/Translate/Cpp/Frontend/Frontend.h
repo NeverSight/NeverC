@@ -27,6 +27,7 @@ class ArrayInitIndexExpr;
 class CastExpr;
 class CXXConstructExpr;
 class CXXStaticCastExpr;
+class StaticAssertDecl;
 class CXXInheritedCtorInitExpr;
 class CXXStdInitializerListExpr;
 class CXXNewExpr;
@@ -155,6 +156,7 @@ struct TemplateUseSource {
   // Inert SDK evidence for an exact not_fn constraint root. It is never
   // indexed as ordinary owned source or as permission to execute an SDK body.
   bool FunctionalNotFnConstraint = false;
+  bool FunctionalBindConstraint = false;
 };
 // Retain each type substitution already performed by Sema. The final
 // VarDecl may keep its first declaration's TypeSourceInfo after completion.
@@ -172,6 +174,7 @@ struct SelectedTemplateCallSource {
   const clang::FunctionDecl *Function;
   clang::SourceLocation Location;
   bool FunctionalNotFnConstraint = false;
+  bool FunctionalBindConstraint = false;
 };
 // Each batch is copied before indexing and then remains immutable. Its AST
 // pointers still belong to the same ASTContext; retaining a batch grants no use.
@@ -1790,6 +1793,42 @@ describeFunctionalBindCallSource(
 
 // These descriptions retain the selected library path. They provide neither
 // runtime permission nor a completed ordinary source/trait certificate.
+struct FunctionalBindTupleConstructionSource {
+  const clang::CXXConstructExpr *Tuple, *Implementation;
+  std::vector<const clang::CXXConstructExpr *> Leaves, Copies;
+  std::vector<const clang::Expr *> Initializers;
+  std::vector<const clang::CallExpr *> Forwards;
+  std::vector<const clang::StaticAssertDecl *> Assertions;
+};
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+
+// Logical C23 storage only. This layout description grants no SDK operation,
+// base conversion, lifecycle, default/trait source, body or lifetime permission.
+struct FunctionalBindNaturalLayout {
+  FunctionalBindStorage Storage;
+  bool PaddedBase;
+};
+std::optional<FunctionalBindNaturalLayout>
+describeFunctionalBindNaturalLayout(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+// Sema callback collection only. This predicate must not complete a record or
+// grant ordinary source, runtime, selected body, default, trait or lifetime use.
+bool retainFunctionalBindConstraintRoot(
+    const State &S, const clang::SourceManager &SM, TemplateSourceKind Kind,
+    const clang::NamedDecl *Template, const clang::Decl *Declaration,
+    const clang::Type *Type, const clang::TypeSourceInfo *Underlying,
+    clang::SourceLocation Location);
+
+bool matchesFunctionalBindSelectedSource(
+    const State &S, const clang::SourceManager &SM,
+    const SelectedTemplateCallSource &Source, const clang::ASTContext &Context);
+
+
 struct FunctionalNotFnStorage {
   const clang::CXXRecordDecl *Record, *Forwarder, *Operation;
   const clang::FieldDecl *BoundArguments;
