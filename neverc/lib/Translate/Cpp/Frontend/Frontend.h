@@ -1829,6 +1829,17 @@ bool matchesFunctionalBindSelectedSource(
     const SelectedTemplateCallSource &Source, const clang::ASTContext &Context);
 
 
+// Source certificates are purpose bound and never admit ordinary SDK calls.
+// The caller must separately finish runtime operands, callbacks and lifetimes.
+bool approvedFunctionalBindFactorySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
+
 struct FunctionalNotFnStorage {
   const clang::CXXRecordDecl *Record, *Forwarder, *Operation;
   const clang::FieldDecl *BoundArguments;

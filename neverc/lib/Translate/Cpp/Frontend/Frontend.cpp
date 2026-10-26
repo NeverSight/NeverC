@@ -35,7 +35,6 @@
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
-#include <cstdlib>
 #include <functional>
 #include <deque>
 #include <set>
@@ -47,143 +46,6 @@
 
 using namespace clang;
 namespace nct {
-
-// Diagnostic-only source packet. This code never retains an event, changes an
-// existing predicate, completes Sema work, or grants an SDK operation/body.
-static bool bindSourcePacketEnabled() {
-  const char *Value = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-  return Value && Value[0] && Value[0] != '0';
-}
-
-static void traceBindTemplatePacket(
-    const State &S, TemplateSourceKind Kind, const NamedDecl *Template,
-    const Decl *Declaration, const Type *Type, const TypeSourceInfo *Underlying,
-    const TemplateArgument *Canonical, const TemplateArgument *Sugared,
-    unsigned Count, NamedDecl *const *DefaultParameters,
-    const TemplateArgumentLoc *OriginalDefaults,
-    const TemplateArgumentLoc *ConvertedDefaults, unsigned DefaultCount,
-    NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
-    const unsigned *PackIndices, unsigned TypeCount, SourceLocation Location) {
-  if (!bindSourcePacketEnabled() || !Template || Count > 16 || DefaultCount > 16 || TypeCount > 16)
-    return;
-  auto &Context = Template->getASTContext();
-  auto &Sources = Context.getSourceManager();
-  const auto Use = S.sdkFile(Sources, Location);
-  const auto Origin = S.sdkFile(Sources, Template->getLocation());
-  auto Relevant = [](const std::optional<SDKFile> &File) {
-    return File && File->Root == "libcxx" &&
-        (File->Path == "__functional/bind.h" || File->Path == "tuple" ||
-         File->Path == "__functional/weak_result_type.h");
-  };
-  if (!Relevant(Use) && !Relevant(Origin)) return;
-  if (Canonical)
-    for (unsigned I = 0; I < Count; ++I)
-      if (Canonical[I].isInstantiationDependent()) return;
-  static unsigned Packets = 0;
-  if (++Packets > 768) return;
-  auto Info = [&](const TypeSourceInfo *Source, llvm::StringRef Role) {
-    llvm::errs() << "NCT_BIND_TSI role=" << Role << " id=" << static_cast<const void *>(Source);
-    if (Source) {
-      const auto Written = Source->getTypeLoc();
-      llvm::errs() << " type=" << Source->getType().getAsString()
-                   << " type_id=" << static_cast<const void *>(Source->getType().getTypePtrOrNull())
-                   << " loc_id=" << Written.getOpaqueData()
-                   << " begin=" << Written.getBeginLoc().printToString(Sources)
-                   << " end=" << Written.getEndLoc().printToString(Sources);
-    }
-    llvm::errs() << "\n";
-  };
-  auto Argument = [&](const TemplateArgument &Value, llvm::StringRef Role) {
-    llvm::errs() << "NCT_BIND_ARGUMENT role=" << Role << " kind=" << unsigned(Value.getKind()) << " ";
-    Value.print(Context.getPrintingPolicy(), llvm::errs(), true);
-    llvm::errs() << "\n";
-    if (Value.getKind() == TemplateArgument::Expression && Value.getAsExpr())
-      Value.getAsExpr()->dump(llvm::errs(), Context);
-  };
-  auto ArgumentLoc = [&](const TemplateArgumentLoc &Value, llvm::StringRef Role) {
-    Argument(Value.getArgument(), Role);
-    if (Value.getArgument().getKind() == TemplateArgument::Type)
-      Info(Value.getTypeSourceInfo(), Role);
-  };
-  llvm::errs() << "NCT_BIND_TEMPLATE_PACKET kind=" << unsigned(Kind)
-               << " template=" << Template->getQualifiedNameAsString()
-               << " template_id=" << static_cast<const void *>(Template)
-               << " declaration_id=" << static_cast<const void *>(Declaration)
-               << " location=" << Location.printToString(Sources)
-               << " use=" << (Use ? Use->Path : "<owned-or-unknown>")
-               << " origin=" << (Origin ? Origin->Path : "<unknown>")
-               << " count=" << Count << " defaults=" << DefaultCount << " parameter_types=" << TypeCount << "\n";
-  Info(Underlying, "underlying");
-  if (Type) llvm::errs() << "NCT_BIND_RAW_TYPE " << QualType(Type, 0).getAsString() << "\n";
-  for (unsigned I = 0; I < Count; ++I) {
-    llvm::errs() << "NCT_BIND_ARGUMENT_SLOT " << I << "\n";
-    if (Canonical) Argument(Canonical[I], "canonical");
-    if (Sugared) Argument(Sugared[I], "sugared");
-  }
-  for (unsigned I = 0; I < DefaultCount; ++I) {
-    llvm::errs() << "NCT_BIND_DEFAULT_SLOT " << I << "\n";
-    if (DefaultParameters && DefaultParameters[I]) DefaultParameters[I]->dump(llvm::errs());
-    if (OriginalDefaults) ArgumentLoc(OriginalDefaults[I], "original-default");
-    if (ConvertedDefaults) ArgumentLoc(ConvertedDefaults[I], "converted-default");
-  }
-  for (unsigned I = 0; I < TypeCount; ++I) {
-    llvm::errs() << "NCT_BIND_PARAMETER_TYPE_SLOT " << I
-                 << " pack=" << (PackIndices ? PackIndices[I] : 0) << "\n";
-    if (TypeParameters && TypeParameters[I]) TypeParameters[I]->dump(llvm::errs());
-    if (ParameterTypes) Info(ParameterTypes[I], "substituted-parameter-type");
-  }
-  llvm::errs() << "NCT_BIND_TEMPLATE_PACKET_END\n";
-}
-
-struct BindOwnedSourcePacket : RecursiveASTVisitor<BindOwnedSourcePacket> {
-  State &S;
-  ASTContext &Context;
-  unsigned Calls = 0;
-  BindOwnedSourcePacket(State &S, ASTContext &Context) : S(S), Context(Context) {}
-  bool TraverseDecl(Decl *Declaration) {
-    if (Declaration && !isa<TranslationUnitDecl>(Declaration) &&
-        !S.owns(Context.getSourceManager(), Declaration->getLocation())) return true;
-    return RecursiveASTVisitor<BindOwnedSourcePacket>::TraverseDecl(Declaration);
-  }
-  bool VisitCallExpr(CallExpr *Call) {
-    const auto *Function = Call->getDirectCallee();
-    if (!Function || !S.owns(Context.getSourceManager(), Call->getExprLoc())) return true;
-    const auto Origin = S.sdkFile(Context.getSourceManager(), Function->getLocation());
-    if (!Origin || Origin->Root != "libcxx" || Origin->Path != "__functional/bind.h") return true;
-    const auto *Method = dyn_cast<CXXMethodDecl>(Function);
-    const auto *Object = Method && isa<CXXOperatorCallExpr>(Call) && Call->getNumArgs()
-        ? Call->getArg(0) : nullptr;
-    const auto *Record = Object ? Object->getType()->getAsCXXRecordDecl()
-                                : Call->getType()->getAsCXXRecordDecl();
-    const bool Factory = Function->getIdentifier() && Function->getName() == "bind";
-    const bool Invocation = Method && Method->getOverloadedOperator() == OO_Call;
-    if ((!Factory && !Invocation) || ++Calls > 8 || !Record) return true;
-    auto &Out = llvm::errs();
-    Out << "NCT_BIND_OWNED_ROOT factory=" << Factory << " invocation=" << Invocation << "\n";
-    Call->dump(Out, Context);
-    Function->dump(Out);
-    if (const auto *Definition = Record->getDefinition()) Definition->dump(Out);
-    const auto Storage = describeFunctionalBindStorage(S, Context.getSourceManager(), Record, Context);
-    Out << "NCT_BIND_DESCRIPTOR storage=" << bool(Storage) << "\n";
-    if (Storage) {
-      Out << "NCT_BIND_LAYOUT size=" << Storage->SizeBytes << " align=" << Storage->AlignmentBytes
-          << " callable_bits=" << Storage->CallableOffsetBits << " bound_bits=" << Storage->BoundOffsetBits
-          << " elements=" << Storage->Arguments.Elements.size() << "\n";
-      for (const auto &Element : Storage->Arguments.Elements)
-        Out << "NCT_BIND_ELEMENT type=" << Element.getType().getAsString()
-            << " offset_bits=" << Element.OffsetBits << "\n";
-    }
-    const auto FactorySource = Factory
-        ? describeFunctionalBindFactorySource(S, Context.getSourceManager(), Call, Context) : std::nullopt;
-    const auto CallSource = Invocation
-        ? describeFunctionalBindCallSource(S, Context.getSourceManager(), Call, Context) : std::nullopt;
-    Out << "NCT_BIND_DESCRIPTOR factory=" << bool(FactorySource) << " invocation=" << bool(CallSource) << "\n";
-    const auto TupleSource = FactorySource ? describeFunctionalBindTupleConstructionSource(S, Context.getSourceManager(), *FactorySource, Context) : std::nullopt;
-    Out << "NCT_BIND_TUPLE_DESCRIPTOR factory=" << bool(FactorySource) << " tuple=" << bool(TupleSource) << "\n";
-    Out << "NCT_BIND_OWNED_ROOT_END\n";
-    return true;
-  }
-};
 
 // Layout admission never supplies a constructor, call or destructor body.
 // Owned callable operations retain their independently checked source maps.
@@ -15231,6 +15093,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<NotFnConstraintKey> NotFnConstraintKeys;
   std::vector<const TemplateUseSource *> NotFnConstraintSources;
   std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> NotFnSelectedCallSources;
+  std::set<NotFnConstraintKey> BindConstraintKeys;
+  std::vector<const TemplateUseSource *> BindConstraintSources;
+  std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> BindSelectedCallSources;
   static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
     return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
             Source.Location.getRawEncoding()};
@@ -23017,6 +22882,29 @@ public:
     }
     return true;
   }
+  bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
+    std::vector<const TemplateUseSource *> Dependencies;
+    std::set<const TemplateUseSource *> Uses;
+    auto AddUse = [&](const TemplateUseSource *Use) {
+      if (Use && Uses.insert(Use).second) Dependencies.push_back(Use);
+    };
+    for (const auto *Use : BindConstraintSources) AddUse(Use);
+    for (const auto &[Key, Entries] : FunctionSources)
+      for (const auto *Use : Entries) AddUse(Use);
+    for (const auto &[Key, Entries] : TypeSources)
+      for (const auto *Use : Entries) AddUse(Use);
+    std::vector<const SelectedTemplateCallSource *> Selections;
+    std::set<const SelectedTemplateCallSource *> Seen;
+    auto AddSelection = [&](const SelectedTemplateCallSource *Selection) {
+      if (Selection && Seen.insert(Selection).second) Selections.push_back(Selection);
+    };
+    for (const auto &[Expression, Entries] : BindSelectedCallSources)
+      for (const auto *Selection : Entries) AddSelection(Selection);
+    for (const auto &[Expression, Entries] : SelectedCallSources)
+      for (const auto *Selection : Entries) AddSelection(Selection);
+    return approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
+        Dependencies, Selections, A.SpecialMembers, A.OperationTraits);
+  }
   void beginTemplateSourceEvents(std::size_t Uses, std::size_t Calls) {
     TemplateUseCursor = Uses;
     SelectedCallCursor = Calls;
@@ -23024,6 +22912,8 @@ public:
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
+    if (Source.FunctionalBindConstraint &&
+        BindConstraintKeys.count(notFnConstraintKey(Source))) return false;
     if (Source.FunctionalNotFnConstraint)
       return !NotFnConstraintKeys.count(notFnConstraintKey(Source));
     // A previously checked key cannot acquire an untraversed alternative after
@@ -23103,6 +22993,7 @@ public:
       for (const auto &Source : Batch.Calls) {
         if (SelectedCallSources.count(Source.Expression) ||
             NotFnSelectedCallSources.count(Source.Expression) ||
+            BindSelectedCallSources.count(Source.Expression) ||
             PairTraitSelections.count(Source.Expression)) {
           A.reject(Source.Location, "repeated late selected source",
                    "A retained late selection needs a fresh exact expression.");
@@ -23127,6 +23018,21 @@ public:
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Source.FunctionalBindConstraint) {
+        if (!matchesFunctionalBindSelectedSource(A.S, A.Sources, Source, A.Context)) {
+          A.reject(Source.Location, "bind selected source", "The exact retained SDK selection is required.");
+          continue;
+        }
+        BindSelectedCallSources[Source.Expression].push_back(&Source);
+        // Preserve every historical producer route independently. Newly
+        // retained Bind-only SDK evidence has no ordinary permission index.
+        if (!A.S.owns(A.Sources, Source.Location) && !Source.FunctionalNotFnConstraint &&
+            !tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+            !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+            !approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+            !pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Source.Function))
+          continue;
+      }
       if (Source.FunctionalNotFnConstraint) {
         if (!matchesFunctionalNotFnSelectedSource(A.S, A.Sources, Source, A.Context)) {
           A.reject(Source.Location, "not_fn selected source", "The exact retained SDK selection is required.");
@@ -23644,6 +23550,18 @@ public:
       return;
     for (const auto &Source : Sources) {
       A.chargeExpansion(1, Source.Location);
+      if (Source.FunctionalBindConstraint) {
+        BindConstraintKeys.insert(notFnConstraintKey(Source));
+        BindConstraintSources.push_back(&Source);
+        const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
+        if (!A.S.owns(A.Sources, Source.Location) && !Source.FunctionalNotFnConstraint &&
+            !(Source.Kind == TemplateSourceKind::Function &&
+              (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+               approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+               approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+               pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Function))))
+          continue;
+      }
       if (Source.FunctionalNotFnConstraint) {
         // These addresses have the same initial snapshot/owned-batch lifetime
         // as every other retained event. No ordinary permission index sees them.
@@ -30527,10 +30445,6 @@ class Consumer : public ASTConsumer {
       return;
     auto &Context = Template->getASTContext();
     auto &Sources = Context.getSourceManager();
-    traceBindTemplatePacket(S, Kind, Template, Declaration, Type, Underlying,
-        Canonical, Sugared, Count, DefaultParameters, OriginalDefaults,
-        ConvertedDefaults, DefaultCount, TypeParameters, ParameterTypes,
-        PackIndices, TypeCount, Location);
     const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
         S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
     const bool BindConstraint = retainFunctionalBindConstraintRoot(
@@ -30605,8 +30519,6 @@ class Consumer : public ASTConsumer {
     Source.Origin = Origin;
     Source.FunctionalNotFnConstraint = NotFnConstraint;
     Source.FunctionalBindConstraint = BindConstraint;
-    if (BindConstraint && bindSourcePacketEnabled())
-      llvm::errs() << "NCT_BIND_RETAIN kind=" << unsigned(Kind) << " template=" << Template->getQualifiedNameAsString() << " location=" << Location.printToString(Sources) << " count=" << Count << " defaults=" << DefaultCount << " parameter_types=" << TypeCount << "\n";
     Source.Defaults.reserve(DefaultCount);
     for (unsigned I = 0; I < DefaultCount; ++I)
       Source.Defaults.push_back({DefaultParameters[I], OriginalDefaults[I], ConvertedDefaults[I]});
@@ -31146,10 +31058,6 @@ public:
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
-    if (S.coreV2() && bindSourcePacketEnabled()) {
-      BindOwnedSourcePacket Packet(S, C);
-      Packet.TraverseDecl(C.getTranslationUnitDecl());
-    }
     // Layout preparation precedes indexing retained Sema
     // events. Completing a layout can produce further substitutions; all of
     // them must reach the same ordinary source checks as the original parse.
