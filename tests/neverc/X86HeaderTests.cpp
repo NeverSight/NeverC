@@ -1,5 +1,8 @@
 #include "NeverCTestFixture.h"
 
+#include "llvm/ADT/StringMap.h"
+#include "llvm/TargetParser/Host.h"
+
 class X86HeaderTest : public NeverCTest {};
 
 namespace {
@@ -86,13 +89,9 @@ TEST_F(X86HeaderTest, ExtractPsCompilesWithoutCxxBitCast) {
 }
 
 TEST_F(X86HeaderTest, ExtractPsKeepsBitsAndEvaluatesInputOnce) {
-#if (defined(__x86_64__) || defined(_M_X64)) &&                                \
-    (defined(__clang__) || defined(__GNUC__))
-  if (!__builtin_cpu_supports("sse4.1"))
+  llvm::StringMap<bool, llvm::MallocAllocator> Features;
+  if (!llvm::sys::getHostCPUFeatures(Features) || !Features.lookup("sse4.1"))
     GTEST_SKIP() << "native execution requires SSE4.1";
-#else
-  GTEST_SKIP() << "native SSE4.1 feature detection is unavailable";
-#endif
   const auto Source = tmpFile("extract.c");
   writeFile(Source, ExtractSource);
   for (const char *Opt : {"-O0", "-O2"})
