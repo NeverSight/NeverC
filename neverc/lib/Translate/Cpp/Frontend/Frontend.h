@@ -1921,6 +1921,26 @@ bool approvedFunctionalBindFactorySource(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
+// Only the selected bullet-7 signature/default/declval source is certified.
+// The owned operator, runtime helper bodies and all ordinary/lifetime roots
+// remain independent obligations before any runtime registration or lowering.
+// Empty call-argument tuple and exact __indices sources only; no runtime call.
+bool approvedFunctionalBindCallAuxiliarySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
+bool approvedFunctionalBindCallInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
 bool approvedFunctionalBindCopySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCopySource &Copy, const clang::ASTContext &Context,
