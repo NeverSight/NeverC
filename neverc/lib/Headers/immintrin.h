@@ -77,12 +77,12 @@
 #endif
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__LZCNT__)
+    defined(__LZCNT__) || defined(__neverc__)
 #include <lzcntintrin.h>
 #endif
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__POPCNT__)
+    defined(__POPCNT__) || defined(__neverc__)
 #include <popcntintrin.h>
 #endif
 
