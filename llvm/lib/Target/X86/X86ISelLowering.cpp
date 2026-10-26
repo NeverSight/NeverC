@@ -2305,6 +2305,8 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
                        ISD::FP_ROUND,
                        ISD::STRICT_FP_ROUND});
 
+  setTargetDAGCombine(ISD::INTRINSIC_WO_CHAIN);
+
   computeRegisterProperties(Subtarget.getRegisterInfo());
 
   MaxStoresPerMemset = 16; // For @llvm.memset -> sequence of stores
@@ -24814,6 +24816,48 @@ static SDValue recoverFramePointer(SelectionDAG &DAG, const Function *Fn,
   return DAG.getNode(ISD::ADD, dl, PtrVT, EntryEBP, ParentFrameOffset);
 }
 
+static void validateNativeADX(const X86Subtarget &Subtarget) {
+  if (!Subtarget.hasADX())
+    report_fatal_error("native ADX intrinsic requires the adx target feature");
+  // NeverC's pruned backend registers only the x86-64 target. The full fork
+  // additionally admits the 32-bit operand APIs in i386 code mode.
+  if (!Subtarget.is64Bit())
+    report_fatal_error(
+        "native ADX intrinsic does not match the target code mode");
+}
+
+// These value intrinsics deliberately select ADCX/ADOX. Carry is explicit SSA,
+// not ambient EFLAGS: initialize the chosen flag and capture its unsigned
+// carry-out in one glued group so unrelated arithmetic cannot split it.
+static SDValue lowerNativeADX(SDValue Op, const X86Subtarget &Subtarget,
+                              SelectionDAG &DAG) {
+  const unsigned ID = Op.getConstantOperandVal(0);
+  const bool Overflow =
+      ID == Intrinsic::x86_adox_32 || ID == Intrinsic::x86_adox_64;
+  const bool Wide =
+      ID == Intrinsic::x86_adcx_64 || ID == Intrinsic::x86_adox_64;
+  validateNativeADX(Subtarget);
+  const SDLoc DL(Op);
+  SDValue Carry = Op.getOperand(1);
+  if (Overflow)
+    Carry = DAG.getSetCC(DL, MVT::i8, Carry, DAG.getConstant(0, DL, MVT::i8),
+                         ISD::SETNE);
+  // c + 255 has CF=(c!=0); bool(c) + 127 has OF=(c!=0).
+  auto *Seed = DAG.getMachineNode(
+      X86::ADD8ri, DL, DAG.getVTList(MVT::i8, MVT::Glue),
+      {Carry, DAG.getTargetConstant(Overflow ? 127 : 255, DL, MVT::i8)});
+  const unsigned Opcode = Overflow ? (Wide ? X86::ADOX64rr : X86::ADOX32rr)
+                                   : (Wide ? X86::ADCX64rr : X86::ADCX32rr);
+  auto *Add = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(Wide ? MVT::i64 : MVT::i32, MVT::Glue),
+      {Op.getOperand(2), Op.getOperand(3), SDValue(Seed, 1)});
+  auto *Out = DAG.getMachineNode(
+      X86::SETCCr, DL, MVT::i8,
+      {DAG.getTargetConstant(Overflow ? X86::COND_O : X86::COND_B, DL, MVT::i8),
+       SDValue(Add, 1)});
+  return DAG.getMergeValues({SDValue(Out, 0), SDValue(Add, 0)}, DL);
+}
+
 SDValue X86TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
                                                    SelectionDAG &DAG) const {
   // Helper to detect if the operand is CUR_DIRECTION rounding mode.
@@ -25508,6 +25552,11 @@ SDValue X86TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
   switch (IntNo) {
   default:
     return SDValue(); // Don't custom lower most intrinsics.
+  case Intrinsic::x86_adcx_32:
+  case Intrinsic::x86_adcx_64:
+  case Intrinsic::x86_adox_32:
+  case Intrinsic::x86_adox_64:
+    return lowerNativeADX(Op, Subtarget, DAG);
 
   // ptest and testp intrinsics. The intrinsic these come from are designed to
   // return an integer value, not just an instruction so lower it to the ptest
@@ -57432,6 +57481,20 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   SelectionDAG &DAG = DCI.DAG;
   switch (N->getOpcode()) {
   default:
+    break;
+  case ISD::INTRINSIC_WO_CHAIN:
+    if (DCI.isBeforeLegalize()) {
+      switch (N->getConstantOperandVal(0)) {
+      case Intrinsic::x86_adcx_32:
+      case Intrinsic::x86_adcx_64:
+      case Intrinsic::x86_adox_32:
+      case Intrinsic::x86_adox_64:
+        validateNativeADX(Subtarget);
+        break;
+      default:
+        break;
+      }
+    }
     break;
   case ISD::SCALAR_TO_VECTOR:
     return combineScalarToVector(N, DAG);

@@ -552,7 +552,7 @@ static __inline__ void
 #include <adcintrin.h>
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__ADX__)
+    defined(__ADX__) || defined(__neverc__)
 #include <adxintrin.h>
 #endif
 

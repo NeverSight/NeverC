@@ -2579,6 +2579,10 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                                       Ops[0]);
     return Builder.CreateExtractValue(Call, 1);
   }
+  case X86::BI__builtin_ia32_adcx_u32:
+  case X86::BI__builtin_ia32_adcx_u64:
+  case X86::BI__builtin_ia32_adox_u32:
+  case X86::BI__builtin_ia32_adox_u64:
   case X86::BI__builtin_ia32_addcarryx_u32:
   case X86::BI__builtin_ia32_addcarryx_u64:
   case X86::BI__builtin_ia32_subborrow_u32:
@@ -2587,6 +2591,18 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     switch (BuiltinID) {
     default:
       llvm_unreachable("Unsupported intrinsic!");
+    case X86::BI__builtin_ia32_adcx_u32:
+      IID = Intrinsic::x86_adcx_32;
+      break;
+    case X86::BI__builtin_ia32_adcx_u64:
+      IID = Intrinsic::x86_adcx_64;
+      break;
+    case X86::BI__builtin_ia32_adox_u32:
+      IID = Intrinsic::x86_adox_32;
+      break;
+    case X86::BI__builtin_ia32_adox_u64:
+      IID = Intrinsic::x86_adox_64;
+      break;
     case X86::BI__builtin_ia32_addcarryx_u32:
       IID = Intrinsic::x86_addcarry_32;
       break;

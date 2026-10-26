@@ -60,6 +60,7 @@ set(NEVERC_TEST_SOURCES
   X86/LegacyAtomicTests.cpp
   X86/TransactionFrontendTests.cpp
   X86/TBMFrontendTests.cpp
+  X86/ADXFrontendTests.cpp
   X86/BMIFrontendTests.cpp
   X86HeaderTests.cpp
   StrHashTests.cpp

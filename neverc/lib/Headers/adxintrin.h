@@ -11,7 +11,7 @@
 
 #define __INLINE static __inline
 
-/* Intrinsics that are available only if __ADX__ is defined. */
+/* The function target enables ADX without a translation-unit feature flag. */
 
 /// Adds unsigned 32-bit integers \a __x and \a __y, plus 0 or 1 as indicated
 ///    by the carry flag \a __cf. Stores the unsigned 32-bit sum in the memory
@@ -40,7 +40,7 @@ __INLINE unsigned char __DEFAULT_FN_ATTRS _addcarryx_u32(unsigned char __cf,
                                                          unsigned int __x,
                                                          unsigned int __y,
                                                          unsigned int *__p) {
-  return __builtin_ia32_addcarryx_u32(__cf, __x, __y, __p);
+  return __builtin_ia32_adcx_u32(__cf, __x, __y, __p);
 }
 
 #ifdef __x86_64__
@@ -70,7 +70,37 @@ __INLINE unsigned char __DEFAULT_FN_ATTRS _addcarryx_u32(unsigned char __cf,
 __INLINE unsigned char __DEFAULT_FN_ATTRS
 _addcarryx_u64(unsigned char __cf, unsigned long long __x,
                unsigned long long __y, unsigned long long *__p) {
-  return __builtin_ia32_addcarryx_u64(__cf, __x, __y, __p);
+  return __builtin_ia32_adcx_u64(__cf, __x, __y, __p);
+}
+#endif
+
+/// Native CF/OF carry-chain APIs. Any nonzero input byte supplies one;
+/// both return unsigned carry (ADOX does not report signed overflow).
+/// Carry state is explicit in the arguments and result, not ambient EFLAGS.
+__INLINE unsigned char __DEFAULT_FN_ATTRS _adcx_u32(unsigned char __carry,
+                                                    unsigned int __x,
+                                                    unsigned int __y,
+                                                    unsigned int *__p) {
+  return __builtin_ia32_adcx_u32(__carry, __x, __y, __p);
+}
+__INLINE unsigned char __DEFAULT_FN_ATTRS _adox_u32(unsigned char __carry,
+                                                    unsigned int __x,
+                                                    unsigned int __y,
+                                                    unsigned int *__p) {
+  return __builtin_ia32_adox_u32(__carry, __x, __y, __p);
+}
+#ifdef __x86_64__
+__INLINE unsigned char __DEFAULT_FN_ATTRS _adcx_u64(unsigned char __carry,
+                                                    unsigned long long __x,
+                                                    unsigned long long __y,
+                                                    unsigned long long *__p) {
+  return __builtin_ia32_adcx_u64(__carry, __x, __y, __p);
+}
+__INLINE unsigned char __DEFAULT_FN_ATTRS _adox_u64(unsigned char __carry,
+                                                    unsigned long long __x,
+                                                    unsigned long long __y,
+                                                    unsigned long long *__p) {
+  return __builtin_ia32_adox_u64(__carry, __x, __y, __p);
 }
 #endif
 

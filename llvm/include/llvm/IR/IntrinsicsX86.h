@@ -58,8 +58,12 @@ enum X86Intrinsics : unsigned {
     x86_aand64,                                      // llvm.x86.aand64
     x86_aand64_address,                              // llvm.x86.aand64.address
     x86_aand64_legacy_address,                       // llvm.x86.aand64.legacy.address
+    x86_adcx_32,                                     // llvm.x86.adcx.32
+    x86_adcx_64,                                     // llvm.x86.adcx.64
     x86_addcarry_32,                                 // llvm.x86.addcarry.32
     x86_addcarry_64,                                 // llvm.x86.addcarry.64
+    x86_adox_32,                                     // llvm.x86.adox.32
+    x86_adox_64,                                     // llvm.x86.adox.64
     x86_aesdec128kl,                                 // llvm.x86.aesdec128kl
     x86_aesdec256kl,                                 // llvm.x86.aesdec256kl
     x86_aesdecwide128kl,                             // llvm.x86.aesdecwide128kl

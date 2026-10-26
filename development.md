@@ -1514,6 +1514,45 @@ DAG references remain owned by `sync-x86-native-intrinsics.py`.
 ELF/COFF/Mach-O and both assembly dialects. Physical Xeon Phi execution and
 hardware exception behavior remain outside this host qualification.
 
+## Native ADX carry chains
+
+`<immintrin.h>` and `<x86intrin.h>` expose `_adcx_u32`, `_adcx_u64`,
+`_adox_u32` and `_adox_u64`. Their `__builtin_ia32_*` forms require the `adx`
+function target. Each takes `(unsigned char carry, word a, word b, word *sum)`,
+stores the low word, and returns an unsigned carry byte. Every nonzero input
+byte supplies one. ADOX's output is unsigned carry, even though the instruction
+uses OF; it is not signed overflow.
+
+The matching NeverSight LLVM intrinsics are `llvm.x86.adcx.32/.64` and
+`llvm.x86.adox.32/.64`, with the fixed signature
+`{i8, iN} (i8 carry, iN a, iN b)`. They have no memory effects. The native
+lowering seeds the selected flag, emits ADCX or ADOX, and captures its carry
+in one scheduling group. It requires ADX, supports 32-bit operands in i386
+and x86-64 and 64-bit operands in x86-64, and uses no inline assembly or
+external helpers. Carry chains are explicit SSA values; callers do not own
+ambient EFLAGS across C expressions or calls. Scheduling simultaneous live
+hardware CF/OF chains without reseeding is a separate optimization.
+
+`_addcarryx_u32/u64` now use the native ADCX API. `_addcarry_u32/u64` and the
+existing `__builtin_ia32_addcarryx_*` compatibility spelling retain the generic
+addcarry contract and work without ADX. This preserves the baseline header
+while allowing explicit selection of both native carry instructions. The
+native intrinsic synchronizer keeps the pruned LLVM enum, signatures,
+attributes and instruction-selection IDs consistent with the full fork.
+
+`X86ADXTest.*` covers headers and function targets at O0/O2 for ELF, COFF and
+Mach-O, native instruction selection, missing-feature diagnostics, all 256
+input carry bytes, aliases, single argument evaluation and interleaved CF/OF
+chains against independent bit addition. Native execution requires an ADX CPU;
+NeverC itself still supports only x86-64/AArch64 targets. Independent execution
+through both NeverC and the full LLVM fork passed 1,187,840 value/chain cases
+at O0/O2, with six ELF/COFF/Mach-O compilation profiles. The full fork's
+standalone value APIs additionally passed 740,352 x86-64 cases and 65,536
+native i386 cases; its source change is
+[`5b7938a7dea3`](https://github.com/NeverSight/llvm-project/commit/5b7938a7dea34d00a705a44c6dad43321e11f3e9).
+These APIs are present in the fork source; this change does not publish a new
+NeverD LLVM SDK release.
+
 ## Standard transaction headers
 
 `<immintrin.h>` and `<x86intrin.h>` expose `_xbegin`, `_xend`, `_xabort`

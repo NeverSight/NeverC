@@ -64,6 +64,12 @@ for operation in ("lar", "lsl"):
             name = f"{operation}_{source}{bits}"
             operand = "I16" if source == "reg" else "PTR"
             DECLARATIONS[name] = ("STRUCT2", f"I{bits}", "I8", operand, f"I{bits}")
+# ADX value APIs share the generic addcarry attributes, with no memory effects.
+VALUE_SIGNATURES = {
+    f"{op}_{bits}": (("STRUCT2", "I8", f"I{bits}", "I8", f"I{bits}", f"I{bits}"),
+                     f"llvm.x86.addcarry.{bits}")
+    for op in ("adcx", "adox") for bits in (32, 64)
+}
 PROTOTYPE = "llvm.x86.vmread"
 EXISTING_FIRST_IMMEDIATE_SIGNATURES = {
     "readcr": ("I64", "I32"), "readdr": ("I64", "I32"),
@@ -271,6 +277,7 @@ def synchronize(write):
     declarations = {suffix: (signature, PROTOTYPE)
                     for suffix, signature in DECLARATIONS.items()}
     declarations.update(AMX_SIGNATURES)
+    declarations.update(VALUE_SIGNATURES)
     declarations.update({suffix: (signature, PROTOTYPE)
                          for suffix, (signature, _) in ADDRESS_SIGNATURES.items()})
     declarations.update({suffix: (signature, "llvm.x86.int")
