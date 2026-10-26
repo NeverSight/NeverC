@@ -1816,6 +1816,22 @@ describeFunctionalBindNaturalLayout(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
+// Original signature and body nodes are separate obligations. A signature
+// selection may leave its body and exception specification uninstantiated.
+struct FunctionalBindInvokeSignatureSource {
+  const clang::FunctionDecl *Function, *Primary;
+  const clang::Expr *PrimaryReturn, *PrimaryException;
+  const clang::Expr *ActualReturn, *ActualException;
+  const clang::CallExpr *SignatureCall;
+  std::vector<const clang::CallExpr *> Declvals;
+};
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<clang::QualType> Forwarded, const clang::ASTContext &Context);
+
+
 // Sema callback collection only. This predicate must not complete a record or
 // grant ordinary source, runtime, selected body, default, trait or lifetime use.
 bool retainFunctionalBindConstraintRoot(
@@ -1827,6 +1843,19 @@ bool retainFunctionalBindConstraintRoot(
 bool matchesFunctionalBindSelectedSource(
     const State &S, const clang::SourceManager &SM,
     const SelectedTemplateCallSource &Source, const clang::ASTContext &Context);
+
+
+struct FunctionalBindTupleTagSource {
+  const clang::CXXConstructExpr *Construction;
+  const clang::CXXRecordDecl *Record;
+  const clang::TypeSourceInfo *Written;
+};
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+bool shouldRetainFunctionalBindSpecialMemberSource(
+    const State &S, const clang::SourceManager &SM, const clang::CXXMethodDecl *Method);
 
 
 // Source certificates are purpose bound and never admit ordinary SDK calls.
