@@ -101,7 +101,7 @@ _mm_tzcnt_64(unsigned long long __X) {
 #undef __RELAXED_FN_ATTRS
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__BMI__)
+    defined(__BMI__) || defined(__neverc__)
 
 /* Define the default attributes for the functions in this file. */
 #define __DEFAULT_FN_ATTRS                                                     \

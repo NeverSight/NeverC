@@ -1576,3 +1576,19 @@ instruction's CF/ZF/SF/OF and undefined AF/PF semantics separately.
 20 interfaces at O0/O2 for ELF, COFF and Mach-O, checks native O2 assembly,
 checks BEXTR IR, and rejects variable immediate controls. It does not execute
 physical TBM instructions.
+
+### BMI and BMI2 header function targets
+
+`<x86intrin.h>` and `<immintrin.h>` expose their BMI/BMI2 interfaces in
+NeverC's Microsoft mode without requiring translation-unit feature macros.
+The wrappers retain their `target("bmi")` or `target("bmi2")` attributes;
+callers can enable the family on individual functions. The older header
+conditions hid these interfaces even from such callers on Windows.
+
+[BMIFrontendTests.cpp](tests/neverc/X86/BMIFrontendTests.cpp) compiles 22
+interfaces at O0/O2 for ELF, COFF and Mach-O, including all three BEXTR
+spellings with dynamic controls. BEXTR, BZHI, PDEP and PEXT retain native LLVM
+intrinsics. ANDN and BLS operations use ordinary arithmetic patterns and
+select their native instructions at O2. MULX retains both product halves
+without a runtime helper; its 32-bit form may use an ordinary 64-bit multiply.
+The suite rejects inline assembly and does not require BMI hardware.

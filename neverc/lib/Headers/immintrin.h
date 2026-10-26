@@ -72,7 +72,7 @@
 #include <bmiintrin.h>
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__BMI2__)
+    defined(__BMI2__) || defined(__neverc__)
 #include <bmi2intrin.h>
 #endif
 
