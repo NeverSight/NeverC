@@ -126,6 +126,10 @@ def main():
             report['native'].append(dict(name=case['name'],
                 source_sha256=sha(source), modes=modes))
             save()
+        metadata_common = common + ['-ffreestanding', '-nostdinc',
+            '-isystem', str(sdk / 'resource/include'), '-D_LIBCPP_NO_VCRUNTIME',
+            '-fno-ms-compatibility', '-fno-ms-extensions', '-fno-delayed-template-parsing']
+        report['metadata_flags'] = metadata_common
         for case in plan['metadata_cases']:
             folder = out / case['name']
             folder.mkdir()
@@ -134,7 +138,7 @@ def main():
             assert sha(source) == case['source_sha256']
             targets = []
             for target in plan['target_abis']:
-                command = ['/usr/bin/clang++-22'] + common + ['--target=' + target,
+                command = ['/usr/bin/clang++-22'] + metadata_common + ['--target=' + target,
                     '-fsyntax-only', '-Xclang', '-ast-dump', '-Xclang',
                     '-ast-dump-filter=__bind', '-Xclang', '-fdump-record-layouts', source]
                 code, log = run(command, case['name'] + '/' + target, True)
