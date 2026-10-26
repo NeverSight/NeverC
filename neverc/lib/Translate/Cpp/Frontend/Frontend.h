@@ -26,6 +26,7 @@ class ArrayInitLoopExpr;
 class ArrayInitIndexExpr;
 class CastExpr;
 class CXXConstructExpr;
+class CXXStaticCastExpr;
 class CXXInheritedCtorInitExpr;
 class CXXStdInitializerListExpr;
 class CXXNewExpr;
@@ -1780,7 +1781,7 @@ struct FunctionalBindCallSource {
   const clang::CallExpr *Apply, *Invoke, *Target;
   const clang::CXXConstructExpr *Indices, *EmptyArguments;
   std::vector<FunctionalBindArgumentSource> Arguments;
-  std::vector<const clang::CallExpr *> InvokeForwards;
+  std::vector<const clang::CXXStaticCastExpr *> InvokeCasts;
 };
 std::optional<FunctionalBindCallSource>
 describeFunctionalBindCallSource(
