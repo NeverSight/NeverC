@@ -673,6 +673,47 @@ global address used in descriptor construction. Prefer bitcode for this
 cross-version boundary. Other differences between LLVM versions still need
 their own qualification.
 
+### Native memory default-segment provenance
+
+`__NEVERC_X86_NATIVE_MEMORY_STACK_REFERENCE__ == 1` enables bit `0x100` in
+native memory segment controls. OR it with a prefix byte to request a real
+stack-default operand with a 64-bit offset. For example,
+`__builtin_ia32_lar_mem32_address(offset, 64, 0x100, prior, &zf)` retains
+stack-reference `#SS` faults for noncanonical addresses. An explicit `0x36`
+SS prefix without this bit keeps data-default fault provenance in long mode.
+CS/DS/ES/SS overrides can be combined with the bit; FS/GS, address32 and
+unknown control bits are rejected.
+
+This applies to explicit descriptor/VMX addresses, RAO/CMPccXADD, native
+compress/expand and four-source memory operations, and LDTILECFG/STTILECFG.
+AMX tile row-memory and MPX controls do not yet accept the bit: their index
+or state semantics need separate lowering. Existing raw prefix values keep
+their meaning. This API describes the native access; it does not authorize
+execution of privileged instructions or promise an emulated completion.
+
+The full LLVM fork publishes `LLVM_X86_NATIVE_MEMORY_STACK_REFERENCE` in
+`llvm/IR/X86NativeMemoryAddress.h` and the shared `NativeMemoryStackReference`
+constant. Its backend reserves the frame pointer, computes `offset - RBP`,
+and uses `[RBP + index]` without replacing RBP or probing memory. CFI/SEH and
+dynamic stack realignment remain under the normal frame-lowering owner.
+Data-default addresses use allocator-owned registers excluding SP/BP; a
+carrier pseudo preserves that constraint through coalescing and post-RA copy
+propagation until MC lowering. Full LLVM also uses SI/DI for i386 address16,
+so neither the PIC GOT register nor a reserved realignment base is overwritten.
+NeverC remains x64-only. The append-only table authority is
+`utils/lint/sync-x86-native-address-carrier.py`; no intrinsic IDs change.
+The x86 target schema now contains 18,573 instructions: it also catches up
+32 previously implemented REP, bounded-state and atomic pseudos that were
+missing from the checked-in schema. Existing instruction records, register
+and feature identities remain unchanged; AArch64's schema is unchanged.
+
+`X86NativeAddressTest` checks native code generation on ELF/COFF/Mach-O,
+invalid controls, real LAR results against a register-form assembly oracle,
+noncanonical `#SS/#GP` trap numbers, and dynamic stack canaries at O0/O2.
+The native trap test requires Linux x64 and does not qualify AMX hardware.
+The address completion scripts validate encodings, wrapped offsets, effects
+and saved registers across both compilers and the NeverC-to-fork route.
+
 ### Explicit descriptor-state addresses
 
 Thirteen header-free builtins add `offset, address_bits, segment_prefix`

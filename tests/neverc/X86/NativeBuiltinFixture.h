@@ -6,6 +6,22 @@
 
 class X86NativeBuiltinTest : public NeverCTest {
 protected:
+  static bool hasDataAddress(const std::string &Assembly,
+                             const std::string &Segment, unsigned Bits,
+                             bool Intel = true) {
+    for (char Letter : {'a', 'b', 'c', 'd'}) {
+      const std::string Register =
+          std::string(Bits == 64 ? "r" : "e") + Letter + "x";
+      const std::string Address =
+          Intel
+              ? Segment + "[" + Register + "]"
+              : (Segment.empty() ? "" : "%" + Segment) + "(%" + Register + ")";
+      if (Assembly.find(Address) != std::string::npos)
+        return true;
+    }
+    return false;
+  }
+
   std::pair<int, std::string> compileToAsm(const char *src, const char *stem,
                                            const char *opt = "-O2") {
     auto srcFile = tmpFile(std::string(stem) + ".c");

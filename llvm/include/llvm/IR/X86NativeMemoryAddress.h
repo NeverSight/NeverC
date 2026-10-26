@@ -11,7 +11,16 @@
 
 #include <cstdint>
 
+// The ordinary-SIB native address APIs accept NativeMemoryStackReference.
+#define LLVM_X86_NATIVE_MEMORY_STACK_REFERENCE 1
+
 namespace llvm::X86 {
+
+// OR this bit with a segment-prefix byte to request a stack-default memory
+// operand in 64-bit addressing. An SS prefix alone does not change a
+// data-default operand's noncanonical fault. Stride/MIB address APIs do not
+// accept this control; their index has instruction-specific semantics.
+inline constexpr uint32_t NativeMemoryStackReference = 0x100;
 
 // The address is an unsigned offset before segment-base addition. A zero
 // segment prefix selects the native DS default; other values are actual
@@ -33,6 +42,16 @@ inline constexpr bool isNativeMemorySegmentPrefix(uint64_t Prefix) {
   default:
     return false;
   }
+}
+
+inline constexpr bool isNativeMemoryAddressControl(bool Is64Bit, uint64_t Width,
+                                                   uint64_t Control) {
+  const uint64_t Prefix = Control & ~uint64_t(NativeMemoryStackReference);
+  if (!isNativeMemoryAddressWidth(Is64Bit, Width) ||
+      !isNativeMemorySegmentPrefix(Prefix))
+    return false;
+  return !(Control & NativeMemoryStackReference) ||
+         (Is64Bit && Width == 64 && Prefix != 0x64 && Prefix != 0x65);
 }
 
 } // namespace llvm::X86

@@ -71,15 +71,18 @@ def memory_decode(code):
                 tile = (modrm >> 3) & 7
                 end = op_at + 2
                 config = name in ("ldtilecfg", "sttilecfg")
-                assert modrm & 0xc7 == (3 if config else 4)
+                assert modrm >> 6 == 0
+                base = modrm & 7
+                assert base in (0, 1, 2, 3) if config else base == 4
                 if not config:
-                    assert code[end] == 0x0b, "base must be BX, unscaled stride CX"
+                    base = code[end] & 7
+                    assert code[end] >> 3 == 1 and base in (0, 1, 2, 3), "expected data-default base and unscaled stride CX"
                     end += 1
                 else:
                     assert tile == 0
                 segment = next((v for v in prefixes if v != 0x67), 0)
                 assert len(prefixes) == bool(segment) + (0x67 in prefixes)
-                result[start] = (name, tile, 32 if 0x67 in prefixes else 64, segment, int(evex), end)
+                result[start] = (name, tile, 32 if 0x67 in prefixes else 64, segment, int(evex), base, end)
                 offset = end
                 continue
         ordinary = next(cs.disasm(code[offset:], offset, count=1), None)
@@ -188,10 +191,10 @@ def complete_memory(code, cases, base, stride):
         pc=machine.reg_read(regs.UC_X86_REG_RIP)
         if pc==N.STOP:break
         actual=native[pc-N.CODE]
-        assert actual[:-1]==cases[count]
-        _,_,width,_,_,end=actual
+        assert actual[:-2]==cases[count]
+        _,_,width,_,_,carrier,end=actual
         mask=(1<<width)-1
-        assert machine.reg_read(regs.UC_X86_REG_RBX)==base&mask,'base truncation changed'
+        assert machine.reg_read((regs.UC_X86_REG_RAX, regs.UC_X86_REG_RCX, regs.UC_X86_REG_RDX, regs.UC_X86_REG_RBX)[carrier])==base&mask,'base truncation changed'
         if actual[0] not in ('ldtilecfg','sttilecfg'):
             assert machine.reg_read(regs.UC_X86_REG_RCX)==stride&mask,'stride truncation changed'
         if not count:
@@ -386,7 +389,7 @@ def main():
         for opt,triple in itertools.product(('O0','O2'),N.TRIPLES):
             stem=opt+'-'+str(N.TRIPLES.index(triple))
             code=build(args,directory,'memory-'+stem,matrix,opt,triple)
-            assert [v[:-1] for v in memory_decode(code).values()]==matrix
+            assert [v[:-2] for v in memory_decode(code).values()]==matrix
             count+=len(matrix)
             code=build(args,directory,'rows-'+stem,row_matrix,opt,triple,rows=True)
             decoded=decode_rows(code)

@@ -163,8 +163,8 @@ def decode(code, stop_at_return=False, mode64=True):
                 register = ((modrm >> 3) & 7) | ((~p0 & 0x80) >> 4) | (~p0 & 0x10)
                 add = ((~p1 & 0x78) >> 3) | ((~p2 & 8) << 1) if compare else register
                 base = (modrm & 7) | ((~p0 & 0x20) >> 2) | ((p0 & 8) << 1)
-                # Native address controls deliberately keep DS-default RBX.
-                assert modrm >> 6 == 0 and base == 3, (start, modrm, base)
+                # Native carriers must retain a data-default base through allocation.
+                assert modrm >> 6 == 0 and base in (0, 1, 2, 3), (start, modrm, base)
                 assert add < len(GPRS) and register < len(GPRS), "controlled oracle does not execute EGPR setup"
                 name = "cmpccxadd" if compare else {0: "aadd", 1: "aand", 3: "aor", 2: "axor"}[pp]
                 result[start] = dict(op=name, bits=64 if p1 & 0x80 else 32,
@@ -191,9 +191,9 @@ def decode(code, stop_at_return=False, mode64=True):
                 bits, cc, end = 64 if rex & 8 else 32, 0, at + 4
                 name = {0: "aadd", 0x66: "aand", 0xf2: "aor", 0xf3: "axor"}[mandatory]
                 if address == 16:
-                    assert modrm & 7 == 7, "addr16 native carrier must be BX"
-                    base = 3
-            assert modrm >> 6 == 0 and base == 3, (start, modrm, base)
+                    assert (modrm & 7) in (4, 5), "addr16 native carrier must be SI or DI"
+                    base = (modrm & 7) + 2
+            assert modrm >> 6 == 0 and base in ((6, 7) if address == 16 else (0, 1, 2, 3)), (start, modrm, base)
             result[start] = dict(op=name, bits=bits, address=address, segment=segment,
                                  cc=cc, compare=register, add=add, base=base, end=end, legacy=True)
             at = end

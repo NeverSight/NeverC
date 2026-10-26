@@ -85,8 +85,8 @@ TEST_F(X86PrivilegedIntrinTest,
                   << Text;
         if (!IR) {
           EXPECT_NE(Text.find("{evex}"), std::string::npos) << Text;
-          EXPECT_NE(Text.find("%fs:(%ebx)"), std::string::npos) << Text;
-          EXPECT_NE(Text.find("%gs:(%ebx)"), std::string::npos) << Text;
+          EXPECT_TRUE(hasDataAddress(Text, "fs:", 32, false)) << Text;
+          EXPECT_TRUE(hasDataAddress(Text, "gs:", 32, false)) << Text;
           const std::regex Query("cmpexadd");
           EXPECT_EQ(std::distance(
                         std::sregex_iterator(Text.begin(), Text.end(), Query),
@@ -920,12 +920,8 @@ TEST_F(X86PrivilegedIntrinTest,
             << Text;
         if (!EmitIR) {
           const bool Intel = Text.find(".intel_syntax") != std::string::npos;
-          EXPECT_NE(Text.find(Intel ? "fs:[ebx]" : "%fs:(%ebx)"),
-                    std::string::npos)
-              << Text;
-          EXPECT_NE(Text.find(Intel ? "gs:[ebx]" : "%gs:(%ebx)"),
-                    std::string::npos)
-              << Text;
+          EXPECT_TRUE(hasDataAddress(Text, "fs:", 32, Intel)) << Text;
+          EXPECT_TRUE(hasDataAddress(Text, "gs:", 32, Intel)) << Text;
         }
       }
     }
@@ -1285,10 +1281,7 @@ TEST_F(X86PrivilegedIntrinTest, DescriptorAddressesKeepWidthSegmentAndResults) {
               Assembly,
               std::regex(std::string("\\t") + Mnemonic + "[wlq]?\\t")))
               << Assembly;
-        EXPECT_NE(Assembly.find(std::string(Segment) +
-                                (Width == 64 ? "[rbx]" : "[ebx]")),
-                  std::string::npos)
-            << Assembly;
+        EXPECT_TRUE(hasDataAddress(Assembly, Segment, Width)) << Assembly;
         EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
       }
     }
@@ -1360,10 +1353,7 @@ TEST_F(X86PrivilegedIntrinTest, VmxExplicitAddressesKeepWidthAndSegment) {
           EXPECT_TRUE(std::regex_search(
               Assembly, std::regex(std::string("\\t") + Mnemonic + "[ql]?\\t")))
               << Assembly;
-        EXPECT_NE(Assembly.find(std::string(Segment) +
-                                (Width == 64 ? "[rbx]" : "[ebx]")),
-                  std::string::npos)
-            << Assembly;
+        EXPECT_TRUE(hasDataAddress(Assembly, Segment, Width)) << Assembly;
         EXPECT_EQ(Assembly.find("#APP"), std::string::npos) << Assembly;
       }
     }

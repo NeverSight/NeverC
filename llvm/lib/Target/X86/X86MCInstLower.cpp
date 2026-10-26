@@ -634,6 +634,10 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
 
   // Handle a few special cases to eliminate operand modifiers.
   switch (OutMI.getOpcode()) {
+  // Keep the address class through post-RA copy propagation as well.
+  case X86::NATIVE_ADDRESS64:
+    OutMI.setOpcode(X86::MOV64rr);
+    break;
   case X86::LEGACY_RAO_NATIVE32:
   case X86::LEGACY_RAO_NATIVE64:
   case X86::LEGACY_CMPCCXADD_NATIVE32:

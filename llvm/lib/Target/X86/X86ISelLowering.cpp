@@ -26119,34 +26119,29 @@ static SDValue getVMXCompletion(SDNode *Access, const SDLoc &DL,
   return DAG.getMergeValues({Status, SDValue(Access, ChainIndex)}, DL);
 }
 
-// Use the B register so the zero-prefix form selects DS even when the
-// allocator otherwise chooses BP/SP. Machine memory operands use the code-mode
-// pointer class; address-size pseudos narrow the base at MC lowering. Truncate
-// the offset before native segment addition and keep setup glued to the access.
+// Keep the original segment-fault provenance independently of register
+// allocation. DS uses a class excluding BP/SP; SS uses the unmodified frame
+// register plus a computed index. Taking the frame address reserves BP and
+// retains unwind information;
+// it does not probe the operand or temporarily replace a live frame pointer.
 static SmallVector<SDValue, 8>
-lowerNativeAddressOperands(SDValue Op, const X86Subtarget &Subtarget,
-                           unsigned OffsetOperand, SelectionDAG &DAG,
-                           SDValue &Chain, SDValue &Glue,
-                           unsigned WidthOperand = 0) {
-  if (!WidthOperand)
-    WidthOperand = OffsetOperand + 1;
-  const auto *Width = dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand));
-  const auto *Prefix =
-      dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand + 1));
-  if (!Width || !Prefix)
-    report_fatal_error("native memory addressing requires constant controls");
-  if (!X86::isNativeMemoryAddressWidth(Subtarget.is64Bit(),
-                                       Width->getZExtValue()))
+lowerNativeMemoryAddress(SDValue Offset, unsigned Bits, uint64_t Control,
+                         const X86Subtarget &Subtarget, SelectionDAG &DAG,
+                         const SDLoc &DL, SDValue &Chain, SDValue &Glue,
+                         bool AllowStack = true) {
+  if (!X86::isNativeMemoryAddressControl(Subtarget.is64Bit(), Bits, Control))
     report_fatal_error(
-        "native memory address width is invalid for this code mode");
-  if (!X86::isNativeMemorySegmentPrefix(Prefix->getZExtValue()))
-    report_fatal_error("invalid native memory segment prefix");
-  const unsigned Bits = Width->getZExtValue();
+        "invalid native memory segment prefix or stack-reference control");
+  const bool Stack = Control & X86::NativeMemoryStackReference;
+  if (Stack && !AllowStack)
+    report_fatal_error("native stack address requires an ordinary SIB index");
+  const uint64_t Prefix = Control & ~uint64_t(X86::NativeMemoryStackReference);
   const MVT VT = MVT::getIntegerVT(Bits);
   const MVT BaseVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
-  const unsigned Base = Subtarget.is64Bit() ? X86::RBX : X86::EBX;
+  // A hard-coded BX can be the function's realigned-stack or PIC base.
+  // The carrier pseudo keeps its class through coalescing and allocation.
   unsigned Segment = 0;
-  switch (Prefix->getZExtValue()) {
+  switch (Prefix) {
   case 0x26:
     Segment = X86::ES;
     break;
@@ -26166,14 +26161,54 @@ lowerNativeAddressOperands(SDValue Op, const X86Subtarget &Subtarget,
     Segment = X86::GS;
     break;
   }
-  const SDLoc DL(Op);
-  SDValue Offset = DAG.getZExtOrTrunc(Op.getOperand(OffsetOperand), DL, VT);
+  Offset = DAG.getZExtOrTrunc(Offset, DL, VT);
   Offset = DAG.getZExtOrTrunc(Offset, DL, BaseVT);
-  Chain = DAG.getCopyToReg(Op.getOperand(0), DL, Base, Offset, SDValue());
-  Glue = Chain.getValue(1);
-  return {DAG.getRegister(Base, BaseVT), DAG.getTargetConstant(1, DL, MVT::i8),
-          DAG.getRegister(0, BaseVT), DAG.getTargetConstant(0, DL, MVT::i32),
+  if (Stack) {
+    DAG.getMachineFunction().getFrameInfo().setFrameAddressIsTaken(true);
+    const SDValue Frame =
+        DAG.getCopyFromReg(DAG.getEntryNode(), DL, X86::RBP, MVT::i64);
+    Offset = DAG.getNode(ISD::SUB, DL, MVT::i64, Offset, Frame);
+  }
+  const unsigned Opcode = X86::NATIVE_ADDRESS64;
+  SmallVector<SDValue, 3> Inputs = {Offset, Chain};
+  if (Glue)
+    Inputs.push_back(Glue);
+  auto *Copy = DAG.getMachineNode(
+      Opcode, DL, DAG.getVTList(BaseVT, MVT::Other, MVT::Glue), Inputs);
+  const SDValue Carrier(Copy, 0);
+  Chain = SDValue(Copy, 1);
+  Glue = SDValue(Copy, 2);
+  return {Stack ? DAG.getRegister(X86::RBP, BaseVT) : Carrier,
+          DAG.getTargetConstant(1, DL, MVT::i8),
+          Stack ? Carrier : DAG.getRegister(0, BaseVT),
+          DAG.getTargetConstant(0, DL, MVT::i32),
           DAG.getRegister(Segment, MVT::i16)};
+}
+
+// Machine memory operands use the code-mode pointer class; address-size
+// pseudos narrow the base at MC lowering. Truncate before segment addition.
+static SmallVector<SDValue, 8>
+lowerNativeAddressOperands(SDValue Op, const X86Subtarget &Subtarget,
+                           unsigned OffsetOperand, SelectionDAG &DAG,
+                           SDValue &Chain, SDValue &Glue,
+                           unsigned WidthOperand = 0, bool AllowStack = true) {
+  if (!WidthOperand)
+    WidthOperand = OffsetOperand + 1;
+  const auto *Width = dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand));
+  const auto *Prefix =
+      dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand + 1));
+  if (!Width || !Prefix)
+    report_fatal_error("native memory addressing requires constant controls");
+  if (!X86::isNativeMemoryAddressWidth(Subtarget.is64Bit(),
+                                       Width->getZExtValue()))
+    report_fatal_error(
+        "native memory address width is invalid for this code mode");
+  Chain = Op.getOperand(0);
+  Glue = SDValue();
+  return lowerNativeMemoryAddress(Op.getOperand(OffsetOperand),
+                                  Width->getZExtValue(), Prefix->getZExtValue(),
+                                  Subtarget, DAG, SDLoc(Op), Chain, Glue,
+                                  AllowStack);
 }
 
 static SDValue lowerVMXAddress(SDValue Op, const X86Subtarget &Subtarget,
@@ -26723,7 +26758,9 @@ static SDValue lowerCompressExpandNative(SDValue Op,
       dyn_cast<ConstantSDNode>(Op.getOperand(Expand ? 7 : 6));
   if (!KindArg || KindArg->getZExtValue() >= X86::CompressExpandKindCount ||
       (Expand && (!ZeroArg || ZeroArg->getZExtValue() > 1)) || !PrefixArg ||
-      !X86::isNativeMemorySegmentPrefix(PrefixArg->getZExtValue()))
+      !X86::isNativeMemoryAddressControl(Subtarget.is64Bit(),
+                                         Subtarget.is64Bit() ? 64 : 32,
+                                         PrefixArg->getZExtValue()))
     report_fatal_error("invalid native compress/expand controls");
   const unsigned Kind = KindArg->getZExtValue();
   const bool Zero = Expand && ZeroArg->getZExtValue();
@@ -26771,47 +26808,23 @@ static SDValue lowerCompressExpandNative(SDValue Op,
     Mask = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL,
                        MVT::getVectorVT(MVT::i1, Lanes), Mask,
                        DAG.getVectorIdxConstant(0, DL));
-  unsigned Segment = 0;
-  switch (PrefixArg->getZExtValue()) {
-  case 0x26:
-    Segment = X86::ES;
-    break;
-  case 0x2e:
-    Segment = X86::CS;
-    break;
-  case 0x36:
-    Segment = X86::SS;
-    break;
-  case 0x3e:
-    Segment = X86::DS;
-    break;
-  case 0x64:
-    Segment = X86::FS;
-    break;
-  case 0x65:
-    Segment = X86::GS;
-    break;
-  }
-  const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
-  const unsigned Base = Subtarget.is64Bit() ? X86::RBX : X86::EBX;
-  SDValue Chain =
-      DAG.getCopyToReg(Op.getOperand(0), DL, Base, Op.getOperand(2), SDValue());
+  SDValue Chain = Op.getOperand(0), Glue;
+  auto Address = lowerNativeMemoryAddress(
+      Op.getOperand(2), Subtarget.is64Bit() ? 64 : 32,
+      PrefixArg->getZExtValue(), Subtarget, DAG, DL, Chain, Glue);
   SmallVector<SDValue, 10> Operands;
   if (Expand) {
     if (!Zero)
       Operands.push_back(DAG.getBitcast(DataVT, Op.getOperand(4)));
     Operands.push_back(Mask);
   }
-  Operands.append(
-      {DAG.getRegister(Base, PtrVT), DAG.getTargetConstant(1, DL, MVT::i8),
-       DAG.getRegister(0, PtrVT), DAG.getTargetConstant(0, DL, MVT::i32),
-       DAG.getRegister(Segment, MVT::i16)});
+  Operands.append(Address);
   if (!Expand) {
     Operands.push_back(Mask);
     Operands.push_back(DAG.getBitcast(DataVT, Op.getOperand(4)));
   }
   Operands.push_back(Chain);
-  Operands.push_back(Chain.getValue(1));
+  Operands.push_back(Glue);
   auto *Node = DAG.getMachineNode(Opcode, DL,
                                   Expand ? DAG.getVTList(DataVT, MVT::Other)
                                          : DAG.getVTList(MVT::Other),
@@ -26840,7 +26853,9 @@ static SDValue lowerFourSourceNative(SDValue Op, const X86Subtarget &Subtarget,
   const auto *Zero = dyn_cast<ConstantSDNode>(Op.getOperand(9));
   const auto *Prefix = dyn_cast<ConstantSDNode>(Op.getOperand(10));
   if (!Zero || Zero->getZExtValue() > 1 || !Prefix ||
-      !X86::isNativeMemorySegmentPrefix(Prefix->getZExtValue()))
+      !X86::isNativeMemoryAddressControl(Subtarget.is64Bit(),
+                                         Subtarget.is64Bit() ? 64 : 32,
+                                         Prefix->getZExtValue()))
     report_fatal_error("invalid native four-source controls");
   if (!Subtarget.hasAVX512() || (!Scalar && !Subtarget.hasEVEX512()))
     report_fatal_error(
@@ -26886,43 +26901,17 @@ static SDValue lowerFourSourceNative(SDValue Op, const X86Subtarget &Subtarget,
                          DAG.getBitcast(Vector, Op.getOperand(4 + I)), Glue);
     Glue = Chain.getValue(1);
   }
-  const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
-  const unsigned Base = Subtarget.is64Bit() ? X86::RBX : X86::EBX;
-  Chain = DAG.getCopyToReg(Chain, DL, Base, Op.getOperand(2), Glue);
-  Glue = Chain.getValue(1);
-  unsigned Segment = 0;
-  switch (Prefix->getZExtValue()) {
-  case 0x26:
-    Segment = X86::ES;
-    break;
-  case 0x2e:
-    Segment = X86::CS;
-    break;
-  case 0x36:
-    Segment = X86::SS;
-    break;
-  case 0x3e:
-    Segment = X86::DS;
-    break;
-  case 0x64:
-    Segment = X86::FS;
-    break;
-  case 0x65:
-    Segment = X86::GS;
-    break;
-  }
+  auto Address = lowerNativeMemoryAddress(
+      Op.getOperand(2), Subtarget.is64Bit() ? 64 : 32, Prefix->getZExtValue(),
+      Subtarget, DAG, DL, Chain, Glue);
   SDValue Mask = DAG.getBitcast(MVT::v16i1, Op.getOperand(8));
   if (Scalar)
     Mask = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, MVT::v1i1, Mask,
                        DAG.getVectorIdxConstant(0, DL));
   SmallVector<SDValue, 13> Operands = {DAG.getBitcast(Vector, Op.getOperand(3)),
                                        Mask,
-                                       DAG.getRegister(Registers[0], Vector),
-                                       DAG.getRegister(Base, PtrVT),
-                                       DAG.getTargetConstant(1, DL, MVT::i8),
-                                       DAG.getRegister(0, PtrVT),
-                                       DAG.getTargetConstant(0, DL, MVT::i32),
-                                       DAG.getRegister(Segment, MVT::i16)};
+                                       DAG.getRegister(Registers[0], Vector)};
+  Operands.append(Address);
   for (unsigned I = 1; I < 4; ++I)
     Operands.push_back(DAG.getRegister(Registers[I], Vector));
   Operands.append({Chain, Glue});
@@ -27125,8 +27114,9 @@ static SDValue lowerAMXNative(SDValue Op, const X86Subtarget &Subtarget,
     return DAG.getMergeValues({SDValue(Read, 0), SDValue(Read, 1)}, DL);
   }
   const unsigned WidthOperand = TileMemory ? 5 : 3;
-  auto Operands = lowerNativeAddressOperands(Op, Subtarget, TileMemory ? 3 : 2,
-                                             DAG, Chain, Glue, WidthOperand);
+  auto Operands =
+      lowerNativeAddressOperands(Op, Subtarget, TileMemory ? 3 : 2, DAG, Chain,
+                                 Glue, WidthOperand, !TileMemory);
   const unsigned Bits = Op.getConstantOperandVal(WidthOperand);
   if (Bits == 32)
     Descriptor |= X86::AMXNativeAddress32;

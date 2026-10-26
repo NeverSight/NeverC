@@ -180,13 +180,14 @@ def accesses(code, op, bits, width, segment, mode, count):
         assert any(0x48 <= p <= 0x4f for p in prefixes) == (op != "lkgs" and bits == 64), "REX.W changed"
         assert raw[cursor:cursor + 2] == bytes((0x0f, {"lar": 2, "lsl": 3, "lkgs": 0}[op]))
         modrm = raw[cursor + 2]
-        assert modrm >> 6 == 0 and modrm & 7 == (7 if width == 16 else 3), "default DS base changed"
+        assert modrm >> 6 == 0 and (modrm & 7) in ((4, 5) if width == 16 else (0, 1, 2, 3)), "address carrier is not a data-default base"
         if op == "lkgs":
             assert modrm >> 3 & 7 == 6
         memory, = (o for o in instruction.operands if o.type == capstone.x86.X86_OP_MEM)
         assert memory.size == 2, "m16 selector was widened"
         assert instruction.addr_size == width // 8
-        assert instruction.reg_name(memory.mem.base) == {16: "bx", 32: "ebx", 64: "rbx"}[width]
+        assert instruction.reg_name(memory.mem.base) in {16: ("si", "di"),
+            32: ("eax", "ebx", "ecx", "edx"), 64: ("rax", "rbx", "rcx", "rdx")}[width]
         assert not memory.mem.index and memory.mem.disp == 0
         assert (instruction.reg_name(memory.mem.segment) if memory.mem.segment else None) == SEGMENTS[segment]
     return native

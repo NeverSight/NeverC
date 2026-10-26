@@ -148,12 +148,13 @@ def accesses(code, operation, width, segment, mode, count):
         opcode = OPCODES[operation]
         assert encoding[cursor:cursor + len(opcode)] == opcode, "wrong native opcode"
         modrm = encoding[cursor + len(opcode)]
-        assert modrm >> 6 == 0 and modrm & 7 == (7 if width == 16 else 3), "address is not the DS-default BX base"
+        assert modrm >> 6 == 0 and (modrm & 7) in ((4, 5) if width == 16 else (0, 1, 2, 3)), "address carrier is not a data-default base"
         if operation not in SELECTOR:
             assert modrm >> 3 & 7 == (7 if operation == "vmptrst" else 6)
         memory, = (o for o in instruction.operands if o.type == capstone.x86.X86_OP_MEM)
         assert instruction.addr_size == width // 8
-        assert instruction.reg_name(memory.mem.base) == {16: "bx", 32: "ebx", 64: "rbx"}[width]
+        assert instruction.reg_name(memory.mem.base) in {16: ("si", "di"),
+            32: ("eax", "ebx", "ecx", "edx"), 64: ("rax", "rbx", "rcx", "rdx")}[width]
         assert not memory.mem.index and memory.mem.disp == 0
         assert (instruction.reg_name(memory.mem.segment) if memory.mem.segment else None) == SEGMENTS[segment]
         expected_size = mode // 8 if operation in ("vmread", "vmwrite.mem") else 16 if operation in ("invept", "invvpid") else 8
@@ -248,6 +249,7 @@ def native_fault_oracle(args, directory):
     if args.llc or platform.system() != "Linux" or platform.machine() != "x86_64":
         return 0
     count = 0
+    libc = ctypes.CDLL(None, use_errno=True)
     for opt in ("O0", "O2"):
         base = directory / ("native-" + opt)
         src, ir, obj, library = (base.with_suffix(s) for s in (".c", ".ll", ".o", ".so"))
@@ -284,6 +286,9 @@ def native_fault_oracle(args, directory):
                 pid = os.fork()
                 if not pid:
                     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                    # A piped core handler can ignore RLIMIT_CORE. These
+                    # intentional CPL3 faults do not need system core dumps.
+                    assert libc.prctl(4, 0, 0, 0, 0) == 0
                     signal.alarm(5)
                     function(offset)
                     os._exit(0)

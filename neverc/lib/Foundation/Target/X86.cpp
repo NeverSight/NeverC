@@ -853,6 +853,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   // Consumers can select the builtins first and attach per-function features.
   if (getTriple().getArch() == llvm::Triple::x86_64) {
     Builder.defineMacro("__NEVERC_X86_AMX_CONTROLS__", "1");
+    Builder.defineMacro("__NEVERC_X86_NATIVE_MEMORY_STACK_REFERENCE__", "1");
     Builder.defineMacro("__NEVERC_X86_SGX_COMPLETION__", "1");
     Builder.defineMacro("__NEVERC_X86_REP_STATE__", "1");
     Builder.defineMacro("__NEVERC_X86_BOUNDED_LEAF_STATE__", "1");

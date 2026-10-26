@@ -20449,6 +20449,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LEGACY_RAO_NATIVE64
     0U,	// LEGACY_CMPCCXADD_NATIVE32
     0U,	// LEGACY_CMPCCXADD_NATIVE64
+    0U,	// NATIVE_ADDRESS64
 };
 
   static const uint16_t OpInfo1[] = {
@@ -39024,6 +39025,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LEGACY_RAO_NATIVE64
     0U,	// LEGACY_CMPCCXADD_NATIVE32
     0U,	// LEGACY_CMPCCXADD_NATIVE64
+    0U,	// NATIVE_ADDRESS64
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57599,6 +57601,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LEGACY_RAO_NATIVE64
     0U,	// LEGACY_CMPCCXADD_NATIVE32
     0U,	// LEGACY_CMPCCXADD_NATIVE64
+    0U,	// NATIVE_ADDRESS64
 };
 
   // Emit the opcode for the instruction.

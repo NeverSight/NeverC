@@ -142,10 +142,14 @@ def accesses(code, case, mode):
         raw = bytes(instruction.bytes)
         cursor, wanted = raw.index(0x0f), expected.index(0x0f)
         assert sorted(raw[:cursor]) == sorted(expected[:wanted]), "prefix controls changed"
-        assert raw[cursor:] == expected[wanted:], "native opcode/ModRM changed"
+        assert len(raw[cursor:]) == 3, "unexpected native address length"
+        assert raw[cursor:cursor + 2] == expected[wanted:wanted + 2], "native opcode changed"
+        assert raw[-1] >> 3 == expected[-1] >> 3, "native ModRM operation changed"
+        assert (raw[-1] & 7) in ((4, 5) if width == 16 else (0, 1, 2, 3)), "invalid data-default carrier"
         memory, = (o for o in instruction.operands if o.type == capstone.x86.X86_OP_MEM)
         assert instruction.addr_size == width // 8
-        assert instruction.reg_name(memory.mem.base) == {16: "bx", 32: "ebx", 64: "rbx"}[width]
+        assert instruction.reg_name(memory.mem.base) in {16: ("si", "di"),
+            32: ("eax", "ebx", "ecx", "edx"), 64: ("rax", "rbx", "rcx", "rdx")}[width]
         assert not memory.mem.index and memory.mem.disp == 0
     return native
 
@@ -195,7 +199,9 @@ def execute(code, case, mode, status, mapped=True):
     for i, instruction in enumerate(native):
         machine.emu_start(start, instruction.address, count=2000)
         assert machine.reg_read(reg("IP")) == instruction.address
-        assert machine.reg_read(reg("BX")) == (offset ^ (0x40 if i else 0)) & address_mask, "offset wrapping changed"
+        memory, = (o for o in instruction.operands if o.type == capstone.x86.X86_OP_MEM)
+        base_register = getattr(regs, "UC_X86_REG_" + instruction.reg_name(memory.mem.base).upper())
+        assert machine.reg_read(base_register) == (offset ^ (0x40 if i else 0)) & address_mask, "offset wrapping changed"
         assert not touched, "memory operand escaped the native instruction"
         if not mapped:
             return

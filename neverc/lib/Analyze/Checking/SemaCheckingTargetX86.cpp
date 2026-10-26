@@ -543,13 +543,16 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
-  auto CheckMemoryAddress = [&](unsigned WidthArgument) {
+  auto CheckMemoryAddress = [&](unsigned WidthArgument,
+                                bool AllowStack = true) {
     llvm::APSInt Width, Prefix;
     if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
         SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Prefix))
       return true;
-    if (llvm::X86::isNativeMemoryAddressWidth(true, Width.getZExtValue()) &&
-        llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+    if (llvm::X86::isNativeMemoryAddressControl(true, Width.getZExtValue(),
+                                                Prefix.getZExtValue()) &&
+        (AllowStack ||
+         !(Prefix.getZExtValue() & llvm::X86::NativeMemoryStackReference)))
       return false;
     return bool(Diag(TheCall->getBeginLoc(),
                      diag::err_x86_builtin_invalid_memory_address)
@@ -626,7 +629,7 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_tileloaddrst164_address:
   case X86::BI__builtin_ia32_tilestored64_address:
     return CheckX86BuiltinTileArgumentsRange(TheCall, 0) ||
-           CheckMemoryAddress(3) ||
+           CheckMemoryAddress(3, false) ||
            SemaBuiltinConstantArgRange(TheCall, 5, 0, 1);
   case X86::BI__builtin_ia32_tcvtrowd2ps_reg:
   case X86::BI__builtin_ia32_tcvtrowps2bf16h_reg:
@@ -662,7 +665,7 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_bndstx:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1) ||
-           CheckMemoryAddress(TheCall->getNumArgs() - 2);
+           CheckMemoryAddress(TheCall->getNumArgs() - 2, false);
   case X86::BI__builtin_ia32_v4fmaddps_native:
   case X86::BI__builtin_ia32_v4fnmaddps_native:
   case X86::BI__builtin_ia32_v4fmaddss_native:
@@ -674,7 +677,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     llvm::APSInt Prefix;
     if (SemaBuiltinConstantArg(TheCall, 8, Prefix))
       return true;
-    if (llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+    if (llvm::X86::isNativeMemoryAddressControl(true, 64,
+                                                Prefix.getZExtValue()))
       return false;
     return bool(Diag(TheCall->getBeginLoc(),
                      diag::err_x86_builtin_invalid_memory_address)
@@ -702,7 +706,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     llvm::APSInt Prefix;
     if (SemaBuiltinConstantArg(TheCall, 3, Prefix))
       return true;
-    if (llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+    if (llvm::X86::isNativeMemoryAddressControl(true, 64,
+                                                Prefix.getZExtValue()))
       return false;
     return bool(Diag(TheCall->getBeginLoc(),
                      diag::err_x86_builtin_invalid_memory_address)
@@ -732,7 +737,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     llvm::APSInt Prefix;
     if (SemaBuiltinConstantArg(TheCall, 4, Prefix))
       return true;
-    if (llvm::X86::isNativeMemorySegmentPrefix(Prefix.getZExtValue()))
+    if (llvm::X86::isNativeMemoryAddressControl(true, 64,
+                                                Prefix.getZExtValue()))
       return false;
     return bool(Diag(TheCall->getBeginLoc(),
                      diag::err_x86_builtin_invalid_memory_address)
